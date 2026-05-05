@@ -1,0 +1,787 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>符号主义、贝叶斯网络、深度学习：三种 AI 范式的对比学习 · Steve Chan — xlisp</title>
+<link rel="stylesheet" href="../style.css">
+</head>
+<body>
+<main class="wrap post">
+
+  <nav class="topnav">
+    <a href="../index.html">← home</a>
+  </nav>
+
+  <article>
+    <header class="post-header">
+      <h1>符号主义、贝叶斯网络、深度学习：三种 AI 范式的对比学习</h1>
+      <p class="meta">2026-05-06 · Steve Chan</p>
+    </header>
+
+    <div class="content">
+<h1 id="ai">符号主义、贝叶斯网络、深度学习：三种 AI 范式的对比学习</h1>
+<blockquote>
+<p>一个非常自然的直觉是这样的：<strong>"GPT 不就是把一堆自然语言数据当成可执行的符号代码，然后在这些海量规则下做回答吗？"</strong></p>
+<p>这个类比有 70% 是对的，30% 错得很关键。要把这 30% 讲清楚，需要把符号主义 AI、贝叶斯网络、深度学习放在同一张桌子上对照——它们三者<strong>都在解同一个问题</strong> $P(y \mid x)$，只是参数化方式根本不同。本文从这个共同问题出发，把三种范式的相同点、差异、各自擅长的边界，一条条钉到 <code>model.py</code> / <code>tokenizer.py</code> 的具体行号上。</p>
+<p>读完这篇，你会知道为什么"训练数据 = 可执行符号代码"是一个<strong>有用的近似</strong>，但<strong>不能当结论</strong>——以及为什么贝叶斯网络是介于两者之间的"半符号半概率"中间态。</p>
+</blockquote>
+<hr />
+<h2 id="_1">目录</h2>
+<ol>
+<li><a href="#1-三个范式的一句话总结">三个范式的一句话总结</a></li>
+<li><a href="#2-都在解同一个问题py--x">都在解同一个问题：$P(y \mid x)$</a></li>
+<li><a href="#3-符号主义-ai人写规则机器搜索">符号主义 AI：人写规则，机器搜索</a></li>
+<li><a href="#4-贝叶斯网络图是符号的参数是概率的">贝叶斯网络：图是符号的，参数是概率的</a></li>
+<li><a href="#5-深度学习大模型人写架构梯度下降写参数">深度学习大模型：人写架构，梯度下降写参数</a></li>
+<li><a href="#6-可解释性深度学习最大的软肋以及它现在进展到哪一步">可解释性：深度学习最大的软肋,以及它现在进展到哪一步</a></li>
+<li><a href="#7-训练数据--一堆可执行的符号代码这个类比对在哪错在哪">"训练数据 = 一堆可执行的符号代码"——这个类比对在哪、错在哪</a></li>
+<li><a href="#8-三种范式的对照表">三种范式的对照表</a></li>
+<li><a href="#9-在-codegpt-里看见三个范式的影子">在 CodeGPT 里看见三个范式的影子</a></li>
+<li><a href="#10-神经-符号混合现代系统都不是纯种">神经-符号混合：现代系统都不是纯种</a></li>
+<li><a href="#11-给用户原问题的最终回答">给用户原问题的最终回答</a></li>
+</ol>
+<hr />
+<h2 id="1">1. 三个范式的一句话总结</h2>
+<table>
+<thead>
+<tr>
+<th>范式</th>
+<th>知识形式</th>
+<th>谁写</th>
+<th>谁执行</th>
+<th>代表系统</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><strong>符号主义</strong></td>
+<td>离散规则 (<code>if A then B</code>)</td>
+<td>人</td>
+<td>推理引擎搜索</td>
+<td>Lisp、Prolog、专家系统、CYC</td>
+</tr>
+<tr>
+<td><strong>贝叶斯网络</strong></td>
+<td>DAG + 条件概率表</td>
+<td>人画图 + 数据估参数</td>
+<td>概率推断 (变量消去 / MCMC)</td>
+<td>医疗诊断、垃圾邮件 (Naive Bayes)、HMM</td>
+</tr>
+<tr>
+<td><strong>深度学习</strong></td>
+<td>连续权重矩阵 $W$</td>
+<td>梯度下降写</td>
+<td>前向传播</td>
+<td>GPT、Transformer、CodeGPT</td>
+</tr>
+</tbody>
+</table>
+<p>注意"谁写"这一列的演变：<strong>人写得越来越少，数据写得越来越多</strong>。这是从 1956 Dartmouth 会议到 2026 的一条主线。</p>
+<hr />
+<h2 id="2-py-mid-x">2. 都在解同一个问题：$P(y \mid x)$</h2>
+<p>不管哪个范式，AI 系统本质都在做条件概率：<strong>给定输入 $x$，预测输出 $y$</strong>。</p>
+<ul>
+<li>在符号系统里，$P(y \mid x) \in {0, 1}$——要么 $x \Rightarrow y$ 是规则的逻辑蕴含，要么不是。</li>
+<li>在贝叶斯网络里，$P(y \mid x)$ 是图上一系列条件概率表 (CPT) 的乘积。</li>
+<li>在深度学习里，$P(y \mid x)$ 是一段可微分程序的输出，比如：</li>
+</ul>
+<div class="highlight"><pre><span></span><code><span class="c1"># model.py:301</span>
+<span class="n">probs</span> <span class="o">=</span> <span class="n">F</span><span class="o">.</span><span class="n">softmax</span><span class="p">(</span><span class="n">logits</span><span class="p">,</span> <span class="n">dim</span><span class="o">=-</span><span class="mi">1</span><span class="p">)</span>        <span class="c1"># P(next_token | context)</span>
+</code></pre></div>
+
+<p>差别只在于<strong>这个分布是怎么参数化、怎么写入系统的</strong>。讲清楚这一点，三种范式的关系立刻变得简单：<strong>它们是同一个数学问题的三种工程实现</strong>。</p>
+<hr />
+<h2 id="3-ai">3. 符号主义 AI：人写规则，机器搜索</h2>
+<h3 id="31">3.1 它长什么样</h3>
+<p>最经典的形式是 Prolog：</p>
+<div class="highlight"><pre><span></span><code><span class="nf">parent</span><span class="p">(</span><span class="s s-Atom">tom</span><span class="p">,</span> <span class="s s-Atom">bob</span><span class="p">).</span>
+<span class="nf">parent</span><span class="p">(</span><span class="s s-Atom">bob</span><span class="p">,</span> <span class="s s-Atom">ann</span><span class="p">).</span>
+<span class="nf">grandparent</span><span class="p">(</span><span class="nv">X</span><span class="p">,</span> <span class="nv">Z</span><span class="p">)</span> <span class="p">:-</span> <span class="nf">parent</span><span class="p">(</span><span class="nv">X</span><span class="p">,</span> <span class="nv">Y</span><span class="p">),</span> <span class="nf">parent</span><span class="p">(</span><span class="nv">Y</span><span class="p">,</span> <span class="nv">Z</span><span class="p">).</span>
+</code></pre></div>
+
+<p>加上一个<strong>推理引擎</strong>（unification + 深度优先搜索 + 回溯），系统就能回答 <code>?- grandparent(tom, ann).</code> → <code>true</code>。</p>
+<p>它的等价 Python 描述：</p>
+<div class="highlight"><pre><span></span><code><span class="n">facts</span> <span class="o">=</span> <span class="p">{(</span><span class="s2">&quot;parent&quot;</span><span class="p">,</span> <span class="s2">&quot;tom&quot;</span><span class="p">,</span> <span class="s2">&quot;bob&quot;</span><span class="p">),</span> <span class="p">(</span><span class="s2">&quot;parent&quot;</span><span class="p">,</span> <span class="s2">&quot;bob&quot;</span><span class="p">,</span> <span class="s2">&quot;ann&quot;</span><span class="p">)}</span>
+
+<span class="k">def</span><span class="w"> </span><span class="nf">grandparent</span><span class="p">(</span><span class="n">x</span><span class="p">,</span> <span class="n">z</span><span class="p">):</span>
+    <span class="k">for</span> <span class="n">y</span> <span class="ow">in</span> <span class="n">all_entities</span><span class="p">:</span>
+        <span class="k">if</span> <span class="p">(</span><span class="s2">&quot;parent&quot;</span><span class="p">,</span> <span class="n">x</span><span class="p">,</span> <span class="n">y</span><span class="p">)</span> <span class="ow">in</span> <span class="n">facts</span> <span class="ow">and</span> <span class="p">(</span><span class="s2">&quot;parent&quot;</span><span class="p">,</span> <span class="n">y</span><span class="p">,</span> <span class="n">z</span><span class="p">)</span> <span class="ow">in</span> <span class="n">facts</span><span class="p">:</span>
+            <span class="k">return</span> <span class="kc">True</span>
+    <span class="k">return</span> <span class="kc">False</span>
+</code></pre></div>
+
+<p><strong>特征</strong>：</p>
+<ul>
+<li>知识是<strong>离散的、可枚举的、可读的</strong>——你能逐条审计每一条规则。</li>
+<li>推理是<strong>确定性</strong>的——同样的输入永远得到同样的输出，且<strong>可证明</strong>（每一步都对应一个推理规则）。</li>
+<li>没有"训练" 这一步，知识是<strong>人直接写进去的</strong>。</li>
+</ul>
+<h3 id="32">3.2 它的死穴：知识获取瓶颈</h3>
+<p>写 100 条规则容易，写 100 万条规则比这难 10 万倍——因为规则之间会<strong>冲突、嵌套、上下文敏感</strong>。1980 年代的专家系统（MYCIN、CYC）就是死在这里：</p>
+<ul>
+<li>自然语言里"苹果"是水果还是公司？需要规则。</li>
+<li>"我打开冰箱"——"打开"对冰箱、对文件、对人，三种语义。需要规则。</li>
+<li>代码里 <code>x = []</code> 后面的 <code>x</code> 类型是什么？需要规则 + 类型推断 + 上下文……</li>
+</ul>
+<p>写规则的人在某一刻会发现：<strong>"规则的规则"是无穷无尽的</strong>。这就是 Hubert Dreyfus 1972 年 <em>What Computers Can't Do</em> 里的核心论证，也是 1980s "AI 寒冬" 的直接原因。</p>
+<h3 id="33">3.3 但它没死</h3>
+<p>形式化推理、定理证明、SQL 优化器、编译器、AST 重写、合规规则引擎——这些<strong>强约束、低歧义、可枚举</strong>的领域，符号 AI 至今无可替代。Lean、Coq、Z3 都是符号系统的最新代表。</p>
+<hr />
+<h2 id="4">4. 贝叶斯网络：图是符号的，参数是概率的</h2>
+<h3 id="41">4.1 它长什么样</h3>
+<p>经典的 "Sprinkler / Rain / WetGrass" 图：</p>
+<div class="highlight"><pre><span></span><code>   Rain ──┐
+          ├──→ WetGrass
+   Sprinkler ┘
+
+P(Rain)             = 0.2
+P(Sprinkler|Rain=T) = 0.01
+P(Sprinkler|Rain=F) = 0.4
+P(WetGrass | Rain, Sprinkler) = ...   # 4 项的 CPT
+</code></pre></div>
+
+<p><strong>联合分布</strong>由图结构因式分解：</p>
+<div class="highlight"><pre><span></span><code>P(R, S, W) = P(R) · P(S | R) · P(W | R, S)
+</code></pre></div>
+
+<p>这个<strong>因式分解</strong>就是贝叶斯网络的核心——它<strong>不是从原始 $2^n$ 大小的联合分布里硬学</strong>，而是<strong>用图结构（条件独立性假设）把它压缩到几个小的 CPT</strong>。</p>
+<h3 id="42">4.2 它处于符号和神经的中间</h3>
+<table>
+<thead>
+<tr>
+<th>组件</th>
+<th>谁定</th>
+<th>性质</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>节点 (变量)</td>
+<td>人定</td>
+<td>符号</td>
+</tr>
+<tr>
+<td>有向边 (依赖结构)</td>
+<td>人画 / 结构学习</td>
+<td>符号</td>
+</tr>
+<tr>
+<td>CPT (条件概率)</td>
+<td>数据估计</td>
+<td>概率</td>
+</tr>
+<tr>
+<td>推理</td>
+<td>算法 (变量消去 / MCMC)</td>
+<td>数值</td>
+</tr>
+</tbody>
+</table>
+<p>这是它<strong>比符号 AI 强的地方</strong>：CPT 可以从数据学，不用人手填。</p>
+<p>也是它<strong>比深度学习弱的地方</strong>：图结构必须人画。10 个变量你能画，10 万个 token、12 层、768 维，没人能画出图。</p>
+<h3 id="43">4.3 在代码里看一眼</h3>
+<div class="highlight"><pre><span></span><code><span class="c1"># 一个最小贝叶斯网络的 PyTorch 实现 (示意)</span>
+<span class="kn">import</span><span class="w"> </span><span class="nn">torch</span>
+
+<span class="c1"># CPT 是一个查找表 —— 这就是为什么它是 &quot;半符号&quot;</span>
+<span class="n">P_R</span>   <span class="o">=</span> <span class="n">torch</span><span class="o">.</span><span class="n">tensor</span><span class="p">([</span><span class="mf">0.8</span><span class="p">,</span> <span class="mf">0.2</span><span class="p">])</span>           <span class="c1"># P(R=F), P(R=T)</span>
+<span class="n">P_S_R</span> <span class="o">=</span> <span class="n">torch</span><span class="o">.</span><span class="n">tensor</span><span class="p">([[</span><span class="mf">0.6</span><span class="p">,</span> <span class="mf">0.4</span><span class="p">],</span>          <span class="c1"># P(S | R=F)</span>
+                      <span class="p">[</span><span class="mf">0.99</span><span class="p">,</span> <span class="mf">0.01</span><span class="p">]])</span>       <span class="c1"># P(S | R=T)</span>
+
+<span class="c1"># 推断 P(R=T | W=T): 枚举 + 归一化</span>
+<span class="k">def</span><span class="w"> </span><span class="nf">infer</span><span class="p">(</span><span class="n">R</span><span class="p">,</span> <span class="n">S</span><span class="p">,</span> <span class="n">W</span><span class="p">,</span> <span class="n">evidence</span><span class="p">):</span>
+    <span class="o">...</span>   <span class="c1"># 变量消去 / 精确推断</span>
+</code></pre></div>
+
+<p><strong>关键</strong>：CPT 是<strong>离散的、可解释的查找表</strong>——和神经网络里 $W \in \mathbb{R}^{768 \times 768}$ 的稠密矩阵完全不同。</p>
+<h3 id="44">4.4 它和深度学习的连接点</h3>
+<ul>
+<li><strong>Naive Bayes</strong> 是最简单的贝叶斯网络（所有特征条件独立给定类别），等价于一个单层 + softmax 的判别模型。</li>
+<li><strong>HMM</strong>（隐马尔可夫模型）在语音识别上统治了 30 年，本质是一条链状的贝叶斯网络。</li>
+<li><strong>变分自编码器 (VAE)、扩散模型</strong> 都是把贝叶斯推断和深度学习"焊"在一起——前者用神经网络近似 $q(z \mid x)$，后者用神经网络近似每一步去噪的条件分布。</li>
+<li>深度学习的 cross-entropy loss 本身就是 <strong>MLE 估计</strong>——贝叶斯派给个先验就成 MAP，再边缘化就成完整贝叶斯。</li>
+</ul>
+<p>所以贝叶斯<strong>没有死</strong>，它<strong>变成了深度学习的损失函数和正则化项</strong>。</p>
+<hr />
+<h2 id="5">5. 深度学习大模型：人写架构，梯度下降写参数</h2>
+<h3 id="51">5.1 关键的视角转换</h3>
+<p>CodeGPT 的 <code>forward</code> 实际上是一段普通 Python：</p>
+<div class="highlight"><pre><span></span><code><span class="c1"># model.py:177-198</span>
+<span class="k">def</span><span class="w"> </span><span class="nf">forward</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">idx</span><span class="p">,</span> <span class="n">targets</span><span class="o">=</span><span class="kc">None</span><span class="p">):</span>
+    <span class="n">pos</span> <span class="o">=</span> <span class="n">torch</span><span class="o">.</span><span class="n">arange</span><span class="p">(</span><span class="mi">0</span><span class="p">,</span> <span class="n">t</span><span class="p">,</span> <span class="n">dtype</span><span class="o">=</span><span class="n">torch</span><span class="o">.</span><span class="n">long</span><span class="p">,</span> <span class="n">device</span><span class="o">=</span><span class="n">device</span><span class="p">)</span>
+    <span class="n">tok_emb</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">transformer</span><span class="o">.</span><span class="n">wte</span><span class="p">(</span><span class="n">idx</span><span class="p">)</span>
+    <span class="n">pos_emb</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">transformer</span><span class="o">.</span><span class="n">wpe</span><span class="p">(</span><span class="n">pos</span><span class="p">)</span>
+    <span class="n">x</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">transformer</span><span class="o">.</span><span class="n">drop</span><span class="p">(</span><span class="n">tok_emb</span> <span class="o">+</span> <span class="n">pos_emb</span><span class="p">)</span>
+    <span class="k">for</span> <span class="n">block</span> <span class="ow">in</span> <span class="bp">self</span><span class="o">.</span><span class="n">transformer</span><span class="o">.</span><span class="n">h</span><span class="p">:</span>
+        <span class="n">x</span> <span class="o">=</span> <span class="n">block</span><span class="p">(</span><span class="n">x</span><span class="p">)</span>
+    <span class="n">x</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">transformer</span><span class="o">.</span><span class="n">ln_f</span><span class="p">(</span><span class="n">x</span><span class="p">)</span>
+    <span class="k">if</span> <span class="n">targets</span> <span class="ow">is</span> <span class="ow">not</span> <span class="kc">None</span><span class="p">:</span>
+        <span class="n">logits</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">lm_head</span><span class="p">(</span><span class="n">x</span><span class="p">)</span>
+        <span class="n">loss</span> <span class="o">=</span> <span class="n">F</span><span class="o">.</span><span class="n">cross_entropy</span><span class="p">(</span><span class="n">logits</span><span class="o">.</span><span class="n">view</span><span class="p">(</span><span class="o">-</span><span class="mi">1</span><span class="p">,</span> <span class="n">logits</span><span class="o">.</span><span class="n">size</span><span class="p">(</span><span class="o">-</span><span class="mi">1</span><span class="p">)),</span>
+                               <span class="n">targets</span><span class="o">.</span><span class="n">view</span><span class="p">(</span><span class="o">-</span><span class="mi">1</span><span class="p">),</span> <span class="n">ignore_index</span><span class="o">=-</span><span class="mi">1</span><span class="p">)</span>
+    <span class="o">...</span>
+</code></pre></div>
+
+<p><strong>这段代码就是一段"程序"</strong>——但里面所有矩阵 (<code>wte.weight</code>, <code>wpe.weight</code>, 每个 <code>Block</code> 里的 Q/K/V/MLP/LayerNorm 权重) 都是<strong>待填的空格</strong>，由 <code>loss.backward()</code> 配 AdamW 一格一格填出来。</p>
+<h3 id="52">5.2 知识在哪里</h3>
+<p><strong>知识压在权重里。</strong> 不是 100 万条 <code>if-else</code>，而是 ~$1.2 \times 10^8$ 个浮点数（CodeGPT-base 124M 参数）。每个浮点数都不是一条单独的规则，而是<strong>许多规则的微小贡献叠加</strong>。</p>
+<p>这种压缩方式有三个革命性后果：</p>
+<ol>
+<li><strong>泛化</strong>——训练时没见过的输入也能合理回答，因为权重学到的是<strong>模式的统计结构</strong>，而非样本的查找表。</li>
+<li><strong>不可解释</strong>——你不能指着某个权重说"这是关于 Python 缩进的规则"，它弥散在整个矩阵里。这是深度学习最被诟病的一点,值得单独一节,见 <a href="#6-可解释性深度学习最大的软肋以及它现在进展到哪一步">§6</a>。</li>
+<li><strong>不可枚举</strong>——你不能审计每条规则，因为规则数量是连续的、无穷的。</li>
+</ol>
+<p>详细推导见 <a href="COMPRESSION_IS_INTELLIGENCE.md">docs/COMPRESSION_IS_INTELLIGENCE.md</a> 和 <a href="DIFFERENTIABLE_PROGRAMMING.md">docs/DIFFERENTIABLE_PROGRAMMING.md</a>。</p>
+<hr />
+<h2 id="6">6. 可解释性：深度学习最大的软肋,以及它现在进展到哪一步</h2>
+<p>"大模型是黑盒、不可解释" 是深度学习被诟病最多的一句话,从 Gary Marcus 到 Yann LeCun 早期言论、到 Bender 的 "stochastic parrots"、到欧盟 AI Act 把高风险场景的可解释性写进法规——这是一个<strong>技术问题、监管问题、信任问题三位一体</strong>的批评。</p>
+<p>但这句话本身需要拆开看。"不可解释" 包含三个完全不同层次的诉求,深度学习在三个层次上的现状差别极大;而过去三年(2022-2025)<strong>机制可解释性 (mechanistic interpretability)</strong> 这个新方向的进展,已经把"完全黑盒"的判决推翻了一大半。这一节把现状钉到具体的工具和论文上。</p>
+<h3 id="61">6.1 "不可解释" 具体指什么——三个层次</h3>
+<table>
+<thead>
+<tr>
+<th>层次</th>
+<th>问的是什么</th>
+<th>深度学习现状</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><strong>行为层 (functional)</strong></td>
+<td>给定输入,能不能预测/审计输出?</td>
+<td>中等。可 benchmark、可写测试,但长尾分布无法穷举</td>
+</tr>
+<tr>
+<td><strong>机制层 (mechanistic)</strong></td>
+<td>模型内部是怎么算出这个输出的?</td>
+<td>弱→改善中。SAE、circuits 已能局部还原</td>
+</tr>
+<tr>
+<td><strong>概念层 (semantic)</strong></td>
+<td>模型"懂"了什么概念?</td>
+<td>弱→改善中。SAE 找到了百万级单义特征</td>
+</tr>
+</tbody>
+</table>
+<p>这三层在符号 AI 里都是<strong>默认完整的</strong>(每一步都对应一条规则);在深度学习里都需要<strong>额外工具</strong>来逆向工程。这不是因为深度学习"原理不清楚"——<code>forward</code> 的每一行 PyTorch 都摆在你面前——而是因为<strong>权重里压了什么概念</strong>这件事,没法从 <code>model.py</code> 的代码读出来。</p>
+<h3 id="62">6.2 为什么神经网络天生难解释——四个根源</h3>
+<h4 id="1-distributed-representation">根源 ①：分布式表征 (Distributed representation)</h4>
+<p>一个概念<strong>不对应一个神经元</strong>,而是对应<strong>一个方向 / 一个子空间</strong>。</p>
+<div class="highlight"><pre><span></span><code><span class="c1"># h: torch.Tensor of shape (768,) —— 某层的 hidden state</span>
+<span class="c1"># &quot;这段是 Python 函数定义&quot; 这个概念</span>
+<span class="c1">#   ≈ h 在某个方向 d_func ∈ R^768 上的投影:</span>
+<span class="c1">#     concept_score = h @ d_func</span>
+<span class="c1"># </span>
+<span class="c1"># 这个 d_func 不是任何一个 weight,是 W 的列向量的某种线性组合</span>
+</code></pre></div>
+
+<p>你拿放大镜看 <code>wte.weight[100]</code> 这一个浮点数,它什么都不"代表"——它是 50304×768 矩阵里的一格,只在和其他 76799 格协同的时候才有意义。</p>
+<h4 id="2-polysemanticity">根源 ②：多义性 (Polysemanticity)</h4>
+<p>同一个神经元在不同输入下响应<strong>完全不相关</strong>的概念——可能既响应 "Python 缩进" 又响应 "JavaScript 大括号" 又响应 "第三人称代词"。这不是 bug,是 SGD 找到的最优解:<strong>用 768 维空间装下远超 768 个特征</strong>。</p>
+<h4 id="3-superposition">根源 ③：叠加 (Superposition)</h4>
+<p>Anthropic 2022 <em>Toy Models of Superposition</em> 论文是关键:模型在 $d$ 维空间里编码了远超 $d$ 个特征,用<strong>近似正交</strong>(而非严格正交)的方向。这就是为什么单看一个神经元/单个权重看不出意义——<strong>意义被刻意打散了</strong>。</p>
+<div class="highlight"><pre><span></span><code>理想 (one-hot)           现实 (superposition)
+n features in n dims     n features in d&lt;&lt;n dims
+单义,可读                多义,需要 SAE 解码
+</code></pre></div>
+
+<h4 id="412">根源 ④：12 层非线性组合</h4>
+<div class="highlight"><pre><span></span><code><span class="c1"># model.py:103-104 —— 残差 + 非线性</span>
+<span class="n">x</span> <span class="o">=</span> <span class="n">x</span> <span class="o">+</span> <span class="bp">self</span><span class="o">.</span><span class="n">attn</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">ln_1</span><span class="p">(</span><span class="n">x</span><span class="p">))</span>
+<span class="n">x</span> <span class="o">=</span> <span class="n">x</span> <span class="o">+</span> <span class="bp">self</span><span class="o">.</span><span class="n">mlp</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">ln_2</span><span class="p">(</span><span class="n">x</span><span class="p">))</span>
+</code></pre></div>
+
+<p>每个 Block 都把信号加进残差流(residual stream),早期层的信息一路 "广播" 到末端。要追溯 "答案 X 是因为第 3 层第 5 个 head 在 token Y 上做了什么" ——这是一条跨 12 层的因果链,而中间每层都有 12 个 head 同时在写。组合爆炸是机制层不可解释的直接来源。</p>
+<h3 id="63">6.3 我们目前到底能解释什么——五条具体进展</h3>
+<p>机制可解释性不是一个抽象口号,它在过去三年有<strong>具体可复现的成果</strong>。从弱到强:</p>
+<h4 id="1-attention-visualization">进展 ①：注意力可视化 (Attention visualization)</h4>
+<p>最早、最简单。把 <code>model.py:68</code> 的 <code>att = F.softmax(att, dim=-1)</code> 这个权重矩阵 hook 出来画热图,能看到代码块边界、变量引用、括号匹配等模式。</p>
+<p><strong>陷阱</strong>:Bibal et al. 2022 <em>Is Attention Explanation?</em> 证明 attention weights <strong>不等于</strong> "解释"——在很多任务上你能找到完全不同的 attention 分布给出同样的预测。所以 attention map <strong>可看,但单独不可信</strong>。</p>
+<h4 id="2-probing">进展 ②:线性探测 (Probing)</h4>
+<p>在某层的 hidden state 上训一个<strong>轻量线性分类器</strong>,看它能不能预测某个概念。</p>
+<div class="highlight"><pre><span></span><code><span class="c1"># 思路 (CodeGPT 上可立刻做):</span>
+<span class="c1"># 1. 跑一段验证集,在第 N 层 hook 出 hidden states H ∈ R^{N_tokens × 768}</span>
+<span class="c1"># 2. 给每个 token 标 &quot;在 docstring 内 / 函数体内 / 注释内&quot;</span>
+<span class="c1"># 3. 训 logistic regression: f(h) → label</span>
+<span class="c1"># 4. 准确率 90%+ 说明这一层&quot;知道&quot;这个概念</span>
+</code></pre></div>
+
+<p>Hewitt &amp; Manning 2019 用这套方法证明 BERT 中层学到了句法树。<strong>局限</strong>:这是相关性不是机制——分类器读得出,不代表模型内部用得上。</p>
+<h4 id="3logit-lens-tuned-lens">进展 ③:Logit lens / Tuned lens</h4>
+<p>把每一层的 hidden state 直接乘 <code>lm_head</code> 看 next-token 预测。</p>
+<div class="highlight"><pre><span></span><code><span class="c1"># CodeGPT 上,基于 model.py:177-198 的 forward,加几行就能跑:</span>
+<span class="n">preds_per_layer</span> <span class="o">=</span> <span class="p">[]</span>
+<span class="k">for</span> <span class="n">block</span> <span class="ow">in</span> <span class="bp">self</span><span class="o">.</span><span class="n">transformer</span><span class="o">.</span><span class="n">h</span><span class="p">:</span>
+    <span class="n">x</span> <span class="o">=</span> <span class="n">block</span><span class="p">(</span><span class="n">x</span><span class="p">)</span>
+    <span class="c1"># 用最终的 ln_f + lm_head 直接 &quot;翻译&quot; 这一层</span>
+    <span class="n">logits_here</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">lm_head</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">transformer</span><span class="o">.</span><span class="n">ln_f</span><span class="p">(</span><span class="n">x</span><span class="p">))</span>
+    <span class="n">preds_per_layer</span><span class="o">.</span><span class="n">append</span><span class="p">(</span><span class="n">logits_here</span><span class="o">.</span><span class="n">argmax</span><span class="p">(</span><span class="o">-</span><span class="mi">1</span><span class="p">))</span>
+<span class="c1"># 看预测是从哪一层稳定下来的</span>
+</code></pre></div>
+
+<p>经验上,<strong>事实回忆通常在中后层定型,语法/格式在早层定型</strong>。这给了模型内部计算流程一个粗粒度的"沙漏图"。</p>
+<h4 id="4circuit-anthropic-olah">进展 ④:Circuit 分析 (Anthropic / Olah 流派)</h4>
+<p>不再问"这层学了什么",而是问 <strong>"完成任务 T 用到了哪些 head 的协作?"</strong>——直接画出电路图。已找到的具体电路:</p>
+<ul>
+<li><strong>Induction heads</strong> (Olsson et al. 2022):两个 head 协同实现 "看到 <code>[A][B] ... [A]</code> 就预测 <code>[B]</code>" 的模式补全。<strong>这是 in-context learning 的最小机械原型</strong>——现在大家相信 GPT 的 ICL 能力,从这个 head 开始</li>
+<li><strong>IOI circuit</strong> (Wang et al. 2022):GPT-2 small 里负责 "Mary and John went to the store, John gave a drink to ___" 这类间接宾语任务的 <strong>26 个 head 的精确协作图</strong></li>
+<li><strong>ROME / MEMIT</strong> (Meng et al. 2022/2023):证明 "巴黎是法国首都" 这个事实<strong>储存在某个具体 MLP 层的某几行权重里</strong>,可以单独编辑——把 "巴黎" 改成 "罗马",模型就开始坚信法国首都是罗马</li>
+</ul>
+<p>这把"知识在权重里"从模糊比喻变成了<strong>可定位、可编辑</strong>的工程操作。</p>
+<h4 id="5-sae-2023">进展 ⑤:稀疏自编码器 (SAE) —— 2023 年突破</h4>
+<p>最近三年最大的进展。思路:<strong>把多义神经元解耦成单义特征</strong>。</p>
+<div class="highlight"><pre><span></span><code><span class="c1"># 在某层 hidden state h ∈ R^{768} 上训一个 SAE:</span>
+<span class="c1"># encoder: h -&gt; features ∈ R^{65536}  (大词典,但稀疏)</span>
+<span class="c1"># decoder: features -&gt; h_hat</span>
+<span class="c1"># loss = ||h - h_hat||^2 + λ * ||features||_1   # L1 强制稀疏</span>
+<span class="c1"># 训完后,每个 feature 几乎单义化:</span>
+<span class="c1">#   feature[42] 只在 &quot;Python 装饰器&quot; 上激活</span>
+<span class="c1">#   feature[1337] 只在 &quot;金门大桥&quot; 上激活</span>
+<span class="c1">#   feature[8888] 只在 &quot;周二&quot; 上激活</span>
+</code></pre></div>
+
+<p>Anthropic 2023 <em>Towards Monosemanticity</em> 在小模型上跑通,2024 <em>Scaling Monosemanticity</em> 推到 Claude 3 Sonnet,<strong>找到约 3400 万个单义特征</strong>,并演示了通过把某个 feature 的激活值人为放大/抑制来直接操控行为(著名的 <strong>"金门大桥 Claude"</strong> ——把 Golden Gate Bridge feature 锁住,模型在任何对话里都自我认同为金门大桥)。</p>
+<p>这是从 "我们看不懂权重" 到 <strong>"我们可以扫出百万级别可读的概念清单"</strong> 的根本性突破。</p>
+<h3 id="64">6.4 一张精确的可解释性对照表</h3>
+<table>
+<thead>
+<tr>
+<th>维度</th>
+<th>符号 AI</th>
+<th>贝叶斯网络</th>
+<th>深度学习 (2026)</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>行为层可解释</td>
+<td>✅ 完全</td>
+<td>✅ 完全</td>
+<td>🟡 中(可 benchmark)</td>
+</tr>
+<tr>
+<td>机制层可解释</td>
+<td>✅ 每条规则可读</td>
+<td>✅ D-separation + 变量消去步骤</td>
+<td>🟡 SAE / circuits 部分还原</td>
+</tr>
+<tr>
+<td>概念层可解释</td>
+<td>✅ 符号即概念</td>
+<td>✅ 节点即变量</td>
+<td>🟡 SAE 已找到百万级单义 feature</td>
+</tr>
+<tr>
+<td>反事实推理</td>
+<td>🟡 改规则即反事实</td>
+<td>✅ <strong>强 (do-calculus)</strong></td>
+<td>🟡 activation patching 局部能做</td>
+</tr>
+<tr>
+<td>因果归因</td>
+<td>✅ 推理链是因果链</td>
+<td>✅ Pearl 因果阶梯三层全覆盖</td>
+<td>🟡 ROME 证明可定位+编辑</td>
+</tr>
+<tr>
+<td>法律可审计性</td>
+<td>✅ 强</td>
+<td>✅ 强</td>
+<td>❌→🟡 (合规性正在快速改善)</td>
+</tr>
+<tr>
+<td>用户层解释</td>
+<td>✅ 规则即解释</td>
+<td>🟡 概率链需要训练才看得懂</td>
+<td>🟡 chain-of-thought (但可能不忠实)</td>
+</tr>
+<tr>
+<td>解释成本</td>
+<td>几乎零</td>
+<td>中(图大了就难)</td>
+<td>高(需要 SAE 训练 + 分析工具)</td>
+</tr>
+</tbody>
+</table>
+<p>注意两件事:</p>
+<ul>
+<li><strong>贝叶斯网络在因果反事实上比符号还强</strong>——Pearl 的 do-calculus 是贝叶斯派给可解释 AI 的最大贡献。如果你的需求是 "改了 X 会怎样",贝叶斯网络至今领先</li>
+<li><strong>深度学习这一列在 2022 年还几乎全是 ❌,现在大半已经变成 🟡</strong>。这条改善曲线还在快速往下走</li>
+</ul>
+<h3 id="65-codegpt">6.5 在 CodeGPT 上能做什么——五个立刻能上手的实战</h3>
+<p>虽然这个 repo 没集成 SAE,但已有架构上<strong>今天就能跑</strong>这五件事:</p>
+<table>
+<thead>
+<tr>
+<th>#</th>
+<th>工具</th>
+<th>在哪挂钩</th>
+<th>能看到什么</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>1</td>
+<td>注意力可视化</td>
+<td><code>model.py:66-68</code> 的非 flash 路径,把 <code>att</code> hook 出来</td>
+<td>缩进对齐、变量引用、括号配对</td>
+</tr>
+<tr>
+<td>2</td>
+<td>Logit lens</td>
+<td><code>model.py:177-198</code> 的 <code>for block in ...</code> 循环里每层接一个 <code>lm_head(ln_f(x))</code></td>
+<td>预测从哪一层稳定下来</td>
+</tr>
+<tr>
+<td>3</td>
+<td>线性探测</td>
+<td>取 hidden state,训 LR 分类器</td>
+<td>"在 docstring 内"、"嵌套深度"、"是否在字符串内" 等可读概念</td>
+</tr>
+<tr>
+<td>4</td>
+<td>Head ablation</td>
+<td>在 <code>Block.attn</code> 里把某个 head 的输出置零,看 val loss 变化</td>
+<td>哪些 head 对代码补全任务关键</td>
+</tr>
+<tr>
+<td>5</td>
+<td>ROME 风格编辑</td>
+<td><code>lm_head.weight</code> 是 tied 的 <code>wte.weight</code>(<code>model.py:158-159</code>),定位到某 token embedding 直接改</td>
+<td>观察生成漂移,证明知识在哪</td>
+</tr>
+</tbody>
+</table>
+<p>这些都不是研究前沿,是 <strong>2026 年任何团队都能上手</strong> 的入门项目——也是 "可解释性正在工程化" 的直接体现。</p>
+<h3 id="66">6.6 哲学层面——"不可解释" 这个标签被夸大了多少</h3>
+<p>三个反问把这个批评放回正确尺度:</p>
+<p><strong>反问 ①:人类自己可解释吗?</strong></p>
+<p>你能解释你刚才为什么用 "诟病" 而不是 "批评" 吗?为什么这一段话先讲反问 ① 再讲反问 ②?神经科学到现在还没真正搞清楚一个具体想法是怎么在大脑里形成的。我们对 "人是可解释的" 的信念,主要靠<strong>事后合理化</strong> (post-hoc rationalization)——这和 LLM 的 chain-of-thought 在性质上几乎一样。CoT 甚至可能<strong>不忠实</strong> (Turpin et al. 2023):模型给出的理由可能不是它实际计算的路径。<strong>人类的 CoT 同样不忠实</strong>,这一点心理学研究了几十年(Nisbett &amp; Wilson 1977 经典论文)。</p>
+<p><strong>反问 ②:"可解释" 是二值还是连续?</strong></p>
+<p>没有任何系统是 100% 可解释的(连 Linux 内核都没有人完整懂——它有 3000 万行代码,十几个子系统的交互边界没人能全握在脑子里)。也没有任何系统是 100% 不可解释的——CodeGPT 的 <code>forward</code> 每一行 PyTorch 都印在屏幕上。<strong>差别是程度,不是二值</strong>。</p>
+<p><strong>反问 ③:解释给谁看?</strong></p>
+<table>
+<thead>
+<tr>
+<th>受众</th>
+<th>想要的解释</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>监管机构</td>
+<td>决策依据、可审计、可申诉</td>
+</tr>
+<tr>
+<td>模型开发者</td>
+<td>哪个 head/feature 在什么时候激活</td>
+</tr>
+<tr>
+<td>终端用户</td>
+<td>自然语言为什么这样回答</td>
+</tr>
+<tr>
+<td>安全研究员</td>
+<td>越狱路径、对抗样本来源</td>
+</tr>
+</tbody>
+</table>
+<p>SAE 的 feature 给开发者看是金矿,给用户看就是天书。<strong>"可解释性" 不是一个统一目标,是四个不同问题</strong>。</p>
+<h3 id="67">6.7 一句话总结</h3>
+<blockquote>
+<p><strong>可解释性不是深度学习的死罪,而是它当前最值得投入的研究方向之一。</strong> 符号 AI 的 "完全可解释" 是因为它表达力有限(规则就那么多);深度学习的 "难解释" 是因为它表达力近乎无限(连续函数空间稠密)——两者其实是同一枚硬币的两面。</p>
+<p>把符号 AI 的可解释性当 baseline 去要求深度学习,是用一个范式的标准评判另一个范式。更合理的姿势是:<strong>用符号/贝叶斯的工具去逆向工程深度网络</strong> ——这正是 SAE / circuits / ROME / probing 在做的事——以"神经-符号混合解释" 把深度学习从黑盒往灰盒推。</p>
+</blockquote>
+<p>这条曲线已经走了三年,远未到尽头。</p>
+<hr />
+<h2 id="7">7. "训练数据 = 一堆可执行的符号代码"——这个类比对在哪、错在哪</h2>
+<p>现在回到你的原问题。让我们逐条拆。</p>
+<h3 id="61-70">6.1 对的部分（70%）</h3>
+<p><strong>类比的核心直觉是正确的：训练数据确实定义了系统的行为，正如代码定义了程序的行为。</strong></p>
+<ul>
+<li>改训练数据 → 改模型行为，等价于"改代码 → 改程序行为"。</li>
+<li>LLM 的 in-context learning 让人觉得它在"执行"prompt 里的指令——这确实有几分像把 prompt 当代码。</li>
+<li>"Compression is intelligence" 的视角下，权重 $W$ 是训练数据的<strong>有损压缩</strong>——你也可以反向理解为"训练数据 = 解压后展开的所有规则"。</li>
+</ul>
+<h3 id="62-30">6.2 错的部分（30%，但很关键）</h3>
+<h4 id="1-vs">错位 ①：硬规则 vs 软统计</h4>
+<p>符号代码：</p>
+<div class="highlight"><pre><span></span><code><span class="k">if</span> <span class="n">x</span> <span class="o">&gt;</span> <span class="mi">0</span><span class="p">:</span>
+    <span class="k">return</span> <span class="s2">&quot;positive&quot;</span>
+</code></pre></div>
+
+<p>——只要 <code>x &gt; 0</code>，<strong>100%</strong> 返回 <code>"positive"</code>。</p>
+<p>训练数据隐含的"规则"：</p>
+<div class="highlight"><pre><span></span><code><span class="c1"># 这其实是 P(token | context) 的一行样本</span>
+<span class="n">context</span><span class="p">:</span> <span class="s2">&quot;def fibonacci(n):</span><span class="se">\n</span><span class="s2">    &quot;</span>
+<span class="n">next_token</span><span class="p">:</span> <span class="s2">&quot;if&quot;</span>   <span class="c1"># 出现在训练集 60% 的时间</span>
+<span class="n">next_token</span><span class="p">:</span> <span class="s2">&quot;return&quot;</span>  <span class="c1"># 25%</span>
+<span class="n">next_token</span><span class="p">:</span> <span class="s2">&quot;n =&quot;</span> <span class="c1"># 5%</span>
+<span class="o">...</span>
+</code></pre></div>
+
+<p>模型不是从这些样本里<strong>抽取出</strong>确定性的 <code>if-then</code> 规则，而是<strong>插值</strong>出一个<strong>连续的概率分布</strong>。这就是为什么同样的 prompt 每次生成不一样——这在符号系统里是不可能的。</p>
+<h4 id="2">错位 ②：执行什么</h4>
+<table>
+<thead>
+<tr>
+<th></th>
+<th>符号系统执行</th>
+<th>LLM 执行</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>输入</td>
+<td>用户写的代码</td>
+<td>用户的 prompt</td>
+</tr>
+<tr>
+<td>执行什么</td>
+<td>用户写的代码</td>
+<td><strong>从数据中统计提取的隐式分布</strong></td>
+</tr>
+<tr>
+<td>谁写规则</td>
+<td>用户</td>
+<td><strong>梯度下降</strong> (用户只写架构)</td>
+</tr>
+</tbody>
+</table>
+<p>这是关键：<strong>符号系统执行的是"用户的意图"；LLM 执行的是"训练集的平均意图"</strong>。这就是为什么 LLM 会幻觉、会偏向训练数据的偏见、会拒绝训练时学过的"敏感"内容——它执行的根本不是你的 prompt，是它对"在这种 prompt 下，训练分布会怎么响应"的估计。</p>
+<h4 id="3-vs">错位 ③：可枚举 vs 不可枚举</h4>
+<p>100 万条 Prolog 规则你<strong>理论上能逐条读完</strong>。124M 个浮点数你不能逐个理解——它们之间存在大量的非线性叠加。你无法把权重"反编译"成一组 <code>if-else</code>（这个研究方向叫<strong>机制可解释性 / mechanistic interpretability</strong>，目前能解释的只是个别 head 的功能，远未做到整体反编译）。</p>
+<h4 id="4_1">错位 ④：训练数据本身不是规则集</h4>
+<p>训练数据是<strong>例子</strong>，不是规则。规则在哪里？<strong>规则是梯度下降从例子里"归纳"出来的，存在权重里</strong>。这是从亚里士多德到 Hume 都在讨论的"归纳问题"——例子和规则不是同一种东西。</p>
+<h3 id="63_1">6.3 一个更精确的类比</h3>
+<p>如果一定要用编程类比，<strong>更准确的版本</strong>是：</p>
+<blockquote>
+<p><strong>训练数据是规约 (specification)，权重是编译产物 (compiled binary)，前向传播是执行。SGD 就是编译器。</strong></p>
+</blockquote>
+<p>这就和 <a href="DIFFERENTIABLE_PROGRAMMING.md">docs/DIFFERENTIABLE_PROGRAMMING.md</a> 里 LeCun 的"可微分编程"视角接上了：训练 = 编译，推理 = 执行。</p>
+<p>但即使这个类比也有局限：传统编译器是<strong>确定性</strong>的，同样的源码编译出同样的二进制；SGD 是<strong>随机</strong>的，不同的初始化、不同的 batch 顺序会编译出不同的权重——但所有这些权重在训练分布上的行为大致等价。这是符号编程里没有的现象。</p>
+<hr />
+<h2 id="7_1">7. 三种范式的对照表</h2>
+<table>
+<thead>
+<tr>
+<th>维度</th>
+<th>符号主义 AI</th>
+<th>贝叶斯网络</th>
+<th>深度学习大模型</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><strong>知识载体</strong></td>
+<td>离散规则 / 事实</td>
+<td>DAG + CPT</td>
+<td>连续权重矩阵</td>
+</tr>
+<tr>
+<td><strong>知识来源</strong></td>
+<td>人手写</td>
+<td>人画图 + 数据估参数</td>
+<td>数据 (+ 人定架构)</td>
+</tr>
+<tr>
+<td><strong>推理形式</strong></td>
+<td>符号搜索 / 归结</td>
+<td>概率推断</td>
+<td>矩阵乘法 + 非线性</td>
+</tr>
+<tr>
+<td><strong>可解释性</strong></td>
+<td>强 (每步可追溯)</td>
+<td>中 (节点+CPT 可读)</td>
+<td>弱 (权重弥散)</td>
+</tr>
+<tr>
+<td><strong>数据效率</strong></td>
+<td>0 例样本即可 (但需大量人工)</td>
+<td>中等</td>
+<td>极差 (需海量数据)</td>
+</tr>
+<tr>
+<td><strong>泛化能力</strong></td>
+<td>弱 (规则边界硬)</td>
+<td>中 (受图结构约束)</td>
+<td>强 (连续插值)</td>
+</tr>
+<tr>
+<td><strong>计算复杂度</strong></td>
+<td>推理可能 NP-hard</td>
+<td>精确推断 NP-hard</td>
+<td>推理 $O(n)$ 一次前向</td>
+</tr>
+<tr>
+<td><strong>不确定性</strong></td>
+<td>没有 (二值)</td>
+<td>一等公民</td>
+<td>隐式 (在 logits 分布里)</td>
+</tr>
+<tr>
+<td><strong>可组合性</strong></td>
+<td>强 (规则即模块)</td>
+<td>中 (子图可拼接)</td>
+<td>弱 (权重不可拆)</td>
+</tr>
+<tr>
+<td><strong>知识更新</strong></td>
+<td>编辑规则即可</td>
+<td>重新估 CPT</td>
+<td>重新训练或 fine-tune</td>
+</tr>
+<tr>
+<td><strong>典型失败模式</strong></td>
+<td>知识获取瓶颈</td>
+<td>图结构错 → 全错</td>
+<td>幻觉 / 训练分布偏移</td>
+</tr>
+<tr>
+<td><strong>形式保证</strong></td>
+<td>可证明正确</td>
+<td>概率边界</td>
+<td>几乎没有</td>
+</tr>
+<tr>
+<td><strong>CodeGPT 例子</strong></td>
+<td><code>&lt;|fim_prefix|&gt;</code> 等特殊 token 的硬模板</td>
+<td>(无显式贝叶斯网络)</td>
+<td><code>forward</code> 里所有 <code>nn.Linear</code></td>
+</tr>
+</tbody>
+</table>
+<p>注意一件事：<strong>没有任何一行说"X 是赢家"</strong>。三个范式各自在自己擅长的边界内是无可替代的。</p>
+<hr />
+<h2 id="8-codegpt">8. 在 CodeGPT 里看见三个范式的影子</h2>
+<p>虽然 CodeGPT 是一个<strong>纯神经</strong>模型，但它的代码里仍然能找到三种范式的痕迹：</p>
+<h3 id="81">8.1 符号成分</h3>
+<p><code>tokenizer.py</code> 里硬编码的特殊 token——这是<strong>纯符号</strong>：</p>
+<div class="highlight"><pre><span></span><code><span class="c1"># tokenizer.py:148-198 的 apply_fim_transform</span>
+<span class="n">prefix_id</span> <span class="o">=</span> <span class="n">SPECIAL_TOKENS</span><span class="p">[</span><span class="s2">&quot;&lt;|fim_prefix|&gt;&quot;</span><span class="p">]</span>   <span class="c1"># 50257</span>
+<span class="n">middle_id</span> <span class="o">=</span> <span class="n">SPECIAL_TOKENS</span><span class="p">[</span><span class="s2">&quot;&lt;|fim_middle|&gt;&quot;</span><span class="p">]</span>   <span class="c1"># 50258</span>
+<span class="n">suffix_id</span> <span class="o">=</span> <span class="n">SPECIAL_TOKENS</span><span class="p">[</span><span class="s2">&quot;&lt;|fim_suffix|&gt;&quot;</span><span class="p">]</span>   <span class="c1"># 50259</span>
+
+<span class="c1"># PSM 模板：&lt;|fim_prefix|&gt; P &lt;|fim_suffix|&gt; S &lt;|fim_middle|&gt; M</span>
+<span class="n">new_tokens</span> <span class="o">=</span> <span class="p">[</span><span class="n">prefix_id</span><span class="p">]</span> <span class="o">+</span> <span class="n">prefix</span> <span class="o">+</span> <span class="p">[</span><span class="n">suffix_id</span><span class="p">]</span> <span class="o">+</span> <span class="n">suffix</span> <span class="o">+</span> <span class="p">[</span><span class="n">middle_id</span><span class="p">]</span> <span class="o">+</span> <span class="n">middle</span>
+</code></pre></div>
+
+<p>这是<strong>人写的、确定性的、离散的格式协议</strong>——和 Prolog 里的 <code>parent(X, Y) :- ...</code> 在性质上是一样的。模型学不出"PSM 模板"——这个模板是由人<strong>作为不可学习的协议</strong>强加给模型的。<code>stop_tokens</code>、<code>lang:python</code> 等也都是同类——它们是<strong>架构里的符号骨架</strong>。</p>
+<h3 id="82">8.2 概率成分</h3>
+<div class="highlight"><pre><span></span><code><span class="c1"># model.py:301-302</span>
+<span class="n">probs</span> <span class="o">=</span> <span class="n">F</span><span class="o">.</span><span class="n">softmax</span><span class="p">(</span><span class="n">logits</span><span class="p">,</span> <span class="n">dim</span><span class="o">=-</span><span class="mi">1</span><span class="p">)</span>
+<span class="n">idx_next</span> <span class="o">=</span> <span class="n">torch</span><span class="o">.</span><span class="n">multinomial</span><span class="p">(</span><span class="n">probs</span><span class="p">,</span> <span class="n">num_samples</span><span class="o">=</span><span class="mi">1</span><span class="p">)</span>
+</code></pre></div>
+
+<p>这是一个<strong>条件概率分布的采样</strong>——和贝叶斯网络的边缘 / 条件推断在数学上是同一类操作。CodeGPT 没有显式的图结构，但它每个 token 上的 next-token 分布就是一个超大规模的隐式贝叶斯模型——只是这个 CPT 是 50304 个值、由神经网络给出，不再是查表。</p>
+<h3 id="83">8.3 神经成分</h3>
+<p>12 层 Block × (注意力 + MLP) × 12 个 head = 124M 参数：</p>
+<div class="highlight"><pre><span></span><code><span class="c1"># model.py:102-105</span>
+<span class="k">def</span><span class="w"> </span><span class="nf">forward</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">x</span><span class="p">):</span>
+    <span class="n">x</span> <span class="o">=</span> <span class="n">x</span> <span class="o">+</span> <span class="bp">self</span><span class="o">.</span><span class="n">attn</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">ln_1</span><span class="p">(</span><span class="n">x</span><span class="p">))</span>
+    <span class="n">x</span> <span class="o">=</span> <span class="n">x</span> <span class="o">+</span> <span class="bp">self</span><span class="o">.</span><span class="n">mlp</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">ln_2</span><span class="p">(</span><span class="n">x</span><span class="p">))</span>
+    <span class="k">return</span> <span class="n">x</span>
+</code></pre></div>
+
+<p>这里的所有"知识"都在 <code>self.attn</code>、<code>self.mlp</code> 的权重矩阵里，由 <code>train.py</code> 的 <code>F.cross_entropy</code> 通过梯度下降一格一格填进去。<strong>这部分完全不可枚举、不可解释、连续可微</strong>——这是纯深度学习的部分。</p>
+<h3 id="84">8.4 三层夹心结构</h3>
+<div class="highlight"><pre><span></span><code>┌──────────────────────────────────────┐
+│  符号层  特殊 token / chat template    │ ← 人写的协议骨架
+│         stop_tokens / FIM 模板         │
+├──────────────────────────────────────┤
+│  概率层  softmax → multinomial         │ ← 把 logits 解释为分布
+├──────────────────────────────────────┤
+│  神经层  12×Block, 124M 权重           │ ← 梯度下降学习的部分
+└──────────────────────────────────────┘
+</code></pre></div>
+
+<p><strong>任何能跑的大模型系统都是这种"三明治"——纯神经的核心，外面包一层概率解释，最外面是符号协议。</strong> 这不是历史遗留，是必然——纯神经模型没法决定"什么时候停止生成"（这是符号问题）、没法决定"采样还是 argmax"（这是概率问题）。</p>
+<hr />
+<h2 id="9-">9. 神经-符号混合：现代系统都不是纯种</h2>
+<p>回顾一下产业现状：</p>
+<ul>
+<li><strong>Tool calling / function calling</strong>：模型生成的不是答案，是<strong>符号化的函数调用</strong>，由外部代码（解释器、计算器、搜索引擎）执行——纯神经搞不定算术。</li>
+<li><strong>Verifier-based RL</strong> (OpenAI o1 / DeepSeek R1)：用<strong>符号验证器</strong>（单元测试通过 / 数学题答案匹配）做 reward，再用 RL 把验证信号反向传到神经权重。</li>
+<li><strong>RAG</strong>：从向量库（神经检索）+ 知识库（符号文档）拼出 prompt，再让模型生成——本质是把"事实查询"留给符号、"语言生成"留给神经。</li>
+<li><strong>Lean / Coq + LLM</strong>：LLM 提议证明步骤，符号系统验证。神经做"想法"，符号做"裁判"。</li>
+<li><strong>CodeGPT 的 FIM</strong>：特殊 token (<code>&lt;|fim_*|&gt;</code>) 是符号协议，模型在协议骨架上学连续分布——这就是一个最小的 neural-symbolic 设计。</li>
+</ul>
+<p>为什么混合？因为<strong>三种范式的强项和弱项几乎完美互补</strong>：</p>
+<table>
+<thead>
+<tr>
+<th>任务</th>
+<th>最适合的范式</th>
+<th>原因</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>自然语言理解 / 生成</td>
+<td>神经</td>
+<td>高维感知、模糊匹配</td>
+</tr>
+<tr>
+<td>数学推理、定理证明</td>
+<td>符号</td>
+<td>需要可证明性、零容错</td>
+</tr>
+<tr>
+<td>因果推断、不确定性量化</td>
+<td>贝叶斯</td>
+<td>概率原语是一等公民</td>
+</tr>
+<tr>
+<td>长程规划、多步推理</td>
+<td>神经主导 + 符号兜底</td>
+<td>神经做候选，符号验证</td>
+</tr>
+<tr>
+<td>AST 操作、编译</td>
+<td>符号</td>
+<td>离散结构、严格类型</td>
+</tr>
+<tr>
+<td>代码生成</td>
+<td>神经 + 执行反馈</td>
+<td>神经写代码，解释器是验证器</td>
+</tr>
+</tbody>
+</table>
+<p><strong>未来 AI 不是某一派胜出，而是三派各自占据自己的层。</strong> 这也是 <a href="SYNTHETIC_DATA.md">docs/SYNTHETIC_DATA.md</a> 里讨论的"执行反馈是最诚实的 reward"——那个反馈天然是符号的（解释器要么报错要么不报错）。</p>
+<hr />
+<h2 id="10">10. 给用户原问题的最终回答</h2>
+<p>回到一开始的问题——<strong>"GPT 是不是把训练数据当成一堆可执行的符号代码来执行？"</strong></p>
+<p>答案分三层：</p>
+<p><strong>第一层（直觉是对的）</strong>：</p>
+<blockquote>
+<p>是的。训练数据<strong>塑造</strong>了模型行为，正如代码塑造了程序行为。改数据可以改模型，这点和"改代码改程序"同构。</p>
+</blockquote>
+<p><strong>第二层（更精确）</strong>：</p>
+<blockquote>
+<p>训练数据不是被"执行"的，而是被"编译"成权重。SGD 是编译器，权重是编译产物，前向传播是执行。和符号代码的关键区别是：编译是统计性、有损、不可逆的——你不能从权重反推出训练数据，正如不能从二进制反推出源码。</p>
+</blockquote>
+<p><strong>第三层（彻底澄清）</strong>：</p>
+<blockquote>
+<p>训练数据和"规则"不是同一种东西。训练数据是<strong>例子</strong>；权重里的"规则"是 SGD 从这些例子<strong>归纳</strong>出来的、连续的、概率性的、不可枚举的隐式模式。这一步归纳——从离散例子到连续分布——是<strong>符号 AI 永远做不到</strong>的、深度学习的核心贡献。</p>
+<p>而<strong>贝叶斯网络</strong>正好是介于两者之间的中间形态：图结构是符号的（可读、可枚举），CPT 是概率的（从数据学）。它在小数据 + 强先验 + 需要因果解释的场景下，至今好用。</p>
+</blockquote>
+<p>所以正确的心智模型不是"二选一"，而是：</p>
+<div class="highlight"><pre><span></span><code>        知识由人写  ←─────────────────────→ 知识由数据写
+        ↑                                                ↑
+        符号 AI    →    贝叶斯网络    →    深度学习
+        Prolog          因果图              Transformer
+        专家系统        HMM/Naive Bayes     CodeGPT
+        Lean/Coq        VAE (混合)
+</code></pre></div>
+
+<p><strong>当前 (2026) 的工业级 AI 系统几乎全部是混合体</strong>：神经做核心、贝叶斯做不确定性建模、符号做协议骨架和验证。CodeGPT 自身就是这种三明治结构的一个最小样本——<code>forward</code> 是神经，<code>F.softmax + multinomial</code> 是概率，<code>&lt;|fim_*|&gt;</code> 模板和 <code>stop_tokens</code> 是符号。三个范式不是替代关系，而是栈关系。</p>
+<p>读这篇文档的最大收获，应该是：以后看任何 AI 系统，都能下意识地把它拆成"哪一层是符号、哪一层是概率、哪一层是神经"——这是分析、调试、设计 AI 系统的基本功。</p>
+    </div>
+  </article>
+
+</main>
+</body>
+</html>

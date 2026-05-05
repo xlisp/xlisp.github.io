@@ -1,0 +1,363 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>多次 SFT 的灾难性遗忘：SFT 的本质、MoE 的本质、以及它们各自解决什么问题 · Steve Chan — xlisp</title>
+<link rel="stylesheet" href="../style.css">
+</head>
+<body>
+<main class="wrap post">
+
+  <nav class="topnav">
+    <a href="../index.html">← home</a>
+  </nav>
+
+  <article>
+    <header class="post-header">
+      <h1>多次 SFT 的灾难性遗忘：SFT 的本质、MoE 的本质、以及它们各自解决什么问题</h1>
+      <p class="meta">2026-05-06 · Steve Chan</p>
+    </header>
+
+    <div class="content">
+<h1 id="sft-sft-moe">多次 SFT 的灾难性遗忘：SFT 的本质、MoE 的本质、以及它们各自解决什么问题</h1>
+<blockquote>
+<p>用户问题：LLM 做了第一次 SFT 学会代码能力，再做第二次 SFT 学 function calling，结果代码能力被"盖掉"了——这怎么办？多个能力是堆多次 SFT，还是上 MoE？</p>
+<p>这篇文档回答两件事：
+1. <strong>SFT 的本质</strong>是什么？为什么"第二次 SFT 覆盖第一次"不是 bug 而是目标函数在数学上的必然。
+2. <strong>MoE 的本质</strong>是什么？它是"可微分的 if/else"，用架构手段把"不同能力"解耦到不同的参数子空间——这才是解决多能力叠加的根本路线。</p>
+</blockquote>
+<hr />
+<h2 id="_1">目录</h2>
+<ol>
+<li><a href="#1-问题的起点第二次-sft-为什么会盖掉第一次">问题的起点：第二次 SFT 为什么会盖掉第一次</a></li>
+<li><a href="#2-sft-的本质换了语料的预训练损失函数完全一样">SFT 的本质：换了语料的预训练，损失函数完全一样</a></li>
+<li><a href="#3-灾难性遗忘的数学梯度下降只关心当前-batch">灾难性遗忘的数学：梯度下降只关心当前 batch</a></li>
+<li><a href="#4-解法一数据混合rehearsal--replay">解法一：数据混合（Rehearsal / Replay）</a></li>
+<li><a href="#5-解法二lora--多适配器--物理上隔离增量">解法二：LoRA + 多适配器 —— 物理上隔离增量</a></li>
+<li><a href="#6-解法三ewc--给老能力的重要参数加弹簧">解法三：EWC —— 给"老能力的重要参数"加弹簧</a></li>
+<li><a href="#7-解法四多任务联合-sft--一次训完根治遗忘">解法四：多任务联合 SFT —— 一次训完，根治遗忘</a></li>
+<li><a href="#8-moe-的本质把一个-mlp-拆成很多专家--一个路由器">MoE 的本质：把一个 MLP 拆成"很多专家 + 一个路由器"</a></li>
+<li><a href="#9-为什么-moe-天然更抗遗忘稀疏激活的参数隔离">为什么 MoE 天然更抗遗忘？稀疏激活的参数隔离</a></li>
+<li><a href="#10-moe-vs-多次-sft-vs-lora该选哪条路">MoE vs 多次 SFT vs LoRA：该选哪条路</a></li>
+<li><a href="#11-回到-codegpt如果要加-function-calling-能力">回到 CodeGPT：如果要加 function calling 能力</a></li>
+</ol>
+<hr />
+<h2 id="1-sft">1. 问题的起点：第二次 SFT 为什么会盖掉第一次</h2>
+<p>一个典型的"踩坑"路径：</p>
+<div class="highlight"><pre><span></span><code>预训练 checkpoint
+    ↓ SFT_1: 代码数据   (loss 降到 0.8，HumanEval 提到 45%)
+代码能力 checkpoint
+    ↓ SFT_2: function calling 数据   (loss 降到 0.5，tool-use 提到 80%)
+&quot;双能力&quot; checkpoint ?
+
+实际结果：
+  - function calling 很强 ✓
+  - HumanEval 从 45% 掉到 18% ✗   ← 灾难性遗忘 (catastrophic forgetting)
+</code></pre></div>
+
+<p>这个现象在学术上有个正式名字：<strong>catastrophic forgetting / catastrophic interference</strong>，最早由 McCloskey &amp; Cohen（1989）在连接主义网络里观察到，深度学习时代几乎所有连续学习（continual learning）论文都在和它作斗争。</p>
+<p>它不是"模型坏了"，它是训练目标函数的<strong>必然结果</strong>。要理解为什么，先理解 SFT 到底在做什么。</p>
+<hr />
+<h2 id="2-sft">2. SFT 的本质：换了语料的预训练，损失函数完全一样</h2>
+<p>很多人以为 SFT 是一种"新的训练算法"。<strong>不是</strong>。SFT 在数学上和预训练是<strong>同一个东西</strong>——都是 next-token prediction 上的交叉熵最小化。看 <code>model.py:192</code>：</p>
+<div class="highlight"><pre><span></span><code><span class="c1"># 预训练的 loss（本项目当前阶段）</span>
+<span class="n">loss</span> <span class="o">=</span> <span class="n">F</span><span class="o">.</span><span class="n">cross_entropy</span><span class="p">(</span><span class="n">logits</span><span class="o">.</span><span class="n">view</span><span class="p">(</span><span class="o">-</span><span class="mi">1</span><span class="p">,</span> <span class="n">logits</span><span class="o">.</span><span class="n">size</span><span class="p">(</span><span class="o">-</span><span class="mi">1</span><span class="p">)),</span>
+                       <span class="n">targets</span><span class="o">.</span><span class="n">view</span><span class="p">(</span><span class="o">-</span><span class="mi">1</span><span class="p">),</span> <span class="n">ignore_index</span><span class="o">=-</span><span class="mi">1</span><span class="p">)</span>
+</code></pre></div>
+
+<p>SFT 的 loss 写出来一模一样：</p>
+<div class="highlight"><pre><span></span><code><span class="c1"># SFT 的 loss</span>
+<span class="n">loss</span> <span class="o">=</span> <span class="n">F</span><span class="o">.</span><span class="n">cross_entropy</span><span class="p">(</span><span class="n">logits</span><span class="o">.</span><span class="n">view</span><span class="p">(</span><span class="o">-</span><span class="mi">1</span><span class="p">,</span> <span class="n">logits</span><span class="o">.</span><span class="n">size</span><span class="p">(</span><span class="o">-</span><span class="mi">1</span><span class="p">)),</span>
+                       <span class="n">targets</span><span class="o">.</span><span class="n">view</span><span class="p">(</span><span class="o">-</span><span class="mi">1</span><span class="p">),</span> <span class="n">ignore_index</span><span class="o">=-</span><span class="mi">1</span><span class="p">)</span>
+</code></pre></div>
+
+<p><strong>唯一的区别只在 <code>targets</code> 里哪些位置是 <code>-1</code>。</strong> 预训练里目标就是原始 token 流；SFT 里通常把"用户提问"那部分的 target 设成 <code>-1</code>（屏蔽梯度），只让"助手回答"那部分产生 loss：</p>
+<div class="highlight"><pre><span></span><code><span class="c1"># SFT 数据构造（伪代码）</span>
+<span class="n">prompt</span> <span class="o">=</span> <span class="s2">&quot;&lt;|user|&gt;写一个快排&lt;|assistant|&gt;&quot;</span>
+<span class="n">answer</span> <span class="o">=</span> <span class="s2">&quot;def quicksort(arr): ...&quot;</span>
+
+<span class="n">tokens</span>  <span class="o">=</span> <span class="n">tokenizer</span><span class="o">.</span><span class="n">encode</span><span class="p">(</span><span class="n">prompt</span> <span class="o">+</span> <span class="n">answer</span><span class="p">)</span>
+<span class="n">targets</span> <span class="o">=</span> <span class="n">tokens</span><span class="o">.</span><span class="n">copy</span><span class="p">()</span>
+<span class="n">targets</span><span class="p">[:</span><span class="nb">len</span><span class="p">(</span><span class="n">prompt_tokens</span><span class="p">)]</span> <span class="o">=</span> <span class="o">-</span><span class="mi">1</span>   <span class="c1"># prompt 部分不算 loss</span>
+<span class="c1"># 剩下的就是标准 next-token prediction</span>
+</code></pre></div>
+
+<p>这个 <code>-1</code> 的机制本项目已经在用——FIM 数据增强把 pad 位置设为 -1（见 <code>train.py:get_batch</code> 和 <code>CLAUDE.md</code> 里对 FIM pad 的描述），<code>cross_entropy(ignore_index=-1)</code> 就会自动跳过。SFT 只是把同样的机制用在 "prompt vs answer" 的切分上。</p>
+<p><strong>一句话本质：SFT 就是在一份精挑细选的小语料上继续做预训练，仅此而已。</strong></p>
+<p>既然 SFT 就是预训练，那就遵守预训练的所有物理规律——包括：<strong>梯度下降只会让当前 batch 的 loss 变小，它不知道、也不在乎模型之前会做什么</strong>。这就是遗忘的根源。</p>
+<hr />
+<h2 id="3-batch">3. 灾难性遗忘的数学：梯度下降只关心当前 batch</h2>
+<p>训练一步就是：</p>
+<div class="highlight"><pre><span></span><code><span class="n">logits</span><span class="p">,</span> <span class="n">loss</span> <span class="o">=</span> <span class="n">model</span><span class="p">(</span><span class="n">X_batch</span><span class="p">,</span> <span class="n">Y_batch</span><span class="p">)</span>   <span class="c1"># 当前 batch</span>
+<span class="n">loss</span><span class="o">.</span><span class="n">backward</span><span class="p">()</span>
+<span class="n">optimizer</span><span class="o">.</span><span class="n">step</span><span class="p">()</span>                          <span class="c1"># θ ← θ - lr · ∇loss</span>
+</code></pre></div>
+
+<p><code>∇loss</code> 是<strong>当前 batch</strong> 的梯度，完全不含任何"之前学过的代码能力"的信息。换句话说：</p>
+<p>$$
+\theta_{\text{SFT2}} = \theta_{\text{SFT1}} - \eta \sum_{t=1}^{T} \nabla \mathcal{L}_{\text{fc}}(\theta_t)
+$$</p>
+<p>这个迭代过程<strong>只看 function calling 数据</strong>，它会把参数推到"function calling loss 最低"的方向。如果这条方向恰好和"代码 loss 最低"的方向不一致（几乎总是不一致），代码能力就会被顺带破坏。</p>
+<p>一个直观类比：把模型参数想成一个沙盘，代码 SFT 把沙子堆成山 A，function calling SFT 的梯度是一双推土机，它只看山 B 的目标形状，并不知道山 A 的存在，于是把山 A 推平了。</p>
+<p>学术上有个更精细的量化指标——<strong>Fisher 信息矩阵</strong> $F_{ii} = \mathbb{E}[(\partial \log p / \partial \theta_i)^2]$ 衡量第 $i$ 个参数对老任务有多重要。遗忘严重程度正比于 $\sum_i F_{ii} (\Delta \theta_i)^2$。后面 EWC 就是直接拿这个量当正则项。</p>
+<p>现在我们知道敌人长什么样了，看解法。</p>
+<hr />
+<h2 id="4-rehearsal-replay">4. 解法一：数据混合（Rehearsal / Replay）</h2>
+<p><strong>最朴素、最有效、工业界默认的做法：不要做两次 SFT，把两份数据混在一起做一次。</strong></p>
+<div class="highlight"><pre><span></span><code><span class="c1"># 错误做法</span>
+<span class="n">train</span><span class="p">(</span><span class="n">model</span><span class="p">,</span> <span class="n">code_sft_data</span><span class="p">,</span>   <span class="n">steps</span><span class="o">=</span><span class="mi">5000</span><span class="p">)</span>   <span class="c1"># SFT_1</span>
+<span class="n">train</span><span class="p">(</span><span class="n">model</span><span class="p">,</span> <span class="n">fc_sft_data</span><span class="p">,</span>     <span class="n">steps</span><span class="o">=</span><span class="mi">5000</span><span class="p">)</span>   <span class="c1"># SFT_2 ← 灾难性遗忘</span>
+
+<span class="c1"># 正确做法：rehearsal</span>
+<span class="n">mixed</span> <span class="o">=</span> <span class="n">interleave</span><span class="p">(</span><span class="n">code_sft_data</span><span class="p">,</span> <span class="n">fc_sft_data</span><span class="p">,</span> <span class="n">ratio</span><span class="o">=</span><span class="p">[</span><span class="mf">0.5</span><span class="p">,</span> <span class="mf">0.5</span><span class="p">])</span>
+<span class="n">train</span><span class="p">(</span><span class="n">model</span><span class="p">,</span> <span class="n">mixed</span><span class="p">,</span> <span class="n">steps</span><span class="o">=</span><span class="mi">10000</span><span class="p">)</span>            <span class="c1"># 一次搞定</span>
+</code></pre></div>
+
+<p>如果实在必须分阶段（比如代码数据已经训完了，现在才拿到 function calling 数据），<strong>关键技巧：在 SFT_2 里按比例保留 SFT_1 的老数据</strong>：</p>
+<div class="highlight"><pre><span></span><code><span class="c1"># 保留 10%~30% 老数据 = 便宜的 rehearsal</span>
+<span class="n">sft2_data</span> <span class="o">=</span> <span class="n">sample</span><span class="p">(</span><span class="n">code_sft_data</span><span class="p">,</span> <span class="n">frac</span><span class="o">=</span><span class="mf">0.2</span><span class="p">)</span> <span class="o">+</span> <span class="n">fc_sft_data</span>
+</code></pre></div>
+
+<p>经验比例在 10%~30%，视任务冲突程度。这是 OpenAI、Anthropic、DeepSeek 在训 instruct 版本时都在用的"土办法"，效果出奇得好。</p>
+<p>本质上，它把"顺序学习"退化回"联合学习"，从根上绕过了遗忘。</p>
+<hr />
+<h2 id="5-lora">5. 解法二：LoRA + 多适配器 —— 物理上隔离增量</h2>
+<p>LoRA（Low-Rank Adaptation，Hu et al. 2021）的思想是：<strong>不要改原始权重 $W$，而是学一个低秩增量 $\Delta W = BA$，推理时 $W + BA$</strong>。用 PyTorch 写出来大概长这样（可以对比 <code>model.py:80</code> 的 <code>self.c_fc</code>）：</p>
+<div class="highlight"><pre><span></span><code><span class="k">class</span><span class="w"> </span><span class="nc">LoRALinear</span><span class="p">(</span><span class="n">nn</span><span class="o">.</span><span class="n">Module</span><span class="p">):</span>
+    <span class="k">def</span><span class="w"> </span><span class="fm">__init__</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">base</span><span class="p">:</span> <span class="n">nn</span><span class="o">.</span><span class="n">Linear</span><span class="p">,</span> <span class="n">rank</span><span class="o">=</span><span class="mi">8</span><span class="p">):</span>
+        <span class="nb">super</span><span class="p">()</span><span class="o">.</span><span class="fm">__init__</span><span class="p">()</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">base</span> <span class="o">=</span> <span class="n">base</span>                                 <span class="c1"># 冻结</span>
+        <span class="k">for</span> <span class="n">p</span> <span class="ow">in</span> <span class="bp">self</span><span class="o">.</span><span class="n">base</span><span class="o">.</span><span class="n">parameters</span><span class="p">():</span>
+            <span class="n">p</span><span class="o">.</span><span class="n">requires_grad</span> <span class="o">=</span> <span class="kc">False</span>
+        <span class="n">d_in</span><span class="p">,</span> <span class="n">d_out</span> <span class="o">=</span> <span class="n">base</span><span class="o">.</span><span class="n">in_features</span><span class="p">,</span> <span class="n">base</span><span class="o">.</span><span class="n">out_features</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">A</span> <span class="o">=</span> <span class="n">nn</span><span class="o">.</span><span class="n">Parameter</span><span class="p">(</span><span class="n">torch</span><span class="o">.</span><span class="n">randn</span><span class="p">(</span><span class="n">rank</span><span class="p">,</span> <span class="n">d_in</span><span class="p">)</span> <span class="o">*</span> <span class="mf">0.01</span><span class="p">)</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">B</span> <span class="o">=</span> <span class="n">nn</span><span class="o">.</span><span class="n">Parameter</span><span class="p">(</span><span class="n">torch</span><span class="o">.</span><span class="n">zeros</span><span class="p">(</span><span class="n">d_out</span><span class="p">,</span> <span class="n">rank</span><span class="p">))</span>  <span class="c1"># 初始 ΔW = 0</span>
+
+    <span class="k">def</span><span class="w"> </span><span class="nf">forward</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">x</span><span class="p">):</span>
+        <span class="k">return</span> <span class="bp">self</span><span class="o">.</span><span class="n">base</span><span class="p">(</span><span class="n">x</span><span class="p">)</span> <span class="o">+</span> <span class="n">x</span> <span class="o">@</span> <span class="bp">self</span><span class="o">.</span><span class="n">A</span><span class="o">.</span><span class="n">T</span> <span class="o">@</span> <span class="bp">self</span><span class="o">.</span><span class="n">B</span><span class="o">.</span><span class="n">T</span>
+</code></pre></div>
+
+<p>关键两点：</p>
+<ol>
+<li><code>self.base</code> 全部冻结——<strong>原始预训练知识物理上不可能被改动</strong>。</li>
+<li><code>A</code>、<code>B</code> 只有几百万参数（rank=8 时约占全量的 0.1%~1%），训练便宜。</li>
+</ol>
+<p>有了 LoRA，多能力叠加的范式变成：</p>
+<div class="highlight"><pre><span></span><code>基座模型 W₀ (冻结)
+  ├── LoRA_code   (独立一套 A,B)
+  ├── LoRA_fc     (独立一套 A,B)
+  └── LoRA_math   (独立一套 A,B)
+
+推理时按需加载一个，或者把多个权重线性合并：
+  W = W₀ + α·ΔW_code + β·ΔW_fc + γ·ΔW_math
+</code></pre></div>
+
+<p>遗忘问题直接消失——因为每个能力住在自己的 A/B 里，彼此不覆盖。缺点是：多个 LoRA 合并时，如果两个任务的梯度方向冲突，线性叠加仍然会相互干扰（没有 MoE 的路由那么"清洁"）。</p>
+<hr />
+<h2 id="6-ewc">6. 解法三：EWC —— 给"老能力的重要参数"加弹簧</h2>
+<p>Elastic Weight Consolidation（Kirkpatrick et al. 2017, DeepMind）的思路很朴素：</p>
+<blockquote>
+<p>每个参数对老任务的重要性不一样。对重要参数，惩罚它偏离老值；对不重要的参数，随便动。</p>
+</blockquote>
+<p>实现上，在 SFT_2 的 loss 上加一个正则项：</p>
+<div class="highlight"><pre><span></span><code><span class="c1"># 在老任务（code SFT）结束时，估计每个参数的 Fisher 重要性</span>
+<span class="n">fisher</span> <span class="o">=</span> <span class="p">{</span><span class="n">n</span><span class="p">:</span> <span class="n">torch</span><span class="o">.</span><span class="n">zeros_like</span><span class="p">(</span><span class="n">p</span><span class="p">)</span> <span class="k">for</span> <span class="n">n</span><span class="p">,</span> <span class="n">p</span> <span class="ow">in</span> <span class="n">model</span><span class="o">.</span><span class="n">named_parameters</span><span class="p">()}</span>
+<span class="k">for</span> <span class="n">X</span><span class="p">,</span> <span class="n">Y</span> <span class="ow">in</span> <span class="n">code_sft_loader</span><span class="p">:</span>
+    <span class="n">_</span><span class="p">,</span> <span class="n">loss</span> <span class="o">=</span> <span class="n">model</span><span class="p">(</span><span class="n">X</span><span class="p">,</span> <span class="n">Y</span><span class="p">)</span>
+    <span class="n">loss</span><span class="o">.</span><span class="n">backward</span><span class="p">()</span>
+    <span class="k">for</span> <span class="n">n</span><span class="p">,</span> <span class="n">p</span> <span class="ow">in</span> <span class="n">model</span><span class="o">.</span><span class="n">named_parameters</span><span class="p">():</span>
+        <span class="n">fisher</span><span class="p">[</span><span class="n">n</span><span class="p">]</span> <span class="o">+=</span> <span class="n">p</span><span class="o">.</span><span class="n">grad</span><span class="o">.</span><span class="n">detach</span><span class="p">()</span> <span class="o">**</span> <span class="mi">2</span>
+    <span class="n">model</span><span class="o">.</span><span class="n">zero_grad</span><span class="p">()</span>
+<span class="n">fisher</span> <span class="o">=</span> <span class="p">{</span><span class="n">n</span><span class="p">:</span> <span class="n">f</span> <span class="o">/</span> <span class="nb">len</span><span class="p">(</span><span class="n">code_sft_loader</span><span class="p">)</span> <span class="k">for</span> <span class="n">n</span><span class="p">,</span> <span class="n">f</span> <span class="ow">in</span> <span class="n">fisher</span><span class="o">.</span><span class="n">items</span><span class="p">()}</span>
+<span class="n">theta_star</span> <span class="o">=</span> <span class="p">{</span><span class="n">n</span><span class="p">:</span> <span class="n">p</span><span class="o">.</span><span class="n">detach</span><span class="p">()</span><span class="o">.</span><span class="n">clone</span><span class="p">()</span> <span class="k">for</span> <span class="n">n</span><span class="p">,</span> <span class="n">p</span> <span class="ow">in</span> <span class="n">model</span><span class="o">.</span><span class="n">named_parameters</span><span class="p">()}</span>
+
+<span class="c1"># SFT_2 的 loss = 新任务 loss + 弹簧项</span>
+<span class="k">def</span><span class="w"> </span><span class="nf">ewc_loss</span><span class="p">(</span><span class="n">new_loss</span><span class="p">,</span> <span class="n">model</span><span class="p">,</span> <span class="n">fisher</span><span class="p">,</span> <span class="n">theta_star</span><span class="p">,</span> <span class="n">lam</span><span class="o">=</span><span class="mf">1e4</span><span class="p">):</span>
+    <span class="n">penalty</span> <span class="o">=</span> <span class="mi">0</span>
+    <span class="k">for</span> <span class="n">n</span><span class="p">,</span> <span class="n">p</span> <span class="ow">in</span> <span class="n">model</span><span class="o">.</span><span class="n">named_parameters</span><span class="p">():</span>
+        <span class="n">penalty</span> <span class="o">=</span> <span class="n">penalty</span> <span class="o">+</span> <span class="p">(</span><span class="n">fisher</span><span class="p">[</span><span class="n">n</span><span class="p">]</span> <span class="o">*</span> <span class="p">(</span><span class="n">p</span> <span class="o">-</span> <span class="n">theta_star</span><span class="p">[</span><span class="n">n</span><span class="p">])</span> <span class="o">**</span> <span class="mi">2</span><span class="p">)</span><span class="o">.</span><span class="n">sum</span><span class="p">()</span>
+    <span class="k">return</span> <span class="n">new_loss</span> <span class="o">+</span> <span class="n">lam</span> <span class="o">*</span> <span class="n">penalty</span>
+</code></pre></div>
+
+<p>直觉：Fisher 矩阵高的参数 = 老任务很依赖它 = 加一根粗弹簧把它拉回老位置；Fisher 低的参数 = 随便动。</p>
+<p>优点是<strong>不需要留老数据</strong>。缺点是 Fisher 是个近似，超参 λ 很难调——大了学不动新任务，小了还是会忘。实践中 EWC 比 rehearsal 更"学术"，在 LLM 工业界不如数据混合常见。</p>
+<hr />
+<h2 id="7-sft">7. 解法四：多任务联合 SFT —— 一次训完，根治遗忘</h2>
+<p>把前三种解法推到极致，就是<strong>多任务联合 SFT</strong>：不分阶段，把代码、function calling、数学、对话所有想要的能力数据按比例混成一份大语料，从预训练 checkpoint 一次性 SFT 出来。</p>
+<p>训练循环甚至不用改——本项目 <code>train.py:304</code> 已经长这样了：</p>
+<div class="highlight"><pre><span></span><code><span class="n">X</span><span class="p">,</span> <span class="n">Y</span> <span class="o">=</span> <span class="n">get_batch</span><span class="p">(</span><span class="s1">&#39;train&#39;</span><span class="p">)</span>
+<span class="c1"># ...</span>
+<span class="n">logits</span><span class="p">,</span> <span class="n">loss</span> <span class="o">=</span> <span class="n">model</span><span class="p">(</span><span class="n">X</span><span class="p">,</span> <span class="n">Y</span><span class="p">)</span>
+<span class="n">loss</span><span class="o">.</span><span class="n">backward</span><span class="p">()</span>
+<span class="n">optimizer</span><span class="o">.</span><span class="n">step</span><span class="p">()</span>
+</code></pre></div>
+
+<p>唯一需要做的是在 <code>data/&lt;dataset&gt;/prepare.py</code> 阶段把多种数据按比例 concatenate 成一份 <code>train.bin</code>。每个 batch 里自然就混了多种任务，梯度同时优化所有能力。</p>
+<p>这是 Llama、Qwen、DeepSeek-Coder 实际的做法。他们的"SFT 数据"是一个包含几百种子任务、有精心配比的混合物，不是先 A 后 B 串行训的。</p>
+<p><strong>但它有个硬限制</strong>：所有能力共享同一套参数 θ。如果任务数量增长到几十上百（通用助手 + 代码 + function calling + math + 翻译 + 医疗 + 法律 + …），参数之间开始互相挤压——这就是 MoE 登场的时机。</p>
+<hr />
+<h2 id="8-moe-mlp">8. MoE 的本质：把一个 MLP 拆成"很多专家 + 一个路由器"</h2>
+<p>先回到 CodeGPT 的标准 Transformer block，看 <code>model.py:93-105</code>：</p>
+<div class="highlight"><pre><span></span><code><span class="k">class</span><span class="w"> </span><span class="nc">Block</span><span class="p">(</span><span class="n">nn</span><span class="o">.</span><span class="n">Module</span><span class="p">):</span>
+    <span class="k">def</span><span class="w"> </span><span class="fm">__init__</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">config</span><span class="p">):</span>
+        <span class="nb">super</span><span class="p">()</span><span class="o">.</span><span class="fm">__init__</span><span class="p">()</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">ln_1</span> <span class="o">=</span> <span class="n">LayerNorm</span><span class="p">(</span><span class="n">config</span><span class="o">.</span><span class="n">n_embd</span><span class="p">,</span> <span class="n">bias</span><span class="o">=</span><span class="n">config</span><span class="o">.</span><span class="n">bias</span><span class="p">)</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">attn</span> <span class="o">=</span> <span class="n">CausalSelfAttention</span><span class="p">(</span><span class="n">config</span><span class="p">)</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">ln_2</span> <span class="o">=</span> <span class="n">LayerNorm</span><span class="p">(</span><span class="n">config</span><span class="o">.</span><span class="n">n_embd</span><span class="p">,</span> <span class="n">bias</span><span class="o">=</span><span class="n">config</span><span class="o">.</span><span class="n">bias</span><span class="p">)</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">mlp</span>  <span class="o">=</span> <span class="n">MLP</span><span class="p">(</span><span class="n">config</span><span class="p">)</span>        <span class="c1"># ← 这里只有一个 MLP</span>
+
+    <span class="k">def</span><span class="w"> </span><span class="nf">forward</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">x</span><span class="p">):</span>
+        <span class="n">x</span> <span class="o">=</span> <span class="n">x</span> <span class="o">+</span> <span class="bp">self</span><span class="o">.</span><span class="n">attn</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">ln_1</span><span class="p">(</span><span class="n">x</span><span class="p">))</span>
+        <span class="n">x</span> <span class="o">=</span> <span class="n">x</span> <span class="o">+</span> <span class="bp">self</span><span class="o">.</span><span class="n">mlp</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">ln_2</span><span class="p">(</span><span class="n">x</span><span class="p">))</span> <span class="c1"># ← 所有 token 都走这同一个 MLP</span>
+        <span class="k">return</span> <span class="n">x</span>
+</code></pre></div>
+
+<p>每一层只有<strong>一个 MLP</strong>（<code>model.py:76-90</code>），每个 token 必须经过它。这个 MLP 承载了这一层所有的"事实性知识"——语法、语义、代码模式、函数调用约定，全挤在 <code>c_fc</code> 和 <code>c_proj</code> 这两个矩阵里。</p>
+<p>MoE（Mixture of Experts，Shazeer et al. 2017 / Switch Transformer 2021 / Mixtral 2024）的改造：<strong>把一个 MLP 换成 N 个 MLP（"专家"）+ 一个小路由器</strong>，每个 token 只被路由到 top-k 个专家。用本项目的命名风格写出来大约是：</p>
+<div class="highlight"><pre><span></span><code><span class="k">class</span><span class="w"> </span><span class="nc">MoEBlock</span><span class="p">(</span><span class="n">nn</span><span class="o">.</span><span class="n">Module</span><span class="p">):</span>
+    <span class="k">def</span><span class="w"> </span><span class="fm">__init__</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">config</span><span class="p">,</span> <span class="n">n_experts</span><span class="o">=</span><span class="mi">8</span><span class="p">,</span> <span class="n">top_k</span><span class="o">=</span><span class="mi">2</span><span class="p">):</span>
+        <span class="nb">super</span><span class="p">()</span><span class="o">.</span><span class="fm">__init__</span><span class="p">()</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">ln_1</span> <span class="o">=</span> <span class="n">LayerNorm</span><span class="p">(</span><span class="n">config</span><span class="o">.</span><span class="n">n_embd</span><span class="p">,</span> <span class="n">bias</span><span class="o">=</span><span class="n">config</span><span class="o">.</span><span class="n">bias</span><span class="p">)</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">attn</span> <span class="o">=</span> <span class="n">CausalSelfAttention</span><span class="p">(</span><span class="n">config</span><span class="p">)</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">ln_2</span> <span class="o">=</span> <span class="n">LayerNorm</span><span class="p">(</span><span class="n">config</span><span class="o">.</span><span class="n">n_embd</span><span class="p">,</span> <span class="n">bias</span><span class="o">=</span><span class="n">config</span><span class="o">.</span><span class="n">bias</span><span class="p">)</span>
+        <span class="c1"># 多个 MLP，每个都是原来那个 MLP</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">experts</span> <span class="o">=</span> <span class="n">nn</span><span class="o">.</span><span class="n">ModuleList</span><span class="p">([</span><span class="n">MLP</span><span class="p">(</span><span class="n">config</span><span class="p">)</span> <span class="k">for</span> <span class="n">_</span> <span class="ow">in</span> <span class="nb">range</span><span class="p">(</span><span class="n">n_experts</span><span class="p">)])</span>
+        <span class="c1"># 路由器：把 token 的向量映射成 N 个专家的打分</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">router</span> <span class="o">=</span> <span class="n">nn</span><span class="o">.</span><span class="n">Linear</span><span class="p">(</span><span class="n">config</span><span class="o">.</span><span class="n">n_embd</span><span class="p">,</span> <span class="n">n_experts</span><span class="p">,</span> <span class="n">bias</span><span class="o">=</span><span class="kc">False</span><span class="p">)</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">top_k</span> <span class="o">=</span> <span class="n">top_k</span>
+
+    <span class="k">def</span><span class="w"> </span><span class="nf">forward</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">x</span><span class="p">):</span>
+        <span class="n">x</span> <span class="o">=</span> <span class="n">x</span> <span class="o">+</span> <span class="bp">self</span><span class="o">.</span><span class="n">attn</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">ln_1</span><span class="p">(</span><span class="n">x</span><span class="p">))</span>
+        <span class="n">h</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">ln_2</span><span class="p">(</span><span class="n">x</span><span class="p">)</span>                             <span class="c1"># (B, T, C)</span>
+        <span class="n">scores</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">router</span><span class="p">(</span><span class="n">h</span><span class="p">)</span>                      <span class="c1"># (B, T, N)</span>
+        <span class="n">weights</span><span class="p">,</span> <span class="n">idx</span> <span class="o">=</span> <span class="n">scores</span><span class="o">.</span><span class="n">topk</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">top_k</span><span class="p">,</span> <span class="n">dim</span><span class="o">=-</span><span class="mi">1</span><span class="p">)</span>   <span class="c1"># 每个 token 选 top-k 专家</span>
+        <span class="n">weights</span> <span class="o">=</span> <span class="n">F</span><span class="o">.</span><span class="n">softmax</span><span class="p">(</span><span class="n">weights</span><span class="p">,</span> <span class="n">dim</span><span class="o">=-</span><span class="mi">1</span><span class="p">)</span>         <span class="c1"># 归一化</span>
+
+        <span class="c1"># 稀疏地把每个 token 送去对应专家（这里伪代码，实际要 gather/scatter）</span>
+        <span class="n">out</span> <span class="o">=</span> <span class="n">torch</span><span class="o">.</span><span class="n">zeros_like</span><span class="p">(</span><span class="n">h</span><span class="p">)</span>
+        <span class="k">for</span> <span class="n">k</span> <span class="ow">in</span> <span class="nb">range</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">top_k</span><span class="p">):</span>
+            <span class="k">for</span> <span class="n">e</span> <span class="ow">in</span> <span class="nb">range</span><span class="p">(</span><span class="nb">len</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">experts</span><span class="p">)):</span>
+                <span class="n">mask</span> <span class="o">=</span> <span class="p">(</span><span class="n">idx</span><span class="p">[</span><span class="o">...</span><span class="p">,</span> <span class="n">k</span><span class="p">]</span> <span class="o">==</span> <span class="n">e</span><span class="p">)</span>            <span class="c1"># 哪些 token 选了专家 e</span>
+                <span class="k">if</span> <span class="n">mask</span><span class="o">.</span><span class="n">any</span><span class="p">():</span>
+                    <span class="n">out</span><span class="p">[</span><span class="n">mask</span><span class="p">]</span> <span class="o">+=</span> <span class="n">weights</span><span class="p">[</span><span class="o">...</span><span class="p">,</span> <span class="n">k</span><span class="p">:</span><span class="n">k</span><span class="o">+</span><span class="mi">1</span><span class="p">][</span><span class="n">mask</span><span class="p">]</span> <span class="o">*</span> <span class="bp">self</span><span class="o">.</span><span class="n">experts</span><span class="p">[</span><span class="n">e</span><span class="p">](</span><span class="n">h</span><span class="p">[</span><span class="n">mask</span><span class="p">])</span>
+
+        <span class="k">return</span> <span class="n">x</span> <span class="o">+</span> <span class="n">out</span>
+</code></pre></div>
+
+<p>关键几个数字（以 Mixtral 8x7B 为例）：</p>
+<ul>
+<li>8 个专家，每个是一个完整的 MLP。总参数量 ~47B。</li>
+<li>每个 token 只激活 top-2 个专家 → 实际参与计算的参数量 ~13B。</li>
+<li>所以 Mixtral 有 47B 参数但跑起来像 13B——<strong>容量 = 47B，算力 = 13B</strong>。</li>
+</ul>
+<p><strong>本质一句话：MoE 是 "可微分的 if/else"。</strong> 路由器学会"看到代码相关的 token 就派给专家 3 和 5，看到自然语言就派给专家 1 和 7"——注意这个"派"是通过 softmax 权重实现的，所以可微、可训练。对应 <a href="DIFFERENTIABLE_PROGRAMMING.md">DIFFERENTIABLE_PROGRAMMING.md</a> 第 5 节讲的那种"把离散控制流翻译成可微权重"的思想——MoE 就是把 <code>if task == 'code': mlp_code(x) else: mlp_general(x)</code> 做成可微的版本。</p>
+<hr />
+<h2 id="9-moe">9. 为什么 MoE 天然更抗遗忘？稀疏激活的参数隔离</h2>
+<p>回到遗忘的数学：SFT_2 会更新<strong>所有</strong>被当前 batch 激活的参数。在稠密 MLP 里，每个 token 都走同一个 MLP，所有参数都被激活，所以所有参数都被覆盖——老能力无处躲藏。</p>
+<p>在 MoE 里：</p>
+<div class="highlight"><pre><span></span><code>function calling 数据进来
+  → 路由器倾向于派给专家 2 和 6（比如）
+  → 只有专家 2 和 6 的参数被更新
+  → 专家 0, 1, 3, 4, 5, 7 完全不动 ← 代码能力可能主要住在这里，得以保留
+</code></pre></div>
+
+<p>这就是 MoE 的<strong>参数隔离（parameter isolation）</strong>——不同能力自动住进不同的专家，梯度只流过被路由到的子集。它不是 100% 的隔离（路由器本身还是会变），但比稠密模型的"全员更新"强太多了。</p>
+<p>实际训练 MoE 还要加一个 <strong>load balancing loss</strong>（让每个专家的负载大致均衡），否则路由器会退化成"所有 token 都派给一个最强的专家"——这个细节这里不展开。</p>
+<p>这也解释了为什么 DeepSeek-V2/V3、Mixtral、Qwen2-MoE 都选择 MoE 架构来做通用助手：<strong>当目标是"同时做好几十种任务"时，MoE 从架构层就在解决能力互相干扰的问题，而稠密模型只能靠数据配比硬调</strong>。</p>
+<hr />
+<h2 id="10-moe-vs-sft-vs-lora">10. MoE vs 多次 SFT vs LoRA：该选哪条路</h2>
+<table>
+<thead>
+<tr>
+<th>方案</th>
+<th>是否改架构</th>
+<th>是否解决遗忘</th>
+<th>参数开销</th>
+<th>工程难度</th>
+<th>适用场景</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>朴素多次 SFT</td>
+<td>否</td>
+<td>✗ 不解决</td>
+<td>0</td>
+<td>低</td>
+<td>不要这样做</td>
+</tr>
+<tr>
+<td>数据混合（rehearsal）</td>
+<td>否</td>
+<td>✓ 部分</td>
+<td>0</td>
+<td>低</td>
+<td><strong>90% 的场景默认选这个</strong></td>
+</tr>
+<tr>
+<td>多任务联合 SFT</td>
+<td>否</td>
+<td>✓ 根治</td>
+<td>0</td>
+<td>中（需配比）</td>
+<td>所有能力一次性训</td>
+</tr>
+<tr>
+<td>LoRA 多适配器</td>
+<td>小改</td>
+<td>✓ 物理隔离</td>
+<td>每任务 +1%</td>
+<td>低</td>
+<td>需要独立能力开关、推理时切换</td>
+</tr>
+<tr>
+<td>EWC / L2-SP 正则</td>
+<td>否</td>
+<td>✓ 部分</td>
+<td>0</td>
+<td>高（λ 难调）</td>
+<td>没有老数据可用</td>
+</tr>
+<tr>
+<td><strong>MoE</strong></td>
+<td><strong>大改</strong></td>
+<td><strong>✓ 架构级</strong></td>
+<td><strong>参数 ×N，FLOPs ~不变</strong></td>
+<td><strong>高</strong></td>
+<td><strong>能力非常多、模型规模大</strong></td>
+</tr>
+</tbody>
+</table>
+<p>决策顺序建议：</p>
+<ol>
+<li>只有两三种能力、总体数据量 &lt;10B token → <strong>数据混合 / 联合 SFT</strong>，不要想别的。</li>
+<li>需要"能力即插即用"、不同场景切不同配置 → <strong>LoRA + 多适配器</strong>。</li>
+<li>能力种类 &gt;10、模型已经 &gt;30B、在做通用助手 → <strong>MoE</strong>。</li>
+<li><strong>"做多次独立 SFT"几乎在任何场景下都不是正解。</strong> 它看起来最直观（像 fine-tune 流水线），但数学上就是在制造遗忘。</li>
+</ol>
+<hr />
+<h2 id="11-codegpt-function-calling">11. 回到 CodeGPT：如果要加 function calling 能力</h2>
+<p>本项目当前是纯预训练阶段（<code>model.py:136</code> 的 <code>CodeGPT</code> 类 + <code>train.py</code> 的 next-token CE loss，没 SFT 也没 RLHF，参见 <a href="RLHF_AND_PLATONIC_REPRESENTATION.md">RLHF_AND_PLATONIC_REPRESENTATION.md</a> 第 7 节）。如果未来要在这之上加 function calling，按本文的分析，推荐路径是：</p>
+<p><strong>Step 1 —— 扩充特殊 token。</strong> 参照 <code>tokenizer.py</code> 里已有的 FIM/code/lang token 的做法，在 <code>SPECIAL_TOKENS</code> 里加 <code>&lt;|tool_call|&gt;</code>、<code>&lt;|tool_result|&gt;</code> 等，更新 <code>CodeGPTConfig</code> 里对应的 <code>*_id</code>，然后用 <code>model.expand_vocab(new_size)</code>（<code>model.py</code> 已实现）扩词表。注意 <code>VOCAB_SIZE</code> 要保持 64 的倍数。</p>
+<p><strong>Step 2 —— 数据混合联合 SFT，不要分两次。</strong> 准备两份 SFT 数据：
+- 代码对话 SFT（"写个快排" → 代码）
+- function calling SFT（"查北京天气" → <code>&lt;|tool_call|&gt;{"name":"get_weather","args":...}&lt;|tool_result|&gt;...</code>）</p>
+<p>按 7:3 或 5:5 混进一份 <code>train.bin</code>，复用 <code>train.py</code> 跑一次。<code>get_batch</code> 里把 prompt 段的 target 设成 -1（机制本项目已经有了，就是 FIM pad 那套）。</p>
+<p><strong>Step 3 —— 先不要上 MoE。</strong> 这个项目在 10M~124M 参数规模（见 <code>config/train_codegpt_small.py</code> 等），MoE 的收益（容量 vs 算力解耦）在这个规模看不出来，反而会让路由器不稳定、负载不均衡。MoE 是模型规模上到 7B+、能力种类上到 10+ 之后才值得投入的复杂度。</p>
+<p><strong>Step 4 —— 如果未来真要做 agent 类的多能力模型（代码 / FC / 搜索 / 数学 / 浏览器），</strong> 再考虑把 <code>Block.mlp</code> 换成 MoE 版本。届时需要额外实现：(1) 路由器和 top-k 选择；(2) load balancing loss；(3) 训练时的 expert parallelism（在单 GPU 上 8 个专家还放得下，再大就要切）。本文第 8 节给出的伪代码是一个起点。</p>
+<hr />
+<h2 id="_2">小结</h2>
+<ul>
+<li><strong>SFT ≠ 新算法</strong>。SFT 就是在精选小数据上继续做 next-token prediction，损失函数和 <code>model.py:192</code> 一模一样。</li>
+<li><strong>多次独立 SFT 会遗忘</strong>，不是 bug，是梯度下降只看当前 batch 的数学事实。</li>
+<li><strong>数据混合</strong> 是 90% 场景的正解；<strong>LoRA</strong> 解决"能力插拔"；<strong>EWC</strong> 在没老数据时救场。</li>
+<li><strong>MoE 的本质是可微分的 if/else</strong>——用稀疏路由把不同能力住进不同专家，从架构层解决遗忘和容量扩展。它是"同时做几十种任务 + 模型规模大"时的长期正解，但在小模型阶段性价比不高。</li>
+<li>对 CodeGPT 这种规模，<strong>先用联合 SFT 拿掉多能力问题，MoE 留给未来真正需要的时候</strong>。</li>
+</ul>
+    </div>
+  </article>
+
+</main>
+</body>
+</html>

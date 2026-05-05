@@ -1,0 +1,500 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>从图像视角理解 Transformer · Steve Chan — xlisp</title>
+<link rel="stylesheet" href="../style.css">
+</head>
+<body>
+<main class="wrap post">
+
+  <nav class="topnav">
+    <a href="../index.html">← home</a>
+  </nav>
+
+  <article>
+    <header class="post-header">
+      <h1>从图像视角理解 Transformer</h1>
+      <p class="meta">2026-05-06 · Steve Chan</p>
+    </header>
+
+    <div class="content">
+<h1 id="transformer">从图像视角理解 Transformer</h1>
+<h2 id="_1">注意力机制的图像起源</h2>
+<p>注意力机制并非 Transformer 的原创发明。早在计算机视觉领域，研究者就发现人眼观察图像时并非均匀扫描，而是<strong>选择性聚焦</strong>于显著区域。这种生物视觉的选择性注意力被形式化为：</p>
+<div class="highlight"><pre><span></span><code>Attention(Q, K, V) = softmax(QK^T / √d_k) V
+</code></pre></div>
+
+<p>在图像中：
+- <strong>Query</strong>: "我现在关注的区域需要什么信息？"
+- <strong>Key</strong>: "图像中每个位置能提供什么信息？"
+- <strong>Value</strong>: "该位置的实际内容是什么？"</p>
+<p>Self-Attention 的本质是：让图像（或序列）中的每个位置都能"看到"其他所有位置，并根据相关性加权聚合信息。这与人眼扫视图像时根据任务动态调整注意力焦点完全一致。</p>
+<h2 id="transformer_1">Transformer 即图神经网络</h2>
+<p>Transformer 可以被理解为一种<strong>全连接的图神经网络 (GNN)</strong>：</p>
+<div class="highlight"><pre><span></span><code>图像像素/Token  →  图的节点
+注意力权重      →  图的边权重
+自注意力层      →  消息传递 (Message Passing)
+</code></pre></div>
+
+<table>
+<thead>
+<tr>
+<th>视角</th>
+<th>结构</th>
+<th>连接方式</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>CNN</td>
+<td>网格图</td>
+<td>局部连接（卷积核大小）</td>
+</tr>
+<tr>
+<td>GNN</td>
+<td>任意图</td>
+<td>邻居节点</td>
+</tr>
+<tr>
+<td>Transformer</td>
+<td>完全图</td>
+<td>全连接（所有token互相关注）</td>
+</tr>
+</tbody>
+</table>
+<p>每一层 Self-Attention 本质上就是一轮<strong>图上的消息传递</strong>：每个节点收集来自所有其他节点的信息，通过注意力权重决定聆听谁的"消息"。Multi-Head Attention 则相当于在同一张图上同时运行多种不同的消息传递模式。</p>
+<h2 id="_2">层级特征：从边缘到美丑</h2>
+<p>深度网络逐层构建越来越抽象的表征，这在视觉领域最为直观：</p>
+<div class="highlight"><pre><span></span><code>Layer 1 (低级特征)
+├── 边缘检测：水平线、垂直线、对角线
+├── 颜色梯度：明暗变化
+└── 纹理元素：点、条纹
+
+Layer 2-3 (中级特征)
+├── 局部组合：角、T型交叉、曲线段
+├── 纹理模式：毛发纹理、皮肤质感
+└── 简单部件：眼睛轮廓、鼻孔形状
+
+Layer 4-5 (高级特征)
+├── 语义部件：完整的眼睛、鼻子、嘴巴
+├── 空间关系：五官的相对位置
+└── 物体原型：正脸、侧脸模板
+
+Layer 6+ (抽象概念)
+├── 身份识别：这是谁的脸
+├── 表情理解：开心、悲伤、愤怒
+├── 审美判断：美丑、和谐、对称性
+└── 社会语义：年龄、情绪、意图
+</code></pre></div>
+
+<p>这种层级抽象不仅存在于 CNN 中，Transformer (如 ViT) 也展现了类似规律：
+- 浅层注意力头关注<strong>局部邻域</strong>（类似卷积）
+- 深层注意力头关注<strong>全局语义关系</strong>（类似高级概念）</p>
+<h2 id="platonic-representation-hypothesis">柏拉图表征假说 (Platonic Representation Hypothesis)</h2>
+<p>2024年MIT的研究提出：不同模态（视觉、语言、音频）的深度学习模型正在<strong>收敛到相同的表征空间</strong>。这呼应了柏拉图的理型论——存在一个独立于感知模态的"理想形式"世界。</p>
+<div class="highlight"><pre><span></span><code>     现实世界（柏拉图的洞穴外）
+            │
+     统一的深层表征空间
+     ┌──────┼──────┐
+     │      │      │
+   视觉   语言   音频
+   模型   模型   模型
+     │      │      │
+   图像   文本   声音
+     （柏拉图洞穴中的影子）
+</code></pre></div>
+
+<p>证据：
+1. <strong>CLIP 现象</strong>：图像编码器和文本编码器学到了对齐的表征
+2. <strong>跨模态迁移</strong>：一个模态训练的特征可以直接用于另一个模态
+3. <strong>缩放定律</strong>：模型越大、数据越多，不同模型的表征越趋同
+4. <strong>Vision Transformer 与 Language Transformer</strong> 共享几乎相同的架构却处理不同模态</p>
+<h2 id="_3">深度学习的本质：深度分布式表征学习</h2>
+<p>将以上所有视角统一，深度学习的本质可以概括为：</p>
+<blockquote>
+<p><strong>通过多层非线性变换，学习数据的分布式表征，使得高层表征捕获数据生成过程中的抽象因果因子。</strong></p>
+</blockquote>
+<h3 id="distributed-representation">分布式表征 (Distributed Representation)</h3>
+<div class="highlight"><pre><span></span><code>局部表征（one-hot）：每个概念 = 一个独立神经元
+  猫 → [1,0,0,0,0...]
+  狗 → [0,1,0,0,0...]
+
+分布式表征：每个概念 = 多个神经元的激活模式
+  猫 → [0.8, 0.2, 0.9, 0.1, 0.7...]  (毛茸茸、小型、有胡须、非水生...)
+  狗 → [0.8, 0.5, 0.1, 0.1, 0.9...]  (毛茸茸、中型、无胡须、非水生...)
+</code></pre></div>
+
+<p>分布式表征的威力：
+- <strong>指数级表达能力</strong>：N个神经元可以表示 2^N 种概念（组合爆炸）
+- <strong>自然支持泛化</strong>：相似概念自动获得相似表征
+- <strong>支持类比推理</strong>：king - man + woman ≈ queen</p>
+<h3 id="_4">深度的意义</h3>
+<div class="highlight"><pre><span></span><code>深度 = 抽象层级 = 因果链长度
+
+原始像素 → 边缘 → 纹理 → 部件 → 物体 → 场景 → 语义
+   ↓         ↓       ↓       ↓       ↓       ↓       ↓
+ 感知层    特征层   模式层   概念层   关系层   情境层   意义层
+</code></pre></div>
+
+<p>每多一层，模型就能捕获更长的因果链、更抽象的概念。这就是"深度"学习之所以"深度"——不是网络层数深，而是<strong>表征的抽象深度</strong>。</p>
+<h2 id="cnn-transformer">从 CNN 到 Transformer：统一的表征学习框架</h2>
+<div class="highlight"><pre><span></span><code>CNN 的归纳偏置：
+  - 局部性（卷积核）→ 强制关注局部
+  - 平移等变性 → 位置无关的特征
+  - 层级组合 → 自底向上构建
+
+Transformer 的归纳偏置：
+  - 全局性（全连接注意力）→ 自由学习关注哪里
+  - 位置编码 → 位置信息可学习
+  - 层级组合 → 涌现式地自底向上
+
+结论：Transformer 用更少的先验假设（更少的归纳偏置），
+     通过更多的数据和计算，学到了与 CNN 相似甚至更好的表征。
+     这支持了&quot;柏拉图表征&quot;的存在——
+     无论用什么架构，只要模型足够大、数据足够多，
+     都会收敛到同一个最优表征。
+</code></pre></div>
+
+<h2 id="debug-transformer">Debug Transformer：从图像可视化到文本可解释性</h2>
+<h3 id="_5">图像模型的调试为何如此直观</h3>
+<p>CNN 的每一层都可以<strong>直接可视化</strong>，这让调试变得像"看图说话"：</p>
+<div class="highlight"><pre><span></span><code>调试 CNN 的经典方法：
+
+1. 特征图可视化 (Feature Map Visualization)
+   Layer 1 输出 → 看到边缘检测器的激活热力图
+   Layer 3 输出 → 看到纹理/部件的响应区域
+   Layer 5 输出 → 看到高级语义区域（脸、车轮）
+
+2. 滤波器可视化 (Filter Visualization)
+   反向优化一张图像使某个神经元最大激活
+   → 直接&quot;看到&quot;这个神经元在找什么模式
+
+3. Grad-CAM / Saliency Map
+   对分类结果求梯度 → 热力图叠加原图
+   → 直接看到模型&quot;看哪里&quot;做的决定
+
+4. 特征图裁剪实验
+   遮挡图像某区域 → 观察输出变化
+   → 定位模型依赖的关键区域
+</code></pre></div>
+
+<p>这些方法之所以强大，是因为<strong>人类视觉系统可以直接理解图像空间的含义</strong>。你看到热力图高亮在猫耳朵上，就知道模型在用耳朵特征——无需额外解释。</p>
+<h3 id="transformer_2">文本 Transformer 的调试困境</h3>
+<p>文本没有"空间直觉"，调试难度陡增：</p>
+<div class="highlight"><pre><span></span><code>图像模型：Layer 3 激活图 → 高亮鼻子区域 → 人眼秒懂 ✓
+文本模型：Layer 3 激活向量 → [0.23, -0.87, 0.45, ...] → ??? ✗
+
+图像模型：Grad-CAM → 红色=重要像素 → 直观 ✓
+文本模型：梯度归因 → &quot;the&quot;重要性0.8 → 为什么？ ✗
+
+图像：二维空间，人眼天生能解读
+文本：高维离散符号序列，无法直接&quot;看到&quot;
+</code></pre></div>
+
+<p>核心难点：
+1. <strong>没有空间连续性</strong>：像素是连续的，token是离散的
+2. <strong>维度诅咒</strong>：768/1024维的隐藏状态无法直接可视化
+3. <strong>组合爆炸</strong>：同一句话的语义依赖可能跨越任意距离
+4. <strong>多义性</strong>：同一个词在不同上下文中表征完全不同</p>
+<h3 id="transformer_3">借鉴图像思路的文本 Transformer 调试方法</h3>
+<p>尽管文本不如图像直观，但我们可以<strong>系统地借鉴图像调试的每一种范式</strong>：</p>
+<h4 id="1-feature-map-visualization">方法 1：注意力图可视化（对应 Feature Map Visualization）</h4>
+<div class="highlight"><pre><span></span><code><span class="c1"># 注意力权重就是文本版的&quot;热力图&quot;</span>
+<span class="kn">import</span><span class="w"> </span><span class="nn">torch</span>
+<span class="kn">from</span><span class="w"> </span><span class="nn">transformers</span><span class="w"> </span><span class="kn">import</span> <span class="n">AutoModel</span><span class="p">,</span> <span class="n">AutoTokenizer</span>
+
+<span class="n">model</span> <span class="o">=</span> <span class="n">AutoModel</span><span class="o">.</span><span class="n">from_pretrained</span><span class="p">(</span><span class="s2">&quot;bert-base-uncased&quot;</span><span class="p">,</span> <span class="n">output_attentions</span><span class="o">=</span><span class="kc">True</span><span class="p">)</span>
+<span class="n">tokenizer</span> <span class="o">=</span> <span class="n">AutoTokenizer</span><span class="o">.</span><span class="n">from_pretrained</span><span class="p">(</span><span class="s2">&quot;bert-base-uncased&quot;</span><span class="p">)</span>
+
+<span class="n">inputs</span> <span class="o">=</span> <span class="n">tokenizer</span><span class="p">(</span><span class="s2">&quot;The cat sat on the mat&quot;</span><span class="p">,</span> <span class="n">return_tensors</span><span class="o">=</span><span class="s2">&quot;pt&quot;</span><span class="p">)</span>
+<span class="n">outputs</span> <span class="o">=</span> <span class="n">model</span><span class="p">(</span><span class="o">**</span><span class="n">inputs</span><span class="p">)</span>
+
+<span class="c1"># outputs.attentions[layer][batch, head, query_token, key_token]</span>
+<span class="c1"># 每一层、每个头的注意力模式 → 类似于每一层的特征图</span>
+<span class="k">for</span> <span class="n">layer_idx</span><span class="p">,</span> <span class="n">attn</span> <span class="ow">in</span> <span class="nb">enumerate</span><span class="p">(</span><span class="n">outputs</span><span class="o">.</span><span class="n">attentions</span><span class="p">):</span>
+    <span class="nb">print</span><span class="p">(</span><span class="sa">f</span><span class="s2">&quot;Layer </span><span class="si">{</span><span class="n">layer_idx</span><span class="si">}</span><span class="s2">: </span><span class="si">{</span><span class="n">attn</span><span class="o">.</span><span class="n">shape</span><span class="si">}</span><span class="s2">&quot;</span><span class="p">)</span>
+    <span class="c1"># → 可视化为 token×token 的热力图矩阵</span>
+</code></pre></div>
+
+<p><strong>逐层观察规律</strong>（对应图像的层级特征）：</p>
+<div class="highlight"><pre><span></span><code>Layer 0-2 (低级)：
+  → 注意力集中在相邻token → 类似图像的局部边缘特征
+  → 关注标点、停用词 → 类似图像的低级纹理
+
+Layer 3-6 (中级)：
+  → 出现语法模式：主语关注谓语，形容词关注名词
+  → 类似图像中&quot;鼻子&quot;级别的语法结构识别
+
+Layer 7-10 (高级)：
+  → 跨句语义关联：代词找到指代对象
+  → 类似图像中&quot;脸&quot;级别的完整语义理解
+
+Layer 11-12 (抽象)：
+  → 任务相关的注意力模式
+  → 类似图像中&quot;美丑判断&quot;级别的抽象推理
+</code></pre></div>
+
+<p>工具推荐：<strong>BertViz</strong> (https://github.com/jessevig/bertviz) 可以交互式可视化注意力。</p>
+<h4 id="2probing-classifiers-filter-visualization">方法 2：Probing Classifiers（对应 Filter Visualization）</h4>
+<p>图像中我们优化输入来"看"神经元学到了什么。文本中，我们用<strong>探针分类器</strong>来"问"每一层学到了什么：</p>
+<div class="highlight"><pre><span></span><code><span class="c1"># 在每一层的隐藏状态上训练简单分类器</span>
+<span class="c1"># 如果某层能准确预测某种语言属性 → 该层编码了该信息</span>
+
+<span class="kn">from</span><span class="w"> </span><span class="nn">sklearn.linear_model</span><span class="w"> </span><span class="kn">import</span> <span class="n">LogisticRegression</span>
+
+<span class="c1"># 提取每一层的隐藏状态</span>
+<span class="n">outputs</span> <span class="o">=</span> <span class="n">model</span><span class="p">(</span><span class="o">**</span><span class="n">inputs</span><span class="p">,</span> <span class="n">output_hidden_states</span><span class="o">=</span><span class="kc">True</span><span class="p">)</span>
+<span class="n">hidden_states</span> <span class="o">=</span> <span class="n">outputs</span><span class="o">.</span><span class="n">hidden_states</span>  <span class="c1"># (num_layers+1, batch, seq_len, hidden_dim)</span>
+
+<span class="c1"># 对每一层训练探针</span>
+<span class="k">for</span> <span class="n">layer_idx</span> <span class="ow">in</span> <span class="nb">range</span><span class="p">(</span><span class="mi">13</span><span class="p">):</span>
+    <span class="n">h</span> <span class="o">=</span> <span class="n">hidden_states</span><span class="p">[</span><span class="n">layer_idx</span><span class="p">][:,</span> <span class="mi">1</span><span class="p">:</span><span class="o">-</span><span class="mi">1</span><span class="p">,</span> <span class="p">:]</span><span class="o">.</span><span class="n">detach</span><span class="p">()</span><span class="o">.</span><span class="n">numpy</span><span class="p">()</span>  <span class="c1"># 去掉[CLS][SEP]</span>
+    <span class="n">h</span> <span class="o">=</span> <span class="n">h</span><span class="o">.</span><span class="n">reshape</span><span class="p">(</span><span class="o">-</span><span class="mi">1</span><span class="p">,</span> <span class="mi">768</span><span class="p">)</span>
+
+    <span class="c1"># 探测不同语言属性：</span>
+    <span class="c1"># 1. 词性标注 (POS) → 低层就能分对 → 类似&quot;边缘特征&quot;</span>
+    <span class="c1"># 2. 句法依赖 → 中层准确率上升 → 类似&quot;部件特征&quot;</span>
+    <span class="c1"># 3. 语义角色 → 高层才行 → 类似&quot;物体特征&quot;</span>
+    <span class="c1"># 4. 情感/蕴含 → 最高层 → 类似&quot;美丑判断&quot;</span>
+
+    <span class="n">clf</span> <span class="o">=</span> <span class="n">LogisticRegression</span><span class="p">(</span><span class="n">max_iter</span><span class="o">=</span><span class="mi">1000</span><span class="p">)</span>
+    <span class="n">clf</span><span class="o">.</span><span class="n">fit</span><span class="p">(</span><span class="n">h</span><span class="p">,</span> <span class="n">labels</span><span class="p">)</span>
+    <span class="nb">print</span><span class="p">(</span><span class="sa">f</span><span class="s2">&quot;Layer </span><span class="si">{</span><span class="n">layer_idx</span><span class="si">}</span><span class="s2"> accuracy: </span><span class="si">{</span><span class="n">clf</span><span class="o">.</span><span class="n">score</span><span class="p">(</span><span class="n">h</span><span class="p">,</span><span class="w"> </span><span class="n">labels</span><span class="p">)</span><span class="si">:</span><span class="s2">.3f</span><span class="si">}</span><span class="s2">&quot;</span><span class="p">)</span>
+</code></pre></div>
+
+<div class="highlight"><pre><span></span><code>探针结果对照：
+
+属性              最佳层    图像类比
+─────────────────────────────────────
+词性 (POS)        Layer 1-3   边缘/纹理
+句法树深度        Layer 4-6   部件组合
+依存关系          Layer 5-8   物体结构
+共指消解          Layer 8-10  场景理解
+语义相似度        Layer 10-12 抽象概念
+情感极性          Layer 11-12 审美判断
+</code></pre></div>
+
+<h4 id="3-grad-cam-saliency-map">方法 3：梯度归因（对应 Grad-CAM / Saliency Map）</h4>
+<div class="highlight"><pre><span></span><code><span class="c1"># 文本版 Grad-CAM：哪些 token 对输出贡献最大</span>
+
+<span class="kn">import</span><span class="w"> </span><span class="nn">torch</span>
+
+<span class="n">inputs</span> <span class="o">=</span> <span class="n">tokenizer</span><span class="p">(</span><span class="s2">&quot;I love this movie&quot;</span><span class="p">,</span> <span class="n">return_tensors</span><span class="o">=</span><span class="s2">&quot;pt&quot;</span><span class="p">)</span>
+<span class="n">inputs_embeds</span> <span class="o">=</span> <span class="n">model</span><span class="o">.</span><span class="n">embeddings</span><span class="p">(</span><span class="n">inputs</span><span class="p">[</span><span class="s2">&quot;input_ids&quot;</span><span class="p">])</span>
+<span class="n">inputs_embeds</span><span class="o">.</span><span class="n">requires_grad_</span><span class="p">(</span><span class="kc">True</span><span class="p">)</span>
+
+<span class="c1"># 前向传播 + 获取目标类别的 logit</span>
+<span class="n">logits</span> <span class="o">=</span> <span class="n">model</span><span class="p">(</span><span class="n">inputs_embeds</span><span class="o">=</span><span class="n">inputs_embeds</span><span class="p">)</span><span class="o">.</span><span class="n">logits</span>
+<span class="n">target_logit</span> <span class="o">=</span> <span class="n">logits</span><span class="p">[</span><span class="mi">0</span><span class="p">,</span> <span class="mi">1</span><span class="p">]</span>  <span class="c1"># 正面情感类别</span>
+
+<span class="c1"># 反向传播</span>
+<span class="n">target_logit</span><span class="o">.</span><span class="n">backward</span><span class="p">()</span>
+
+<span class="c1"># 计算每个 token 的重要性（类似 saliency map）</span>
+<span class="n">token_importance</span> <span class="o">=</span> <span class="n">inputs_embeds</span><span class="o">.</span><span class="n">grad</span><span class="o">.</span><span class="n">abs</span><span class="p">()</span><span class="o">.</span><span class="n">sum</span><span class="p">(</span><span class="n">dim</span><span class="o">=-</span><span class="mi">1</span><span class="p">)[</span><span class="mi">0</span><span class="p">]</span>
+<span class="n">tokens</span> <span class="o">=</span> <span class="n">tokenizer</span><span class="o">.</span><span class="n">convert_ids_to_tokens</span><span class="p">(</span><span class="n">inputs</span><span class="p">[</span><span class="s2">&quot;input_ids&quot;</span><span class="p">][</span><span class="mi">0</span><span class="p">])</span>
+
+<span class="k">for</span> <span class="n">token</span><span class="p">,</span> <span class="n">imp</span> <span class="ow">in</span> <span class="nb">zip</span><span class="p">(</span><span class="n">tokens</span><span class="p">,</span> <span class="n">token_importance</span><span class="p">):</span>
+    <span class="n">bar</span> <span class="o">=</span> <span class="s2">&quot;█&quot;</span> <span class="o">*</span> <span class="nb">int</span><span class="p">(</span><span class="n">imp</span> <span class="o">*</span> <span class="mi">50</span><span class="p">)</span>
+    <span class="nb">print</span><span class="p">(</span><span class="sa">f</span><span class="s2">&quot;</span><span class="si">{</span><span class="n">token</span><span class="si">:</span><span class="s2">&gt;10s</span><span class="si">}</span><span class="s2"> | </span><span class="si">{</span><span class="n">bar</span><span class="si">}</span><span class="s2">&quot;</span><span class="p">)</span>
+
+<span class="c1"># 输出类似：</span>
+<span class="c1">#      [CLS] | ██</span>
+<span class="c1">#          I | ████</span>
+<span class="c1">#       love | ████████████████████  ← 关键词高亮，类似 Grad-CAM 红色区域</span>
+<span class="c1">#       this | ███</span>
+<span class="c1">#      movie | ████████████</span>
+<span class="c1">#      [SEP] | █</span>
+</code></pre></div>
+
+<p>进阶方法：
+- <strong>Integrated Gradients</strong>：沿嵌入路径积分，比原始梯度更稳定
+- <strong>SHAP (SHapley Additive exPlanations)</strong>：博弈论方法，计算每个token的边际贡献
+- <strong>LIME</strong>：扰动输入token观察输出变化，类似图像的遮挡实验</p>
+<h4 id="4activation-patching-causal-tracing">方法 4：激活打补丁（Activation Patching / Causal Tracing）</h4>
+<p>这是 Mechanistic Interpretability 的核心方法，<strong>最接近图像调试的直觉</strong>：</p>
+<div class="highlight"><pre><span></span><code><span class="c1"># 思路：类似遮挡图像某区域看输出变化</span>
+<span class="c1"># 文本版：替换某一层某个位置的激活，观察输出变化</span>
+
+<span class="k">def</span><span class="w"> </span><span class="nf">activation_patching</span><span class="p">(</span><span class="n">model</span><span class="p">,</span> <span class="n">clean_input</span><span class="p">,</span> <span class="n">corrupted_input</span><span class="p">,</span> <span class="n">layer</span><span class="p">,</span> <span class="n">position</span><span class="p">):</span>
+<span class="w">    </span><span class="sd">&quot;&quot;&quot;</span>
+<span class="sd">    1. 正常运行 clean_input → 得到正确输出</span>
+<span class="sd">    2. 正常运行 corrupted_input → 得到错误输出</span>
+<span class="sd">    3. 运行 corrupted_input，但在指定 layer 的指定 position</span>
+<span class="sd">       替换为 clean_input 的激活</span>
+<span class="sd">    4. 如果输出恢复正确 → 该位置该层是关键的</span>
+<span class="sd">    &quot;&quot;&quot;</span>
+
+    <span class="c1"># 例：</span>
+    <span class="c1"># clean: &quot;The Eiffel Tower is in Paris&quot;    → 预测 &quot;Paris&quot; ✓</span>
+    <span class="c1"># corrupt: &quot;The Eiffel Tower is in Rome&quot;   → 预测 &quot;Rome&quot; ✗</span>
+    <span class="c1"># </span>
+    <span class="c1"># Patch layer 8, position &quot;Tower&quot; 的激活</span>
+    <span class="c1"># → 如果输出恢复 &quot;Paris&quot; → layer 8 在 &quot;Tower&quot; 位置</span>
+    <span class="c1">#   存储了 &quot;Eiffel Tower → Paris&quot; 的事实关联</span>
+
+    <span class="n">clean_cache</span> <span class="o">=</span> <span class="n">get_activations</span><span class="p">(</span><span class="n">model</span><span class="p">,</span> <span class="n">clean_input</span><span class="p">)</span>
+
+    <span class="k">def</span><span class="w"> </span><span class="nf">hook_fn</span><span class="p">(</span><span class="n">module</span><span class="p">,</span> <span class="nb">input</span><span class="p">,</span> <span class="n">output</span><span class="p">):</span>
+        <span class="n">output</span><span class="p">[</span><span class="mi">0</span><span class="p">][:,</span> <span class="n">position</span><span class="p">,</span> <span class="p">:]</span> <span class="o">=</span> <span class="n">clean_cache</span><span class="p">[</span><span class="n">layer</span><span class="p">][:,</span> <span class="n">position</span><span class="p">,</span> <span class="p">:]</span>
+        <span class="k">return</span> <span class="n">output</span>
+
+    <span class="n">model</span><span class="o">.</span><span class="n">layers</span><span class="p">[</span><span class="n">layer</span><span class="p">]</span><span class="o">.</span><span class="n">register_forward_hook</span><span class="p">(</span><span class="n">hook_fn</span><span class="p">)</span>
+    <span class="n">patched_output</span> <span class="o">=</span> <span class="n">model</span><span class="p">(</span><span class="n">corrupted_input</span><span class="p">)</span>
+    <span class="k">return</span> <span class="n">patched_output</span>
+
+<span class="c1"># 遍历所有 (layer, position) → 生成因果重要性热力图</span>
+<span class="c1"># 这张热力图就是文本版的 Grad-CAM！</span>
+</code></pre></div>
+
+<h4 id="5logit-lens-tuned-lens">方法 5：Logit Lens / Tuned Lens（逐层"偷看"预测）</h4>
+<div class="highlight"><pre><span></span><code><span class="c1"># 核心思想：在每一层都把隐藏状态投影到词表空间</span>
+<span class="c1"># → 看到模型在每一层&quot;当前觉得下一个词是什么&quot;</span>
+<span class="c1"># → 类似于看 CNN 每一层的特征图如何逐步聚焦</span>
+
+<span class="k">def</span><span class="w"> </span><span class="nf">logit_lens</span><span class="p">(</span><span class="n">model</span><span class="p">,</span> <span class="n">input_ids</span><span class="p">):</span>
+<span class="w">    </span><span class="sd">&quot;&quot;&quot;观察每一层的预测如何演化&quot;&quot;&quot;</span>
+    <span class="n">outputs</span> <span class="o">=</span> <span class="n">model</span><span class="p">(</span><span class="n">input_ids</span><span class="p">,</span> <span class="n">output_hidden_states</span><span class="o">=</span><span class="kc">True</span><span class="p">)</span>
+
+    <span class="k">for</span> <span class="n">layer_idx</span><span class="p">,</span> <span class="n">hidden</span> <span class="ow">in</span> <span class="nb">enumerate</span><span class="p">(</span><span class="n">outputs</span><span class="o">.</span><span class="n">hidden_states</span><span class="p">):</span>
+        <span class="c1"># 用最终的 LM head 解码每一层的隐藏状态</span>
+        <span class="n">logits</span> <span class="o">=</span> <span class="n">model</span><span class="o">.</span><span class="n">lm_head</span><span class="p">(</span><span class="n">model</span><span class="o">.</span><span class="n">transformer</span><span class="o">.</span><span class="n">ln_f</span><span class="p">(</span><span class="n">hidden</span><span class="p">))</span>
+        <span class="n">top_tokens</span> <span class="o">=</span> <span class="n">logits</span><span class="p">[</span><span class="mi">0</span><span class="p">,</span> <span class="o">-</span><span class="mi">1</span><span class="p">]</span><span class="o">.</span><span class="n">topk</span><span class="p">(</span><span class="mi">5</span><span class="p">)</span>
+
+        <span class="n">predictions</span> <span class="o">=</span> <span class="p">[</span><span class="n">tokenizer</span><span class="o">.</span><span class="n">decode</span><span class="p">(</span><span class="n">t</span><span class="p">)</span> <span class="k">for</span> <span class="n">t</span> <span class="ow">in</span> <span class="n">top_tokens</span><span class="o">.</span><span class="n">indices</span><span class="p">]</span>
+        <span class="nb">print</span><span class="p">(</span><span class="sa">f</span><span class="s2">&quot;Layer </span><span class="si">{</span><span class="n">layer_idx</span><span class="si">:</span><span class="s2">2d</span><span class="si">}</span><span class="s2">: </span><span class="si">{</span><span class="n">predictions</span><span class="si">}</span><span class="s2">&quot;</span><span class="p">)</span>
+
+<span class="c1"># 输入: &quot;The capital of France is&quot;</span>
+<span class="c1"># Layer  0: [&#39;the&#39;, &#39;a&#39;, &#39;and&#39;, &#39;in&#39;, &#39;to&#39;]     ← 只有统计频率，类似边缘噪声</span>
+<span class="c1"># Layer  4: [&#39;the&#39;, &#39;located&#39;, &#39;a&#39;, &#39;known&#39;, &#39;in&#39;] ← 开始理解句法结构</span>
+<span class="c1"># Layer  8: [&#39;the&#39;, &#39;Paris&#39;, &#39;located&#39;, &#39;a&#39;, &#39;in&#39;] ← Paris 浮现！类似识别出&quot;鼻子&quot;</span>
+<span class="c1"># Layer 10: [&#39;Paris&#39;, &#39;the&#39;, &#39;Lyon&#39;, &#39;a&#39;, &#39;France&#39;] ← 语义聚焦</span>
+<span class="c1"># Layer 12: [&#39;Paris&#39;, &#39;Lyon&#39;, &#39;Marseille&#39;, &#39;P&#39;, &#39;the&#39;] ← 最终确定，类似识别出&quot;脸&quot;</span>
+</code></pre></div>
+
+<p>这个方法极其强大——你可以<strong>逐层看到一个概念如何在网络中形成</strong>，完全对应于 CNN 中从边缘到物体的渐进过程。</p>
+<h4 id="6-sparse-autoencoder-sae">方法 6：稀疏自编码器 (Sparse Autoencoder, SAE) 分解特征</h4>
+<div class="highlight"><pre><span></span><code><span class="c1"># 最新方法（Anthropic 2024）：</span>
+<span class="c1"># 将每一层的激活分解为可解释的&quot;单语义特征&quot;</span>
+<span class="c1"># → 类似于把 CNN 的特征图分解为独立的滤波器</span>
+
+<span class="c1"># 训练一个稀疏自编码器来分解 MLP 层的激活</span>
+<span class="k">class</span><span class="w"> </span><span class="nc">SparseAutoencoder</span><span class="p">(</span><span class="n">torch</span><span class="o">.</span><span class="n">nn</span><span class="o">.</span><span class="n">Module</span><span class="p">):</span>
+    <span class="k">def</span><span class="w"> </span><span class="fm">__init__</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">d_model</span><span class="p">,</span> <span class="n">n_features</span><span class="p">):</span>
+        <span class="nb">super</span><span class="p">()</span><span class="o">.</span><span class="fm">__init__</span><span class="p">()</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">encoder</span> <span class="o">=</span> <span class="n">torch</span><span class="o">.</span><span class="n">nn</span><span class="o">.</span><span class="n">Linear</span><span class="p">(</span><span class="n">d_model</span><span class="p">,</span> <span class="n">n_features</span><span class="p">)</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">decoder</span> <span class="o">=</span> <span class="n">torch</span><span class="o">.</span><span class="n">nn</span><span class="o">.</span><span class="n">Linear</span><span class="p">(</span><span class="n">n_features</span><span class="p">,</span> <span class="n">d_model</span><span class="p">)</span>
+
+    <span class="k">def</span><span class="w"> </span><span class="nf">forward</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">x</span><span class="p">):</span>
+        <span class="c1"># 编码为稀疏特征</span>
+        <span class="n">features</span> <span class="o">=</span> <span class="n">torch</span><span class="o">.</span><span class="n">relu</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">encoder</span><span class="p">(</span><span class="n">x</span><span class="p">))</span>  <span class="c1"># 大部分为0</span>
+        <span class="c1"># 重建</span>
+        <span class="n">reconstruction</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">decoder</span><span class="p">(</span><span class="n">features</span><span class="p">)</span>
+        <span class="c1"># 稀疏性损失</span>
+        <span class="n">sparsity_loss</span> <span class="o">=</span> <span class="n">features</span><span class="o">.</span><span class="n">abs</span><span class="p">()</span><span class="o">.</span><span class="n">mean</span><span class="p">()</span>
+        <span class="k">return</span> <span class="n">reconstruction</span><span class="p">,</span> <span class="n">features</span><span class="p">,</span> <span class="n">sparsity_loss</span>
+
+<span class="c1"># 发现的特征示例：</span>
+<span class="c1"># Feature #3142: 在所有关于&quot;金融欺诈&quot;的上下文中激活</span>
+<span class="c1"># Feature #7891: 在代码中的&quot;递归调用&quot;处激活  </span>
+<span class="c1"># Feature #12045: 在&quot;讽刺&quot;语气的句子中激活</span>
+<span class="c1"># </span>
+<span class="c1"># 这就像发现 CNN 中：</span>
+<span class="c1"># Filter #23: 检测猫耳朵</span>
+<span class="c1"># Filter #67: 检测车轮</span>
+<span class="c1"># Filter #142: 检测天空纹理</span>
+</code></pre></div>
+
+<h3 id="_6">调试方法对照总结</h3>
+<div class="highlight"><pre><span></span><code>┌──────────────────────┬──────────────────────┬──────────────────────┐
+│    图像模型调试       │    文本模型调试        │    核心思想          │
+├──────────────────────┼──────────────────────┼──────────────────────┤
+│ 特征图可视化         │ 注意力图可视化         │ 看每层在关注什么      │
+│ Feature Map          │ Attention Pattern     │                      │
+├──────────────────────┼──────────────────────┼──────────────────────┤
+│ 滤波器可视化         │ Probing Classifier    │ 问每层学到了什么      │
+│ Filter Viz           │ 探针分类器            │                      │
+├──────────────────────┼──────────────────────┼──────────────────────┤
+│ Grad-CAM             │ 梯度归因 / SHAP       │ 哪些输入最重要        │
+│ Saliency Map         │ Integrated Gradients  │                      │
+├──────────────────────┼──────────────────────┼──────────────────────┤
+│ 遮挡实验             │ Activation Patching   │ 去掉/替换某部分       │
+│ Occlusion            │ Causal Tracing        │ 看输出如何变化        │
+├──────────────────────┼──────────────────────┼──────────────────────┤
+│ DeepDream            │ Logit Lens            │ 放大每层的&quot;想法&quot;      │
+│ 特征放大             │ 逐层预测窥视          │                      │
+├──────────────────────┼──────────────────────┼──────────────────────┤
+│ 独立滤波器分析       │ Sparse Autoencoder    │ 分解为单一语义特征    │
+│ Individual Filters   │ 稀疏自编码器          │                      │
+└──────────────────────┴──────────────────────┴──────────────────────┘
+</code></pre></div>
+
+<h3 id="transformer_4">实践建议：文本 Transformer 调试工作流</h3>
+<div class="highlight"><pre><span></span><code>Step 1: 宏观诊断
+  ├── 注意力图可视化 → 模型是否在关注合理的 token？
+  ├── Logit Lens → 预测在哪一层开始成形？
+  └── 如果预测在浅层就正确 → 任务可能太简单，模型过大
+
+Step 2: 定位问题层
+  ├── Probing → 逐层检查：语法信息在哪层？语义信息在哪层？
+  ├── Activation Patching → 哪一层对最终输出影响最大？
+  └── 如果某层探针准确率骤降 → 该层可能是瓶颈
+
+Step 3: 精细分析
+  ├── 梯度归因 → 具体哪些 token 导致了错误输出？
+  ├── SAE 分解 → 哪些语义特征被激活/遗漏？
+  └── 对比正确 vs 错误样本的激活差异
+
+Step 4: 调优策略
+  ├── 浅层问题 → 检查 tokenization、embedding 质量
+  ├── 中层问题 → 可能需要更多语法/结构训练数据
+  ├── 高层问题 → 可能需要更多任务相关的微调数据
+  └── 注意力模式异常 → 考虑调整注意力头数或加入归纳偏置
+</code></pre></div>
+
+<h2 id="_7">总结：一切都是表征</h2>
+<table>
+<thead>
+<tr>
+<th>概念</th>
+<th>图像视角</th>
+<th>统一视角</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>注意力</td>
+<td>眼动聚焦</td>
+<td>动态信息路由</td>
+</tr>
+<tr>
+<td>多头注意力</td>
+<td>多种观察方式</td>
+<td>多子空间并行消息传递</td>
+</tr>
+<tr>
+<td>层级特征</td>
+<td>边缘→部件→物体</td>
+<td>具体→抽象</td>
+</tr>
+<tr>
+<td>Transformer</td>
+<td>全连接图上的消息传递</td>
+<td>通用的表征学习机器</td>
+</tr>
+<tr>
+<td>收敛表征</td>
+<td>不同视觉模型学到相似特征</td>
+<td>柏拉图理型的计算实现</td>
+</tr>
+</tbody>
+</table>
+<p>深度学习的终极目标不是分类、生成或预测——而是<strong>发现数据背后的真实结构</strong>。从这个意义上说，每一个深度网络都是一个柏拉图主义者，试图透过感知的表象，抵达事物的本质。</p>
+    </div>
+  </article>
+
+</main>
+</body>
+</html>

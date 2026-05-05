@@ -1,0 +1,669 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>深度学习是可微分编程：从 y = wx + b 讲到 CodeGPT · Steve Chan — xlisp</title>
+<link rel="stylesheet" href="../style.css">
+</head>
+<body>
+<main class="wrap post">
+
+  <nav class="topnav">
+    <a href="../index.html">← home</a>
+  </nav>
+
+  <article>
+    <header class="post-header">
+      <h1>深度学习是可微分编程：从 y = wx + b 讲到 CodeGPT</h1>
+      <p class="meta">2026-05-06 · Steve Chan</p>
+    </header>
+
+    <div class="content">
+<h1 id="y-wx-b-codegpt">深度学习是可微分编程：从 y = wx + b 讲到 CodeGPT</h1>
+<blockquote>
+<p>2018 年初，Yann LeCun 在 Facebook 上宣告："Deep Learning est mort. Vive Differentiable Programming!"（深度学习已死，可微分编程万岁！）这不是修辞，而是一个架构视角的转变：神经网络不是一类特殊的统计模型，它就是一段<strong>带可学习参数的程序</strong>，只不过这段程序的每一步都是可微分的，可以被梯度下降自动"编译"出参数。</p>
+<p>本文从最小的线性方程讲起，一路加结构——非线性、注意力、残差、多层堆叠——直到 <code>CodeGPT.forward()</code>。每一步都展示：我们不是在"训练一个模型"，我们是在<strong>写一段程序</strong>，然后让 <code>loss.backward()</code> 替我们填空。</p>
+</blockquote>
+<hr />
+<h2 id="_1">目录</h2>
+<ol>
+<li><a href="#1-lecun-的宣言为什么深度学习这个词不够用">LeCun 的宣言：为什么"深度学习"这个词不够用</a></li>
+<li><a href="#2-微积分简史从行星轨道到-token-预测">微积分简史：从行星轨道到 token 预测</a></li>
+<li><a href="#3-从一条直线开始y--wx--b-就是最小的可微分程序">从一条直线开始：y = wx + b 就是最小的可微分程序</a></li>
+<li><a href="#4-梯度下降把解方程换成写程序--求导">梯度下降：把"解方程"换成"写程序 + 求导"</a></li>
+<li><a href="#5-非线性两条直线的组合打开了宇宙">非线性：两条直线的组合打开了宇宙</a></li>
+<li><a href="#6-可微分的控制流softmax注意力mask">可微分的控制流：softmax、注意力、mask</a></li>
+<li><a href="#7-组合即编程nnmodule-就是函数forward-就是-main">组合即编程：<code>nn.Module</code> 就是函数，<code>forward</code> 就是 <code>main</code></a></li>
+<li><a href="#8-大模型是这个范式的极致codegpt-代码级解剖">大模型是这个范式的极致：CodeGPT 代码级解剖</a></li>
+<li><a href="#9-回到-lecun深度学习--可微分编程">回到 LeCun：深度学习 ⊂ 可微分编程</a></li>
+</ol>
+<hr />
+<h2 id="1-lecun">1. LeCun 的宣言：为什么"深度学习"这个词不够用</h2>
+<p>LeCun 原话的关键一段：</p>
+<blockquote>
+<p>An increasingly large number of people are defining the networks procedurally in a data-dependent way (with loops and conditionals), allowing them to change dynamically as a function of the input data fed to them. It's really very much like a regular program, except it's parameterized, automatically differentiated, and trainable/optimizable.</p>
+</blockquote>
+<p>翻译成工程语言：</p>
+<ul>
+<li>一段 Python 程序里可以有 <code>for</code>、<code>if</code>、调用函数、读字典、查表；</li>
+<li>如果把这些操作<strong>全部换成可微分的近似</strong>（循环 → 注意力、查表 → softmax 加权求和、if → 门控），</li>
+<li>然后把"可调参数"放进每个操作里，</li>
+<li>那这段程序就可以被 <code>autograd</code> 自动求导，</li>
+<li>再用梯度下降"编译"出参数。</li>
+</ul>
+<p>"深度学习"这个词容易让人以为它是一种模型类型（像 SVM、随机森林那样）。但神经网络的真正特性是：<strong>它是一段程序，而不是一个固定的数学模型</strong>。神经网络可以有数据依赖的控制流、递归结构、甚至运行时生成的子图——只要每一步都是可微分的。</p>
+<p>这个视角下，PyTorch 不是一个"深度学习库"，它是一门<strong>可微分编程语言</strong>。</p>
+<hr />
+<h2 id="2-token">2. 微积分简史：从行星轨道到 token 预测</h2>
+<p>要理解为什么"可微分编程"这四个字里有"微分"，得先回到三百多年前——回到那个数学还在描述"形状"，却不会描述"变化"的时代。这一节绕一圈讲微积分的来历，然后回到大模型，你会发现 <code>loss.backward()</code> 干的事情，是牛顿和莱布尼茨那一代人就埋下的伏笔。</p>
+<h3 id="21">2.1 从静态到动态：人类第一次能描述"变化"</h3>
+<p>17 世纪以前的数学是<strong>静态</strong>的：几何描述形状，代数描述未知量。但人类需要回答的问题越来越<strong>动态</strong>：</p>
+<ul>
+<li>这块石头此刻的速度是多少？</li>
+<li>火星明晚会出现在天空哪个位置？</li>
+<li>一笔本金以连续利息生长，一年后值多少？</li>
+</ul>
+<p>这些问题的共同点是：<strong>它们关心"变化"本身</strong>。一秒前的速度、此刻的速度、一秒后的速度都不一样——你需要一种语言来描述"无穷小时间里位置变化了多少"。</p>
+<p>牛顿和莱布尼茨各自独立发明了这门语言，今天叫<strong>微积分</strong>。它的核心不是公式，而是一个观念上的飞跃：<strong>把"瞬间的变化"作为一种新的、可计算的对象</strong>。从那一刻起，数学从描述"是什么"扩展到描述"在如何变"。</p>
+<h3 id="22">2.2 极限：瞬时速度怎么算？</h3>
+<p>平均速度好算：走过的路程除以时间。但"此刻的速度"听起来矛盾——此刻没有时间流逝，怎么有速度？</p>
+<p>牛顿的答案：<strong>让时间间隔无限缩小，看比值趋近于什么</strong>。这就是"极限"。把它直接写成代码：</p>
+<div class="highlight"><pre><span></span><code><span class="c1"># 数值微分:当 h 越来越小,比值收敛到瞬时变化率</span>
+<span class="k">def</span><span class="w"> </span><span class="nf">numerical_derivative</span><span class="p">(</span><span class="n">f</span><span class="p">,</span> <span class="n">x</span><span class="p">,</span> <span class="n">h</span><span class="o">=</span><span class="mf">1e-5</span><span class="p">):</span>
+    <span class="k">return</span> <span class="p">(</span><span class="n">f</span><span class="p">(</span><span class="n">x</span> <span class="o">+</span> <span class="n">h</span><span class="p">)</span> <span class="o">-</span> <span class="n">f</span><span class="p">(</span><span class="n">x</span><span class="p">))</span> <span class="o">/</span> <span class="n">h</span>
+
+<span class="kn">import</span><span class="w"> </span><span class="nn">math</span>
+<span class="nb">print</span><span class="p">(</span><span class="n">numerical_derivative</span><span class="p">(</span><span class="n">math</span><span class="o">.</span><span class="n">sin</span><span class="p">,</span> <span class="mf">0.0</span><span class="p">))</span>         <span class="c1"># ≈ 1.0  (cos 0 = 1)</span>
+<span class="nb">print</span><span class="p">(</span><span class="n">numerical_derivative</span><span class="p">(</span><span class="k">lambda</span> <span class="n">x</span><span class="p">:</span> <span class="n">x</span><span class="o">**</span><span class="mi">2</span><span class="p">,</span> <span class="mf">3.0</span><span class="p">))</span>   <span class="c1"># ≈ 6.0  (2x at x=3)</span>
+</code></pre></div>
+
+<p>这就是导数的本质：<strong>比值的极限</strong>。一旦把它定义清楚，"瞬时速度"就从哲学问题变成可计算的数。</p>
+<p>PyTorch 的 <code>autograd</code> 没有真的去算 <code>(f(x+h) - f(x)) / h</code>——它在符号层面应用链式法则，但<strong>精神上等价</strong>：每个 op 都登记了它的导数规则，反向传播时把这些规则按图组合起来。</p>
+<h3 id="23">2.3 积分是微分的逆：知道变化率，反推原函数</h3>
+<p>微积分的另一半是<strong>积分</strong>：把无穷多个小变化累加起来，重建总量。物理直觉非常清晰——</p>
+<ul>
+<li>加速度积分得到速度；</li>
+<li>速度积分得到位置；</li>
+<li>温度变化率积分得到温度分布。</li>
+</ul>
+<div class="highlight"><pre><span></span><code><span class="kn">import</span><span class="w"> </span><span class="nn">torch</span>
+
+<span class="n">dt</span> <span class="o">=</span> <span class="mf">0.01</span>
+<span class="n">acceleration</span> <span class="o">=</span> <span class="n">torch</span><span class="o">.</span><span class="n">full</span><span class="p">((</span><span class="mi">1000</span><span class="p">,),</span> <span class="mf">9.8</span><span class="p">)</span>             <span class="c1"># 自由落体, 10 秒</span>
+<span class="n">velocity</span> <span class="o">=</span> <span class="n">torch</span><span class="o">.</span><span class="n">cumsum</span><span class="p">(</span><span class="n">acceleration</span> <span class="o">*</span> <span class="n">dt</span><span class="p">,</span> <span class="n">dim</span><span class="o">=</span><span class="mi">0</span><span class="p">)</span>   <span class="c1"># 离散积分:累积求和</span>
+<span class="n">position</span> <span class="o">=</span> <span class="n">torch</span><span class="o">.</span><span class="n">cumsum</span><span class="p">(</span><span class="n">velocity</span>     <span class="o">*</span> <span class="n">dt</span><span class="p">,</span> <span class="n">dim</span><span class="o">=</span><span class="mi">0</span><span class="p">)</span>
+<span class="nb">print</span><span class="p">(</span><span class="n">position</span><span class="p">[</span><span class="o">-</span><span class="mi">1</span><span class="p">]</span><span class="o">.</span><span class="n">item</span><span class="p">())</span>  <span class="c1"># ≈ 49.0 米 (10 秒末的位移)</span>
+</code></pre></div>
+
+<p><code>torch.cumsum</code> 是积分的离散形式。<strong>给你变化率，反推出原函数</strong>——这件事就是日后机器学习的精神原型：观测到的是"片段、变化、采样"，想恢复的是背后那个完整的规律。</p>
+<p>牛顿/莱布尼茨证明的"微积分基本定理"说的就是：<strong>微分和积分是一对逆运算</strong>。这个对偶后来反复出现——在物理里是"力 ↔ 位移"，在 ML 里是"梯度 ↔ 参数更新"，本质都是同一种结构。</p>
+<h3 id="24">2.4 牛顿与莱布尼茨：两条路通向同一座山</h3>
+<p>两位发明者代表了两种至今仍并行的传统：</p>
+<table>
+<thead>
+<tr>
+<th>牛顿</th>
+<th>莱布尼茨</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>物理驱动:要算行星轨道</td>
+<td>符号驱动:要给数学一套好用的记号</td>
+</tr>
+<tr>
+<td><code>流数</code>、<code>流量</code>(命名不太好用)</td>
+<td><code>dy/dx</code>、<code>∫</code>(沿用至今)</td>
+</tr>
+<tr>
+<td>万有引力 + 微分方程 → 天体力学</td>
+<td>把微积分变成"代数一样可机械推演的东西"</td>
+</tr>
+</tbody>
+</table>
+<p>牛顿用微积分写出 $F = ma$，再加上万有引力定律，<strong>第一次让人类能预测行星明天的位置</strong>——这是有史以来最震撼的"用数学预测未来"的范例。在此之前，天文是观测+经验；在此之后，天文是方程+计算。</p>
+<p>莱布尼茨更关心<strong>符号的力学</strong>：他的 <code>d</code>、<code>∫</code> 让微积分像普通代数一样可以"按规则推演"。今天 PyTorch 的 autograd 之所以能存在，本质上是莱布尼茨传统的胜利——<strong>只要每个原子操作有符号化的导数规则，任意组合的程序都能被自动求导</strong>。</p>
+<blockquote>
+<p>你每次写 <code>loss.backward()</code>，其实是在调用一台沿莱布尼茨道路造了三百多年的"符号求导机器"。</p>
+</blockquote>
+<h3 id="25">2.5 天气预报：解一个巨大的微分方程</h3>
+<p>把视角拉到现代。今天打开手机看明天的天气，背后是什么？</p>
+<p>大气的演化由一组<strong>偏微分方程</strong>支配（Navier-Stokes + 热力学方程）：</p>
+<ul>
+<li>温度 T 怎么变？取决于自身梯度、对流、辐射……</li>
+<li>压力 p 怎么变？取决于密度、风、温度……</li>
+<li>风速 v 怎么变？取决于压力梯度、地转力、摩擦……</li>
+</ul>
+<p>这是一个上千万格点、几十个状态变量的<strong>微分方程系统</strong>，没有解析解。气象台的做法是：</p>
+<ol>
+<li>把地球大气切成网格；</li>
+<li>把微分方程<strong>离散化</strong>（变成"格点之间的差分"）；</li>
+<li>用超算从今天的初始状态一步步推到明天。</li>
+</ol>
+<p><strong>所谓"预测明天的天气"，本质上就是数值解一个巨大的微分方程系统。</strong> 牛顿当年用一组方程预测了一颗行星，今天我们用同一种数学预测了一整片大气。</p>
+<h3 id="26">2.6 大模型也在解一个巨大的微分方程</h3>
+<p>现在做一次类比上的跳跃。</p>
+<p>天气方程问：<strong>给定今天的温度/压力/湿度，明天它们是多少？</strong>
+语言模型问：<strong>给定前面的 token 序列 $x$，下一个 token $y$ 的概率分布 $P(y \mid x)$ 是什么？</strong></p>
+<p>如果把"语言"想象成一个高维空间里的连续过程，<strong>每个 token 就是这个过程的一个采样点</strong>，那么模型要做的就是：</p>
+<ul>
+<li>找到一个"原函数"——把上下文 $x$ 映射到 $y$ 的概率分布；</li>
+<li>这个原函数的形状是未知的，但我们有海量观测数据（人类写过的文本和代码）；</li>
+<li><strong>用数据反推这个原函数，就像气象学家用观测数据反推大气方程的参数</strong>。</li>
+</ul>
+<p>CodeGPT 的整段 forward 就是这个"原函数"的参数化形式：</p>
+<div class="highlight"><pre><span></span><code><span class="c1"># model.py:182-189 关键几行</span>
+<span class="n">tok_emb</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">transformer</span><span class="o">.</span><span class="n">wte</span><span class="p">(</span><span class="n">idx</span><span class="p">)</span>       <span class="c1"># 把离散 token 嵌入到连续空间</span>
+<span class="n">pos_emb</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">transformer</span><span class="o">.</span><span class="n">wpe</span><span class="p">(</span><span class="n">pos</span><span class="p">)</span>
+<span class="n">x</span> <span class="o">=</span> <span class="n">tok_emb</span> <span class="o">+</span> <span class="n">pos_emb</span>
+<span class="k">for</span> <span class="n">block</span> <span class="ow">in</span> <span class="bp">self</span><span class="o">.</span><span class="n">transformer</span><span class="o">.</span><span class="n">h</span><span class="p">:</span>          <span class="c1"># 在连续空间里&quot;逐层演化&quot;</span>
+    <span class="n">x</span> <span class="o">=</span> <span class="n">block</span><span class="p">(</span><span class="n">x</span><span class="p">)</span>
+<span class="n">x</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">transformer</span><span class="o">.</span><span class="n">ln_f</span><span class="p">(</span><span class="n">x</span><span class="p">)</span>
+<span class="n">logits</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">lm_head</span><span class="p">(</span><span class="n">x</span><span class="p">)</span>                  <span class="c1"># 投影回 token 概率</span>
+</code></pre></div>
+
+<p>注意结构上的呼应：</p>
+<table>
+<thead>
+<tr>
+<th>天气方程</th>
+<th>语言模型</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>状态变量:温度、压力、湿度……</td>
+<td>状态变量:768 维隐向量 <code>x</code></td>
+</tr>
+<tr>
+<td>演化算子:N-S 方程的右端项</td>
+<td>演化算子:每一层 <code>Block(x)</code></td>
+</tr>
+<tr>
+<td>时间步进:积分微分方程</td>
+<td>层叠步进:12 层 Block 堆叠</td>
+</tr>
+<tr>
+<td>输出:明天的天气</td>
+<td>输出:下一个 token 的分布</td>
+</tr>
+</tbody>
+</table>
+<p>而<strong>训练</strong>是反过来：观测真实演化（语料），调整方程的参数，让模型预测的"明天 token"和真实"明天 token"尽可能接近。这正是 cross-entropy 损失干的事：</p>
+<div class="highlight"><pre><span></span><code><span class="c1"># model.py:192</span>
+<span class="n">loss</span> <span class="o">=</span> <span class="n">F</span><span class="o">.</span><span class="n">cross_entropy</span><span class="p">(</span><span class="n">logits</span><span class="o">.</span><span class="n">view</span><span class="p">(</span><span class="o">-</span><span class="mi">1</span><span class="p">,</span> <span class="n">logits</span><span class="o">.</span><span class="n">size</span><span class="p">(</span><span class="o">-</span><span class="mi">1</span><span class="p">)),</span>
+                       <span class="n">targets</span><span class="o">.</span><span class="n">view</span><span class="p">(</span><span class="o">-</span><span class="mi">1</span><span class="p">),</span> <span class="n">ignore_index</span><span class="o">=-</span><span class="mi">1</span><span class="p">)</span>
+</code></pre></div>
+
+<p>它在最小化"真实分布"与"模型分布"之间的差距（等价于 KL 散度）——也就是<strong>让我们写下的"语言微分方程"逼近真实的"语言微分方程"</strong>。每一次 <code>loss.backward()</code> + <code>optimizer.step()</code>，都是在这个亿级维度的方程组里挪动一小步。</p>
+<h3 id="27-ml">2.7 为什么 ML 总在讲"概率同分布"：离散语言怎么被微积分捕获</h3>
+<p>到这里有个关键的疑问要正面回答：<strong>牛顿的微积分活在连续空间——位置、速度、温度都是实数。但 token 是离散的、词表里的原子，没有"半个 token"这种东西。微积分凭什么管得了语言？</strong></p>
+<p>答案藏在一个看似平凡的偷换：<strong>我们不直接预测 token，我们预测 token 的概率分布</strong>。下面把这个偷换拆开来看。</p>
+<h4 id="271">2.7.1 离散观测，连续分布</h4>
+<p>设词表有 $V = 50304$ 个 token（CodeGPT 的设置，见 <code>tokenizer.py</code> 的 <code>VOCAB_SIZE</code>）。给定上下文 $x$，下一个 token $y$ 是 $V$ 个离散选项之一。这个<strong>选择</strong>是离散的，但 <strong>"在 V 个选项上的概率分布"是连续的</strong>——它是一个长度 $V$、各分量 $\in [0,1]$、总和为 $1$ 的向量，活在一个叫<strong>概率单纯形</strong>（probability simplex）的连续流形上。</p>
+<div class="highlight"><pre><span></span><code><span class="c1"># 关键三步:连续 logits → 连续概率分布 → 离散采样</span>
+<span class="c1"># model.py 推理路径(简化)</span>
+<span class="n">logits</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">lm_head</span><span class="p">(</span><span class="n">x</span><span class="p">[:,</span> <span class="p">[</span><span class="o">-</span><span class="mi">1</span><span class="p">],</span> <span class="p">:])</span>      <span class="c1"># (B,1,V) 连续, 可任取实数</span>
+<span class="n">probs</span>  <span class="o">=</span> <span class="n">F</span><span class="o">.</span><span class="n">softmax</span><span class="p">(</span><span class="n">logits</span><span class="p">,</span> <span class="n">dim</span><span class="o">=-</span><span class="mi">1</span><span class="p">)</span>         <span class="c1"># (B,1,V) 连续, ∈[0,1] 且总和=1</span>
+<span class="n">next_token</span> <span class="o">=</span> <span class="n">torch</span><span class="o">.</span><span class="n">multinomial</span><span class="p">(</span><span class="n">probs</span><span class="p">,</span> <span class="mi">1</span><span class="p">)</span>   <span class="c1"># 这一步才&quot;离散化&quot;(采样)</span>
+</code></pre></div>
+
+<p>注意结构：<strong>离散性只出现在最末一步采样</strong>。前面所有运算——embedding、attention、MLP、softmax——都在连续空间里跑，所以梯度能一路反传。这是离散语言能被微积分捕获的工程秘密。</p>
+<h4 id="272">2.7.2 "同分布"是什么假设？</h4>
+<p>ML 教科书反复出现一句话："训练样本独立同分布（i.i.d.）地采自某未知分布 $P^*$"。在大模型语境下它的意思是：</p>
+<ul>
+<li>存在一个<strong>真实的、未知的</strong>语言/代码分布 $P^*(y \mid x)$；</li>
+<li>互联网上的代码、文档、训练语料里的每一段，都是从 $P^*$ 里采的样本；</li>
+<li>我们将来要让模型补全的代码，<strong>也来自同一个 $P^*$</strong>——这就是"同分布假设"；</li>
+<li>所以学好训练集的统计规律，就能推广到未来。</li>
+</ul>
+<p>如果未来分布和训练集大不相同（训练全是 Python 2，部署全是 Rust），同分布假设就破了，模型必然失效。<strong>同分布假设是机器学习能从过去外推到未来的全部理由</strong>——它在 ML 里扮演的角色，相当于物理里"自然规律不随时间改变"。</p>
+<h4 id="273-pyx">2.7.3 P(y|x) 就是被反推出来的"语言原函数"</h4>
+<p>把上面两点合起来，就回答了你的问题：</p>
+<blockquote>
+<p><strong>是的——<code>P(y|x)</code> 正是我们想反推出来的"语言原函数"</strong>。</p>
+</blockquote>
+<p>类比一一对上：</p>
+<table>
+<thead>
+<tr>
+<th>牛顿物理</th>
+<th>大模型</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>观测:一系列位置采样</td>
+<td>观测:一堆 token 序列(语料)</td>
+</tr>
+<tr>
+<td>假设:背后存在连续轨迹 $x(t)$</td>
+<td>假设:背后存在真实分布 $P^*(y \mid x)$</td>
+</tr>
+<tr>
+<td>目标:反推 $x(t)$(原函数)</td>
+<td>目标:反推 $P^*(y \mid x)$(原函数)</td>
+</tr>
+<tr>
+<td>工具:把观测代入运动方程,用积分恢复轨迹</td>
+<td>工具:用神经网络做参数化原函数,梯度下降拟合</td>
+</tr>
+</tbody>
+</table>
+<p>差别只在：物理的"原函数"是连续轨迹（一维实变量），语言的"原函数"是定义在所有上下文上的概率分布族（无穷多个 simplex 上的点）。<strong>反推的精神完全一致</strong>：观测是局部、片段、采样的；原函数是完整的、规律性的；学习就是从前者重建后者。</p>
+<h4 id="274">2.7.4 离散 + 概率 + 矩阵 = 可微分</h4>
+<p>为什么必须是"概率"和"矩阵"？因为它们是<strong>让离散问题可微分的唯一组合</strong>：</p>
+<ol>
+<li><strong>离散 → 概率</strong>：把 V 个选项的"硬选择"换成 V 维概率向量；</li>
+<li><strong>概率 → 矩阵</strong>：embedding 是矩阵 $V \times d$，把离散 token id 翻译成连续向量；<code>lm_head</code> 是矩阵 $d \times V$，把连续向量翻译回 V 维 logits；</li>
+<li><strong>矩阵 → 可微</strong>：矩阵乘法处处可微，梯度可以经由它流到每一个 embedding 行；</li>
+<li><strong>可微 → 梯度下降</strong>：autograd 沿前向图反推，把误差信号变成参数更新方向。</li>
+</ol>
+<p>具体到 CodeGPT，这条链子在代码里就是这几跳：</p>
+<div class="highlight"><pre><span></span><code><span class="c1"># 离散 token → 连续向量 → 离散概率</span>
+<span class="n">tok_emb</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">transformer</span><span class="o">.</span><span class="n">wte</span><span class="p">(</span><span class="n">idx</span><span class="p">)</span>        <span class="c1"># (B,T) 离散 id  → (B,T,d) 连续向量</span>
+<span class="c1"># ... 中间所有 attention/MLP 都在 (B,T,d) 连续空间运算 ...</span>
+<span class="n">logits</span>  <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">lm_head</span><span class="p">(</span><span class="n">x</span><span class="p">)</span>                  <span class="c1"># (B,T,d) → (B,T,V) 连续 logits</span>
+<span class="n">loss</span>    <span class="o">=</span> <span class="n">F</span><span class="o">.</span><span class="n">cross_entropy</span><span class="p">(</span>                 <span class="c1"># 用真实 token id 当 target</span>
+    <span class="n">logits</span><span class="o">.</span><span class="n">view</span><span class="p">(</span><span class="o">-</span><span class="mi">1</span><span class="p">,</span> <span class="n">logits</span><span class="o">.</span><span class="n">size</span><span class="p">(</span><span class="o">-</span><span class="mi">1</span><span class="p">)),</span>
+    <span class="n">targets</span><span class="o">.</span><span class="n">view</span><span class="p">(</span><span class="o">-</span><span class="mi">1</span><span class="p">),</span>
+    <span class="n">ignore_index</span><span class="o">=-</span><span class="mi">1</span><span class="p">,</span>
+<span class="p">)</span>
+</code></pre></div>
+
+<p><code>wte</code> 是入口、<code>lm_head</code> 是出口，<strong>它俩共享权重</strong>（<code>model.py:153</code> <code>lm_head.weight = wte.weight</code>）——意思是同一个 $V \times d$ 矩阵既负责"id 进来变向量"，也负责"向量出去变 V 维分数"。这种对称性正暗示了：<strong>整个网络是定义在词表上的一个函数族，以这个嵌入矩阵为坐标系</strong>。</p>
+<h4 id="275-cross-entropy">2.7.5 cross-entropy 把"反推原函数"变成可下降的目标</h4>
+<p>最后一步，要把"我们想要 $P_\theta \approx P^<em>$"翻译成可优化的标量。这里登场的是 </em><em>cross-entropy / KL 散度</em><em>——它正是在所有"测距"工具里</em><em>和最大似然等价</em>*的那一个：</p>
+<p>$$
+\mathcal{L}(\theta) \;=\; -\frac{1}{N}\sum_{i=1}^{N} \log P_\theta(y_i \mid x_i)
+$$</p>
+<p>每个训练样本 $(x_i, y_i)$ 是从 $P^<em>$ 采的。最小化这个 loss 等价于最小化 $\mathrm{KL}(P^</em> \,|\, P_\theta)$——也就是<strong>让模型分布尽量贴住真实分布</strong>。代码里就是一行：</p>
+<div class="highlight"><pre><span></span><code><span class="c1"># model.py:192</span>
+<span class="n">loss</span> <span class="o">=</span> <span class="n">F</span><span class="o">.</span><span class="n">cross_entropy</span><span class="p">(</span><span class="n">logits</span><span class="o">.</span><span class="n">view</span><span class="p">(</span><span class="o">-</span><span class="mi">1</span><span class="p">,</span> <span class="n">logits</span><span class="o">.</span><span class="n">size</span><span class="p">(</span><span class="o">-</span><span class="mi">1</span><span class="p">)),</span>
+                       <span class="n">targets</span><span class="o">.</span><span class="n">view</span><span class="p">(</span><span class="o">-</span><span class="mi">1</span><span class="p">),</span> <span class="n">ignore_index</span><span class="o">=-</span><span class="mi">1</span><span class="p">)</span>
+</code></pre></div>
+
+<p>这条 loss 连续、可微，对每一个参数都有梯度。autograd 沿反向图把梯度送回所有 124M 参数，optimizer 推一小步——<strong>$P_\theta$ 就向 $P^*$ 靠近一点</strong>。重复几十万步，模型就"反推出"了一个足够接近真实语言分布的近似原函数。</p>
+<blockquote>
+<p><strong>一句话回答你的问题</strong>：是的，<code>P(y|x)</code> 就是被反推出来的"语言原函数"；之所以非概率不可，是因为语言离散、硬预测不可微；之所以非矩阵不可，是因为矩阵是把离散 id 嫁接到连续可微空间的桥；之所以非梯度不可，是因为反推这个原函数没有解析解，只能用梯度下降数值地"积"出来。<strong>离散观测 + 连续分布 + 矩阵参数化 + 梯度下降</strong>——这四件套合起来，才让微积分这门连续数学第一次能解一个离散符号系统的"微分方程"。</p>
+</blockquote>
+<h3 id="28">2.8 所以叫"可微分编程"：解一个亿级参数的微分方程</h3>
+<p>把上面这条线索拉直：</p>
+<ol>
+<li>微积分诞生于"描述变化"——牛顿要算行星，莱布尼茨要好用的符号；</li>
+<li>它的两半是<strong>导数</strong>（变化率）和<strong>积分</strong>（从变化率反推原函数）；</li>
+<li>自然界的复杂系统——天体运动、气候、流体——都用微分方程描述，<strong>求解 = 预测未来</strong>；</li>
+<li><strong>语言、代码也可以视作一种"微分方程"</strong>：给定上下文（初始条件），预测下一个 token（下一时刻状态）；</li>
+<li>我们不知道这个方程长什么样，但可以<strong>用神经网络作为它的参数化原函数</strong>，让数据决定参数；</li>
+<li>训练神经网络 = 数值求解一个 124M 维参数的微分方程组——找到那个让 loss 最小的参数解；</li>
+<li>整个过程能跑起来，是因为 <code>autograd</code> 把莱布尼茨的链式法则自动化了。</li>
+</ol>
+<p>这就是为什么 LeCun 说"深度学习已死，<strong>可微分编程</strong>万岁"。"可微分"三个字直接呼应微积分；"编程"则是莱布尼茨"符号化"传统的现代极致——我们不再手算导数，而是用 PyTorch 这门<strong>可微分编程语言</strong>写程序，让 autograd 替我们应用三百年前发明的那条规则。</p>
+<blockquote>
+<p><strong>一句话总结这一节</strong>：天气预报是用微积分解大气方程；CodeGPT 是用微积分解"语言方程"。前者积分的是温度和压力，后者"积分"的是 token 之间的概率结构——但它们用的是同一种数学。</p>
+</blockquote>
+<p>理解了这一层，下面从 <code>y = wx + b</code> 一路加到 <code>forward()</code> 就只是同一件事的逐步展开：写一段可微的程序，让梯度下降把它的参数"解"出来。</p>
+<hr />
+<h2 id="3-y-wx-b">3. 从一条直线开始：y = wx + b 就是最小的可微分程序</h2>
+<p>最简单的程序：</p>
+<div class="highlight"><pre><span></span><code><span class="k">def</span><span class="w"> </span><span class="nf">program</span><span class="p">(</span><span class="n">x</span><span class="p">,</span> <span class="n">w</span><span class="p">,</span> <span class="n">b</span><span class="p">):</span>
+    <span class="k">return</span> <span class="n">w</span> <span class="o">*</span> <span class="n">x</span> <span class="o">+</span> <span class="n">b</span>
+</code></pre></div>
+
+<p>这个"程序"有两个可调参数 <code>w</code>、<code>b</code>，和一个输入 <code>x</code>。它可微吗？显然可微：</p>
+<div class="highlight"><pre><span></span><code>∂y/∂w = x
+∂y/∂b = 1
+</code></pre></div>
+
+<p>现在假设我有一堆 <code>(x, y)</code> 数据对（比如 x=身高，y=体重），我想找到最好的 <code>w</code>、<code>b</code>。</p>
+<p><strong>传统做法（手工求解）</strong>：最小二乘法。写出损失函数，对 <code>w</code>、<code>b</code> 求偏导，令为零，解出解析解。</p>
+<div class="highlight"><pre><span></span><code>L(w, b) = Σᵢ (yᵢ - (w·xᵢ + b))²
+</code></pre></div>
+
+<p>这是一种"编程"——你用数学公式<strong>亲手</strong>算出了参数。</p>
+<p><strong>可微分编程做法</strong>：不解方程，直接让程序自己"跑"出参数。</p>
+<div class="highlight"><pre><span></span><code><span class="kn">import</span><span class="w"> </span><span class="nn">torch</span>
+
+<span class="n">w</span> <span class="o">=</span> <span class="n">torch</span><span class="o">.</span><span class="n">tensor</span><span class="p">(</span><span class="mf">0.0</span><span class="p">,</span> <span class="n">requires_grad</span><span class="o">=</span><span class="kc">True</span><span class="p">)</span>
+<span class="n">b</span> <span class="o">=</span> <span class="n">torch</span><span class="o">.</span><span class="n">tensor</span><span class="p">(</span><span class="mf">0.0</span><span class="p">,</span> <span class="n">requires_grad</span><span class="o">=</span><span class="kc">True</span><span class="p">)</span>
+<span class="n">x</span> <span class="o">=</span> <span class="n">torch</span><span class="o">.</span><span class="n">tensor</span><span class="p">([</span><span class="mf">1.0</span><span class="p">,</span> <span class="mf">2.0</span><span class="p">,</span> <span class="mf">3.0</span><span class="p">,</span> <span class="mf">4.0</span><span class="p">])</span>
+<span class="n">y</span> <span class="o">=</span> <span class="n">torch</span><span class="o">.</span><span class="n">tensor</span><span class="p">([</span><span class="mf">2.1</span><span class="p">,</span> <span class="mf">3.9</span><span class="p">,</span> <span class="mf">6.1</span><span class="p">,</span> <span class="mf">7.8</span><span class="p">])</span>   <span class="c1"># 大约是 y = 2x</span>
+
+<span class="k">for</span> <span class="n">step</span> <span class="ow">in</span> <span class="nb">range</span><span class="p">(</span><span class="mi">200</span><span class="p">):</span>
+    <span class="n">pred</span> <span class="o">=</span> <span class="n">w</span> <span class="o">*</span> <span class="n">x</span> <span class="o">+</span> <span class="n">b</span>                     <span class="c1"># ← 前向&quot;程序&quot;</span>
+    <span class="n">loss</span> <span class="o">=</span> <span class="p">((</span><span class="n">pred</span> <span class="o">-</span> <span class="n">y</span><span class="p">)</span> <span class="o">**</span> <span class="mi">2</span><span class="p">)</span><span class="o">.</span><span class="n">mean</span><span class="p">()</span>      <span class="c1"># ← 目标</span>
+    <span class="n">loss</span><span class="o">.</span><span class="n">backward</span><span class="p">()</span>                      <span class="c1"># ← 自动求导，填入 w.grad、b.grad</span>
+    <span class="k">with</span> <span class="n">torch</span><span class="o">.</span><span class="n">no_grad</span><span class="p">():</span>
+        <span class="n">w</span> <span class="o">-=</span> <span class="mf">0.01</span> <span class="o">*</span> <span class="n">w</span><span class="o">.</span><span class="n">grad</span>
+        <span class="n">b</span> <span class="o">-=</span> <span class="mf">0.01</span> <span class="o">*</span> <span class="n">b</span><span class="o">.</span><span class="n">grad</span>
+        <span class="n">w</span><span class="o">.</span><span class="n">grad</span><span class="o">.</span><span class="n">zero_</span><span class="p">();</span> <span class="n">b</span><span class="o">.</span><span class="n">grad</span><span class="o">.</span><span class="n">zero_</span><span class="p">()</span>
+
+<span class="nb">print</span><span class="p">(</span><span class="n">w</span><span class="o">.</span><span class="n">item</span><span class="p">(),</span> <span class="n">b</span><span class="o">.</span><span class="n">item</span><span class="p">())</span>  <span class="c1"># 约等于 2.0, 0.0</span>
+</code></pre></div>
+
+<p>注意这里发生了什么：</p>
+<ol>
+<li>你<strong>没有</strong>写任何求导代码。<code>loss.backward()</code> 自动算了 <code>∂loss/∂w</code> 和 <code>∂loss/∂b</code>。</li>
+<li>你写的是<strong>前向程序</strong>（<code>w * x + b</code>），反向传播是 PyTorch 根据前向图自动生成的。</li>
+<li>如果你把第一行改成 <code>pred = w * x * x + b</code>（一条抛物线），<strong>整段代码不用改</strong>——autograd 会处理新的求导规则。</li>
+</ol>
+<p>这就是"可微分编程"的雏形：<strong>你写前向，系统自动给你反向</strong>。</p>
+<hr />
+<h2 id="4">4. 梯度下降：把"解方程"换成"写程序 + 求导"</h2>
+<p>上面的例子里，我们可以解析求解（最小二乘有闭式解），但这是<strong>运气好</strong>。一旦前向程序变复杂，解析解立刻消失。</p>
+<p>比如把程序改成：</p>
+<div class="highlight"><pre><span></span><code><span class="k">def</span><span class="w"> </span><span class="nf">program</span><span class="p">(</span><span class="n">x</span><span class="p">,</span> <span class="n">w1</span><span class="p">,</span> <span class="n">w2</span><span class="p">,</span> <span class="n">b</span><span class="p">):</span>
+    <span class="k">return</span> <span class="n">torch</span><span class="o">.</span><span class="n">relu</span><span class="p">(</span><span class="n">w1</span> <span class="o">*</span> <span class="n">x</span> <span class="o">+</span> <span class="n">b</span><span class="p">)</span> <span class="o">*</span> <span class="n">w2</span>
+</code></pre></div>
+
+<p>现在 <code>relu</code> 在 0 点不可导，而且是分段的，联立方程没法消元。但<strong>梯度下降完全不在乎这个</strong>：</p>
+<ul>
+<li>PyTorch 知道 <code>relu</code> 在正半轴导数为 1，负半轴为 0；</li>
+<li>链式法则把这些导数一层层乘起来；</li>
+<li><code>loss.backward()</code> 照样给你 <code>w1.grad</code>、<code>w2.grad</code>、<code>b.grad</code>。</li>
+</ul>
+<p>这是视角转变的关键：</p>
+<table>
+<thead>
+<tr>
+<th>传统数学建模</th>
+<th>可微分编程</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>写出 $y = f(x; \theta)$</td>
+<td>写一段 Python</td>
+</tr>
+<tr>
+<td>写出 loss 的解析梯度</td>
+<td>调用 <code>loss.backward()</code></td>
+</tr>
+<tr>
+<td>需要保证闭式解存在</td>
+<td>只要每步可微（或有次梯度）即可</td>
+</tr>
+<tr>
+<td>模型形式受解析能力限制</td>
+<td>模型形式受<strong>想象力</strong>限制</td>
+</tr>
+</tbody>
+</table>
+<p>所以 LeCun 的观点可以重述为：<strong>一旦有了 autograd，"神经网络"和"普通程序"的界限就消失了。</strong></p>
+<hr />
+<h2 id="5">5. 非线性：两条直线的组合打开了宇宙</h2>
+<p>如果只堆叠线性层，有个灾难：</p>
+<div class="highlight"><pre><span></span><code><span class="n">nn</span><span class="o">.</span><span class="n">Linear</span><span class="p">(</span><span class="n">n</span><span class="p">,</span> <span class="n">n</span><span class="p">)</span> <span class="o">@</span> <span class="n">nn</span><span class="o">.</span><span class="n">Linear</span><span class="p">(</span><span class="n">n</span><span class="p">,</span> <span class="n">n</span><span class="p">)</span>   <span class="c1"># 还是一个线性函数</span>
+</code></pre></div>
+
+<p>两个线性层相乘，数学上等价于一个线性层。堆再多层也没用。</p>
+<p><strong>突破来自插入一个非线性函数。</strong> CodeGPT 的 MLP 长这样：</p>
+<div class="highlight"><pre><span></span><code><span class="c1"># model.py:76-90</span>
+<span class="k">class</span><span class="w"> </span><span class="nc">MLP</span><span class="p">(</span><span class="n">nn</span><span class="o">.</span><span class="n">Module</span><span class="p">):</span>
+    <span class="k">def</span><span class="w"> </span><span class="fm">__init__</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">config</span><span class="p">):</span>
+        <span class="nb">super</span><span class="p">()</span><span class="o">.</span><span class="fm">__init__</span><span class="p">()</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">c_fc</span>   <span class="o">=</span> <span class="n">nn</span><span class="o">.</span><span class="n">Linear</span><span class="p">(</span><span class="n">config</span><span class="o">.</span><span class="n">n_embd</span><span class="p">,</span> <span class="mi">4</span> <span class="o">*</span> <span class="n">config</span><span class="o">.</span><span class="n">n_embd</span><span class="p">,</span> <span class="n">bias</span><span class="o">=</span><span class="n">config</span><span class="o">.</span><span class="n">bias</span><span class="p">)</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">gelu</span>   <span class="o">=</span> <span class="n">nn</span><span class="o">.</span><span class="n">GELU</span><span class="p">()</span>                                  <span class="c1"># ← 关键的一行</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">c_proj</span> <span class="o">=</span> <span class="n">nn</span><span class="o">.</span><span class="n">Linear</span><span class="p">(</span><span class="mi">4</span> <span class="o">*</span> <span class="n">config</span><span class="o">.</span><span class="n">n_embd</span><span class="p">,</span> <span class="n">config</span><span class="o">.</span><span class="n">n_embd</span><span class="p">,</span> <span class="n">bias</span><span class="o">=</span><span class="n">config</span><span class="o">.</span><span class="n">bias</span><span class="p">)</span>
+
+    <span class="k">def</span><span class="w"> </span><span class="nf">forward</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">x</span><span class="p">):</span>
+        <span class="n">x</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">c_fc</span><span class="p">(</span><span class="n">x</span><span class="p">)</span>
+        <span class="n">x</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">gelu</span><span class="p">(</span><span class="n">x</span><span class="p">)</span>          <span class="c1"># ← 把线性空间掰弯</span>
+        <span class="n">x</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">c_proj</span><span class="p">(</span><span class="n">x</span><span class="p">)</span>
+        <span class="k">return</span> <span class="n">x</span>
+</code></pre></div>
+
+<p>GELU 本身很简单，可微，长得像一条柔化的 ReLU。但它的存在让整个 MLP 成为<strong>通用函数近似器</strong>（universal approximator）——理论上，足够宽的单隐层 MLP 可以近似任何连续函数。</p>
+<p>从可微分编程的角度看：</p>
+<ul>
+<li><code>nn.Linear</code> 是 "带可学习参数的矩阵乘法"；</li>
+<li><code>nn.GELU</code> 是 "不带参数但引入非线性的操作"；</li>
+<li>两者都可微 → 梯度能穿透整个 MLP；</li>
+<li>所以 MLP 就是一段"有两个可调矩阵 + 一个非线性门"的可微分程序。</li>
+</ul>
+<p><strong>经典编程类比</strong>：<code>c_fc</code> 把输入升维到 4 倍（像是在高维空间"展开"），<code>gelu</code> 做出选择（类似"如果某个特征大于阈值就激活"），<code>c_proj</code> 再把结果投影回原维度（类似"总结"）。但我们没写 <code>if</code>——是 GELU 的曲线形状在可微地扮演 <code>if</code>。</p>
+<hr />
+<h2 id="6-softmaxmask">6. 可微分的控制流：softmax、注意力、mask</h2>
+<p>MLP 解决了"非线性"，但还缺一样东西——<strong>数据依赖的控制流</strong>。</p>
+<p>传统 Python 程序里，你会写：</p>
+<div class="highlight"><pre><span></span><code><span class="k">def</span><span class="w"> </span><span class="nf">retrieve</span><span class="p">(</span><span class="n">query</span><span class="p">,</span> <span class="n">database</span><span class="p">):</span>
+    <span class="k">for</span> <span class="n">key</span><span class="p">,</span> <span class="n">value</span> <span class="ow">in</span> <span class="n">database</span><span class="o">.</span><span class="n">items</span><span class="p">():</span>
+        <span class="k">if</span> <span class="n">key</span> <span class="o">==</span> <span class="n">query</span><span class="p">:</span>
+            <span class="k">return</span> <span class="n">value</span>
+</code></pre></div>
+
+<p>这里有 <code>for</code>、<code>if</code>、<code>==</code>——<strong>没有一个是可微的</strong>。你不能对 <code>==</code> 求导。</p>
+<p>注意力机制的魔法就在于：<strong>它是这段查表代码的可微分版本。</strong></p>
+<div class="highlight"><pre><span></span><code><span class="c1"># model.py:51-73 中的核心几行</span>
+<span class="n">q</span><span class="p">,</span> <span class="n">k</span><span class="p">,</span> <span class="n">v</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">c_attn</span><span class="p">(</span><span class="n">x</span><span class="p">)</span><span class="o">.</span><span class="n">split</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">n_embd</span><span class="p">,</span> <span class="n">dim</span><span class="o">=</span><span class="mi">2</span><span class="p">)</span>         <span class="c1"># 查询、键、值</span>
+<span class="n">att</span> <span class="o">=</span> <span class="p">(</span><span class="n">q</span> <span class="o">@</span> <span class="n">k</span><span class="o">.</span><span class="n">transpose</span><span class="p">(</span><span class="o">-</span><span class="mi">2</span><span class="p">,</span> <span class="o">-</span><span class="mi">1</span><span class="p">))</span> <span class="o">*</span> <span class="p">(</span><span class="mf">1.0</span> <span class="o">/</span> <span class="n">math</span><span class="o">.</span><span class="n">sqrt</span><span class="p">(</span><span class="n">k</span><span class="o">.</span><span class="n">size</span><span class="p">(</span><span class="o">-</span><span class="mi">1</span><span class="p">)))</span>   <span class="c1"># 相似度（不是 ==，是点积）</span>
+<span class="n">att</span> <span class="o">=</span> <span class="n">att</span><span class="o">.</span><span class="n">masked_fill</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">bias</span><span class="p">[:,</span> <span class="p">:,</span> <span class="p">:</span><span class="n">T</span><span class="p">,</span> <span class="p">:</span><span class="n">T</span><span class="p">]</span> <span class="o">==</span> <span class="mi">0</span><span class="p">,</span> <span class="nb">float</span><span class="p">(</span><span class="s1">&#39;-inf&#39;</span><span class="p">))</span>  <span class="c1"># 因果 mask</span>
+<span class="n">att</span> <span class="o">=</span> <span class="n">F</span><span class="o">.</span><span class="n">softmax</span><span class="p">(</span><span class="n">att</span><span class="p">,</span> <span class="n">dim</span><span class="o">=-</span><span class="mi">1</span><span class="p">)</span>                               <span class="c1"># 归一化成概率</span>
+<span class="n">y</span>   <span class="o">=</span> <span class="n">att</span> <span class="o">@</span> <span class="n">v</span>                                              <span class="c1"># 加权求和</span>
+</code></pre></div>
+
+<p>把它和传统查表对照：</p>
+<table>
+<thead>
+<tr>
+<th>传统查表（不可微）</th>
+<th>注意力（可微）</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>key == query</code>（布尔值）</td>
+<td><code>q @ k.T</code>（连续相似度）</td>
+</tr>
+<tr>
+<td><code>if</code> 选中一个 value</td>
+<td><code>softmax</code> 把相似度变成权重</td>
+</tr>
+<tr>
+<td><code>return value</code></td>
+<td><code>att @ v</code>（所有 value 的加权平均）</td>
+</tr>
+<tr>
+<td>离散决策</td>
+<td><strong>连续、可微的"软决策"</strong></td>
+</tr>
+</tbody>
+</table>
+<p><code>softmax</code> 在这里扮演的角色，本质上是 <code>argmax</code> 的<strong>可微分近似</strong>。当某个 key 的相似度远大于其他，softmax 会给它接近 1 的权重，其它接近 0——退化成"硬查表"；但整个过程对 <code>q</code>、<code>k</code>、<code>v</code> 都可导。</p>
+<p>这才是 LeCun 所说的精髓：<strong>注意力不是一个新模型，它是"查表"这一经典程序结构的可微分改写。</strong></p>
+<p>类似地：</p>
+<ul>
+<li><code>for</code> 循环 → <strong>自注意力的并行全对全</strong>（每个位置看所有位置）；</li>
+<li>递归 / 栈 → <strong>多层 Transformer Block 堆叠</strong>（深度模拟迭代）；</li>
+<li>变量绑定 → <strong>残差连接</strong> <code>x = x + attn(x)</code>（保留"上一步状态"）；</li>
+<li>字典 → <strong>embedding 查表</strong> <code>wte(idx)</code>（可微的 id → 向量）。</li>
+</ul>
+<p>一旦把这些都翻译成可微分的形式，整个程序就可以被反向传播穿透。</p>
+<hr />
+<h2 id="7-nnmodule-forward-main">7. 组合即编程：<code>nn.Module</code> 就是函数，<code>forward</code> 就是 <code>main</code></h2>
+<p>有了"可微分的原子操作"，下一步就是<strong>用它们写大程序</strong>。这就是 <code>nn.Module</code> 的作用。</p>
+<p>看 <code>Block</code> 的定义：</p>
+<div class="highlight"><pre><span></span><code><span class="c1"># model.py:93-105</span>
+<span class="k">class</span><span class="w"> </span><span class="nc">Block</span><span class="p">(</span><span class="n">nn</span><span class="o">.</span><span class="n">Module</span><span class="p">):</span>
+    <span class="k">def</span><span class="w"> </span><span class="fm">__init__</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">config</span><span class="p">):</span>
+        <span class="nb">super</span><span class="p">()</span><span class="o">.</span><span class="fm">__init__</span><span class="p">()</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">ln_1</span> <span class="o">=</span> <span class="n">LayerNorm</span><span class="p">(</span><span class="n">config</span><span class="o">.</span><span class="n">n_embd</span><span class="p">,</span> <span class="n">bias</span><span class="o">=</span><span class="n">config</span><span class="o">.</span><span class="n">bias</span><span class="p">)</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">attn</span> <span class="o">=</span> <span class="n">CausalSelfAttention</span><span class="p">(</span><span class="n">config</span><span class="p">)</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">ln_2</span> <span class="o">=</span> <span class="n">LayerNorm</span><span class="p">(</span><span class="n">config</span><span class="o">.</span><span class="n">n_embd</span><span class="p">,</span> <span class="n">bias</span><span class="o">=</span><span class="n">config</span><span class="o">.</span><span class="n">bias</span><span class="p">)</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">mlp</span>  <span class="o">=</span> <span class="n">MLP</span><span class="p">(</span><span class="n">config</span><span class="p">)</span>
+
+    <span class="k">def</span><span class="w"> </span><span class="nf">forward</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">x</span><span class="p">):</span>
+        <span class="n">x</span> <span class="o">=</span> <span class="n">x</span> <span class="o">+</span> <span class="bp">self</span><span class="o">.</span><span class="n">attn</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">ln_1</span><span class="p">(</span><span class="n">x</span><span class="p">))</span>    <span class="c1"># ← 一行 Python</span>
+        <span class="n">x</span> <span class="o">=</span> <span class="n">x</span> <span class="o">+</span> <span class="bp">self</span><span class="o">.</span><span class="n">mlp</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">ln_2</span><span class="p">(</span><span class="n">x</span><span class="p">))</span>     <span class="c1"># ← 一行 Python</span>
+        <span class="k">return</span> <span class="n">x</span>
+</code></pre></div>
+
+<p>这<strong>就是一段 Python 代码</strong>。不是比喻——它真的在运行时按这两行顺序执行。但这段代码的特别之处在于：</p>
+<ol>
+<li>每个函数调用（<code>ln_1</code>、<code>attn</code>、<code>ln_2</code>、<code>mlp</code>）都带可学习参数；</li>
+<li>每个 <code>+</code>、每个函数调用都可微；</li>
+<li>调用 <code>.backward()</code> 时，PyTorch 根据这段 Python 的执行轨迹自动构造反向图。</li>
+</ol>
+<p><strong>这和写普通 Python 函数有什么区别？</strong></p>
+<table>
+<thead>
+<tr>
+<th>普通 Python 函数</th>
+<th><code>nn.Module.forward</code></th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>参数在调用时传入</td>
+<td>参数保存在 <code>self.xxx</code>，由 <code>.parameters()</code> 暴露</td>
+</tr>
+<tr>
+<td>没有"可训练"概念</td>
+<td>所有 <code>nn.Parameter</code> 自动进入梯度图</td>
+</tr>
+<tr>
+<td>要求导需手工算</td>
+<td><code>loss.backward()</code> 自动微分</td>
+</tr>
+<tr>
+<td>执行 = 结果</td>
+<td>执行 = 结果 + 反向图</td>
+</tr>
+</tbody>
+</table>
+<p>换句话说：<strong><code>nn.Module</code> 是可微分编程语言里的"函数定义"，<code>forward</code> 方法就是函数体。</strong></p>
+<hr />
+<h2 id="8-codegpt">8. 大模型是这个范式的极致：CodeGPT 代码级解剖</h2>
+<p>现在把前面所有片段组装起来，看看 CodeGPT 作为一段"可微分程序"到底是什么样子。</p>
+<p>完整的"主函数"：</p>
+<div class="highlight"><pre><span></span><code><span class="c1"># model.py:177-198</span>
+<span class="k">def</span><span class="w"> </span><span class="nf">forward</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">idx</span><span class="p">,</span> <span class="n">targets</span><span class="o">=</span><span class="kc">None</span><span class="p">):</span>
+    <span class="n">device</span> <span class="o">=</span> <span class="n">idx</span><span class="o">.</span><span class="n">device</span>
+    <span class="n">b</span><span class="p">,</span> <span class="n">t</span> <span class="o">=</span> <span class="n">idx</span><span class="o">.</span><span class="n">size</span><span class="p">()</span>
+    <span class="n">pos</span> <span class="o">=</span> <span class="n">torch</span><span class="o">.</span><span class="n">arange</span><span class="p">(</span><span class="mi">0</span><span class="p">,</span> <span class="n">t</span><span class="p">,</span> <span class="n">dtype</span><span class="o">=</span><span class="n">torch</span><span class="o">.</span><span class="n">long</span><span class="p">,</span> <span class="n">device</span><span class="o">=</span><span class="n">device</span><span class="p">)</span>
+
+    <span class="n">tok_emb</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">transformer</span><span class="o">.</span><span class="n">wte</span><span class="p">(</span><span class="n">idx</span><span class="p">)</span>       <span class="c1"># id → 向量（可微查表）</span>
+    <span class="n">pos_emb</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">transformer</span><span class="o">.</span><span class="n">wpe</span><span class="p">(</span><span class="n">pos</span><span class="p">)</span>       <span class="c1"># 位置 → 向量</span>
+    <span class="n">x</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">transformer</span><span class="o">.</span><span class="n">drop</span><span class="p">(</span><span class="n">tok_emb</span> <span class="o">+</span> <span class="n">pos_emb</span><span class="p">)</span>
+    <span class="k">for</span> <span class="n">block</span> <span class="ow">in</span> <span class="bp">self</span><span class="o">.</span><span class="n">transformer</span><span class="o">.</span><span class="n">h</span><span class="p">:</span>          <span class="c1"># ← 普通 Python for 循环</span>
+        <span class="n">x</span> <span class="o">=</span> <span class="n">block</span><span class="p">(</span><span class="n">x</span><span class="p">)</span>                          <span class="c1"># ← 每层 Block 都是可微函数</span>
+    <span class="n">x</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">transformer</span><span class="o">.</span><span class="n">ln_f</span><span class="p">(</span><span class="n">x</span><span class="p">)</span>
+
+    <span class="k">if</span> <span class="n">targets</span> <span class="ow">is</span> <span class="ow">not</span> <span class="kc">None</span><span class="p">:</span>
+        <span class="n">logits</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">lm_head</span><span class="p">(</span><span class="n">x</span><span class="p">)</span>              <span class="c1"># 投影回词表维度</span>
+        <span class="n">loss</span> <span class="o">=</span> <span class="n">F</span><span class="o">.</span><span class="n">cross_entropy</span><span class="p">(</span><span class="n">logits</span><span class="o">.</span><span class="n">view</span><span class="p">(</span><span class="o">-</span><span class="mi">1</span><span class="p">,</span> <span class="n">logits</span><span class="o">.</span><span class="n">size</span><span class="p">(</span><span class="o">-</span><span class="mi">1</span><span class="p">)),</span>
+                               <span class="n">targets</span><span class="o">.</span><span class="n">view</span><span class="p">(</span><span class="o">-</span><span class="mi">1</span><span class="p">),</span> <span class="n">ignore_index</span><span class="o">=-</span><span class="mi">1</span><span class="p">)</span>
+    <span class="k">else</span><span class="p">:</span>
+        <span class="n">logits</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">lm_head</span><span class="p">(</span><span class="n">x</span><span class="p">[:,</span> <span class="p">[</span><span class="o">-</span><span class="mi">1</span><span class="p">],</span> <span class="p">:])</span>
+        <span class="n">loss</span> <span class="o">=</span> <span class="kc">None</span>
+    <span class="k">return</span> <span class="n">logits</span><span class="p">,</span> <span class="n">loss</span>
+</code></pre></div>
+
+<p><strong>这就是一段 Python 程序。</strong> 它有：</p>
+<ul>
+<li>变量赋值（<code>tok_emb = ...</code>）；</li>
+<li>for 循环（<code>for block in self.transformer.h</code>）；</li>
+<li>if 分支（<code>if targets is not None</code>）；</li>
+<li>函数调用（<code>block(x)</code>、<code>F.cross_entropy</code>）。</li>
+</ul>
+<p>和普通 Python 程序唯一的区别是：<strong>每一个操作都在可微图里留下了痕迹</strong>。调用一次 <code>loss.backward()</code>，梯度自动流回所有 124M 参数。</p>
+<h3 id="81-vs">8.1 程序员的部分 vs. 梯度下降的部分</h3>
+<p>写 CodeGPT 的人（架构师）决定了这些：</p>
+<ul>
+<li>用多少层 Block（<code>n_layer=12</code>）；</li>
+<li>每层多少维（<code>n_embd=768</code>）；</li>
+<li>注意力用因果 mask（<code>is_causal=True</code>）；</li>
+<li>用 Pre-LN（<code>x + attn(ln(x))</code> 而不是 <code>ln(x + attn(x))</code>）；</li>
+<li>权重绑定 <code>lm_head.weight = wte.weight</code>（<code>model.py:153</code>）；</li>
+<li>FIM 变换在训练时 50% 概率触发；</li>
+<li>损失函数用 cross-entropy，忽略 -1 的 target（<code>ignore_index=-1</code>）。</li>
+</ul>
+<p>这些是<strong>代码</strong>——人类写的、可微分程序的"骨架"。</p>
+<p>梯度下降决定了这些：</p>
+<ul>
+<li><code>wte.weight</code>：每个 token 的 768 维向量长什么样；</li>
+<li><code>c_attn.weight</code>：注意力怎么选择关注哪里；</li>
+<li><code>c_fc.weight</code>、<code>c_proj.weight</code>：MLP 怎么变换表示；</li>
+<li><code>ln_*.weight</code>：每层归一化的缩放因子。</li>
+</ul>
+<p>这些是<strong>参数</strong>——机器通过看数据"写"出来的、可微分程序的"填空"部分。</p>
+<h3 id="82">8.2 训练循环 = 可微分程序的"编译"过程</h3>
+<div class="highlight"><pre><span></span><code><span class="c1"># 训练循环的核心（train.py 简化版）</span>
+<span class="n">logits</span><span class="p">,</span> <span class="n">loss</span> <span class="o">=</span> <span class="n">model</span><span class="p">(</span><span class="n">X</span><span class="p">,</span> <span class="n">Y</span><span class="p">)</span>    <span class="c1"># 跑一遍前向程序</span>
+<span class="n">loss</span><span class="o">.</span><span class="n">backward</span><span class="p">()</span>               <span class="c1"># 自动生成反向程序并执行</span>
+<span class="n">optimizer</span><span class="o">.</span><span class="n">step</span><span class="p">()</span>              <span class="c1"># 用梯度更新参数</span>
+<span class="n">optimizer</span><span class="o">.</span><span class="n">zero_grad</span><span class="p">()</span>
+</code></pre></div>
+
+<p>每一次迭代：</p>
+<ol>
+<li><strong>前向</strong>：按 <code>forward</code> 代码执行，得到 loss；</li>
+<li><strong>反向</strong>：autograd 沿着前向图逆行，算出每个参数的梯度；</li>
+<li><strong>更新</strong>：优化器用梯度调整参数。</li>
+</ol>
+<p>重复几万到几百万步，程序的参数就被"编译"完成。模型推理时，同一段 <code>forward</code> 代码再跑一遍——参数已经是训练好的值。</p>
+<p><strong>所以训练 = 编译，推理 = 执行。</strong> 这个类比不是比喻，从计算图的角度看就是字面意思。</p>
+<h3 id="83-fcross_entropy-forward">8.3 一个关键细节：<code>F.cross_entropy</code> 为什么放进 forward？</h3>
+<p>看这行：</p>
+<div class="highlight"><pre><span></span><code><span class="c1"># model.py:192</span>
+<span class="n">loss</span> <span class="o">=</span> <span class="n">F</span><span class="o">.</span><span class="n">cross_entropy</span><span class="p">(</span><span class="n">logits</span><span class="o">.</span><span class="n">view</span><span class="p">(</span><span class="o">-</span><span class="mi">1</span><span class="p">,</span> <span class="n">logits</span><span class="o">.</span><span class="n">size</span><span class="p">(</span><span class="o">-</span><span class="mi">1</span><span class="p">)),</span>
+                       <span class="n">targets</span><span class="o">.</span><span class="n">view</span><span class="p">(</span><span class="o">-</span><span class="mi">1</span><span class="p">),</span> <span class="n">ignore_index</span><span class="o">=-</span><span class="mi">1</span><span class="p">)</span>
+</code></pre></div>
+
+<p>如果 loss 计算在 <code>forward</code> 之外，autograd 也能工作。但放进 <code>forward</code> 有一个可微分编程视角下的好处：<strong>让"程序"的输出从"预测"变成"评价预测"</strong>。这样整个 <code>CodeGPT</code> 模块就是一个<strong>端到端可微的函数</strong>——输入 <code>(idx, targets)</code>，输出一个标量 loss。DDP、混合精度、<code>torch.compile</code> 都围绕这个"一个前向产生一个 loss"的约定运行。</p>
+<p>这也是为什么 <code>ignore_index=-1</code> 这个细节如此重要：FIM 变换在 target 里把 pad 位置设为 -1（<code>train.py:get_batch</code>），<code>cross_entropy</code> 就自动跳过这些位置的梯度。<strong>程序员用一个 <code>-1</code> 实现了"不在这里反向传播"，而不需要手动写 mask 再乘到梯度上。</strong> 这就是可微分编程该有的优雅。</p>
+<hr />
+<h2 id="9-lecun">9. 回到 LeCun：深度学习 ⊂ 可微分编程</h2>
+<p>现在可以重述 LeCun 的观点：</p>
+<ul>
+<li><strong>深度学习</strong>这个词强调的是"很多层的网络"——这只是程序的一种<strong>特定结构</strong>（层级堆叠）。</li>
+<li><strong>可微分编程</strong>强调的是背后的<strong>范式</strong>——只要每步可微，什么结构都可以。</li>
+</ul>
+<p>如果只从"堆叠层"的视角看 CodeGPT，你会错过：</p>
+<ul>
+<li><code>apply_fim_transform</code> 是一段数据相关的控制流（取决于输入概率触发）；</li>
+<li><code>generate()</code> 里的 <code>top_k</code>、<code>top_p</code>、<code>repetition_penalty</code> 是推理时的动态子图（<code>model.py:258-310</code>）；</li>
+<li><code>crop_block_size</code>、<code>expand_vocab</code> 是在<strong>运行时修改程序结构</strong>（<code>model.py:200</code>、<code>model.py:359</code>）；</li>
+<li>DDP 把同一段 <code>forward</code> 复制到多 GPU 并行执行——像是把程序并行编译。</li>
+</ul>
+<p>这些都是"程序"的特征，不是"静态模型"的特征。</p>
+<h3 id="91">9.1 为什么这个视角重要？</h3>
+<p>如果你把神经网络当作"一个数学函数 $f_\theta(x)$"来想，会<strong>主动限制自己</strong>——总觉得要写出整洁的闭式表达。</p>
+<p>但如果你把它当作"一段程序"，你会很自然地想到：</p>
+<ul>
+<li>为什么不能在 forward 里做 <code>torch.where(cond, branch_a, branch_b)</code>？能，这就是<strong>门控</strong>；</li>
+<li>为什么不能在 forward 里用 <code>while</code> 循环直到条件满足？能，这就是<strong>自适应计算时间</strong>（ACT）；</li>
+<li>为什么不能在 forward 里动态选择哪个子模块？能，这就是 <strong>Mixture of Experts</strong>；</li>
+<li>为什么不能让模型输出代码再执行？能，这就是 <strong>Neural Program Induction</strong>。</li>
+</ul>
+<p>所有这些"新"结构，本质上都是<strong>在可微分编程框架下写更复杂的程序</strong>。大模型的进步，一半来自算力和数据，另一半来自"我们学会了在 forward 里写更精巧的程序"。</p>
+<h3 id="92">9.2 与本项目其他文档的联系</h3>
+<ul>
+<li><a href="./DEEP_DIVE.md">DEEP_DIVE.md</a> 讲的是这段"程序"从 RNN 演化到 Transformer 的过程——每一次架构升级都在<strong>扩充可微分编程的表达力</strong>。</li>
+<li><a href="./COMPRESSION_IS_INTELLIGENCE.md">COMPRESSION_IS_INTELLIGENCE.md</a> 讲的是<strong>目标</strong>——为什么这段程序的 loss 定义为 cross-entropy 是在压缩数据。</li>
+<li><a href="./RLHF_AND_PLATONIC_REPRESENTATION.md">RLHF_AND_PLATONIC_REPRESENTATION.md</a> 讲的是<strong>扩展</strong>——当基础程序训练好后，如何用 RLHF 把另一段可微分程序（奖励模型）接到上面继续优化。</li>
+</ul>
+<p>三篇分别从"结构"、"目标"、"对齐"三个角度解释 CodeGPT；本篇则从"范式"角度指出：<strong>它们讲的都是同一件事——可微分编程</strong>。</p>
+<hr />
+<h2 id="pytorch">结语：PyTorch 其实是一门语言</h2>
+<p>如果你回头看 <code>model.py</code> 的每一行，会发现没有一行是"魔法"：</p>
+<ul>
+<li><code>nn.Linear</code> 是矩阵乘法 + 可学习参数；</li>
+<li><code>F.softmax</code> 是指数归一化；</li>
+<li><code>F.cross_entropy</code> 是 log + 取值 + 求平均；</li>
+<li><code>loss.backward()</code> 是链式法则的自动展开；</li>
+<li><code>optimizer.step()</code> 是 <code>w -= lr * w.grad</code> 的工程化封装。</li>
+</ul>
+<p>每一个原子都简单，简单到可以在一张纸上推导导数。但它们组合起来——通过 <code>nn.Module</code> 定义的函数层次、通过 <code>forward</code> 里的控制流、通过 <code>autograd</code> 维护的反向图——就构成了一种<strong>语言</strong>。用这种语言，你可以编写数亿参数的程序，让梯度下降把它们全部"填空"完成。</p>
+<p>所以当 LeCun 说"深度学习已死，可微分编程万岁"时，他想表达的是：</p>
+<blockquote>
+<p>别再把注意力放在"网络有多深、多宽"上。去想你在 forward 里写了什么程序。去想你引入了哪些新的可微分操作。去想如何用 autograd 把更复杂的经典算法翻译成可学习的形式。</p>
+</blockquote>
+<p><strong>CodeGPT 从这个视角看，就是一段长长的、124M 个参数的 Python 程序——它的 <code>forward</code> 是人写的骨架，它的参数是梯度下降写出来的血肉，而 <code>loss.backward()</code> 是把两者粘合起来的编译器。</strong></p>
+    </div>
+  </article>
+
+</main>
+</body>
+</html>

@@ -1,0 +1,376 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>RAG 还是 SFT：面对一堆私有数据，该怎么选？ · Steve Chan — xlisp</title>
+<link rel="stylesheet" href="../style.css">
+</head>
+<body>
+<main class="wrap post">
+
+  <nav class="topnav">
+    <a href="../index.html">← home</a>
+  </nav>
+
+  <article>
+    <header class="post-header">
+      <h1>RAG 还是 SFT：面对一堆私有数据，该怎么选？</h1>
+      <p class="meta">2026-05-06 · Steve Chan</p>
+    </header>
+
+    <div class="content">
+<h1 id="rag-sft">RAG 还是 SFT：面对一堆私有数据，该怎么选？</h1>
+<blockquote>
+<p>用户问题：我有一堆私有数据（公司文档、内部代码库、知识库、日志……），想让 LLM "学会"它们。应该做 RAG（检索增强生成），还是 SFT（监督微调）？怎么评估哪个方案更好？为什么？</p>
+<p>这篇文档回答三件事：
+1. <strong>RAG 和 SFT 在数学上到底是两种不同的操作</strong>——一个改 <code>context</code>（输入），一个改 <code>W</code>（参数）。理解这一点，90% 的困惑就没了。
+2. <strong>按什么维度选</strong>：数据性质、更新频率、数据量、可解释性、推理成本、隐私、工程复杂度。给一张决策表。
+3. <strong>怎么"真的评估"</strong>：怎么切数据、怎么定 metric、怎么设 baseline，才能得到可信的"谁更好"的结论。</p>
+</blockquote>
+<hr />
+<h2 id="_1">目录</h2>
+<ol>
+<li><a href="#1-先把两种操作的本质摆清楚">先把两种操作的本质摆清楚</a></li>
+<li><a href="#2-rag-的数学把知识塞进-prompt-的前半段">RAG 的数学：把知识塞进 prompt 的前半段</a></li>
+<li><a href="#3-sft-的数学把知识压进权重矩阵">SFT 的数学：把知识压进权重矩阵</a></li>
+<li><a href="#4-六个决策维度哪种私有数据适合哪条路">六个决策维度：哪种私有数据适合哪条路</a></li>
+<li><a href="#5-为什么默认先做-rag-是合理的">为什么"默认先做 RAG"是合理的</a></li>
+<li><a href="#6-什么时候-sft-才是正解">什么时候 SFT 才是正解</a></li>
+<li><a href="#7-rag--sft-叠加不是二选一">RAG + SFT 叠加：不是二选一</a></li>
+<li><a href="#8-真正的评估方法数据集切分--metric--baseline">真正的评估方法：数据集切分 + metric + baseline</a></li>
+<li><a href="#9-回到-codegpt私有代码库该怎么用">回到 CodeGPT：私有代码库该怎么用</a></li>
+<li><a href="#10-小结">小结</a></li>
+</ol>
+<hr />
+<h2 id="1">1. 先把两种操作的本质摆清楚</h2>
+<p>"给模型加私有数据"这句话在数学上是有歧义的。看看 CodeGPT 的 forward，就知道"知识"可以住在两个地方。<code>model.py:177-198</code>：</p>
+<div class="highlight"><pre><span></span><code><span class="k">def</span><span class="w"> </span><span class="nf">forward</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">idx</span><span class="p">,</span> <span class="n">targets</span><span class="o">=</span><span class="kc">None</span><span class="p">):</span>
+    <span class="c1"># idx: (B, T) 输入 token ——&quot;context&quot;住在这里</span>
+    <span class="n">tok_emb</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">transformer</span><span class="o">.</span><span class="n">wte</span><span class="p">(</span><span class="n">idx</span><span class="p">)</span>      <span class="c1"># wte 是权重矩阵 W 的一部分</span>
+    <span class="n">pos_emb</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">transformer</span><span class="o">.</span><span class="n">wpe</span><span class="p">(</span><span class="n">pos</span><span class="p">)</span>
+    <span class="n">x</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">transformer</span><span class="o">.</span><span class="n">drop</span><span class="p">(</span><span class="n">tok_emb</span> <span class="o">+</span> <span class="n">pos_emb</span><span class="p">)</span>
+    <span class="k">for</span> <span class="n">block</span> <span class="ow">in</span> <span class="bp">self</span><span class="o">.</span><span class="n">transformer</span><span class="o">.</span><span class="n">h</span><span class="p">:</span>          <span class="c1"># 每个 block 里的 W 矩阵</span>
+        <span class="n">x</span> <span class="o">=</span> <span class="n">block</span><span class="p">(</span><span class="n">x</span><span class="p">)</span>
+    <span class="n">x</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">transformer</span><span class="o">.</span><span class="n">ln_f</span><span class="p">(</span><span class="n">x</span><span class="p">)</span>
+    <span class="n">logits</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">lm_head</span><span class="p">(</span><span class="n">x</span><span class="p">)</span>                  <span class="c1"># lm_head 也是 W</span>
+    <span class="n">loss</span> <span class="o">=</span> <span class="n">F</span><span class="o">.</span><span class="n">cross_entropy</span><span class="p">(</span><span class="n">logits</span><span class="o">.</span><span class="n">view</span><span class="p">(</span><span class="o">-</span><span class="mi">1</span><span class="p">,</span> <span class="n">logits</span><span class="o">.</span><span class="n">size</span><span class="p">(</span><span class="o">-</span><span class="mi">1</span><span class="p">)),</span>
+                           <span class="n">targets</span><span class="o">.</span><span class="n">view</span><span class="p">(</span><span class="o">-</span><span class="mi">1</span><span class="p">),</span> <span class="n">ignore_index</span><span class="o">=-</span><span class="mi">1</span><span class="p">)</span>
+</code></pre></div>
+
+<p>知识可以住在两个位置：</p>
+<ul>
+<li><strong><code>idx</code>（context / 输入）</strong>：推理时动态喂进去的 token。改它 = 改 prompt。<strong>RAG 改的就是这个。</strong></li>
+<li><strong><code>W</code>（模型参数：<code>wte</code>、<code>wpe</code>、<code>block.*</code>、<code>lm_head</code>）</strong>：训练时通过梯度下降被写进去。<strong>SFT 改的就是这个。</strong></li>
+</ul>
+<p>换句话说：</p>
+<ul>
+<li><strong>RAG = 不动 <code>W</code>，在 <code>idx</code> 前面拼接相关文档。</strong> 模型推理时"看到"私有数据，但自己并不"记得"。</li>
+<li><strong>SFT = 不动 <code>idx</code>，用私有数据跑 <code>F.cross_entropy</code> + <code>backward</code>，把知识压进 <code>W</code>。</strong> 模型之后再也不需要文档，私有数据"内化"进了参数。</li>
+</ul>
+<p>这是两件完全不同的事。两者的取舍也就完全不同。</p>
+<hr />
+<h2 id="2-rag-prompt">2. RAG 的数学：把知识塞进 prompt 的前半段</h2>
+<p>RAG（Retrieval-Augmented Generation，Lewis et al. 2020）的完整流水线：</p>
+<div class="highlight"><pre><span></span><code>私有数据 → 切 chunk → 向量化（embedding）→ 存进向量库
+                                                ↓
+用户问题 → 向量化 → 相似度搜索 → top-k chunk → 拼进 prompt → LLM 生成
+</code></pre></div>
+
+<p>用 PyTorch 伪代码写出来（向量化这一步用本项目的 <code>tokenizer.py</code> + 一个 embedding 模型即可）：</p>
+<div class="highlight"><pre><span></span><code><span class="c1"># 1. 建索引（一次性）</span>
+<span class="n">chunks</span>   <span class="o">=</span> <span class="n">split_documents</span><span class="p">(</span><span class="n">private_docs</span><span class="p">,</span> <span class="n">chunk_size</span><span class="o">=</span><span class="mi">512</span><span class="p">)</span>
+<span class="n">vectors</span>  <span class="o">=</span> <span class="n">embedding_model</span><span class="o">.</span><span class="n">encode</span><span class="p">(</span><span class="n">chunks</span><span class="p">)</span>          <span class="c1"># (N, d)</span>
+<span class="n">index</span>    <span class="o">=</span> <span class="n">numpy_or_faiss_index</span><span class="p">(</span><span class="n">vectors</span><span class="p">)</span>
+
+<span class="c1"># 2. 推理时（每次）</span>
+<span class="n">q_vec</span>      <span class="o">=</span> <span class="n">embedding_model</span><span class="o">.</span><span class="n">encode</span><span class="p">(</span><span class="n">user_query</span><span class="p">)</span>
+<span class="n">top_k_ids</span>  <span class="o">=</span> <span class="n">index</span><span class="o">.</span><span class="n">search</span><span class="p">(</span><span class="n">q_vec</span><span class="p">,</span> <span class="n">k</span><span class="o">=</span><span class="mi">5</span><span class="p">)</span>
+<span class="n">retrieved</span>  <span class="o">=</span> <span class="p">[</span><span class="n">chunks</span><span class="p">[</span><span class="n">i</span><span class="p">]</span> <span class="k">for</span> <span class="n">i</span> <span class="ow">in</span> <span class="n">top_k_ids</span><span class="p">]</span>
+
+<span class="n">prompt</span> <span class="o">=</span> <span class="sa">f</span><span class="s2">&quot;&quot;&quot;参考资料：</span>
+<span class="si">{</span><span class="nb">chr</span><span class="p">(</span><span class="mi">10</span><span class="p">)</span><span class="o">.</span><span class="n">join</span><span class="p">(</span><span class="n">retrieved</span><span class="p">)</span><span class="si">}</span>
+
+<span class="s2">问题：</span><span class="si">{</span><span class="n">user_query</span><span class="si">}</span>
+<span class="s2">回答：&quot;&quot;&quot;</span>
+
+<span class="c1"># 3. 喂进 CodeGPT —— model.py 的代码完全不改</span>
+<span class="n">input_ids</span> <span class="o">=</span> <span class="n">tokenizer</span><span class="o">.</span><span class="n">encode</span><span class="p">(</span><span class="n">prompt</span><span class="p">)</span>
+<span class="n">output</span> <span class="o">=</span> <span class="n">model</span><span class="o">.</span><span class="n">generate</span><span class="p">(</span><span class="n">input_ids</span><span class="p">,</span> <span class="n">max_new_tokens</span><span class="o">=</span><span class="mi">256</span><span class="p">,</span> <span class="n">top_p</span><span class="o">=</span><span class="mf">0.95</span><span class="p">,</span> <span class="o">...</span><span class="p">)</span>
+</code></pre></div>
+
+<p><strong>关键观察：RAG 完全不改模型参数</strong>。它改变的只是 <code>idx</code>——<code>model.py:277</code> 里的 <code>idx_cond</code> 多了 retrieved chunks 的 token。模型依然是原来那个模型。</p>
+<p>这带来几个立刻推得出的性质：</p>
+<ul>
+<li><strong>知识可以秒级更新</strong>：换掉向量库里的一条文档，下一次推理立刻生效。不需要训练。</li>
+<li><strong>可以引用出处</strong>：retrieved chunks 本身就是证据，直接展示给用户。</li>
+<li><strong>有硬边界</strong>：<code>block_size</code>（<code>model.py:111</code> 默认 1024）。retrieved 塞进来占位置，留给问题和回答的空间就少了。</li>
+<li><strong>每次推理都要多做一次检索</strong>：延迟和算力成本上升一些。</li>
+</ul>
+<hr />
+<h2 id="3-sft">3. SFT 的数学：把知识压进权重矩阵</h2>
+<p>SFT 在数学上和预训练是<strong>同一个 loss</strong>——就是 <code>model.py:192</code> 那行 <code>F.cross_entropy</code>，详见 <a href="SFT_FORGETTING_AND_MOE.md">SFT_FORGETTING_AND_MOE.md</a> 第 2 节。区别仅在于：</p>
+<ul>
+<li>语料是精选的（你的私有数据，格式化成 prompt-answer 对）。</li>
+<li><code>targets</code> 的 prompt 段被设成 <code>-1</code>，只让 answer 段产生梯度。</li>
+</ul>
+<div class="highlight"><pre><span></span><code><span class="c1"># 把一条私有数据格式化</span>
+<span class="n">prompt</span> <span class="o">=</span> <span class="s2">&quot;&lt;|user|&gt;公司的 VPN 怎么配置？&lt;|assistant|&gt;&quot;</span>
+<span class="n">answer</span> <span class="o">=</span> <span class="s2">&quot;1. 打开 Tunnelblick… 2. …&quot;</span>
+
+<span class="n">tokens</span>  <span class="o">=</span> <span class="n">tokenizer</span><span class="o">.</span><span class="n">encode</span><span class="p">(</span><span class="n">prompt</span> <span class="o">+</span> <span class="n">answer</span><span class="p">)</span>
+<span class="n">targets</span> <span class="o">=</span> <span class="n">tokens</span><span class="o">.</span><span class="n">copy</span><span class="p">()</span>
+<span class="n">targets</span><span class="p">[:</span><span class="nb">len</span><span class="p">(</span><span class="n">prompt_tokens</span><span class="p">)]</span> <span class="o">=</span> <span class="o">-</span><span class="mi">1</span>
+
+<span class="c1"># 然后复用 train.py 的循环，一行不改</span>
+<span class="n">X</span><span class="p">,</span> <span class="n">Y</span> <span class="o">=</span> <span class="n">tokens</span><span class="p">,</span> <span class="n">targets</span>
+<span class="n">logits</span><span class="p">,</span> <span class="n">loss</span> <span class="o">=</span> <span class="n">model</span><span class="p">(</span><span class="n">X</span><span class="p">,</span> <span class="n">Y</span><span class="p">)</span>        <span class="c1"># model.py:192 的 cross_entropy</span>
+<span class="n">loss</span><span class="o">.</span><span class="n">backward</span><span class="p">()</span>
+<span class="n">optimizer</span><span class="o">.</span><span class="n">step</span><span class="p">()</span>                   <span class="c1"># W ← W - lr · ∇loss</span>
+</code></pre></div>
+
+<p>训练完之后：<strong>私有数据已经不存在了</strong>——它被压缩、蒸馏、扩散进了 <code>W</code> 的几十亿个浮点数里。推理时不再需要任何外部资料。</p>
+<p>这也带来一组和 RAG 截然相反的性质：</p>
+<ul>
+<li><strong>知识更新意味着重训</strong>：新增一条文档 → 重新 SFT（或增量训）。至少几小时起步。</li>
+<li><strong>无法引用出处</strong>：答案是从参数"涌现"出来的，没有可追溯的证据链。</li>
+<li><strong>上下文窗口完全省给真正的任务</strong>：不用塞参考资料。</li>
+<li><strong>一次性成本高，单次推理便宜</strong>：训练贵，推理就是普通的 forward。</li>
+<li><strong>会遗忘</strong>：做过 SFT 的模型，如果数据配比不当，通用能力可能下降（这也是 <a href="SFT_FORGETTING_AND_MOE.md">SFT_FORGETTING_AND_MOE.md</a> 的主题）。</li>
+</ul>
+<hr />
+<h2 id="4">4. 六个决策维度：哪种私有数据适合哪条路</h2>
+<p>把问题拆成可以独立判断的维度：</p>
+<table>
+<thead>
+<tr>
+<th>维度</th>
+<th>RAG 更好</th>
+<th>SFT 更好</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><strong>数据性质</strong></td>
+<td>事实性、查表类（API 文档、知识库、FAQ、合同）</td>
+<td>风格/技能类（说话语气、代码风格、领域推理方式）</td>
+</tr>
+<tr>
+<td><strong>更新频率</strong></td>
+<td>高频变动（每天/每周都有新文档）</td>
+<td>静态或很少变（一年一次）</td>
+</tr>
+<tr>
+<td><strong>数据量</strong></td>
+<td>几百条到几百万条，任意规模</td>
+<td>至少几千条高质量样本，太少会过拟合</td>
+</tr>
+<tr>
+<td><strong>可解释性 / 可溯源</strong></td>
+<td>必须引用出处（法律、医疗、合规场景）</td>
+<td>不需要出处，只要输出对</td>
+</tr>
+<tr>
+<td><strong>推理延迟 / 成本</strong></td>
+<td>可接受多一次检索的延迟</td>
+<td>延迟敏感、单次推理越便宜越好</td>
+</tr>
+<tr>
+<td><strong>数据隐私 / 独立部署</strong></td>
+<td>本地向量库 + 本地模型即可</td>
+<td>一样可以本地训本地跑</td>
+</tr>
+</tbody>
+</table>
+<p>几条经验法则：</p>
+<ul>
+<li><strong>"我想让模型知道 X 这条事实"</strong> → RAG。事实是离散的、可变的、可索引的。</li>
+<li><strong>"我想让模型学会 Y 这种风格 / 这种思考方式"</strong> → SFT。风格是连续的、分布式的、不适合检索。</li>
+<li><strong>"文档有几十 GB，而且每周都更新"</strong> → RAG。SFT 根本跟不上节奏。</li>
+<li><strong>"我只有 500 条样本"</strong> → RAG。SFT 在这个量级大概率只是在学数据的噪声。</li>
+<li><strong>"我需要模型在没网的边缘设备上跑"</strong> → 倾向 SFT（或小模型 SFT + 本地向量库的 RAG 都行）。</li>
+</ul>
+<hr />
+<h2 id="5-rag">5. 为什么"默认先做 RAG"是合理的</h2>
+<p>如果你没想清楚，先上 RAG。原因：</p>
+<ol>
+<li><strong>零训练成本</strong>。你不用准备 SFT 数据格式、不用调 lr、不用担心遗忘（见 <a href="SFT_FORGETTING_AND_MOE.md">SFT_FORGETTING_AND_MOE.md</a>）、不用维护 checkpoint。</li>
+<li><strong>试错便宜</strong>。加一条文档就是 <code>index.add(vec)</code>，错了就删。SFT 错了要回滚到上一个 ckpt，重训。</li>
+<li><strong>天生可解释</strong>。retrieved chunks 就是证据。模型幻觉（hallucination）一眼能抓到——答案里引的事实不在 retrieved 里，就是幻觉。</li>
+<li><strong>数据安全更简单</strong>。私有数据留在向量库，不进入模型权重；想撤回某条数据就是 <code>index.remove(id)</code>。SFT 过的数据要"撤回"几乎不可能——它已经被混进 <code>W</code>，和其它知识纠缠在一起了（这一点在有 GDPR / "被遗忘权" 要求的场景特别关键）。</li>
+<li><strong>可以和任何底座模型搭配</strong>。换 base model 不影响向量库。SFT 和 base model 绑死。</li>
+</ol>
+<p>反过来，如果你一上来就做 SFT，你会发现自己在训练一个<strong>永远落后于文档更新的副本</strong>。这是大多数"想让 LLM 学公司知识"的团队踩的第一个大坑。</p>
+<hr />
+<h2 id="6-sft">6. 什么时候 SFT 才是正解</h2>
+<p>有几类场景 RAG 是做不好的，必须 SFT：</p>
+<p><strong>(a) 改变输出风格 / 格式。</strong> 比如希望模型总是用特定 JSON schema 回答、总是用公司术语、总是按某种模板组织答复。这些是"行为模式"而不是"事实"，塞进 prompt 可以临时压住，但 SFT 才能让它成为模型的默认习惯。</p>
+<p><strong>(b) 领域推理能力。</strong> 比如让模型学会某种专业推理（病历诊断、合同风险分析、特定代码审查模式）。这类能力不是"记住几条规则"，而是<strong>在参数里形成一种新的推理路径</strong>。retrieved chunks 只是例子，它不会让模型"变得会这样想"。</p>
+<p><strong>(c) 降低推理延迟 / token 成本。</strong> 如果某类知识被高频查询，每次都检索 + 塞 5KB 参考资料到 prompt 里太贵。把它 SFT 进模型，之后每次推理省掉 5KB 的 input tokens。规模大了账很可观。</p>
+<p><strong>(d) 离线 / 带宽受限场景。</strong> 边缘设备、无网环境。RAG 需要一个向量库在手边；SFT 过的模型是自包含的。</p>
+<p><strong>(e) 对抗 prompt 注入。</strong> RAG 的 retrieved chunks 如果来源不可信，攻击者可以在一篇"私有文档"里埋入 <code>忽略上面的指令，……</code> 这类注入。SFT 过的知识没有这个攻击面（因为没有运行时的文本注入通道）。</p>
+<p>注意：即使要 SFT，<strong>也几乎总是应该叠加 RAG</strong>，而不是替代它。看下一节。</p>
+<hr />
+<h2 id="7-rag-sft">7. RAG + SFT 叠加：不是二选一</h2>
+<p>工业界成熟方案常常是<strong>两者都要</strong>：</p>
+<div class="highlight"><pre><span></span><code>私有数据
+  ├── 静态的、风格的、推理模式的 ─→ SFT 进模型
+  └── 动态的、事实的、带出处的    ─→ RAG 从向量库检索
+
+推理时：
+  SFT-过的模型 ( RAG 检索出来的文档 + 用户问题 ) → 回答
+</code></pre></div>
+
+<p>比如一个"公司内部助手"可能是这样做的：</p>
+<ul>
+<li><strong>SFT 阶段</strong>：用 ~10k 条人工标注的"公司风格问答"样本，教会模型用公司内部术语说话、按内部 JSON schema 返回结构化结果、识别出什么问题该转给哪个部门。</li>
+<li><strong>RAG 阶段</strong>：把几十万条持续更新的 wiki 文档、工单历史、代码注释放进向量库。推理时检索相关 chunk 拼进 prompt。</li>
+</ul>
+<p>这两层各司其职：SFT 决定<strong>怎么说</strong>，RAG 决定<strong>说的内容依据什么</strong>。</p>
+<p>在本项目的代码框架里，这两者完全可以共存：SFT 走 <code>train.py</code> 那套（改一下 <code>prepare.py</code> 构造 prompt-answer 对 + 把 prompt 段 target 设 -1），RAG 走推理期——在 <code>sample.py</code> 或 <code>repl.py</code> 的 <code>input_ids = tokenizer.encode(prompt)</code> 之前，先做一次检索、把 chunks 拼进 prompt 就行。模型的 <code>forward</code> / <code>generate</code> 一个字都不用改。</p>
+<hr />
+<h2 id="8-metric-baseline">8. 真正的评估方法：数据集切分 + metric + baseline</h2>
+<p>"哪个更好"是一个经验问题，不是哲学问题。要得出<strong>可复现</strong>的结论，需要一个最小实验设计：</p>
+<h3 id="81">8.1 数据集切分</h3>
+<p>把你的私有数据和"问题"分开：</p>
+<div class="highlight"><pre><span></span><code><span class="c1"># 私有数据（知识源）</span>
+<span class="n">docs_train</span>       <span class="c1"># 训 SFT / 进 RAG 向量库的文档</span>
+<span class="n">docs_heldout</span>     <span class="c1"># ← 关键：留一部分文档不给任何一方看</span>
+
+<span class="c1"># 问题集（评测用）</span>
+<span class="n">questions</span> <span class="o">=</span> <span class="p">[</span>
+    <span class="c1"># 来自 docs_train 的：测&quot;记住 / 能查到&quot;</span>
+    <span class="p">(</span><span class="s2">&quot;公司 VPN 配置步骤？&quot;</span><span class="p">,</span> <span class="n">answer_1</span><span class="p">,</span> <span class="n">source_doc_in_train</span><span class="p">),</span>
+    <span class="c1"># 来自 docs_heldout 的：测泛化（RAG 能靠检索命中，SFT 没见过）</span>
+    <span class="p">(</span><span class="s2">&quot;最新的报销流程？&quot;</span><span class="p">,</span> <span class="n">answer_2</span><span class="p">,</span> <span class="n">source_doc_in_heldout</span><span class="p">),</span>
+    <span class="c1"># 完全不相关的：测&quot;没变笨&quot;（防止 SFT 遗忘）</span>
+    <span class="p">(</span><span class="s2">&quot;Python 怎么写快排？&quot;</span><span class="p">,</span> <span class="n">answer_3</span><span class="p">,</span> <span class="kc">None</span><span class="p">),</span>
+<span class="p">]</span>
+</code></pre></div>
+
+<p>三段问题的意图：</p>
+<table>
+<thead>
+<tr>
+<th>问题来源</th>
+<th>RAG 预期</th>
+<th>SFT 预期</th>
+<th>意义</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>docs_train</code></td>
+<td>答对（检索命中）</td>
+<td>答对（参数记住了）</td>
+<td>基本能力</td>
+</tr>
+<tr>
+<td><code>docs_heldout</code></td>
+<td>答对（检索仍命中）</td>
+<td><strong>大概率答错</strong>（没训到）</td>
+<td><strong>RAG 优势的关键证据</strong></td>
+</tr>
+<tr>
+<td>无关通用问题</td>
+<td>答对（能力没变）</td>
+<td><strong>可能答错</strong>（遗忘）</td>
+<td><strong>RAG 的另一个优势</strong></td>
+</tr>
+</tbody>
+</table>
+<p>这个设计能直接把两种方案最重要的差异暴露出来。</p>
+<h3 id="82-metric">8.2 Metric</h3>
+<p>不要只看 loss。loss 和"用户觉得答得好"不是一回事。至少加两三个：</p>
+<div class="highlight"><pre><span></span><code><span class="c1"># (1) 任务正确率 —— 如果你有标准答案</span>
+<span class="n">accuracy</span> <span class="o">=</span> <span class="nb">sum</span><span class="p">(</span><span class="n">is_correct</span><span class="p">(</span><span class="n">model_answer</span><span class="p">,</span> <span class="n">gold</span><span class="p">)</span> <span class="k">for</span> <span class="o">...</span> <span class="p">)</span> <span class="o">/</span> <span class="n">N</span>
+
+<span class="c1"># (2) 引用准确性 —— 专门测 RAG 是否幻觉</span>
+<span class="c1"># 答案里提到的事实是否真的出现在 retrieved chunks 里</span>
+<span class="n">citation_precision</span> <span class="o">=</span> <span class="n">cited_facts_in_retrieved</span> <span class="o">/</span> <span class="n">cited_facts_total</span>
+
+<span class="c1"># (3) 通用能力回归 —— 专门测 SFT 是否遗忘</span>
+<span class="c1"># 在一个固定的通用 benchmark 上跑 before/after</span>
+<span class="n">humaneval_before</span> <span class="o">=</span> <span class="nb">eval</span><span class="p">(</span><span class="n">base_model</span><span class="p">,</span>   <span class="n">humaneval_set</span><span class="p">)</span>
+<span class="n">humaneval_after</span>  <span class="o">=</span> <span class="nb">eval</span><span class="p">(</span><span class="n">sft_model</span><span class="p">,</span>    <span class="n">humaneval_set</span><span class="p">)</span>
+<span class="n">forgetting</span> <span class="o">=</span> <span class="n">humaneval_before</span> <span class="o">-</span> <span class="n">humaneval_after</span>   <span class="c1"># 越大越糟</span>
+</code></pre></div>
+
+<p>这三个指标合在一起，才能讲清楚"RAG vs SFT"的完整故事。只看正确率，SFT 在训练分布内往往看起来"更好"——但那是过拟合的假象。</p>
+<h3 id="83-baseline">8.3 Baseline</h3>
+<p>至少四条基线同台比较：</p>
+<div class="highlight"><pre><span></span><code><span class="n">baselines</span> <span class="o">=</span> <span class="p">{</span>
+    <span class="s2">&quot;base&quot;</span><span class="p">:</span>         <span class="n">原始</span> <span class="n">CodeGPT</span><span class="err">，</span><span class="n">不给任何私有数据</span><span class="p">,</span>             <span class="c1"># 底线</span>
+    <span class="s2">&quot;rag_only&quot;</span><span class="p">:</span>     <span class="n">base</span> <span class="o">+</span> <span class="n">RAG</span><span class="err">（</span><span class="n">向量库</span> <span class="o">+</span> <span class="n">retrieve</span> <span class="o">+</span> <span class="n">拼</span> <span class="n">prompt</span><span class="err">）</span><span class="p">,</span>
+    <span class="s2">&quot;sft_only&quot;</span><span class="p">:</span>     <span class="n">base</span> <span class="n">上做</span> <span class="n">SFT</span><span class="err">，</span><span class="n">不用</span> <span class="n">RAG</span><span class="p">,</span>
+    <span class="s2">&quot;sft_plus_rag&quot;</span><span class="p">:</span> <span class="n">SFT</span> <span class="n">后的模型</span> <span class="o">+</span> <span class="n">RAG</span><span class="p">,</span>                        <span class="c1"># 叠加方案</span>
+<span class="p">}</span>
+</code></pre></div>
+
+<p>在相同的 questions 上跑这四个，矩阵一出，结论自然浮现——不需要拍脑袋说"我觉得 RAG 更好"。</p>
+<h3 id="84">8.4 成本也要量化</h3>
+<p>除了质量，把下面几条记录下来：</p>
+<ul>
+<li><strong>前置成本</strong>：RAG = 建索引时间；SFT = 训练 GPU 小时。</li>
+<li><strong>单次推理延迟</strong>：检索延迟 + 多出来的 prompt tokens 对应的额外 forward 时间。</li>
+<li><strong>知识更新成本</strong>：新加一条文档，两种方案分别要花多久。</li>
+<li><strong>存储</strong>：向量库大小 vs checkpoint 大小。</li>
+</ul>
+<p>一个方案再"准"，如果知识更新一次要 8 小时训练，在"公司 wiki 每天改"的场景里就是不可用。</p>
+<hr />
+<h2 id="9-codegpt">9. 回到 CodeGPT：私有代码库该怎么用</h2>
+<p>假设场景：你有一个公司私有代码库（比如 50 万行内部 Python + 自建框架），想让 CodeGPT 学会在这个代码库里做补全。</p>
+<p>按本文的分析，推荐路径：</p>
+<p><strong>Step 1 —— 先判断你要的是"事实"还是"风格"。</strong></p>
+<ul>
+<li>"给我写一个调用我们公司 <code>InternalAuth</code> 类的登录代码" → 这是<strong>事实查找</strong>（<code>InternalAuth</code> 的方法签名）。RAG 更合适：把代码库 chunk 化（按函数切），放进向量库，推理时检索相关文件喂进 prompt。</li>
+<li>"让模型按我们公司风格写代码（命名习惯、错误处理模式、注释风格）" → 这是<strong>风格</strong>。SFT 更合适：把代码库当成预训练语料继续训。</li>
+</ul>
+<p>90% 的私有代码场景，其实两者都想要——这就是 SFT + RAG 叠加的典型用例。</p>
+<p><strong>Step 2 —— RAG 的最小实现，本项目已经具备所有部件。</strong></p>
+<div class="highlight"><pre><span></span><code><span class="c1"># 切 chunk：可以复用 tokenizer.py 的 encode，按 block_size/2 滑窗</span>
+<span class="n">chunks</span> <span class="o">=</span> <span class="p">[]</span>
+<span class="k">for</span> <span class="n">file</span> <span class="ow">in</span> <span class="n">private_codebase</span><span class="p">:</span>
+    <span class="n">tokens</span> <span class="o">=</span> <span class="n">tokenizer</span><span class="o">.</span><span class="n">encode</span><span class="p">(</span><span class="n">file</span><span class="o">.</span><span class="n">read</span><span class="p">())</span>
+    <span class="k">for</span> <span class="n">i</span> <span class="ow">in</span> <span class="nb">range</span><span class="p">(</span><span class="mi">0</span><span class="p">,</span> <span class="nb">len</span><span class="p">(</span><span class="n">tokens</span><span class="p">),</span> <span class="mi">256</span><span class="p">):</span>
+        <span class="n">chunks</span><span class="o">.</span><span class="n">append</span><span class="p">(</span><span class="n">tokens</span><span class="p">[</span><span class="n">i</span><span class="p">:</span><span class="n">i</span><span class="o">+</span><span class="mi">512</span><span class="p">])</span>
+
+<span class="c1"># 向量化：用任何 embedding 模型（本项目没自带，可以先用一个小型 sentence-transformer）</span>
+<span class="c1"># 检索：numpy 的余弦相似度足够跑通 demo，规模大了再换 FAISS</span>
+<span class="c1"># 拼 prompt：直接在 sample.py 的 tokenizer.encode(prompt) 前做</span>
+</code></pre></div>
+
+<p>注意 <code>block_size=1024</code>（<code>model.py:111</code>）这个硬约束——retrieved chunks 总长 + 用户 prompt + 要生成的 tokens 不能超过它。给自己留至少 256 token 的生成预算。</p>
+<p><strong>Step 3 —— 如果要上 SFT，按私有代码的量决定配比。</strong></p>
+<ul>
+<li>如果私有代码 &lt; 100 MB（约几千万 token），直接混进预训练语料继续训，配比 30%~70% 私有、其余保持原来的公开代码，防止模型"只会写公司代码、不会写通用 Python"。</li>
+<li>如果 &gt; 1 GB，可以做两阶段：先在公开数据预训，再用私有数据做 SFT 阶段。<strong>仍然要按 <a href="SFT_FORGETTING_AND_MOE.md">SFT_FORGETTING_AND_MOE.md</a> 第 4 节的方法混入 10%~30% 公开数据</strong>，否则通用能力会掉。</li>
+<li>数据格式上，私有代码就是 next-token prediction，<code>target</code> 不用设 -1，和预训练一样——这种"用原始代码做 SFT"严格来说叫 continued pretraining，但损失函数和预训练完全一致（<code>model.py:192</code>）。</li>
+</ul>
+<p><strong>Step 4 —— 评估就按第 8 节那一套做。</strong> 特别建议：</p>
+<ul>
+<li>在 <strong>heldout 的私有文件</strong>（训练时完全没见过）上测补全质量。这是最能区分"模型真的懂"和"只是记住"的信号。</li>
+<li>跑一次 HumanEval（公开 benchmark）做 before/after，确保 SFT 没把通用 Python 能力打废。</li>
+</ul>
+<p><strong>Step 5 —— 先 RAG 后 SFT 的现实节奏。</strong> 实际项目中的推荐顺序是：</p>
+<ol>
+<li>先两周上一个 RAG 版本。立刻可用、可回滚、可迭代。</li>
+<li>观察用户高频问到的场景，收集"RAG 答不好 / 答得慢 / 答案不够像公司风格" 的样例。</li>
+<li>把这些样例当成 SFT 数据的信号来源。SFT 不是替代 RAG，是补 RAG 的短板。</li>
+</ol>
+<hr />
+<h2 id="10">10. 小结</h2>
+<ul>
+<li><strong>RAG 改 <code>idx</code>，SFT 改 <code>W</code></strong>。是两种不同的操作，不是两种"差不多的方法"。分清楚这一点，选型问题的一半就消失了。</li>
+<li><strong>事实 → RAG，风格 → SFT</strong>。更新频繁 → RAG，离线推理 / 延迟敏感 → SFT。需要溯源 → RAG。需要遵守 GDPR "被遗忘权" → RAG。</li>
+<li><strong>默认先做 RAG</strong>。试错便宜、可解释、数据可撤回。见到 RAG 的短板（风格、领域推理、延迟、注入攻击面）再叠加 SFT。</li>
+<li><strong>SFT 和 RAG 通常是叠加而非二选一</strong>。SFT 教"怎么说"，RAG 提供"说什么的依据"。</li>
+<li><strong>"哪个更好"要用实验回答</strong>：切数据（train / heldout / 无关三段）+ 三类 metric（正确率 + 引用准确性 + 通用能力回归）+ 四条 baseline（base / rag / sft / sft+rag）。没做这套实验之前，任何"我觉得 X 更好"都只是偏见。</li>
+<li><strong>对 CodeGPT 这种私有代码场景</strong>：先建一个最小 RAG（复用 <code>tokenizer.py</code> + numpy 相似度），观察短板，再决定要不要做 continued pretraining / SFT。别上来就砸 GPU 训。</li>
+</ul>
+    </div>
+  </article>
+
+</main>
+</body>
+</html>

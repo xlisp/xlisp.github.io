@@ -1,0 +1,1093 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>GPT 是更高级的"万能谷歌搜索"：从关键词到高维空间的搜索进化史 · Steve Chan — xlisp</title>
+<link rel="stylesheet" href="../style.css">
+</head>
+<body>
+<main class="wrap post">
+
+  <nav class="topnav">
+    <a href="../index.html">← home</a>
+  </nav>
+
+  <article>
+    <header class="post-header">
+      <h1>GPT 是更高级的"万能谷歌搜索"：从关键词到高维空间的搜索进化史</h1>
+      <p class="meta">2026-05-06 · Steve Chan</p>
+    </header>
+
+    <div class="content">
+<h1 id="gpt">GPT 是更高级的"万能谷歌搜索"：从关键词到高维空间的搜索进化史</h1>
+<blockquote>
+<p>程序员每天用 GPT 的姿势，本质和十年前用 Google 搜报错信息没差。</p>
+<ul>
+<li><strong>2010 年</strong>：报错 → 复制英文关键词 → Google → Stack Overflow 第一个答案 → 抄回去。</li>
+<li><strong>2018 年</strong>：把"语义相似"也算上 → 向量搜索（Elasticsearch 的 <code>dense_vector</code>、Faiss、向量数据库）。</li>
+<li><strong>2020 年</strong>：搜索的对象从"文档"升级成"高维空间里的点"，相似度从字符串匹配变成内积。</li>
+<li><strong>2023 年</strong>：GPT 直接"搜索 + 拼接结果 + 过滤无关 + 顺手帮你写出来"——只是这一切都在高维空间里、由一次 forward 完成。</li>
+</ul>
+<p>这篇文档的目的不是把 GPT 神秘化，而是反过来：<strong>把 GPT 拆成一个你已经熟悉的搜索引擎</strong>，让你知道训练 / 微调一个个人 GPT 本质上就是"在自己的语料上重建一个更懂你的搜索索引"。理解了这件事，你用 GPT 的姿势会立刻升级——你会知道什么任务它能做、什么不能、什么时候要喂检索结果（RAG）、什么时候要训权重（SFT），以及为什么"prompt 写得好"等价于"搜索词写得好"。</p>
+</blockquote>
+<hr />
+<h2 id="_1">目录</h2>
+<ol>
+<li><a href="#1-搜索引擎的四代进化">搜索引擎的四代进化</a></li>
+<li><a href="#2-第一代关键词匹配grep-over-the-internet">第一代：关键词匹配（grep over the internet）</a></li>
+<li><a href="#3-第二代向量搜索语义近似">第二代：向量搜索（语义近似）</a>
+3.5. <a href="#35-工业级向量搜索faiss--hnsw-与近似最近邻ann">工业级向量搜索：Faiss / HNSW 与近似最近邻（ANN）</a></li>
+<li><a href="#4-第三代高维空间里的搜索embedding-everywhere">第三代：高维空间里的搜索（embedding everywhere）</a></li>
+<li><a href="#5-第四代gpt--在每一层都做一次搜索">第四代：GPT — 在每一层都做一次搜索</a></li>
+<li><a href="#6-attention-就是软-sqlqkt-是-wheresoftmax-是过滤v-是-select">Attention 就是"软 SQL"：QK^T 是 WHERE，softmax 是过滤，@V 是 SELECT</a>
+6.5. <a href="#65-qkv-三角投影把每个-token-揉碎成三个角色">QKV 三角投影：把每个 token "揉碎"成三个角色</a>
+6.6. <a href="#66-gpt-是抄答案拼接器迁移和幻觉是同一枚硬币">GPT 是抄答案拼接器：迁移和幻觉是同一枚硬币</a>
+6.7. <a href="#67-多头--多个特征矩阵qkv-为什么是-transformer-成功的核心">多头 = 多个"特征矩阵"：QKV 为什么是 Transformer 成功的核心</a>
+6.8. <a href="#68-子空间是怎么分离的svm-升维-vs-transformer-升维">子空间是怎么分离的？SVM 升维 vs Transformer 升维</a>
+6.9. <a href="#69-数据怎么才能分离开svd-vs-特征矩阵-vs-看标签差异一个会让-svd-翻车的例子">数据怎么才能分离开？SVD vs 特征矩阵 vs 看标签差异（一个会让 SVD 翻车的例子）</a>
+6.10. <a href="#610-从搜索缓存到-kv-cache同一种缓存哲学含-ollama--vllm-原理与-undo-机制">从搜索缓存到 KV cache：同一种缓存哲学（含 Ollama / vLLM 原理与 undo 机制）</a></li>
+<li><a href="#7-训练个人-gpt--在你的语料上重建搜索索引">训练个人 GPT = 在你的语料上重建搜索索引</a></li>
+<li><a href="#8-实战把用好-gpt-翻译成用好搜索">实战：把"用好 GPT"翻译成"用好搜索"</a></li>
+<li><a href="#9-小结gpt-不神秘它只是把搜索做到了极致">小结：GPT 不神秘，它只是把搜索做到了极致</a></li>
+</ol>
+<hr />
+<h2 id="1">1. 搜索引擎的四代进化</h2>
+<table>
+<thead>
+<tr>
+<th>代际</th>
+<th>核心数据结构</th>
+<th>相似度怎么算</th>
+<th>召回什么</th>
+<th>程序员的痛点</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>1. 关键词</td>
+<td>倒排索引</td>
+<td>字符串精确匹配 + TF-IDF</td>
+<td>包含关键词的文档</td>
+<td>同义词、拼写、跨语言全都失效</td>
+</tr>
+<tr>
+<td>2. 向量搜索</td>
+<td>Faiss / HNSW</td>
+<td>内积 / 余弦</td>
+<td>语义近似的文档</td>
+<td>切 chunk、embedding 选型、跨域漂移</td>
+</tr>
+<tr>
+<td>3. 高维空间搜索</td>
+<td>embedding model + ANN</td>
+<td>学习到的距离</td>
+<td>概念邻居（不止文本）</td>
+<td>仍然是"找文档"，不会写答案</td>
+</tr>
+<tr>
+<td>4. GPT</td>
+<td>模型权重 <code>W</code></td>
+<td>一次 forward 里多次 attention</td>
+<td>直接生成答案</td>
+<td>幻觉、对齐、上下文长度</td>
+</tr>
+</tbody>
+</table>
+<p>每一代都不是把上一代推翻，而是<strong>把"搜索"这件事在更高维的空间上做、用更连续的相似度算、把更多步骤压进同一次操作</strong>。GPT 是这个谱系的顶点——但仍然是搜索。</p>
+<hr />
+<h2 id="2-grep-over-the-internet">2. 第一代：关键词匹配（grep over the internet）</h2>
+<p>最朴素的搜索就是 <code>grep</code>。Google 早期的本质就是"全网范围的 grep + PageRank 排序"。</p>
+<div class="highlight"><pre><span></span><code><span class="c1"># 伪代码：关键词搜索的核心</span>
+<span class="k">def</span><span class="w"> </span><span class="nf">keyword_search</span><span class="p">(</span><span class="n">query</span><span class="p">:</span> <span class="nb">str</span><span class="p">,</span> <span class="n">docs</span><span class="p">:</span> <span class="nb">list</span><span class="p">[</span><span class="nb">str</span><span class="p">])</span> <span class="o">-&gt;</span> <span class="nb">list</span><span class="p">[</span><span class="nb">str</span><span class="p">]:</span>
+    <span class="n">tokens</span> <span class="o">=</span> <span class="n">query</span><span class="o">.</span><span class="n">lower</span><span class="p">()</span><span class="o">.</span><span class="n">split</span><span class="p">()</span>
+    <span class="n">hits</span> <span class="o">=</span> <span class="p">[]</span>
+    <span class="k">for</span> <span class="n">doc</span> <span class="ow">in</span> <span class="n">docs</span><span class="p">:</span>
+        <span class="k">if</span> <span class="nb">all</span><span class="p">(</span><span class="n">t</span> <span class="ow">in</span> <span class="n">doc</span><span class="o">.</span><span class="n">lower</span><span class="p">()</span> <span class="k">for</span> <span class="n">t</span> <span class="ow">in</span> <span class="n">tokens</span><span class="p">):</span>
+            <span class="n">hits</span><span class="o">.</span><span class="n">append</span><span class="p">(</span><span class="n">doc</span><span class="p">)</span>
+    <span class="k">return</span> <span class="n">rank_by_tf_idf</span><span class="p">(</span><span class="n">hits</span><span class="p">,</span> <span class="n">tokens</span><span class="p">)</span>
+</code></pre></div>
+
+<p>为什么程序员用英文报错关键词搜得比中文好？因为：</p>
+<ol>
+<li><strong>倒排索引是字符串级别的</strong>——<code>TypeError: 'NoneType' object is not subscriptable</code> 这种报错全网每天有几十万次复现，关键词命中率 100%。</li>
+<li><strong>英文是 Stack Overflow / GitHub 的母语</strong>——文档密度 × 关键词唯一性 = 高召回。</li>
+<li><strong>报错信息本身已经是一种"高熵特征"</strong>——它包含罕见的符号组合，几乎是天然的指纹。</li>
+</ol>
+<p>但这一代的天花板很硬：</p>
+<ul>
+<li>同义词不行（"crash" 找不到 "panic"）。</li>
+<li>拼写错误不行。</li>
+<li>跨语言不行（中文报错和英文文档对不上）。</li>
+<li>"我想知道怎么用 LangChain 做检索"——这种<strong>意图查询</strong>，关键词搜索几乎无能为力。</li>
+</ul>
+<p>所以下一代必须把"含义"也搜进来。</p>
+<hr />
+<h2 id="3">3. 第二代：向量搜索（语义近似）</h2>
+<p>向量搜索的核心思想是：<strong>把每段文本压成一个固定维度的向量，让"语义相近的文本"在向量空间里也相近。</strong></p>
+<div class="highlight"><pre><span></span><code><span class="c1"># 伪代码：向量搜索</span>
+<span class="kn">import</span><span class="w"> </span><span class="nn">numpy</span><span class="w"> </span><span class="k">as</span><span class="w"> </span><span class="nn">np</span>
+
+<span class="k">def</span><span class="w"> </span><span class="nf">vector_search</span><span class="p">(</span><span class="n">query</span><span class="p">:</span> <span class="nb">str</span><span class="p">,</span> <span class="n">docs</span><span class="p">:</span> <span class="nb">list</span><span class="p">[</span><span class="nb">str</span><span class="p">],</span> <span class="n">encoder</span><span class="p">,</span> <span class="n">k</span><span class="o">=</span><span class="mi">5</span><span class="p">):</span>
+    <span class="n">q_vec</span> <span class="o">=</span> <span class="n">encoder</span><span class="o">.</span><span class="n">encode</span><span class="p">(</span><span class="n">query</span><span class="p">)</span>             <span class="c1"># (d,)</span>
+    <span class="n">doc_vecs</span> <span class="o">=</span> <span class="n">encoder</span><span class="o">.</span><span class="n">encode</span><span class="p">(</span><span class="n">docs</span><span class="p">)</span>           <span class="c1"># (N, d)</span>
+    <span class="n">scores</span> <span class="o">=</span> <span class="n">doc_vecs</span> <span class="o">@</span> <span class="n">q_vec</span>                  <span class="c1"># (N,) 点积 = 相似度</span>
+    <span class="n">top_k</span> <span class="o">=</span> <span class="n">np</span><span class="o">.</span><span class="n">argsort</span><span class="p">(</span><span class="o">-</span><span class="n">scores</span><span class="p">)[:</span><span class="n">k</span><span class="p">]</span>
+    <span class="k">return</span> <span class="p">[</span><span class="n">docs</span><span class="p">[</span><span class="n">i</span><span class="p">]</span> <span class="k">for</span> <span class="n">i</span> <span class="ow">in</span> <span class="n">top_k</span><span class="p">]</span>
+</code></pre></div>
+
+<p>注意这里两个关键：</p>
+<ul>
+<li><strong><code>encoder.encode</code></strong> 把文本投到 $\mathbb{R}^d$（典型 $d=384$ 或 $768$）。</li>
+<li><strong><code>@ q_vec</code></strong> 内积就是相似度。这是一个<strong>纯矩阵运算</strong>，没有任何字符串比较。</li>
+</ul>
+<p>突然之间——同义词、跨语言、意图查询都可以工作，因为 encoder 已经在巨量语料上学过"crash 和 panic 在同一个邻域"。</p>
+<p>这正是 CodeGPT 的 token embedding 在做的事，只是更原始。看 <code>tokenizer.py</code> 把字符串转成 ID，再看 <code>model.py:183</code>：</p>
+<div class="highlight"><pre><span></span><code><span class="c1"># model.py:183 —— 这一行就是&quot;查表 = 第一次嵌入&quot;</span>
+<span class="n">tok_emb</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">transformer</span><span class="o">.</span><span class="n">wte</span><span class="p">(</span><span class="n">idx</span><span class="p">)</span>   <span class="c1"># (B, T, n_embd)</span>
+</code></pre></div>
+
+<p><code>wte</code>（word token embedding）就是一个 <code>(50304, 768)</code> 的矩阵。每个 token ID 进来，查出一个 768 维向量——<strong>这就是 token 的语义坐标</strong>。和向量搜索引擎里每篇文档的 embedding 是同一类东西，只是粒度更细：一个 token 一个向量，而不是一段文本一个向量。</p>
+<hr />
+<h2 id="35-faiss-hnsw-ann">3.5 工业级向量搜索：Faiss / HNSW 与近似最近邻（ANN）</h2>
+<p>第二代向量搜索的伪代码 <code>doc_vecs @ q_vec</code> 看起来很优雅，但<strong>在亿级文档库上跑一次要算 N×d 次乘加</strong>——N=1e9、d=768 时单次查询要 7.6×10¹¹ 次浮点运算，几十秒起步。所以工业界从来不跑朴素内积，而是用 <strong>ANN（Approximate Nearest Neighbor，近似最近邻）</strong>——牺牲一点点召回准确率，把时间复杂度从 O(N) 降到 O(log N) 甚至 O(1)。</p>
+<p>ANN 是 RAG、向量数据库（Pinecone / Milvus / Qdrant / Weaviate）、Faiss / HNSWLib 这一整层基础设施的核心。<strong>搞清 ANN，"高维空间搜索"这一代才不悬空。</strong></p>
+<h3 id="351-ann">3.5.1 三类主流 ANN 算法</h3>
+<table>
+<thead>
+<tr>
+<th>算法</th>
+<th>核心思想</th>
+<th>时间复杂度</th>
+<th>召回率</th>
+<th>典型实现</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>LSH (Locality-Sensitive Hashing)</td>
+<td>设计哈希函数让"相近向量大概率落同一桶"</td>
+<td>O(1) 平均</td>
+<td>中</td>
+<td>Faiss <code>IndexLSH</code></td>
+</tr>
+<tr>
+<td>IVF (Inverted File)</td>
+<td>先 K-means 把向量聚成 nlist 个 cluster；查询时只搜最近的 nprobe 个 cluster</td>
+<td>O(N/nlist · nprobe)</td>
+<td>高（调参后）</td>
+<td>Faiss <code>IndexIVFFlat</code></td>
+</tr>
+<tr>
+<td>HNSW (Hierarchical Navigable Small World)</td>
+<td>多层跳表 + 小世界图：上层稀疏快速定位、下层稠密精确搜索</td>
+<td>O(log N)</td>
+<td>极高（&gt;0.99）</td>
+<td>Faiss <code>IndexHNSWFlat</code>、HNSWLib</td>
+</tr>
+<tr>
+<td>PQ (Product Quantization)</td>
+<td>把 d 维向量切成 m 段，每段 K-means 量化成 256 个码字——内存压缩 8-32 倍</td>
+<td>视组合而定</td>
+<td>中-高</td>
+<td>常和 IVF 拼成 <code>IndexIVFPQ</code></td>
+</tr>
+</tbody>
+</table>
+<p><strong>HNSW 是当前事实标准</strong>：召回率高、查询稳定、动态插入友好。理解一个 HNSW 就理解了 95% 的工业向量库。</p>
+<h3 id="352-rag">3.5.2 一段能跑的 RAG 检索代码</h3>
+<div class="highlight"><pre><span></span><code><span class="c1"># pip install sentence-transformers faiss-cpu</span>
+<span class="kn">import</span><span class="w"> </span><span class="nn">numpy</span><span class="w"> </span><span class="k">as</span><span class="w"> </span><span class="nn">np</span>
+<span class="kn">import</span><span class="w"> </span><span class="nn">faiss</span>
+<span class="kn">from</span><span class="w"> </span><span class="nn">sentence_transformers</span><span class="w"> </span><span class="kn">import</span> <span class="n">SentenceTransformer</span>
+
+<span class="c1"># 1) embedding model：把文本压成 384 维向量</span>
+<span class="n">encoder</span> <span class="o">=</span> <span class="n">SentenceTransformer</span><span class="p">(</span><span class="s1">&#39;all-MiniLM-L6-v2&#39;</span><span class="p">)</span>   <span class="c1"># 22M 参数的小模型</span>
+<span class="n">docs</span> <span class="o">=</span> <span class="p">[</span>
+    <span class="s2">&quot;Python dict update merges keys in-place&quot;</span><span class="p">,</span>
+    <span class="s2">&quot;JS spread operator {...a, ...b} merges objects&quot;</span><span class="p">,</span>
+    <span class="s2">&quot;Rust borrow checker prevents data races&quot;</span><span class="p">,</span>
+    <span class="s2">&quot;TypeScript generics constrain type parameters&quot;</span><span class="p">,</span>
+    <span class="c1"># ... 假装有 1e6 条文档</span>
+<span class="p">]</span>
+<span class="n">doc_vecs</span> <span class="o">=</span> <span class="n">encoder</span><span class="o">.</span><span class="n">encode</span><span class="p">(</span><span class="n">docs</span><span class="p">,</span> <span class="n">normalize_embeddings</span><span class="o">=</span><span class="kc">True</span><span class="p">)</span>  <span class="c1"># (N, 384) float32</span>
+
+<span class="c1"># 2) 建 ANN 索引：HNSW</span>
+<span class="n">d</span> <span class="o">=</span> <span class="n">doc_vecs</span><span class="o">.</span><span class="n">shape</span><span class="p">[</span><span class="mi">1</span><span class="p">]</span>
+<span class="n">index</span> <span class="o">=</span> <span class="n">faiss</span><span class="o">.</span><span class="n">IndexHNSWFlat</span><span class="p">(</span><span class="n">d</span><span class="p">,</span> <span class="n">M</span><span class="o">=</span><span class="mi">32</span><span class="p">)</span>        <span class="c1"># M = 每个节点保留的邻居数</span>
+<span class="n">index</span><span class="o">.</span><span class="n">hnsw</span><span class="o">.</span><span class="n">efConstruction</span> <span class="o">=</span> <span class="mi">200</span>              <span class="c1"># 建图时的搜索宽度（越大越准、越慢）</span>
+<span class="n">index</span><span class="o">.</span><span class="n">add</span><span class="p">(</span><span class="n">doc_vecs</span><span class="p">)</span>                          <span class="c1"># 插入向量，自动构图</span>
+
+<span class="c1"># 3) 查询：把 query 也 encode，再到图里找最近邻</span>
+<span class="n">query</span> <span class="o">=</span> <span class="s2">&quot;how do I combine two python dictionaries&quot;</span>
+<span class="n">q_vec</span> <span class="o">=</span> <span class="n">encoder</span><span class="o">.</span><span class="n">encode</span><span class="p">([</span><span class="n">query</span><span class="p">],</span> <span class="n">normalize_embeddings</span><span class="o">=</span><span class="kc">True</span><span class="p">)</span>
+<span class="n">index</span><span class="o">.</span><span class="n">hnsw</span><span class="o">.</span><span class="n">efSearch</span> <span class="o">=</span> <span class="mi">64</span>                     <span class="c1"># 查询时的搜索宽度</span>
+<span class="n">D</span><span class="p">,</span> <span class="n">I</span> <span class="o">=</span> <span class="n">index</span><span class="o">.</span><span class="n">search</span><span class="p">(</span><span class="n">q_vec</span><span class="p">,</span> <span class="n">k</span><span class="o">=</span><span class="mi">5</span><span class="p">)</span>              <span class="c1"># D=距离，I=文档下标</span>
+<span class="k">for</span> <span class="n">rank</span><span class="p">,</span> <span class="p">(</span><span class="n">dist</span><span class="p">,</span> <span class="n">doc_id</span><span class="p">)</span> <span class="ow">in</span> <span class="nb">enumerate</span><span class="p">(</span><span class="nb">zip</span><span class="p">(</span><span class="n">D</span><span class="p">[</span><span class="mi">0</span><span class="p">],</span> <span class="n">I</span><span class="p">[</span><span class="mi">0</span><span class="p">])):</span>
+    <span class="nb">print</span><span class="p">(</span><span class="sa">f</span><span class="s2">&quot;#</span><span class="si">{</span><span class="n">rank</span><span class="si">}</span><span class="s2">  dist=</span><span class="si">{</span><span class="n">dist</span><span class="si">:</span><span class="s2">.3f</span><span class="si">}</span><span class="s2">  </span><span class="si">{</span><span class="n">docs</span><span class="p">[</span><span class="n">doc_id</span><span class="p">]</span><span class="si">}</span><span class="s2">&quot;</span><span class="p">)</span>
+</code></pre></div>
+
+<p>整条流水线分三步——<strong>encode（升维到 384 维）→ 建索引（在高维空间里搭一张可导航的图）→ search（图上跳几步找邻居）</strong>。这就是"embedding model + ANN"的全部含义。</p>
+<h3 id="353-hnsw">3.5.3 HNSW 在搜什么？——一张图</h3>
+<div class="highlight"><pre><span></span><code>Layer 2 (稀疏):    A ─────────────── F  ← 长跳：从入口快速跨域
+                   │                 │
+Layer 1 (中层):    A ───── C ─────── F
+                   │       │         │
+Layer 0 (稠密):    A─B─C─D─E─F─G─H─I─J  ← 全量节点 + 短跳精搜
+
+查询路径：从 Layer 2 顶层入口出发 → 贪心走向最近邻 → 下一层继续 → Layer 0 精细搜
+</code></pre></div>
+
+<p><strong>一句话</strong>：HNSW 把"亿级向量的 NN 搜索"变成"在一张多层小世界图上从入口跳到目标"——<code>O(log N)</code> 步搞定。和 Google 早年的"先粗排再精排"完全同构，只是粗排/精排都换成了高维向量内积。</p>
+<h3 id="354-embedding-model-transformer">3.5.4 Embedding model 自己也是个迷你 transformer</h3>
+<p>注意上面的 <code>SentenceTransformer('all-MiniLM-L6-v2')</code>——这就是一个 6 层、384 维的迷你 BERT。它把变长文本压成定长向量的方法是：</p>
+<div class="highlight"><pre><span></span><code><span class="c1"># 伪代码：sentence-transformers 内部</span>
+<span class="k">def</span><span class="w"> </span><span class="nf">encode</span><span class="p">(</span><span class="n">text</span><span class="p">):</span>
+    <span class="n">tok_ids</span> <span class="o">=</span> <span class="n">tokenizer</span><span class="p">(</span><span class="n">text</span><span class="p">)</span>                      <span class="c1"># (T,)</span>
+    <span class="n">h</span> <span class="o">=</span> <span class="n">bert_forward</span><span class="p">(</span><span class="n">tok_ids</span><span class="p">)</span>                       <span class="c1"># (T, 384)：每个 token 一个向量</span>
+    <span class="n">sentence_vec</span> <span class="o">=</span> <span class="n">mean_pool</span><span class="p">(</span><span class="n">h</span><span class="p">,</span> <span class="n">attention_mask</span><span class="p">)</span>     <span class="c1"># (384,)：mean pooling</span>
+    <span class="k">return</span> <span class="n">F</span><span class="o">.</span><span class="n">normalize</span><span class="p">(</span><span class="n">sentence_vec</span><span class="p">,</span> <span class="n">p</span><span class="o">=</span><span class="mi">2</span><span class="p">,</span> <span class="n">dim</span><span class="o">=-</span><span class="mi">1</span><span class="p">)</span>
+</code></pre></div>
+
+<p><strong>所以现代向量搜索 = 一个小 transformer 当 encoder + ANN 当索引</strong>。两者都是 transformer 时代的产物——上层（GPT）做生成，下层（embedding 模型）做检索。RAG 把两层缝在一起：先用下层的 ANN 召回 top-k，再把 top-k 拼进上层 GPT 的 prompt。</p>
+<h3 id="355-ann-attention">3.5.5 ANN 和 attention 是什么关系？</h3>
+<p>attention 也是"在一堆向量里找最相关的"——但它<strong>不用 ANN</strong>，因为：</p>
+<ul>
+<li>上下文长度 T 通常 ≤ 几千到几十万，<strong>O(T²) 直接算精确内积比 ANN 还快</strong>——<code>q @ k.T</code>（<code>model.py:66</code>）就是穷举打分。</li>
+<li>attention 需要<strong>梯度可导</strong>，ANN 算法（哈希、聚类、图）大多不可微。</li>
+<li>ANN 是"亿级文档里挑 top-5"，attention 是"几千 token 里软加权所有"——任务粒度不同。</li>
+</ul>
+<blockquote>
+<p><strong>分工清楚</strong>：ANN 处理"模型外 / 全网 / 知识库"级别的搜索（RAG 的 retrieval 那一步）；attention 处理"模型内 / 当前上下文"级别的搜索（每次 forward 内部）。两者都在做内积检索，<strong>只是数据库的大小、是否要可微、是精确还是近似不同</strong>。</p>
+</blockquote>
+<p>理解这一层，下一节再讲"GPT 在每一层都做一次搜索"就特别自然——ANN 已经把"高维内积检索"做到了极致工程化，GPT 把同样的操作搬进了网络内部、变成可微的、并且堆了 144 次。</p>
+<hr />
+<h2 id="4-embedding-everywhere">4. 第三代：高维空间里的搜索（embedding everywhere）</h2>
+<p>第二代向量搜索还有一个隐含假设：<strong>"一段文本只压成一个向量"</strong>——句子级、文档级 embedding。</p>
+<p>但语言不是这样工作的。同一个词在不同上下文里意思可以完全不同（"bank" 是银行还是河岸？）。所以现代做法是：</p>
+<ul>
+<li><strong>每个 token 一个向量。</strong></li>
+<li><strong>同一个 token 在不同上下文里的向量也不同</strong>（contextualized embedding）。</li>
+<li><strong>这些向量在 12 / 24 / 96 层 Transformer 里反复变形</strong>，每过一层就在更高阶的概念空间里挪一次位置。</li>
+</ul>
+<p>这就是 BERT 最初让人惊艳的地方，也是 GPT 之所以能"理解"的基础。</p>
+<p>我们直接看 CodeGPT 的 forward（<code>model.py:177-198</code>）：</p>
+<div class="highlight"><pre><span></span><code><span class="k">def</span><span class="w"> </span><span class="nf">forward</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">idx</span><span class="p">,</span> <span class="n">targets</span><span class="o">=</span><span class="kc">None</span><span class="p">):</span>
+    <span class="n">tok_emb</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">transformer</span><span class="o">.</span><span class="n">wte</span><span class="p">(</span><span class="n">idx</span><span class="p">)</span>        <span class="c1"># 第一次嵌入：token → 768维向量</span>
+    <span class="n">pos_emb</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">transformer</span><span class="o">.</span><span class="n">wpe</span><span class="p">(</span><span class="n">pos</span><span class="p">)</span>         <span class="c1"># 位置也嵌入成向量</span>
+    <span class="n">x</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">transformer</span><span class="o">.</span><span class="n">drop</span><span class="p">(</span><span class="n">tok_emb</span> <span class="o">+</span> <span class="n">pos_emb</span><span class="p">)</span>
+    <span class="k">for</span> <span class="n">block</span> <span class="ow">in</span> <span class="bp">self</span><span class="o">.</span><span class="n">transformer</span><span class="o">.</span><span class="n">h</span><span class="p">:</span>            <span class="c1"># 12 个 Block，每层都在重新搜索</span>
+        <span class="n">x</span> <span class="o">=</span> <span class="n">block</span><span class="p">(</span><span class="n">x</span><span class="p">)</span>
+    <span class="n">x</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">transformer</span><span class="o">.</span><span class="n">ln_f</span><span class="p">(</span><span class="n">x</span><span class="p">)</span>
+    <span class="n">logits</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">lm_head</span><span class="p">(</span><span class="n">x</span><span class="p">)</span>                    <span class="c1"># 最后一层：在 50304 维上找最匹配的下一个 token</span>
+</code></pre></div>
+
+<p>把它读成<strong>搜索引擎语言</strong>：</p>
+<table>
+<thead>
+<tr>
+<th>这一行在干什么</th>
+<th>搜索引擎类比</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>wte(idx)</code></td>
+<td>查询词被向量化（query embedding）</td>
+</tr>
+<tr>
+<td><code>wpe(pos)</code></td>
+<td>加上位置坐标（document position）</td>
+</tr>
+<tr>
+<td><code>for block in h: x = block(x)</code></td>
+<td><strong>12 次重排 / 重检索</strong>——每一层都在更抽象的空间上重新搜一遍</td>
+</tr>
+<tr>
+<td><code>lm_head(x)</code></td>
+<td>最后一次搜索：从 50304 个候选 token 里挑出"最匹配下一个位置"的那个</td>
+</tr>
+</tbody>
+</table>
+<p><strong>关键洞察</strong>：transformer 不是搜索一次就给你答案，它在 12 层里搜了 12 次。每一层处理的"概念粒度"不同——浅层处理语法、中层处理短语、深层处理意图。这就是<strong>深度</strong>带来的能力——它让"搜索"在层次结构上展开。</p>
+<hr />
+<h2 id="5-gpt">5. 第四代：GPT — 在每一层都做一次搜索</h2>
+<p>那每一层 <code>block(x)</code> 内部具体怎么搜？答案就是 <strong>self-attention</strong>。看 <code>model.py:53-70</code>：</p>
+<div class="highlight"><pre><span></span><code><span class="c1"># model.py:53-70 —— attention 就是一次&quot;在序列内部&quot;的搜索</span>
+<span class="n">q</span><span class="p">,</span> <span class="n">k</span><span class="p">,</span> <span class="n">v</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">c_attn</span><span class="p">(</span><span class="n">x</span><span class="p">)</span><span class="o">.</span><span class="n">split</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">n_embd</span><span class="p">,</span> <span class="n">dim</span><span class="o">=</span><span class="mi">2</span><span class="p">)</span>   <span class="c1"># 把 x 投影成 query, key, value</span>
+<span class="c1"># ...省略 reshape...</span>
+<span class="n">att</span> <span class="o">=</span> <span class="p">(</span><span class="n">q</span> <span class="o">@</span> <span class="n">k</span><span class="o">.</span><span class="n">transpose</span><span class="p">(</span><span class="o">-</span><span class="mi">2</span><span class="p">,</span> <span class="o">-</span><span class="mi">1</span><span class="p">))</span> <span class="o">*</span> <span class="p">(</span><span class="mf">1.0</span> <span class="o">/</span> <span class="n">math</span><span class="o">.</span><span class="n">sqrt</span><span class="p">(</span><span class="n">k</span><span class="o">.</span><span class="n">size</span><span class="p">(</span><span class="o">-</span><span class="mi">1</span><span class="p">)))</span>   <span class="c1"># 相似度矩阵</span>
+<span class="n">att</span> <span class="o">=</span> <span class="n">att</span><span class="o">.</span><span class="n">masked_fill</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">bias</span><span class="p">[:,</span> <span class="p">:,</span> <span class="p">:</span><span class="n">T</span><span class="p">,</span> <span class="p">:</span><span class="n">T</span><span class="p">]</span> <span class="o">==</span> <span class="mi">0</span><span class="p">,</span> <span class="nb">float</span><span class="p">(</span><span class="s1">&#39;-inf&#39;</span><span class="p">))</span>  <span class="c1"># 因果掩码</span>
+<span class="n">att</span> <span class="o">=</span> <span class="n">F</span><span class="o">.</span><span class="n">softmax</span><span class="p">(</span><span class="n">att</span><span class="p">,</span> <span class="n">dim</span><span class="o">=-</span><span class="mi">1</span><span class="p">)</span>                          <span class="c1"># 概率化（过滤 + 归一）</span>
+<span class="n">y</span> <span class="o">=</span> <span class="n">att</span> <span class="o">@</span> <span class="n">v</span>                                            <span class="c1"># 加权聚合</span>
+</code></pre></div>
+
+<p>把这五行翻译成你熟悉的搜索引擎术语：</p>
+<div class="highlight"><pre><span></span><code>q @ k.T              ⟺ 相似度计算（内积，和向量搜索同款）
+masked_fill(...-inf) ⟺ 过滤不可见的文档（因果约束：只能搜历史）
+F.softmax            ⟺ Top-k → 软性 Top-k：把不相关的得分压到接近 0
+att @ v              ⟺ 把检索到的内容按相关度加权拼接
+</code></pre></div>
+
+<p><strong>这就是用户问题里说的那句话的数学版本</strong>：</p>
+<blockquote>
+<p>GPT "搜索生成" 本质 = 搜索（QK^T） + 过滤不相关（softmax） + 拼接搜索结果（@V） + 在高维空间上完成。</p>
+</blockquote>
+<p>而且这件事每一层、每一个头都做一次。CodeGPT 的默认配置（<code>model.py:113-115</code>）：</p>
+<div class="highlight"><pre><span></span><code><span class="n">n_layer</span><span class="p">:</span> <span class="nb">int</span> <span class="o">=</span> <span class="mi">12</span>
+<span class="n">n_head</span><span class="p">:</span>  <span class="nb">int</span> <span class="o">=</span> <span class="mi">12</span>
+<span class="n">n_embd</span><span class="p">:</span>  <span class="nb">int</span> <span class="o">=</span> <span class="mi">768</span>
+</code></pre></div>
+
+<p>12 层 × 12 头 = <strong>每生成 1 个 token 就做了 144 次"高维搜索"</strong>。这就是为什么 GPT 给的答案"看起来综合了很多信息"——它确实做了 144 次检索 + 加权 + 重组。</p>
+<hr />
+<h2 id="6-attention-sqlqkt-wheresoftmax-v-select">6. Attention 就是"软 SQL"：QK^T 是 WHERE，softmax 是过滤，@V 是 SELECT</h2>
+<p>如果你更熟悉 SQL 而非搜索引擎，类比同样成立：</p>
+<div class="highlight"><pre><span></span><code><span class="c1">-- 传统检索：硬 WHERE</span>
+<span class="k">SELECT</span><span class="w"> </span><span class="n">v</span><span class="p">.</span><span class="n">content</span>
+<span class="k">FROM</span><span class="w">   </span><span class="n">keys</span><span class="w"> </span><span class="n">k</span><span class="w"> </span><span class="k">JOIN</span><span class="w"> </span><span class="k">values</span><span class="w"> </span><span class="n">v</span><span class="w"> </span><span class="k">ON</span><span class="w"> </span><span class="n">k</span><span class="p">.</span><span class="n">id</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="n">v</span><span class="p">.</span><span class="n">id</span>
+<span class="k">WHERE</span><span class="w">  </span><span class="n">similarity</span><span class="p">(</span><span class="n">k</span><span class="p">.</span><span class="n">vector</span><span class="p">,</span><span class="w"> </span><span class="p">:</span><span class="n">query_vector</span><span class="p">)</span><span class="w"> </span><span class="o">&gt;</span><span class="w"> </span><span class="mi">0</span><span class="p">.</span><span class="mi">8</span>
+<span class="k">ORDER</span><span class="w">  </span><span class="k">BY</span><span class="w"> </span><span class="n">similarity</span><span class="w"> </span><span class="k">DESC</span>
+<span class="k">LIMIT</span><span class="w">  </span><span class="mi">5</span><span class="p">;</span>
+</code></pre></div>
+
+<div class="highlight"><pre><span></span><code><span class="c1"># Attention：软 WHERE（每一行都参与，但权重不同）</span>
+<span class="n">scores</span>  <span class="o">=</span> <span class="n">q</span> <span class="o">@</span> <span class="n">k</span><span class="o">.</span><span class="n">T</span> <span class="o">/</span> <span class="n">sqrt</span><span class="p">(</span><span class="n">d</span><span class="p">)</span>           <span class="c1"># similarity(k, q) for all k</span>
+<span class="n">weights</span> <span class="o">=</span> <span class="n">softmax</span><span class="p">(</span><span class="n">scores</span><span class="p">)</span>              <span class="c1"># 权重而不是 0/1 过滤</span>
+<span class="n">result</span>  <span class="o">=</span> <span class="n">weights</span> <span class="o">@</span> <span class="n">v</span>                  <span class="c1"># SELECT 但用加权和而非 LIMIT</span>
+</code></pre></div>
+
+<p>差别就这一点：<strong>SQL 是 0/1 的硬过滤，attention 是 [0,1] 的软过滤</strong>。软过滤的好处是<strong>可微分</strong>——梯度可以流过 softmax，让模型自动学到"什么样的相似度该保留"。</p>
+<p>这也解释了 GPT 推理时的两个采样策略（<code>model.py:287-299</code>）：</p>
+<div class="highlight"><pre><span></span><code><span class="c1"># top-k：硬过滤前 k 名（传统搜索的 LIMIT）</span>
+<span class="n">v</span><span class="p">,</span> <span class="n">_</span> <span class="o">=</span> <span class="n">torch</span><span class="o">.</span><span class="n">topk</span><span class="p">(</span><span class="n">logits</span><span class="p">,</span> <span class="nb">min</span><span class="p">(</span><span class="n">top_k</span><span class="p">,</span> <span class="n">logits</span><span class="o">.</span><span class="n">size</span><span class="p">(</span><span class="o">-</span><span class="mi">1</span><span class="p">)))</span>
+<span class="n">logits</span><span class="p">[</span><span class="n">logits</span> <span class="o">&lt;</span> <span class="n">v</span><span class="p">[:,</span> <span class="p">[</span><span class="o">-</span><span class="mi">1</span><span class="p">]]]</span> <span class="o">=</span> <span class="o">-</span><span class="nb">float</span><span class="p">(</span><span class="s1">&#39;Inf&#39;</span><span class="p">)</span>
+
+<span class="c1"># top-p (nucleus)：动态过滤累积概率 &gt; p 的尾部（自适应 LIMIT）</span>
+<span class="n">sorted_logits</span><span class="p">,</span> <span class="n">sorted_indices</span> <span class="o">=</span> <span class="n">torch</span><span class="o">.</span><span class="n">sort</span><span class="p">(</span><span class="n">logits</span><span class="p">,</span> <span class="n">descending</span><span class="o">=</span><span class="kc">True</span><span class="p">)</span>
+<span class="n">cumulative_probs</span> <span class="o">=</span> <span class="n">torch</span><span class="o">.</span><span class="n">cumsum</span><span class="p">(</span><span class="n">F</span><span class="o">.</span><span class="n">softmax</span><span class="p">(</span><span class="n">sorted_logits</span><span class="p">,</span> <span class="n">dim</span><span class="o">=-</span><span class="mi">1</span><span class="p">),</span> <span class="n">dim</span><span class="o">=-</span><span class="mi">1</span><span class="p">)</span>
+<span class="n">sorted_indices_to_remove</span> <span class="o">=</span> <span class="n">cumulative_probs</span> <span class="o">&gt;</span> <span class="n">top_p</span>
+</code></pre></div>
+
+<p><code>top_k</code> 就是搜索结果的 <code>LIMIT k</code>，<code>top_p</code> 是"动态 LIMIT，直到累积置信度 ≥ p"。<strong>完全是搜索引擎的语义。</strong></p>
+<hr />
+<h2 id="65-qkv-token">6.5 QKV 三角投影：把每个 token "揉碎"成三个角色</h2>
+<p>回到 attention 那一行（<code>model.py:53</code>）：</p>
+<div class="highlight"><pre><span></span><code><span class="n">q</span><span class="p">,</span> <span class="n">k</span><span class="p">,</span> <span class="n">v</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">c_attn</span><span class="p">(</span><span class="n">x</span><span class="p">)</span><span class="o">.</span><span class="n">split</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">n_embd</span><span class="p">,</span> <span class="n">dim</span><span class="o">=</span><span class="mi">2</span><span class="p">)</span>
+</code></pre></div>
+
+<p><code>self.c_attn</code> 是一个 <code>Linear(n_embd, 3 * n_embd)</code>（<code>model.py:36</code>）。它把同一个输入向量 <code>x</code> 通过<strong>三组不同的权重矩阵</strong>投影成三份完全不同的东西：</p>
+<ul>
+<li><strong>Q（query）</strong>：这个 token 想搜什么？</li>
+<li><strong>K（key）</strong>：这个 token 能被什么搜到？（它的"标签"）</li>
+<li><strong>V（value）</strong>：被搜到时，它贡献什么内容？</li>
+</ul>
+<p><strong>关键不是"分成三份"，而是"同一个向量被三种角度撕开"</strong>。同一个 token "for" 在 Q 角度可能问的是"我后面接的是迭代器吗"，在 K 角度暴露的是"我是循环关键字"，在 V 角度提供的是"循环语义本身"。一个 token 有三套人格，每套都由不同的 W 学出来。</p>
+<p>接下来还要再揉一次（<code>model.py:54-56</code>）：</p>
+<div class="highlight"><pre><span></span><code><span class="n">k</span> <span class="o">=</span> <span class="n">k</span><span class="o">.</span><span class="n">view</span><span class="p">(</span><span class="n">B</span><span class="p">,</span> <span class="n">T</span><span class="p">,</span> <span class="bp">self</span><span class="o">.</span><span class="n">n_head</span><span class="p">,</span> <span class="n">C</span> <span class="o">//</span> <span class="bp">self</span><span class="o">.</span><span class="n">n_head</span><span class="p">)</span><span class="o">.</span><span class="n">transpose</span><span class="p">(</span><span class="mi">1</span><span class="p">,</span> <span class="mi">2</span><span class="p">)</span>
+<span class="n">q</span> <span class="o">=</span> <span class="n">q</span><span class="o">.</span><span class="n">view</span><span class="p">(</span><span class="n">B</span><span class="p">,</span> <span class="n">T</span><span class="p">,</span> <span class="bp">self</span><span class="o">.</span><span class="n">n_head</span><span class="p">,</span> <span class="n">C</span> <span class="o">//</span> <span class="bp">self</span><span class="o">.</span><span class="n">n_head</span><span class="p">)</span><span class="o">.</span><span class="n">transpose</span><span class="p">(</span><span class="mi">1</span><span class="p">,</span> <span class="mi">2</span><span class="p">)</span>
+<span class="n">v</span> <span class="o">=</span> <span class="n">v</span><span class="o">.</span><span class="n">view</span><span class="p">(</span><span class="n">B</span><span class="p">,</span> <span class="n">T</span><span class="p">,</span> <span class="bp">self</span><span class="o">.</span><span class="n">n_head</span><span class="p">,</span> <span class="n">C</span> <span class="o">//</span> <span class="bp">self</span><span class="o">.</span><span class="n">n_head</span><span class="p">)</span><span class="o">.</span><span class="n">transpose</span><span class="p">(</span><span class="mi">1</span><span class="p">,</span> <span class="mi">2</span><span class="p">)</span>
+</code></pre></div>
+
+<p>12 个头 = 把 768 维向量<strong>砍成 12 段，每段 64 维</strong>，每个头独立做一次 QK^T 搜索。<strong>这就是"矩阵揉碎重组"的具体含义</strong>：</p>
+<ul>
+<li>每个头看一个不同的 64 维子空间，可能一个头专门看"语法依存"，一个头看"作用域嵌套"，一个头看"类型流动"……</li>
+<li>12 个头的搜索结果用 <code>c_proj</code>（<code>model.py:37</code>）再缝合回 768 维。</li>
+<li>12 层 × 12 头 = <strong>144 次"切片 → 搜索 → 缝合"</strong>。</li>
+</ul>
+<p><strong>这就是 GPT 之所以能"跨语言迁移"的根源</strong>：因为每个 token 都被揉碎成多个角度的子空间，Python 的 <code>for x in range(10):</code> 和 JavaScript 的 <code>for (let x = 0; x &lt; 10; x++)</code> 在某几个头里会被表示成几乎相同的 K 和 V——它们都是"循环结构"在抽象空间里的同一个邻居。模型从未明确学过两种语言的对应关系，但<strong>揉碎重组让它们在某些子空间里自动汇合到同一个"算法理想型"</strong>。</p>
+<p>这条原理也解释了 <code>data/github_code/prepare.py</code> 里支持多语言混合训练（<code>--langs python javascript typescript ...</code>）的合理性：</p>
+<blockquote>
+<p>喂多种语言不是让模型学 N 种语法，而是让 attention 头把 N 种语法的共同结构压成一份。Python 学到的循环、JS 学到的回调、Rust 学到的 ownership——在足够深的层里都被对齐到同一个跨语言的"算法骨架"上。</p>
+</blockquote>
+<p>这也就是为什么 GitHub Copilot 在你写一种它训练时只见过几千行代码的小众语言（比如 Nim、Zig）时，仍然能给出像样的补全：它检索的不是"Nim 代码片段"，而是"在所有语言的共同高维空间里，最像这个上下文的算法骨架"，再用 Nim 的语法表面"渲染"出来。</p>
+<hr />
+<h2 id="66-gpt">6.6 GPT 是抄答案拼接器：迁移和幻觉是同一枚硬币</h2>
+<p>如果你接受"GPT = 高维空间搜索引擎 + 加权拼接"，就必须同时接受一个不舒服的推论：</p>
+<blockquote>
+<p><strong>GPT 永远在抄答案，只是抄的不是字符串而是高维向量的加权和。</strong></p>
+</blockquote>
+<p><code>y = att @ v</code>（<code>model.py:70</code>）这一行就是<strong>抄答案的数学定义</strong>：从全部历史 token 里按相关度加权拷贝它们的 V，输出就是这堆 V 的混合体。</p>
+<p>理解这一点会同时解释两个看似相反的现象：</p>
+<h3 id="a">现象 A：跨语言、跨领域的"惊人迁移能力"</h3>
+<p>模型从没学过你的私有 DSL，但你贴几个例子它就能继续写——因为：</p>
+<ul>
+<li>每个 token 在 144 次切片搜索里都能找到训练集中"形似 + 神似"的高维邻居。</li>
+<li><code>att @ v</code> 把这些邻居的 V 拼起来，<strong>对你来说"看起来很懂"，但它其实是把训练分布里相邻的几十个片段加权混合给你。</strong></li>
+<li>多语言、多框架训练让"邻居池"足够大、子空间足够通用——所以总有东西可抄。</li>
+</ul>
+<p>这是 GPT 的<strong>特性</strong>：抄得越广越像一个全能助理。</p>
+<h3 id="b">现象 B：幻觉（瞎编）</h3>
+<p>幻觉的本质是<strong>"邻居池在那个位置稀疏甚至为空，但 softmax 强行归一化后必须给出权重"</strong>。</p>
+<p>看 <code>model.py:68</code>：</p>
+<div class="highlight"><pre><span></span><code><span class="n">att</span> <span class="o">=</span> <span class="n">F</span><span class="o">.</span><span class="n">softmax</span><span class="p">(</span><span class="n">att</span><span class="p">,</span> <span class="n">dim</span><span class="o">=-</span><span class="mi">1</span><span class="p">)</span>
+</code></pre></div>
+
+<p><code>softmax</code> 的关键性质：<strong>输出永远归一化为 1</strong>。哪怕所有 logits 都很低（说明历史 token 里没有真正相关的内容），它也会把几个"相对最不离谱"的 V 拼起来——结果就是看起来言之凿凿、实际胡编乱造。</p>
+<p>具体几种典型场景：</p>
+<table>
+<thead>
+<tr>
+<th>场景</th>
+<th>邻居池状态</th>
+<th>输出表现</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>训练集见过原题</td>
+<td>邻居高密度、高相似度</td>
+<td>准确复述</td>
+</tr>
+<tr>
+<td>训练集见过类似题</td>
+<td>邻居中等密度、近似</td>
+<td>跨域迁移（看起来像理解）</td>
+</tr>
+<tr>
+<td>训练集没见过、但子空间有邻居</td>
+<td>邻居稀疏、相似度低</td>
+<td>似是而非、细节错（幻觉）</td>
+</tr>
+<tr>
+<td>训练集完全没邻居</td>
+<td>softmax 权重接近均匀</td>
+<td>胡说八道（严重幻觉）</td>
+</tr>
+</tbody>
+</table>
+<p><strong>所以幻觉不是 bug，是 attention + softmax 这套机制在低密度区域的必然表现</strong>。同一个让它能跨语言迁移的机制（揉碎 + 加权拼接），在邻居池不足时直接退化成瞎编。</p>
+<p>最常出问题的几类输入——本质都是<strong>邻居池稀疏区域</strong>：</p>
+<ul>
+<li>编造不存在的 API（<code>numpy.special_function()</code>）：训练集中"numpy.xxx"的 K 太多，softmax 总能找几个混合出一个看起来合理的名字。</li>
+<li>编造文献引用 / DOI：论文标题、作者、年份的子空间各自有大量邻居，揉碎重组就成了"格式正确但内容不存在"的引用。</li>
+<li>数学计算错误：算术不在它的强项分布里，邻居池靠的是"看起来像计算的文本"。</li>
+<li>私有领域问答：你公司内部 API、自家代码库——训练集压根没有。</li>
+</ul>
+<h3 id="_2">对应的工程含义</h3>
+<p>这套理解直接给出三条工程建议：</p>
+<ol>
+<li><strong>prompt 里给足"邻居"</strong>：把相关代码、报错、文档贴进 prompt，相当于人为往邻居池里塞高质量样本。这就是 RAG 的本质（见 <a href="RAG_VS_SFT.md"><code>RAG_VS_SFT.md</code></a>）。</li>
+<li><strong>对低密度区域要持怀疑</strong>：API 名、版本号、引用、数字——这些是幻觉重灾区。让 GPT 写代码可以信，让它说"这个库的某函数签名"必须验证。</li>
+<li><strong>训练个人 GPT 的真实价值</strong>：不是让它"懂更多"，而是<strong>在你的私有数据邻域上把邻居池密度提上去</strong>。10M 参数的小模型在你公司代码上跑 SFT 后，它生成你内部 API 调用的准确率可以远超 GPT-4——因为 GPT-4 在那个区域邻居为零，而你的小模型邻居很密。</li>
+</ol>
+<blockquote>
+<p><strong>一句话</strong>：跨域迁移和幻觉是同一种行为在不同邻居密度下的两种外观——邻居够密，叫"举一反三"；邻居为空，叫"胡说八道"。理解这一点，你就知道什么任务能用 GPT、什么必须配 RAG、什么必须 SFT。</p>
+</blockquote>
+<hr />
+<h2 id="67-qkv-transformer">6.7 多头 = 多个"特征矩阵"：QKV 为什么是 Transformer 成功的核心</h2>
+<p>我们退一步看，<strong>为什么 Transformer 这一套打败了 RNN、CNN、所有上一代序列模型？</strong> 直接答案是 multi-head attention，但更精确的说法是：</p>
+<blockquote>
+<p><strong>QKV 把"特征提取"这件事变成可以并行学习多套独立的特征矩阵。</strong></p>
+</blockquote>
+<h3 id="k">K 就是"学到的特征模板"</h3>
+<p>在传统 ML 里，特征工程是手工的——你写规则、定模板。在 CNN 里，特征是卷积核学的——一个核学一个特征（边缘、纹理、眼睛……）。在 attention 里：</p>
+<ul>
+<li><strong>K（key）就是 token 暴露给检索系统的"特征模板"</strong>。</li>
+<li><code>q @ k.T</code> 就是"我的查询和你这个特征模板有多匹配"。</li>
+<li><code>c_attn</code> 里那块产生 K 的权重（<code>Linear(n_embd, n_embd)</code> 的 K 部分）就是<strong>学到的特征矩阵</strong>——和 CNN 的卷积核完全同构。</li>
+</ul>
+<p>12 个头 = 12 套独立的特征矩阵 K¹, K², …, K¹². 训练时每个头被不同的下游梯度路径推着走，它们会<strong>自动分工</strong>：</p>
+<table>
+<thead>
+<tr>
+<th>头编号（典型）</th>
+<th>学到的特征类型</th>
+<th>类比传统 ML</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>Head 1</td>
+<td>前一个 token 是什么（局部 n-gram）</td>
+<td>Bigram 特征</td>
+</tr>
+<tr>
+<td>Head 2</td>
+<td>同一缩进层的 token</td>
+<td>作用域特征</td>
+</tr>
+<tr>
+<td>Head 3</td>
+<td>匹配的括号 / 引号</td>
+<td>配对特征</td>
+</tr>
+<tr>
+<td>Head 4</td>
+<td>函数定义 → 调用名</td>
+<td>类型流特征</td>
+</tr>
+<tr>
+<td>Head 5-12</td>
+<td>越来越抽象、越来越难命名</td>
+<td>高阶组合特征</td>
+</tr>
+</tbody>
+</table>
+<p>每多一个头，<strong>特征空间就多一组维度</strong>。这就是为什么 <code>n_head=12</code> 比 <code>n_head=1</code> 强得多——不是因为参数多了 12 倍（实际上没多，每头维度只有 64），而是<strong>模型同时在用 12 套不同的"匹配标准"找邻居</strong>。</p>
+<h3 id="qkv">为什么是 QKV 三件套，不是两件、四件？</h3>
+<ul>
+<li><strong>只有 K + V 没有 Q</strong>：没法"按需查询"，退化成静态特征。</li>
+<li><strong>Q + K 合并</strong>：失去"查询模式 ≠ 被查询模式"的灵活性。一个 token 可以"想问 A"同时"被别人问到 B"，这种不对称是关键。</li>
+<li><strong>加上 R / U 等更多角色</strong>：边际收益递减。三件套已经把"查询、被查、内容"三种角色解耦干净，足够通用。</li>
+</ul>
+<p>QKV 就是序列建模里"特征提取"的最小完备解——这就是 Transformer 设计的精髓。</p>
+<hr />
+<h2 id="68-svm-vs-transformer">6.8 子空间是怎么分离的？SVM 升维 vs Transformer 升维</h2>
+<p>用户问得好：<strong>多头之间的子空间是靠什么分离的？</strong>——SVM 的做法是"升维 + 超平面切",Transformer 怎么做？</p>
+<p>先看 SVM 的核技巧：</p>
+<div class="highlight"><pre><span></span><code>原始空间    →  φ(x) 升维     →  线性超平面 w·φ(x) + b = 0 切开
+(2维不可分)    (高维可分)         (训练得到 w)
+</code></pre></div>
+
+<p><strong>核心思想</strong>：低维不可分的问题，到高维就线性可分（Cover 定理）。</p>
+<p>Transformer 在每一个 Block 里都做了<strong>两次升维 + 一次"软分离"</strong>：</p>
+<h4 id="c_attnmodelpy36">升维一：c_attn（<code>model.py:36</code>）</h4>
+<div class="highlight"><pre><span></span><code><span class="bp">self</span><span class="o">.</span><span class="n">c_attn</span> <span class="o">=</span> <span class="n">nn</span><span class="o">.</span><span class="n">Linear</span><span class="p">(</span><span class="n">config</span><span class="o">.</span><span class="n">n_embd</span><span class="p">,</span> <span class="mi">3</span> <span class="o">*</span> <span class="n">config</span><span class="o">.</span><span class="n">n_embd</span><span class="p">,</span> <span class="n">bias</span><span class="o">=</span><span class="n">config</span><span class="o">.</span><span class="n">bias</span><span class="p">)</span>
+</code></pre></div>
+
+<p>把 768 维向量升到 2304 维（3 倍），切成 Q/K/V 三份。<strong>这就是 attention 的"核映射"</strong>——升到三倍空间，让原本难以区分的"查询模式 / 被查询模式 / 内容"在更高维里彻底分开。</p>
+<h4 id="mlpmodelpy80-82">升维二：MLP（<code>model.py:80-82</code>）</h4>
+<div class="highlight"><pre><span></span><code><span class="bp">self</span><span class="o">.</span><span class="n">c_fc</span>   <span class="o">=</span> <span class="n">nn</span><span class="o">.</span><span class="n">Linear</span><span class="p">(</span><span class="n">config</span><span class="o">.</span><span class="n">n_embd</span><span class="p">,</span> <span class="mi">4</span> <span class="o">*</span> <span class="n">config</span><span class="o">.</span><span class="n">n_embd</span><span class="p">,</span> <span class="n">bias</span><span class="o">=</span><span class="n">config</span><span class="o">.</span><span class="n">bias</span><span class="p">)</span>
+<span class="bp">self</span><span class="o">.</span><span class="n">gelu</span>   <span class="o">=</span> <span class="n">nn</span><span class="o">.</span><span class="n">GELU</span><span class="p">()</span>
+<span class="bp">self</span><span class="o">.</span><span class="n">c_proj</span> <span class="o">=</span> <span class="n">nn</span><span class="o">.</span><span class="n">Linear</span><span class="p">(</span><span class="mi">4</span> <span class="o">*</span> <span class="n">config</span><span class="o">.</span><span class="n">n_embd</span><span class="p">,</span> <span class="n">config</span><span class="o">.</span><span class="n">n_embd</span><span class="p">,</span> <span class="n">bias</span><span class="o">=</span><span class="n">config</span><span class="o">.</span><span class="n">bias</span><span class="p">)</span>
+</code></pre></div>
+
+<p>这就是<strong>Transformer 里教科书级的"核技巧"</strong>：</p>
+<ul>
+<li><code>c_fc</code>：768 → 3072，4 倍升维。</li>
+<li><code>GELU</code>：非线性（线性升维不够，必须有 nonlinearity 来打破线性叠加，这是核函数的本质）。</li>
+<li><code>c_proj</code>：3072 → 768，投影回原维度。</li>
+</ul>
+<p><strong>这一段几乎就是 SVM 核技巧的神经网络版</strong>——只不过 SVM 在升维后用一个线性超平面分割，MLP 在升维后用另一个线性层（<code>c_proj</code>）做加权"读出"，两者都依赖"高维线性分割就够了"这一性质（Cover 定理 / 通用近似定理）。</p>
+<h4 id="multi-head">软分离：multi-head 切片</h4>
+<p>那 12 个头之间的子空间靠什么分离？答案是<strong>结构 + 训练</strong>两件事合力，<strong>没有显式的超平面切</strong>：</p>
+<ol>
+<li>
+<p><strong>结构强制（机械分离）</strong>：<code>view(B, T, n_head, C // n_head)</code>（<code>model.py:54</code>）按内存布局把 768 维向量<strong>物理切</strong>成 12 段 64 维。每个头的权重只能看自己那 64 维 slice。这是硬分离，但只是<strong>坐标层面</strong>的，并不保证语义不重叠。</p>
+</li>
+<li>
+<p><strong>训练涌现（语义分离）</strong>：每个头的输出经过 <code>c_proj</code> 缝合后参与下游 loss，<strong>梯度回传时每个头收到的信号方向不同</strong>——加上随机初始化的对称性破缺，小差异在迭代中被放大，最终各头学到不同的特征。<strong>这是 emergent 的，不是设计出来的</strong>。</p>
+</li>
+</ol>
+<p>可以把两种"分离"机制对比一下：</p>
+<table>
+<thead>
+<tr>
+<th>模型</th>
+<th>分离机制</th>
+<th>谁决定边界</th>
+<th>是否显式</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>SVM</td>
+<td>升维 → 线性超平面</td>
+<td>优化目标里的 max margin</td>
+<td><strong>显式</strong>：边界由支持向量定义</td>
+</tr>
+<tr>
+<td>决策树</td>
+<td>坐标轴分割</td>
+<td>信息增益最大化</td>
+<td><strong>显式</strong>：每个节点一个判据</td>
+</tr>
+<tr>
+<td>多头 attention</td>
+<td>升维 → 多头切片 → 训练涌现</td>
+<td>loss 梯度 + 随机初始化</td>
+<td><strong>隐式</strong>：没有明确边界，靠优化自动分化</td>
+</tr>
+<tr>
+<td>MLP（核技巧侧）</td>
+<td>升维 → 非线性 → 投影</td>
+<td>反向传播</td>
+<td><strong>隐式</strong>：3072 维隐空间无法直接解释</td>
+</tr>
+</tbody>
+</table>
+<p><strong>这就是为什么 Transformer 既好训练又强大</strong>：它把"特征工程 + 子空间划分"这两件人类做不好的事完全交给梯度下降，自己只负责提供<strong>升维结构</strong>（<code>3*n_embd</code>、<code>4*n_embd</code>）和<strong>软相似度操作</strong>（<code>softmax(QK^T)</code>）。模型规模一大，自动分化出几百个有意义的子空间——而你只需要写 30 行代码。</p>
+<h4 id="svm-transformer">一张总图：从 SVM 到 Transformer 的"升维+分割"谱系</h4>
+<div class="highlight"><pre><span></span><code>SVM:          x  →  φ(x)             →  w · φ(x) + b
+              低维   核函数升维           线性超平面分割（max margin）
+
+MLP:          x  →  c_fc(x) → GELU   →  c_proj
+              768    3072   非线性       投影回 768（线性读出）
+
+Attention:    x  →  c_attn → Q/K/V    →  softmax(QK^T) @ V → c_proj
+              768    2304   切成 3 份    高维内积检索 + 加权拷贝
+                            再切 12 头
+
+Block (一层):  attn(LN(x)) + mlp(LN(x))   ←  两次升维 + 残差
+                                              （`model.py:103-104`）
+</code></pre></div>
+
+<p>每一行都在做"升维 → 在高维做某种简单操作 → 投影回来"。SVM 用一次，Transformer 在每一层做两次，12 层做 24 次。<strong>Transformer 的强大不是因为它发明了新数学，而是因为它把已经验证过的"升维 + 高维线性操作"这个范式工业化、可微化、堆叠化了。</strong></p>
+<blockquote>
+<p><strong>一句话</strong>：SVM 用一次升维 + 一个超平面把世界切开；Transformer 用 24 次升维 + 144 次软检索把世界揉透。前者是单层手术，后者是反复煎炒——做出来的菜是一个数量级的复杂度。</p>
+</blockquote>
+<hr />
+<h2 id="69-svd-vs-vs-svd">6.9 数据怎么才能分离开？SVD vs 特征矩阵 vs 看标签差异（一个会让 SVD 翻车的例子）</h2>
+<p>退一步问一个更基础的问题：<strong>给你一堆样本数据，怎么找到能把它们分开的方向？</strong></p>
+<p>很多人下意识想到三件事——奇异值分解（SVD/PCA）、协方差矩阵的特征向量、或者"看哪几个特征本身就不一样"。它们解决的<strong>根本不是同一个问题</strong>——能不能分开取决于"判别信号在哪里"，以及"你有没有让方法看到标签"。</p>
+<h3 id="_3">四种思路的本质区别</h3>
+<table>
+<thead>
+<tr>
+<th>方法</th>
+<th>优化目标</th>
+<th>用不用标签</th>
+<th>找的是什么方向</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>SVD / PCA</td>
+<td>最大化总方差</td>
+<td><strong>不用</strong></td>
+<td>数据本身散得最开的方向</td>
+</tr>
+<tr>
+<td>协方差矩阵特征分解</td>
+<td>同上（数学等价于 PCA）</td>
+<td><strong>不用</strong></td>
+<td>同上</td>
+</tr>
+<tr>
+<td>Fisher LDA</td>
+<td>(类间方差) / (类内方差)</td>
+<td><strong>用</strong></td>
+<td>把类别推得最远、类内压得最紧的方向</td>
+</tr>
+<tr>
+<td>逐特征 t-test / ANOVA</td>
+<td>单维度上类别均值差</td>
+<td><strong>用</strong></td>
+<td>哪些维度本身就区分类别</td>
+</tr>
+<tr>
+<td>K-means</td>
+<td>簇内方差最小</td>
+<td><strong>不用</strong></td>
+<td>假设球状簇、找重心</td>
+</tr>
+</tbody>
+</table>
+<p><strong>关键</strong>：SVD 和协方差矩阵特征分解解决的是"数据自己的几何结构"，但<strong>几何结构和类别结构是两回事</strong>。</p>
+<h3 id="svd">一个让 SVD 完全翻车的具体例子</h3>
+<p>构造一个二维数据集——判别信号在 x 轴上很弱，噪声在 y 轴上很强：</p>
+<div class="highlight"><pre><span></span><code><span class="kn">import</span><span class="w"> </span><span class="nn">numpy</span><span class="w"> </span><span class="k">as</span><span class="w"> </span><span class="nn">np</span>
+<span class="n">np</span><span class="o">.</span><span class="n">random</span><span class="o">.</span><span class="n">seed</span><span class="p">(</span><span class="mi">0</span><span class="p">)</span>
+
+<span class="c1"># 类 A：x ≈ +1，y 是大噪声</span>
+<span class="n">A</span> <span class="o">=</span> <span class="n">np</span><span class="o">.</span><span class="n">column_stack</span><span class="p">([</span><span class="n">np</span><span class="o">.</span><span class="n">random</span><span class="o">.</span><span class="n">randn</span><span class="p">(</span><span class="mi">500</span><span class="p">)</span> <span class="o">*</span> <span class="mf">0.1</span> <span class="o">+</span> <span class="mf">1.0</span><span class="p">,</span>
+                     <span class="n">np</span><span class="o">.</span><span class="n">random</span><span class="o">.</span><span class="n">randn</span><span class="p">(</span><span class="mi">500</span><span class="p">)</span> <span class="o">*</span> <span class="mf">5.0</span><span class="p">])</span>
+<span class="c1"># 类 B：x ≈ -1，y 是同样的大噪声</span>
+<span class="n">B</span> <span class="o">=</span> <span class="n">np</span><span class="o">.</span><span class="n">column_stack</span><span class="p">([</span><span class="n">np</span><span class="o">.</span><span class="n">random</span><span class="o">.</span><span class="n">randn</span><span class="p">(</span><span class="mi">500</span><span class="p">)</span> <span class="o">*</span> <span class="mf">0.1</span> <span class="o">-</span> <span class="mf">1.0</span><span class="p">,</span>
+                     <span class="n">np</span><span class="o">.</span><span class="n">random</span><span class="o">.</span><span class="n">randn</span><span class="p">(</span><span class="mi">500</span><span class="p">)</span> <span class="o">*</span> <span class="mf">5.0</span><span class="p">])</span>
+
+<span class="n">X</span> <span class="o">=</span> <span class="n">np</span><span class="o">.</span><span class="n">vstack</span><span class="p">([</span><span class="n">A</span><span class="p">,</span> <span class="n">B</span><span class="p">])</span>                 <span class="c1"># (1000, 2)</span>
+<span class="n">y</span> <span class="o">=</span> <span class="n">np</span><span class="o">.</span><span class="n">array</span><span class="p">([</span><span class="mi">0</span><span class="p">]</span><span class="o">*</span><span class="mi">500</span> <span class="o">+</span> <span class="p">[</span><span class="mi">1</span><span class="p">]</span><span class="o">*</span><span class="mi">500</span><span class="p">)</span>
+</code></pre></div>
+
+<p>数据画出来是这样：x 方向上两类分得很开（+1 vs −1，类内 std=0.1），y 方向上完全混在一起但 std=5.0。<strong>真正的判别方向是 x 轴</strong>。</p>
+<h4 id="svdpca">思路一：SVD（PCA）—— 翻车</h4>
+<div class="highlight"><pre><span></span><code><span class="n">Xc</span> <span class="o">=</span> <span class="n">X</span> <span class="o">-</span> <span class="n">X</span><span class="o">.</span><span class="n">mean</span><span class="p">(</span><span class="mi">0</span><span class="p">)</span>
+<span class="n">U</span><span class="p">,</span> <span class="n">S</span><span class="p">,</span> <span class="n">Vt</span> <span class="o">=</span> <span class="n">np</span><span class="o">.</span><span class="n">linalg</span><span class="o">.</span><span class="n">svd</span><span class="p">(</span><span class="n">Xc</span><span class="p">,</span> <span class="n">full_matrices</span><span class="o">=</span><span class="kc">False</span><span class="p">)</span>
+<span class="nb">print</span><span class="p">(</span><span class="n">Vt</span><span class="p">[</span><span class="mi">0</span><span class="p">])</span>    <span class="c1"># ≈ [0, 1]   ← 第一主成分指向 y 轴！</span>
+<span class="nb">print</span><span class="p">(</span><span class="n">S</span><span class="o">**</span><span class="mi">2</span> <span class="o">/</span> <span class="p">(</span><span class="nb">len</span><span class="p">(</span><span class="n">X</span><span class="p">)</span><span class="o">-</span><span class="mi">1</span><span class="p">))</span>  <span class="c1"># 方差：[~25, ~1.02]</span>
+</code></pre></div>
+
+<p><strong>SVD 选了 y 轴</strong>——因为 y 方向方差是 25，x 方向只有 ~1。但<strong>沿 y 轴投影下去两类完全混在一起</strong>，分类准确率 ≈ 50%。判别信号被当成噪声扔掉了。</p>
+<p>协方差矩阵特征分解给出的结果<strong>完全一样</strong>——因为 <code>cov(X) = (1/(n-1)) X^T X</code>，PCA 和它的特征分解是同一件事的两种表述。</p>
+<h4 id="fisher-lda">思路二：Fisher LDA —— 找对方向</h4>
+<div class="highlight"><pre><span></span><code><span class="n">mu_A</span><span class="p">,</span> <span class="n">mu_B</span> <span class="o">=</span> <span class="n">A</span><span class="o">.</span><span class="n">mean</span><span class="p">(</span><span class="mi">0</span><span class="p">),</span> <span class="n">B</span><span class="o">.</span><span class="n">mean</span><span class="p">(</span><span class="mi">0</span><span class="p">)</span>
+<span class="n">S_w</span> <span class="o">=</span> <span class="n">np</span><span class="o">.</span><span class="n">cov</span><span class="p">(</span><span class="n">A</span><span class="o">.</span><span class="n">T</span><span class="p">)</span> <span class="o">+</span> <span class="n">np</span><span class="o">.</span><span class="n">cov</span><span class="p">(</span><span class="n">B</span><span class="o">.</span><span class="n">T</span><span class="p">)</span>       <span class="c1"># 类内散度</span>
+<span class="n">w</span>   <span class="o">=</span> <span class="n">np</span><span class="o">.</span><span class="n">linalg</span><span class="o">.</span><span class="n">inv</span><span class="p">(</span><span class="n">S_w</span><span class="p">)</span> <span class="o">@</span> <span class="p">(</span><span class="n">mu_A</span> <span class="o">-</span> <span class="n">mu_B</span><span class="p">)</span>
+<span class="n">w</span>  <span class="o">/=</span> <span class="n">np</span><span class="o">.</span><span class="n">linalg</span><span class="o">.</span><span class="n">norm</span><span class="p">(</span><span class="n">w</span><span class="p">)</span>
+<span class="nb">print</span><span class="p">(</span><span class="n">w</span><span class="p">)</span>                              <span class="c1"># ≈ [1, 0]   ← 直接找到 x 轴</span>
+</code></pre></div>
+
+<p>LDA 选了 x 轴——因为它<strong>用了标签</strong>，知道"沿哪个方向投影后两类的均值差最大、类内抖动最小"。沿 x 轴投影分类准确率 ≈ 100%。</p>
+<h4 id="t-test">思路三：逐特征 t-test —— 最朴素也最直接</h4>
+<div class="highlight"><pre><span></span><code><span class="kn">from</span><span class="w"> </span><span class="nn">scipy.stats</span><span class="w"> </span><span class="kn">import</span> <span class="n">ttest_ind</span>
+<span class="nb">print</span><span class="p">(</span><span class="n">ttest_ind</span><span class="p">(</span><span class="n">A</span><span class="p">[:,</span><span class="mi">0</span><span class="p">],</span> <span class="n">B</span><span class="p">[:,</span><span class="mi">0</span><span class="p">])</span><span class="o">.</span><span class="n">pvalue</span><span class="p">)</span>   <span class="c1"># x 维：≈ 0       ← 显著</span>
+<span class="nb">print</span><span class="p">(</span><span class="n">ttest_ind</span><span class="p">(</span><span class="n">A</span><span class="p">[:,</span><span class="mi">1</span><span class="p">],</span> <span class="n">B</span><span class="p">[:,</span><span class="mi">1</span><span class="p">])</span><span class="o">.</span><span class="n">pvalue</span><span class="p">)</span>   <span class="c1"># y 维：≈ 0.6     ← 不显著</span>
+</code></pre></div>
+
+<p>也直接告诉你"x 是判别特征，y 不是"。</p>
+<h3 id="_4">教训：方差大 ≠ 能区分类别</h3>
+<p>这是机器学习里最反直觉的坑：</p>
+<blockquote>
+<p><strong>PCA 找的是"数据自己散得最开的方向"，不是"类别分得最开的方向"。</strong>
+类别信号小、噪声方向大时，SVD 会把判别信号当成噪声扔掉。</p>
+</blockquote>
+<p>所以回到用户的问题——"是 SVD？是特征矩阵？是看两类样本特征不一样？还是看 k 标签不一样？"——答案是：</p>
+<ul>
+<li><strong>没有标签</strong>：只能靠 SVD / PCA / t-SNE / UMAP 之类的无监督几何方法，前提是<strong>类别结构恰好和数据的主方差方向对齐</strong>。否则注定失败。</li>
+<li><strong>有标签、线性可分</strong>：用 Fisher LDA 或 logistic regression，让方法<strong>看见标签</strong>，直接找判别方向。</li>
+<li><strong>有标签、想知道哪些维度有用</strong>：逐特征 t-test / ANOVA / mutual information——简单粗暴，常常就够。</li>
+<li><strong>有标签、非线性</strong>：SVM + 核函数，或直接训神经网络。</li>
+</ul>
+<p><strong>简而言之：能不能分开，关键是"判别信号在哪"，以及"你的方法有没有看到标签"。</strong> 同样一份数据，SVD 看不到标签所以被噪声方差骗到 y 轴；LDA 一旦用上标签，立刻指向 x 轴。</p>
+<h3 id="transformer-lda">Transformer 是哪一种？—— "有监督的非线性 LDA"</h3>
+<p>回到 attention（<code>model.py:53-70</code>）：</p>
+<div class="highlight"><pre><span></span><code><span class="n">q</span><span class="p">,</span> <span class="n">k</span><span class="p">,</span> <span class="n">v</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">c_attn</span><span class="p">(</span><span class="n">x</span><span class="p">)</span><span class="o">.</span><span class="n">split</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">n_embd</span><span class="p">,</span> <span class="n">dim</span><span class="o">=</span><span class="mi">2</span><span class="p">)</span>
+<span class="n">att</span> <span class="o">=</span> <span class="p">(</span><span class="n">q</span> <span class="o">@</span> <span class="n">k</span><span class="o">.</span><span class="n">transpose</span><span class="p">(</span><span class="o">-</span><span class="mi">2</span><span class="p">,</span> <span class="o">-</span><span class="mi">1</span><span class="p">))</span> <span class="o">*</span> <span class="p">(</span><span class="mf">1.0</span> <span class="o">/</span> <span class="n">math</span><span class="o">.</span><span class="n">sqrt</span><span class="p">(</span><span class="n">k</span><span class="o">.</span><span class="n">size</span><span class="p">(</span><span class="o">-</span><span class="mi">1</span><span class="p">)))</span>
+<span class="n">att</span> <span class="o">=</span> <span class="n">F</span><span class="o">.</span><span class="n">softmax</span><span class="p">(</span><span class="n">att</span><span class="p">,</span> <span class="n">dim</span><span class="o">=-</span><span class="mi">1</span><span class="p">)</span>
+<span class="n">y</span>   <span class="o">=</span> <span class="n">att</span> <span class="o">@</span> <span class="n">v</span>
+</code></pre></div>
+
+<p>这里<strong>没有 PCA、没有 LDA、没有 K-means</strong>——但它做的事更接近 LDA 而不是 PCA：</p>
+<ul>
+<li><code>c_attn</code> 的权重<strong>不是按方差最大化</strong>训出来的，而是按下游 cross-entropy loss 训出来的（<code>model.py:192</code>）。</li>
+<li>Loss 来源于"下一个 token 是什么"——这是一种<strong>自带的标签</strong>。每次反向传播都在告诉 Q/K/V 投影矩阵：<blockquote>
+<p>"朝着让正确 token 概率上升的方向调"——这是<strong>有监督</strong>的判别式学习。</p>
+</blockquote>
+</li>
+</ul>
+<p>所以 Transformer 不需要先跑 PCA 再训分类器——它的 <code>c_attn</code> / <code>c_fc</code> 投影矩阵本来就是被任务标签直接监督出来的"LDA 的高维非线性版"。多头让它<strong>同时学十几套这种判别投影</strong>，每个头的 K 矩阵都是"在某个子任务上区分类别最强的方向集合"。</p>
+<p>如果当年用 PCA 替代 attention（"先把 token embedding 降维到主方差方向再做下一步"），结果会和上面 SVD 翻车同款——<strong>主方差方向上往往恰好不是预测下一个 token 最关键的方向</strong>。Transformer 不犯这个错，因为它从一开始就让标签信号通过梯度告诉投影矩阵该往哪转。</p>
+<h4 id="_5">一张表收拢</h4>
+<table>
+<thead>
+<tr>
+<th>你想分什么数据？</th>
+<th>推荐方法</th>
+<th>为什么</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>无标签、求降维可视化</td>
+<td>SVD / PCA / t-SNE / UMAP</td>
+<td>没标签，只能靠几何结构</td>
+</tr>
+<tr>
+<td>有标签、线性可分</td>
+<td>Fisher LDA / Logistic Regression</td>
+<td>用标签找判别方向</td>
+</tr>
+<tr>
+<td>有标签、想筛特征</td>
+<td>逐特征 t-test / mutual information</td>
+<td>直接找单维度差异</td>
+</tr>
+<tr>
+<td>有标签、非线性、特征清晰</td>
+<td>SVM + RBF kernel</td>
+<td>升维 + 超平面</td>
+</tr>
+<tr>
+<td>有标签、序列数据、特征复杂</td>
+<td>Transformer</td>
+<td>升维 + 软检索 + 多套判别投影</td>
+</tr>
+</tbody>
+</table>
+<blockquote>
+<p><strong>一句话</strong>：能不能分开数据，关键不是"用什么数学"，而是"判别信号在哪"，以及"你有没有让方法看到标签"。SVD 看不到标签所以会被噪声方差骗；LDA、Transformer 看标签，才会去找类别真正不一样的那一维。</p>
+</blockquote>
+<hr />
+<h2 id="610-kv-cache-ollama-vllm-undo">6.10 从搜索缓存到 KV cache：同一种缓存哲学（含 Ollama / vLLM 原理与 undo 机制）</h2>
+<p>把 GPT 当搜索引擎看的好处之一是——<strong>搜索引擎所有的缓存技巧，在 GPT 这边都有对应</strong>。</p>
+<table>
+<thead>
+<tr>
+<th>搜索引擎一侧</th>
+<th>GPT 一侧</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>Google 把热门 query 的结果缓存起来，第二次同样 query 直接命中</td>
+<td>自回归生成里前 t-1 个 token 的 K/V 完全相同，缓存即可</td>
+</tr>
+<tr>
+<td>CDN 边缘节点缓存静态结果</td>
+<td>vLLM 的 PagedAttention 把 KV 切成 block 跨请求共享</td>
+</tr>
+<tr>
+<td>缓存失效 = 撤销缓存条目</td>
+<td>undo / rewind = 丢弃 KV 矩阵尾部若干行</td>
+</tr>
+<tr>
+<td>多个 user 共享同一份热门页面</td>
+<td>多 request 共享同一段 system prompt 的 KV（prefix caching）</td>
+</tr>
+</tbody>
+</table>
+<p>所以<strong>KV cache 不是 transformer 时代的新发明，它就是搜索缓存在自回归生成场景下的具体形态</strong>。下面把这层关系说穿。</p>
+<h3 id="6101">6.10.1 自回归生成的天然冗余</h3>
+<p>先看一下 CodeGPT 当前的 <code>generate</code>（<code>model.py:275-308</code>）：</p>
+<div class="highlight"><pre><span></span><code><span class="k">for</span> <span class="n">_</span> <span class="ow">in</span> <span class="nb">range</span><span class="p">(</span><span class="n">max_new_tokens</span><span class="p">):</span>
+    <span class="n">idx_cond</span> <span class="o">=</span> <span class="n">idx</span> <span class="k">if</span> <span class="n">idx</span><span class="o">.</span><span class="n">size</span><span class="p">(</span><span class="mi">1</span><span class="p">)</span> <span class="o">&lt;=</span> <span class="bp">self</span><span class="o">.</span><span class="n">config</span><span class="o">.</span><span class="n">block_size</span> <span class="k">else</span> <span class="n">idx</span><span class="p">[:,</span> <span class="o">-</span><span class="bp">self</span><span class="o">.</span><span class="n">config</span><span class="o">.</span><span class="n">block_size</span><span class="p">:]</span>
+    <span class="n">logits</span><span class="p">,</span> <span class="n">_</span> <span class="o">=</span> <span class="bp">self</span><span class="p">(</span><span class="n">idx_cond</span><span class="p">)</span>          <span class="c1"># ← 每一步都把整个序列从头跑一遍 forward</span>
+    <span class="n">logits</span> <span class="o">=</span> <span class="n">logits</span><span class="p">[:,</span> <span class="o">-</span><span class="mi">1</span><span class="p">,</span> <span class="p">:]</span> <span class="o">/</span> <span class="n">temperature</span>
+    <span class="c1"># ... 采样 ...</span>
+    <span class="n">idx</span> <span class="o">=</span> <span class="n">torch</span><span class="o">.</span><span class="n">cat</span><span class="p">((</span><span class="n">idx</span><span class="p">,</span> <span class="n">idx_next</span><span class="p">),</span> <span class="n">dim</span><span class="o">=</span><span class="mi">1</span><span class="p">)</span>
+</code></pre></div>
+
+<p>每生成一个 token，<code>self(idx_cond)</code> 会<strong>把已经处理过的所有 token 再算一遍</strong>。第 100 个 token 时，前 99 个 token 在 12 个 Block 里的 K、V 矩阵已经在第 99 步算过了——但代码里没有保存，于是第 100 步重新算了一次。第 101 步又算了一次……</p>
+<p>总开销是 <strong>O(T²) 而不是 O(T)</strong>——T 越长越亏。CodeGPT 是教学项目，所以保留了这个最朴素的实现；任何工业部署都不会这样做。</p>
+<h3 id="6102-kv-cache">6.10.2 KV cache 是什么——一句话定义</h3>
+<blockquote>
+<p><strong>把每一层每个 head 已经算出来的 K 和 V 矩阵存下来，下一步生成时只算"新 token 那一行"的 K/V，再 append 到缓存末尾。</strong></p>
+</blockquote>
+<p>attention 那块（<code>model.py:53-70</code>）的关键观察是：</p>
+<div class="highlight"><pre><span></span><code><span class="n">q</span><span class="p">,</span> <span class="n">k</span><span class="p">,</span> <span class="n">v</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">c_attn</span><span class="p">(</span><span class="n">x</span><span class="p">)</span><span class="o">.</span><span class="n">split</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">n_embd</span><span class="p">,</span> <span class="n">dim</span><span class="o">=</span><span class="mi">2</span><span class="p">)</span>   <span class="c1"># 每个 token 独立算 Q/K/V</span>
+<span class="n">att</span> <span class="o">=</span> <span class="p">(</span><span class="n">q</span> <span class="o">@</span> <span class="n">k</span><span class="o">.</span><span class="n">transpose</span><span class="p">(</span><span class="o">-</span><span class="mi">2</span><span class="p">,</span> <span class="o">-</span><span class="mi">1</span><span class="p">))</span> <span class="o">*</span> <span class="p">(</span><span class="mf">1.0</span> <span class="o">/</span> <span class="n">math</span><span class="o">.</span><span class="n">sqrt</span><span class="p">(</span><span class="n">k</span><span class="o">.</span><span class="n">size</span><span class="p">(</span><span class="o">-</span><span class="mi">1</span><span class="p">)))</span>
+<span class="n">att</span> <span class="o">=</span> <span class="n">att</span><span class="o">.</span><span class="n">masked_fill</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">bias</span><span class="p">[:,</span> <span class="p">:,</span> <span class="p">:</span><span class="n">T</span><span class="p">,</span> <span class="p">:</span><span class="n">T</span><span class="p">]</span> <span class="o">==</span> <span class="mi">0</span><span class="p">,</span> <span class="nb">float</span><span class="p">(</span><span class="s1">&#39;-inf&#39;</span><span class="p">))</span>   <span class="c1"># 因果掩码</span>
+<span class="n">att</span> <span class="o">=</span> <span class="n">F</span><span class="o">.</span><span class="n">softmax</span><span class="p">(</span><span class="n">att</span><span class="p">,</span> <span class="n">dim</span><span class="o">=-</span><span class="mi">1</span><span class="p">)</span>
+<span class="n">y</span>   <span class="o">=</span> <span class="n">att</span> <span class="o">@</span> <span class="n">v</span>
+</code></pre></div>
+
+<p>因果掩码保证了<strong>第 t 个位置只能看 ≤ t 的 K/V</strong>——也就是说<strong>前面位置的 K/V 不依赖后面位置</strong>。一旦算出来就永远不变。这就是缓存的合法性来源。</p>
+<p>带 KV cache 的 generate 伪代码：</p>
+<div class="highlight"><pre><span></span><code><span class="c1"># 伪代码：带 KV cache 的自回归生成</span>
+<span class="k">def</span><span class="w"> </span><span class="nf">generate_with_cache</span><span class="p">(</span><span class="n">model</span><span class="p">,</span> <span class="n">idx</span><span class="p">,</span> <span class="n">max_new_tokens</span><span class="p">):</span>
+    <span class="c1"># 第一次：处理整个 prompt，所有层的 K/V 都缓存下来</span>
+    <span class="n">kv_cache</span> <span class="o">=</span> <span class="p">[{</span><span class="s2">&quot;k&quot;</span><span class="p">:</span> <span class="kc">None</span><span class="p">,</span> <span class="s2">&quot;v&quot;</span><span class="p">:</span> <span class="kc">None</span><span class="p">}</span> <span class="k">for</span> <span class="n">_</span> <span class="ow">in</span> <span class="nb">range</span><span class="p">(</span><span class="n">model</span><span class="o">.</span><span class="n">config</span><span class="o">.</span><span class="n">n_layer</span><span class="p">)]</span>
+    <span class="n">logits</span> <span class="o">=</span> <span class="n">model</span><span class="o">.</span><span class="n">forward_with_cache</span><span class="p">(</span><span class="n">idx</span><span class="p">,</span> <span class="n">kv_cache</span><span class="p">)</span>         <span class="c1"># 全量 forward + 写 cache</span>
+
+    <span class="k">for</span> <span class="n">_</span> <span class="ow">in</span> <span class="nb">range</span><span class="p">(</span><span class="n">max_new_tokens</span><span class="p">):</span>
+        <span class="n">idx_next</span> <span class="o">=</span> <span class="n">sample</span><span class="p">(</span><span class="n">logits</span><span class="p">[:,</span> <span class="o">-</span><span class="mi">1</span><span class="p">,</span> <span class="p">:])</span>
+        <span class="c1"># 关键：只输入新 token，每层只算一行 K/V，append 到 cache</span>
+        <span class="n">logits</span> <span class="o">=</span> <span class="n">model</span><span class="o">.</span><span class="n">forward_with_cache</span><span class="p">(</span><span class="n">idx_next</span><span class="p">,</span> <span class="n">kv_cache</span><span class="p">)</span>  <span class="c1"># 增量 forward</span>
+        <span class="n">idx</span> <span class="o">=</span> <span class="n">torch</span><span class="o">.</span><span class="n">cat</span><span class="p">([</span><span class="n">idx</span><span class="p">,</span> <span class="n">idx_next</span><span class="p">],</span> <span class="n">dim</span><span class="o">=</span><span class="mi">1</span><span class="p">)</span>
+    <span class="k">return</span> <span class="n">idx</span>
+</code></pre></div>
+
+<p>复杂度从 <strong>O(T²) → O(T)</strong>——每生成一个 token 只做 <strong>O(T)</strong> 的工作（查 cache 算 attention）而不是 O(t²)。</p>
+<h3 id="6103-kv-cache">6.10.3 KV cache 的内存账</h3>
+<p>工业部署里 KV cache 通常<strong>比模型权重还占显存</strong>：</p>
+<div class="highlight"><pre><span></span><code>KV cache 大小 = 2 × num_layers × num_heads × seq_len × head_dim × dtype_bytes × batch
+                ↑ K 和 V 各一份
+</code></pre></div>
+
+<p>代入 Llama-3 70B 的数字：</p>
+<div class="highlight"><pre><span></span><code>2 × 80 × 64 × 8192 × 128 × 2 (fp16) × 1 = 21.5 GB    # 单 batch、8K 上下文
+2 × 80 × 64 × 32768 × 128 × 2 (fp16) × 1 = 86 GB     # 32K 上下文，已经爆 80GB H100
+</code></pre></div>
+
+<p><strong>所以推理引擎的核心命题，就是 KV cache 怎么放、怎么省、怎么共享。</strong> 这就把 Ollama 和 vLLM 是干什么的解释干净了。</p>
+<h3 id="6104-ollama-kv-cache-cpugpu">6.10.4 Ollama 的本质：把 KV cache 放进 CPU/GPU 友好的连续内存 + 量化</h3>
+<p>Ollama 是 <a href="https://github.com/ggerganov/llama.cpp">llama.cpp</a> 的封装，核心优化全在 KV cache 这一层：</p>
+<ul>
+<li><strong>GGUF 格式</strong>：把权重和 KV cache 都按"连续内存 + mmap"组织，CPU 推理友好。</li>
+<li><strong>KV cache 量化（Q4_K / Q8_0）</strong>：把 fp16 的 K/V 压到 4-bit 或 8-bit 整数，显存直接砍 2-4 倍——精度损失通常 &lt; 1%。</li>
+<li><strong>环形 buffer</strong>：上下文超过 <code>n_ctx</code> 时滚动覆盖最早的 K/V（牺牲早期记忆换长会话，对应"搜索缓存里 LRU 淘汰"）。</li>
+<li><strong>CPU/GPU 混合</strong>：把热的 K/V 放 GPU，冷的放 CPU RAM——和 CDN 边缘节点 vs 中心库的关系一样。</li>
+</ul>
+<p><strong>Ollama 跑得动 70B 模型的关键就在这里</strong>——不是模型小了，是 KV cache 被精打细算地放置/量化了。</p>
+<h3 id="6105-vllm-pagedattention-kv-cache">6.10.5 vLLM 的本质：PagedAttention = 把 KV cache 当虚拟内存分页</h3>
+<p>vLLM 解决的是<strong>多请求并发</strong>场景下的 KV cache 浪费问题。问题描述：</p>
+<ul>
+<li>朴素实现给每个 request 预留 <code>max_seq_len</code> 那么大的连续 KV 缓冲——但很多 request 实际只生成几百 token，<strong>预留的内存大量空着</strong>。</li>
+<li>不同 request 如果共享 system prompt 或 few-shot 例子，<strong>前缀的 KV 完全相同，本来可以共享</strong>。</li>
+</ul>
+<p>PagedAttention 借鉴操作系统虚拟内存的做法（<a href="https://arxiv.org/abs/2309.06180">vLLM 论文</a>）：</p>
+<div class="highlight"><pre><span></span><code>传统：一个 request 一段连续 KV cache
+[req-A: ████████████░░░░░░░░░░░] ← 大量预留浪费
+[req-B: ████░░░░░░░░░░░░░░░░░░░]
+[req-C: ██████████████████████░░]
+
+PagedAttention：把 KV cache 切成固定大小 block（比如 16 token 一块），block table 像页表那样映射
+block 池: [B0][B1][B2][B3][B4][B5][B6][B7]...
+req-A 的 page table: B0 → B2 → B5
+req-B 的 page table: B1 → B3
+req-C 的 page table: B0 → B2 → B5 → B6 → B7   ← 前三个 block 和 req-A 共享！
+</code></pre></div>
+
+<p>这就让 <strong>prefix caching</strong> 直接成立——多个 request 共用同一段 system prompt 时，那段的 KV block <strong>只算一次、被多个请求引用</strong>。这跟 CDN 把热门页面缓存到边缘节点是同一种思想。</p>
+<p>vLLM 把推理吞吐量比朴素实现提高 2-24 倍，几乎全部红利来自这一层 KV cache 复用。</p>
+<h3 id="6106">6.10.6 回到用户的疑问："这就是搜索文章的缓存吗？"</h3>
+<p><strong>是的，本质完全相同</strong>——只是对应物从"网页"换成了"K/V 矩阵的某些行"：</p>
+<table>
+<thead>
+<tr>
+<th>维度</th>
+<th>搜索缓存</th>
+<th>KV cache</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>缓存键</td>
+<td>query 字符串（或 hash）</td>
+<td>前缀 token 序列</td>
+</tr>
+<tr>
+<td>缓存值</td>
+<td>检索结果（doc list）</td>
+<td>每层每头的 K, V 矩阵</td>
+</tr>
+<tr>
+<td>命中条件</td>
+<td>query 完全相同</td>
+<td>前缀 token 完全相同（prefix match）</td>
+</tr>
+<tr>
+<td>失效策略</td>
+<td>LRU / TTL</td>
+<td>上下文滑窗 / 显存满了 evict</td>
+</tr>
+<tr>
+<td>跨用户共享</td>
+<td>CDN 边缘共享热门页</td>
+<td>vLLM PagedAttention 共享 prefix block</td>
+</tr>
+<tr>
+<td>数据结构</td>
+<td>哈希表 / Redis</td>
+<td>block table + 物理 block 池</td>
+</tr>
+</tbody>
+</table>
+<p><strong>记忆挂钩</strong>：vLLM 之于 Llama，约等于 Cloudflare 之于一个 Web 站点——都是在请求层做缓存复用，把"重复计算的工作量"摊到接近零。</p>
+<h3 id="6107-undo-undo-kv-cache">6.10.7 Undo 的代价：为什么"原则上 undo 也可以靠 KV cache"</h3>
+<blockquote>
+<p><strong>用户的原话</strong>："但是没法 undo，原则上 undo 也可以利用 kv cache 的，要有个抛弃回退 kv 矩阵一部分。"</p>
+</blockquote>
+<p>这话点中了一个真实的工程能力——<strong>KV cache 让 undo / rewind / 多分支生成成为 O(1) 而不是 O(T) 的操作</strong>。</p>
+<p>每层 cache 的形状是 <code>(B, n_head, T, head_dim)</code>，"回退 k 步"的实现就是一次 slicing：</p>
+<div class="highlight"><pre><span></span><code><span class="c1"># 伪代码：回退 k 个 token，让模型从第 (T-k) 位置重新生成</span>
+<span class="k">def</span><span class="w"> </span><span class="nf">rewind</span><span class="p">(</span><span class="n">kv_cache</span><span class="p">,</span> <span class="n">k</span><span class="p">):</span>
+    <span class="k">for</span> <span class="n">layer_cache</span> <span class="ow">in</span> <span class="n">kv_cache</span><span class="p">:</span>
+        <span class="n">layer_cache</span><span class="p">[</span><span class="s2">&quot;k&quot;</span><span class="p">]</span> <span class="o">=</span> <span class="n">layer_cache</span><span class="p">[</span><span class="s2">&quot;k&quot;</span><span class="p">][:,</span> <span class="p">:,</span> <span class="p">:</span><span class="o">-</span><span class="n">k</span><span class="p">,</span> <span class="p">:]</span>   <span class="c1"># 丢掉最后 k 行 K</span>
+        <span class="n">layer_cache</span><span class="p">[</span><span class="s2">&quot;v&quot;</span><span class="p">]</span> <span class="o">=</span> <span class="n">layer_cache</span><span class="p">[</span><span class="s2">&quot;v&quot;</span><span class="p">][:,</span> <span class="p">:,</span> <span class="p">:</span><span class="o">-</span><span class="n">k</span><span class="p">,</span> <span class="p">:]</span>   <span class="c1"># 丢掉最后 k 行 V</span>
+    <span class="c1"># idx 也截短到 [:, :-k]</span>
+</code></pre></div>
+
+<p><strong>对比无 cache 的 undo</strong>：得把 idx 截短，然后整个序列从头 forward 一遍——O(T·n_layer) 工作量。
+<strong>有 cache 的 undo</strong>：每层做一次切片，<strong>几乎零成本</strong>，前 (T-k) 个位置的 K/V 完全保留下来继续用。</p>
+<p>这就是为什么现代推理引擎能轻松实现下面这些场景：</p>
+<ul>
+<li><strong>多分支采样 / beam search</strong>：从同一个 prefix 出发探索多条生成路径——前缀 KV 共享，每条分支只 fork 自己的尾部。</li>
+<li><strong>Self-consistency / 温度重采样</strong>：发现刚生成的几个 token 不满意，回退几步、换温度再来一遍。CodeGPT 的 REPL（<code>repl.py</code>）如果加 KV cache 就能秒级实现"重采样最后一句"。</li>
+<li><strong>编辑式 prompt（edit prompt）</strong>：把第 N 个 token 改了，只需丢弃 N 之后的 KV、重算新 token 的 K/V——O(remaining)，不是 O(T)。</li>
+<li><strong>agentic 多步推理里的回滚</strong>：tool call 失败、rethink、走另一条路——KV cache 的尾部回退是底层机制。</li>
+</ul>
+<p><strong>所以"GPT 没法 undo" 是错觉</strong>——单纯就 transformer 数学而言，undo 是一个 KV 矩阵切片操作。看起来"没法 undo" 只是因为：</p>
+<ol>
+<li>大多数 chat UI 没有把 cache 暴露给用户，回退被实现成"重发对话"。</li>
+<li>远端 API（OpenAI、Anthropic）出于隔离/安全原因不暴露 cache 句柄。</li>
+<li>CodeGPT 这种朴素实现根本没有 cache，"undo" 和"重跑"无差别。</li>
+</ol>
+<p><strong>vLLM、SGLang、TensorRT-LLM 这一代推理引擎都把"KV 切片回退"做成了一等公民</strong>——只要你跑的是本地服务，undo 就是 O(1)。</p>
+<blockquote>
+<p><strong>一句话总结</strong>：搜索引擎缓存让"重复 query"零成本、缓存淘汰让 undo 自然存在；KV cache 让"重复前缀"零成本、矩阵尾部切片让 undo 自然存在。<strong>同一种缓存哲学，从字符串世界搬到了高维向量世界</strong>——这也是为什么搞 transformer 推理的人和搞 web 缓存的人聊起来毫无门槛。</p>
+</blockquote>
+<hr />
+<h2 id="7-gpt">7. 训练个人 GPT = 在你的语料上重建搜索索引</h2>
+<p>理解了"GPT = 高维空间里的搜索引擎"，训练个人 GPT 这件事就立刻不神秘了：</p>
+<blockquote>
+<p><strong>训练 = 用你的数据重建权重矩阵 W，使得 attention 检索的结果偏向你想要的答案。</strong></p>
+</blockquote>
+<p>具体在 CodeGPT 里发生的事：</p>
+<ol>
+<li>
+<p><strong>准备语料 = 准备被搜索的文档库</strong>（<code>data/python_code/prepare.py</code>、<code>data/github_code/prepare.py</code>）。
+   - 切 token、写成 <code>train.bin</code>/<code>val.bin</code> 的 uint16 流——<strong>这就是建索引的过程</strong>。</p>
+</li>
+<li>
+<p><strong>训练 = 让搜索在你的语料上"答得准"</strong>（<code>train.py</code>）。
+   - <code>F.cross_entropy(logits, targets, ignore_index=-1)</code>（<code>model.py:192</code>）= "下一个 token 应该是 X，可你搜出的最高分是 Y"——loss 大，梯度反向把 W 调一点点。
+   - 几万到几亿次这种调整后，W 收敛成"在我的代码风格下答得最准的搜索引擎"。</p>
+</li>
+<li>
+<p><strong>微调 = 把已有索引在你的小语料上重排</strong>（<code>config/finetune_codegpt.py</code> + <code>init_from='gpt2*'</code>）。
+   - 从 GPT-2 的 W 开始（已经是一个全网大搜索引擎），用你的代码再训几千步——相当于让搜索结果更偏向你这个领域。</p>
+</li>
+<li>
+<p><strong>FIM 训练 = 教搜索引擎也能"中间填空"</strong>（<code>tokenizer.py:apply_fim_transform</code>，<code>train.py:get_batch</code>）。
+   - 50% 概率把 <code>prefix + middle + suffix</code> 重排成 <code>&lt;|fim_prefix|&gt; P &lt;|fim_suffix|&gt; S &lt;|fim_middle|&gt; M</code>。
+   - 训练后，模型不仅能"续写"，还能"在两段已知代码之间补中间"——这是 Copilot / Cursor 内联补全背后的机制。<strong>搜索维度多了一个</strong>：从"给前缀找后缀"扩展到"给前后缀找中间"。</p>
+</li>
+<li>
+<p><strong>RAG = 不重训，临时往 query 里塞检索结果</strong>——<code>docs/RAG_VS_SFT.md</code> 详细讲过。RAG 是"在 GPT 这个高级搜索之外再套一层传统向量搜索"，把命中的 chunk 拼进 prompt，让 GPT 做最后的综合。</p>
+</li>
+</ol>
+<p><strong>所以"训个人 GPT"的真实含义</strong>：你不是在造一个新的 AI，你是在<strong>用你的数据重建一个搜索索引</strong>——只不过这个索引同时具备生成、综合、改写能力，因为它的"召回"是在 12 层高维空间里完成的。</p>
+<hr />
+<h2 id="8-gpt">8. 实战：把"用好 GPT"翻译成"用好搜索"</h2>
+<p>既然 GPT 是搜索引擎，那"会用 GPT"就等于"会写好的搜索 query"。把过去你提报错时知道的所有搜索技巧迁移过来：</p>
+<table>
+<thead>
+<tr>
+<th>搜索时代的技巧</th>
+<th>GPT 时代的对应</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>关键词加引号锁死精确匹配</td>
+<td>prompt 里贴<strong>完整报错信息</strong>而不是改写</td>
+</tr>
+<tr>
+<td>加 <code>site:stackoverflow.com</code> 限定域</td>
+<td>prompt 里加 <code>回答只引用 PyTorch 官方文档</code></td>
+</tr>
+<tr>
+<td>减号排除噪音（<code>-tutorial</code>）</td>
+<td>prompt 里加 <code>不要给入门级解释</code></td>
+</tr>
+<tr>
+<td>同时开几个 tab 横向对比</td>
+<td>让 GPT 一次列 <strong>3 种方案 + 各自 trade-off</strong></td>
+</tr>
+<tr>
+<td>直接搜函数签名而非自然语言</td>
+<td>prompt 里贴<strong>真实代码片段</strong>比口头描述强十倍</td>
+</tr>
+<tr>
+<td>用英文搜效果远好于中文</td>
+<td>用英文 prompt + 让它中文回答（embedding 空间英文密度高）</td>
+</tr>
+<tr>
+<td>翻到第二页找冷门正解</td>
+<td>让 GPT 给"<strong>less obvious</strong>"或"反直觉"的答案</td>
+</tr>
+</tbody>
+</table>
+<p><strong>核心 mental model</strong>：你写的每个 prompt 都是在高维空间里挑选一个区域。Prompt 越具体、越接近训练分布、越带"高熵特征"（罕见词、代码、报错），召回的区域就越准——和 Google 报错搜索完全同构。</p>
+<hr />
+<h2 id="9-gpt">9. 小结：GPT 不神秘，它只是把搜索做到了极致</h2>
+<p>回到一开始那条线：</p>
+<div class="highlight"><pre><span></span><code>关键词搜索 → 向量搜索 → 高维空间搜索 → GPT
+   |             |              |          |
+ 倒排索引     Faiss/HNSW     embedding   12 层 attention
+ 字符串=     内积=相似       学习到的     QK^T + softmax + @V
+                                          每层一次，每头一次
+</code></pre></div>
+
+<p>每一代的进步都是<strong>把"搜索"这件事在更高维、更连续、更可微的空间上重做一遍</strong>。GPT 是顶点——它把搜索、过滤、排序、生成这四步压进了同一次 forward，每生成一个 token 都做一遍。</p>
+<p>理解这件事的几个直接好处：</p>
+<ol>
+<li><strong>去神秘化</strong>：GPT 不是魔法，它是一个把每一层都做向量检索的搜索引擎。<code>F.softmax(q @ k.T) @ v</code> 就是核心。</li>
+<li><strong>训自己模型时不慌</strong>：你只是在自己的语料上重建索引；模型小没关系，索引精准就行（10M 的 CodeGPT-small 在自己的代码上能比 GPT-4 更懂你的命名风格，因为你的数据在 GPT-4 训练集中权重接近 0）。</li>
+<li><strong>会写 prompt</strong>：把"写 prompt"看成"写搜索 query"——具体、贴报错、用英文、给约束、要 trade-off。</li>
+<li><strong>判断什么任务做不到</strong>：搜索引擎查不到没收录过的内容，GPT 也一样。所以才需要 RAG（拼一个外部索引进去）和 SFT（把新内容压进权重）。</li>
+<li><strong>理解多层的意义</strong>：单层 attention 只能做一次平面搜索，12 层让搜索在层次结构上展开——像把"搜文档 → 读文档 → 综合 → 改写"压进一次前向传播。</li>
+<li><strong>看穿推理引擎的优化重点</strong>：Ollama 和 vLLM 干的事和 CDN / Redis 干的事是同构的——KV cache 就是搜索缓存的高维向量版，prefix sharing 就是 CDN 的边缘节点共享，rewind/undo 就是缓存条目的尾部切片。<strong>理解了"GPT 是搜索引擎"，整个推理栈的工程优化你都能秒懂</strong>。</li>
+<li><strong>理解工业向量库</strong>：embedding model + ANN（HNSW / IVF / PQ）就是 attention 的工业化离线版——只是不要梯度、不要可微，换来亿级文档上的 O(log N) 搜索。RAG 的 retrieval 那一层就是这个东西，它和 GPT 内部 attention 的关系是分工而不是替代。</li>
+</ol>
+<hr />
+<h2 id="_6">延伸阅读</h2>
+<ul>
+<li><a href="COMPRESSION_IS_INTELLIGENCE.md"><code>COMPRESSION_IS_INTELLIGENCE.md</code></a> — 为什么"搜索 + 综合"等价于压缩；<code>F.cross_entropy</code> 在度量什么。</li>
+<li><a href="RAG_VS_SFT.md"><code>RAG_VS_SFT.md</code></a> — 改 <code>idx</code>（外挂搜索）还是改 <code>W</code>（重训搜索引擎），决策表 + 评估方法。</li>
+<li><a href="DEEP_DIVE.md"><code>DEEP_DIVE.md</code></a> — 注意力机制从加法注意力到缩放点积注意力的进化。</li>
+<li><a href="PHYSICS_AND_DEEP_LEARNING.md"><code>PHYSICS_AND_DEEP_LEARNING.md</code></a> — Attention = 连续型 Hopfield 网络，从能量最小化的角度看"搜索"。</li>
+<li><a href="SFT_RL_INFERENCE_MECHANICS.md"><code>SFT_RL_INFERENCE_MECHANICS.md</code></a> — 训练写权重、推理用权重 + 脚手架。</li>
+</ul>
+<blockquote>
+<p><strong>一句话总结</strong>：GPT 是一个 12 层、每层 12 头、共做 144 次"高维向量内积检索"的搜索引擎，权重 W 就是它的索引，训练就是建索引，prompt 就是 query，生成就是把检索到的内容加权拼接出来。</p>
+</blockquote>
+    </div>
+  </article>
+
+</main>
+</body>
+</html>

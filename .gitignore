@@ -5,3 +5,5 @@ venv/
 .DS_Store
 .idea/
 .vscode/
+logs/
+docs/*.md

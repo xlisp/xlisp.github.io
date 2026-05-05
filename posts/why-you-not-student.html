@@ -1,0 +1,993 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Why You Not Student? · Steve Chan — xlisp</title>
+<link rel="stylesheet" href="../style.css">
+</head>
+<body>
+<main class="wrap post">
+
+  <nav class="topnav">
+    <a href="../index.html">← home</a>
+  </nav>
+
+  <article>
+    <header class="post-header">
+      <h1>Why You Not Student?</h1>
+      <p class="meta">2026-05-06 · Steve Chan</p>
+    </header>
+
+    <div class="content">
+<h1 id="why-you-not-student">Why You Not Student?</h1>
+<blockquote>
+<p>高中生用 Claude Code 也能改一个 nano-GPT 跑出"大模型"，
+那么一个十几年经验的高级工程师，价值到底在哪里？</p>
+</blockquote>
+<h2 id="_1">一、问题的提出</h2>
+<p>AI 编程工具（Claude Code、Cursor、Copilot 等）正在抹平"会写代码"这件事的门槛。</p>
+<ul>
+<li>一个高中生 + Claude Code，几个晚上就能把 <a href="https://github.com/karpathy/nanoGPT">nanoGPT</a> 改一改，跑出一个可以"说话"的小模型。</li>
+<li>一个干了十几年的资深工程师，如果只是"让 AI 写代码、自己点 Accept"，做出来的东西<strong>和高中生没有本质区别</strong>。</li>
+</ul>
+<p>那么，资深工程师存在的意义还剩多少？</p>
+<blockquote>
+<p>📌 <strong>Karpathy 在 2026 Sequoia AI Ascent 上的回答</strong>（机器之心报道）：</p>
+<blockquote>
+<p><strong>"你可以外包你的『思考』，但你不能外包你的『理解』。"</strong></p>
+</blockquote>
+<p>他还提到几个直接打在这个问题上的判断：
+- <strong>Software 3.0</strong>：LLM 是新的计算机，提示词是程序，上下文是内存——"会写代码"已经不再是稀缺技能。
+- <strong>Jagged Intelligence（锯齿智能）</strong>：模型在数学/编程接近"逃逸速度"，但在常识、判断力的山谷里依然摔得很惨。
+- <strong>很多 App 根本不该存在</strong>：他自己 vibe coding 写的 Menu Gen，在新模型面前直接变成多余的中间层。
+- <strong>Agentic Engineering</strong>：未来招聘看的不是算法题，是你能不能用智能体交付真实项目。
+- <strong>认知瓶颈</strong>：连 Karpathy 自己都说，他正在成为自己工作流里的瓶颈——瓶颈不在算力，在<strong>理解</strong>。</p>
+<p>这篇 README 想接着 Karpathy 这句话往下推一层：
+在 nano-GPT / 大模型训练这个具体场景里，
+高中生和资深工程师的区别，到底是不是"理解"？</p>
+</blockquote>
+<h2 id="karpathy">二、价值区别：不在"写"，在"判断"（即 Karpathy 说的"理解"）</h2>
+<p>高中生用 CC 做 nano-GPT，能跑通 ≠ 训得好 ≠ 知道为什么这样做。</p>
+<p>资深工程师真正不可替代的能力，是 <strong>AI 生成不出来的那一层</strong>：</p>
+<h3 id="1">1. 专家级别指导模型训练</h3>
+<table>
+<thead>
+<tr>
+<th>维度</th>
+<th>高中生 + CC</th>
+<th>资深工程师 + CC</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>跑通 demo</td>
+<td>✅</td>
+<td>✅</td>
+</tr>
+<tr>
+<td>解释 loss 不收敛的原因</td>
+<td>❌</td>
+<td>✅</td>
+</tr>
+<tr>
+<td>判断 lr / batch / warmup / weight decay 是否合理</td>
+<td>❌</td>
+<td>✅</td>
+</tr>
+<tr>
+<td>看 grad norm、loss 曲线诊断训练状态</td>
+<td>❌</td>
+<td>✅</td>
+</tr>
+<tr>
+<td>选择数据配比、清洗策略、tokenizer 方案</td>
+<td>❌</td>
+<td>✅</td>
+</tr>
+<tr>
+<td>评估模型——不只是看 sample 输出"像不像人话"</td>
+<td>❌</td>
+<td>✅</td>
+</tr>
+<tr>
+<td>在算力受限下做 scaling law 推断</td>
+<td>❌</td>
+<td>✅</td>
+</tr>
+<tr>
+<td>知道哪一步在浪费 GPU、哪一步是噪声</td>
+<td>❌</td>
+<td>✅</td>
+</tr>
+</tbody>
+</table>
+<p>跑通 nanoGPT 是"复制"，<strong>指导一次真正的训练</strong>才是"工程"。</p>
+<h3 id="2-ai">2. 知道 AI 生成的代码到底对不对</h3>
+<p>这是 CC 时代最关键的能力分水岭：</p>
+<ul>
+<li>高中生只能看代码"能不能跑"。</li>
+<li>资深工程师要能看代码"<strong>对不对、稳不稳、未来会不会爆</strong>"。</li>
+</ul>
+<p>举几个 nano-GPT/LLM 训练里 AI 经常写错、但跑得通的例子：</p>
+<ul>
+<li>attention mask 的 causal 方向写反 —— loss 照样下降，但模型在偷看未来。</li>
+<li>位置编码 broadcast 错维度 —— 短序列没事，长序列性能崩。</li>
+<li>mixed precision 下 layernorm 用 fp16 —— 训到一半 NaN。</li>
+<li>gradient accumulation 步数和 lr scheduler 没对齐 —— 学习率曲线全错。</li>
+<li>DataLoader 的 shuffle / seed / drop_last —— 复现性悄悄消失。</li>
+<li>KV cache、RoPE、FlashAttention 的边界条件 —— 推理结果不一样但不报错。</li>
+</ul>
+<p>这些 bug <strong>AI 不会主动告诉你</strong>，只有真正训过、踩过坑的人才能在 diff 里一眼看出来。</p>
+<blockquote>
+<p>CC 把"打字速度"这件事的优势抹平了，
+但把"判断力"的价值放大了 10 倍。</p>
+</blockquote>
+<h4 id="ai">⚠️ 杠杆是双向的：AI 同时放大你的能力，和你的错误方向</h4>
+<p>这是比"AI 写错代码"更危险的一层：</p>
+<ul>
+<li>方向对 + AI 加速 → 你 1 周做完别人 1 个月的工作。</li>
+<li><strong>方向错 + AI 加速 → 你 1 周烧掉别人 1 个月才会烧掉的 GPU</strong>，
+  而且因为代码"看起来都跑通了"，你以为自己在前进。</li>
+</ul>
+<p>具体在大模型训练里，这种"被放大的错误方向"长这样：</p>
+<ul>
+<li>选错了 base 模型 / tokenizer，AI 帮你飞快搭好了 pipeline——你越训越偏。</li>
+<li>数据清洗的判断错了，AI 帮你把脏数据<strong>高效地、规模化地</strong>喂进了模型。</li>
+<li>评估指标选错了（比如只看 perplexity），AI 帮你画出了一条漂亮但<strong>误导</strong>的曲线。</li>
+<li>早期实验设计错了，AI 帮你把一个本来 3 天就该被砍掉的方向跑了 3 周。</li>
+</ul>
+<blockquote>
+<p>AI 不会问你"你为什么要做这件事"。
+它只会非常高效地，把你正在做的事——不管对错——做到底。</p>
+</blockquote>
+<p>所以高级工程师真正的护城河不是"会用 AI"，而是：
+<strong>在按下 Enter 之前，能判断这个方向值不值得被 AI 放大。</strong></p>
+<h3 id="3-cc">3. 不用 CC，能不能自己手写出来？</h3>
+<p>这是检验真假高级工程师的终极问题。</p>
+<p>如果回答是"不能"——那么你和高中生的区别只是：
+<strong>你比他更会写 prompt、更会读 AI 的输出</strong>，仅此而已。</p>
+<p>如果回答是"能"——你才有资格去<strong>指导</strong> AI、<strong>审查</strong> AI、<strong>纠正</strong> AI。</p>
+<blockquote>
+<p>你能不能在没有 Claude Code 的情况下，
+手敲出 Transformer、Attention、Tokenizer、训练循环、推理 KV cache？</p>
+<p>能 → AI 是你的放大器。
+不能 → 你只是 AI 的传声筒。</p>
+</blockquote>
+<h3 id="4-jagged-intelligence">4. 锯齿智能（Jagged Intelligence）下，谁来填山谷？</h3>
+<p>Karpathy 提醒我们：模型不是均匀变强的，它是<strong>参差不齐的山脊线</strong>。</p>
+<ul>
+<li>山峰：写 Transformer 模板代码、做矩阵推导、套 nanoGPT 训练循环——CC 已经接近"逃逸速度"。</li>
+<li>山谷：判断"这条 loss 曲线该不该停"、"这个 base 模型适不适合这批数据"、"这个评估指标在骗我"——CC 一脚踩空。</li>
+</ul>
+<blockquote>
+<p>高中生看不到山谷，因为他只在山峰上走（CC 把他抬上去的那段）。
+资深工程师的价值，就是<strong>在山谷里替模型兜底</strong>。</p>
+</blockquote>
+<p>锯齿智能的这些山谷，恰好就是"理解"无法被外包的地方。</p>
+<h2 id="nanogpt-claude">二·五、从 nanoGPT 到 Claude 的鸿沟</h2>
+<blockquote>
+<p><strong>高中生很容易拿 Claude Code 基于 nanoGPT 改出一个特殊 SFT 的小模型，</strong>
+<strong>但他几乎不可能做出一个 Claude 那种级别的模型。</strong></p>
+</blockquote>
+<p>这中间隔的不是"再多写点代码"——是一整个产业。</p>
+<h3 id="_2">这道鸿沟里有什么？</h3>
+<table>
+<thead>
+<tr>
+<th>维度</th>
+<th>nanoGPT + SFT（高中生 + CC，一晚上）</th>
+<th>Claude 级别（顶级团队 × 多年）</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>参数规模</td>
+<td>100M ~ 1B</td>
+<td>100B+</td>
+</tr>
+<tr>
+<td>训练数据</td>
+<td>现成数据集，几十 GB</td>
+<td>自建语料管线，数十 TB，多语言/多源/严格去重</td>
+</tr>
+<tr>
+<td>算力</td>
+<td>一张消费级显卡训一晚</td>
+<td>数万 H100 跑数月，单次训练 $10M ~ $100M+</td>
+</tr>
+<tr>
+<td>分布式训练</td>
+<td>单机、最多 DDP</td>
+<td>3D 并行（DP/TP/PP）、ZeRO、序列并行、容错 checkpoint</td>
+</tr>
+<tr>
+<td>数据配比</td>
+<td>拍脑袋</td>
+<td>上百次 ablation 决定每一类数据的占比与课程顺序</td>
+</tr>
+<tr>
+<td>Tokenizer</td>
+<td>复用 GPT-2 BPE</td>
+<td>从头训练，处理多语言/代码/数学符号边界</td>
+</tr>
+<tr>
+<td>对齐</td>
+<td>没有</td>
+<td>SFT + RLHF + Constitutional AI + 红队迭代 + 安全微调</td>
+</tr>
+<tr>
+<td>长上下文</td>
+<td>2K</td>
+<td>200K+，需要 RoPE scaling、attention 变体、KV cache 优化</td>
+</tr>
+<tr>
+<td>评估</td>
+<td>看几条 sample</td>
+<td>数百个 benchmark + 内部 eval 套件 + 人类偏好评测</td>
+</tr>
+<tr>
+<td>训练失败</td>
+<td>重跑就行</td>
+<td>一次失败损失 $X00 万，必须 root cause 后才能重启</td>
+</tr>
+<tr>
+<td>推理</td>
+<td>不管</td>
+<td>speculative decoding / 量化 / batching / serving 架构</td>
+</tr>
+</tbody>
+</table>
+<h3 id="cc">为什么 CC 跨不过这条鸿沟？</h3>
+<p>因为 Claude Code <strong>不会替你做下面这些事</strong>：</p>
+<ul>
+<li>它不会替你<strong>决定</strong>用什么数据、什么配比、什么课程学习策略。</li>
+<li>它不会替你<strong>承担</strong> $50M 训练失败的代价。</li>
+<li>它不会替你<strong>判断</strong> loss 曲线在第 3 周突然抖一下要不要紧。</li>
+<li>它不会替你设计 RLHF 的 reward model 该惩罚什么、奖励什么。</li>
+<li>它不会替你回答"<strong>我们要做一个什么样的模型</strong>"——这个问题没有训练数据。</li>
+</ul>
+<p>Karpathy 那句"理解不能外包"，落到这里就是：
+<strong>你得知道"为什么 Claude 是 Claude"，而不只是知道"怎么跑通 nanoGPT"。</strong></p>
+<h3 id="_3">所以三条线长这样</h3>
+<div class="highlight"><pre><span></span><code>[ Claude / GPT / Gemini 级别 ]       ← 顶级研究团队 + 算力 + 工程 + 多年迭代
+            ▲
+            │   ← 99% 的人跨不过去，CC 也帮不了
+            │
+[ 微调一个垂直 SFT 小模型 ]            ← 高中生 + CC + 一晚上
+            ▲
+            │   ← CC 把这条线压平了
+            │
+[ 跑通 nanoGPT demo ]                  ← 任何人 + 一杯咖啡
+</code></pre></div>
+
+<blockquote>
+<p><strong>高中生 + CC</strong> 能做的，是把第一条线（demo → SFT 小模型）压平的那一段。
+<strong>资深工程师真正的战场，是第二条线</strong>——CC 跨不过去的那条。</p>
+<p>在那条线上：
+- 算力是真金白银，错一次烧掉一辆法拉利。
+- 数据是策略，不是文件。
+- 训练是马拉松，不是 <code>python train.py</code>。
+- 对齐是哲学问题，不是 reward 函数。</p>
+<p>这条线两边的差距，不会因为 CC 越来越强而缩小——
+<strong>反而会因为下面那条线被压平，显得越来越宽。</strong></p>
+</blockquote>
+<h2 id="ai_1">二·六、理解的带宽：AI 时代真正的稀缺资源</h2>
+<blockquote>
+<p>Karpathy 说"理解不能外包"——
+那么 <strong>如何提高 AI 内容输入到你大脑的"理解效率"，就成了差距的真正关键</strong>。</p>
+</blockquote>
+<p>AI 每秒能生成上万 token，
+你大脑每秒能"真正理解"多少？</p>
+<p>这是被严重低估的瓶颈：</p>
+<ul>
+<li>AI 输出速度 ≈ 无限（愿意付钱就有）</li>
+<li>你阅读速度 ≈ 每分钟几百字</li>
+<li>你<strong>真正压缩成心智模型</strong>的速度 ≈ 远低于阅读速度</li>
+</ul>
+<blockquote>
+<p>高级工程师的真正护城河，不是"读得多"，
+而是"<strong>同样的输入，理解得比别人更快、更深</strong>"。</p>
+</blockquote>
+<h3 id="ai_2">三种"理解放大器"——把 AI 输出翻译成大脑更擅长处理的形式</h3>
+<h4 id="1_1">1. 图像化（空间认知）</h4>
+<p>人脑处理 2D 空间关系比顺序阅读快一个数量级。</p>
+<ul>
+<li>AI 丢给你 500 行 Transformer 代码 → 你画成 dataflow 图。</li>
+<li>AI 讲完 RLHF pipeline → 你画成"模型 / 数据 / reward / 反馈"四盒图。</li>
+<li>AI 输出一段长推理 → 你画成因果链 / 决策树。</li>
+</ul>
+<blockquote>
+<p>看完不画 = 没看完。
+<strong>画出来的那一刻，才是"理解"发生的那一刻。</strong></p>
+</blockquote>
+<h4 id="2-lisp">2. Lisp 化（结构认知）</h4>
+<p>把任何东西都看成<strong>嵌套的 S-表达式</strong>——code is data，idea is also data。</p>
+<div class="highlight"><pre><span></span><code><span class="p">(</span><span class="nv">system</span>
+<span class="w">  </span><span class="p">(</span><span class="nv">input</span><span class="w">  </span><span class="o">...</span><span class="p">)</span>
+<span class="w">  </span><span class="p">(</span><span class="nv">compute</span><span class="w"> </span><span class="o">...</span><span class="p">)</span>
+<span class="w">  </span><span class="p">(</span><span class="nv">output</span><span class="w"> </span><span class="o">...</span><span class="p">))</span>
+
+<span class="p">(</span><span class="nv">train</span>
+<span class="w">  </span><span class="p">(</span><span class="nv">data</span><span class="w">   </span><span class="o">...</span><span class="p">)</span>
+<span class="w">  </span><span class="p">(</span><span class="nv">model</span><span class="w">  </span><span class="o">...</span><span class="p">)</span>
+<span class="w">  </span><span class="p">(</span><span class="nv">loss</span><span class="w">   </span><span class="o">...</span><span class="p">)</span>
+<span class="w">  </span><span class="p">(</span><span class="nb">eval</span><span class="w">   </span><span class="o">...</span><span class="p">))</span>
+
+<span class="p">(</span><span class="nv">argument</span>
+<span class="w">  </span><span class="p">(</span><span class="nv">claim</span><span class="w">    </span><span class="o">...</span><span class="p">)</span>
+<span class="w">  </span><span class="p">(</span><span class="nv">premise</span><span class="w">  </span><span class="o">...</span><span class="p">)</span>
+<span class="w">  </span><span class="p">(</span><span class="nv">premise</span><span class="w">  </span><span class="o">...</span><span class="p">)</span>
+<span class="w">  </span><span class="p">(</span><span class="nv">counter</span><span class="w">  </span><span class="o">...</span><span class="p">))</span>
+</code></pre></div>
+
+<p>Lisp 化逼你做两件事：
+- <strong>找出"核心动词"</strong>——这东西到底在做什么。
+- <strong>暴露层级结构</strong>——谁是子问题，谁是兄弟节点。</p>
+<blockquote>
+<p>当你能用 30 行 S-expr 重写 AI 给你的 500 行内容时，
+你才<strong>真的</strong>理解了它。</p>
+</blockquote>
+<h4 id="3">3. 咏春武术化（身体化 / 原则化）</h4>
+<p>咏春不靠记招式，靠记<strong>原则</strong>：中线、寸劲、连消带打。
+原则少而锋利——所以能在 0.1 秒内调用。</p>
+<p>把 AI 喂给你的知识也这样压缩：</p>
+<table>
+<thead>
+<tr>
+<th>表层（招式）</th>
+<th>内核（原则）</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>"用 cosine warmup + 线性 decay"</td>
+<td><strong>lr 调度的本质：先稳后准</strong></td>
+</tr>
+<tr>
+<td>"FlashAttention 的 7 步算法"</td>
+<td><strong>把 IO 换成计算</strong></td>
+</tr>
+<tr>
+<td>"RLHF 三阶段流程"</td>
+<td><strong>用偏好替代标签</strong></td>
+</tr>
+<tr>
+<td>"MoE 的 router + expert"</td>
+<td><strong>稀疏激活换容量</strong></td>
+</tr>
+</tbody>
+</table>
+<blockquote>
+<p>招式可以查文档。
+<strong>原则必须长在身上。</strong>
+review AI 代码的那 5 秒，你调用的不是知识库，是身体化的原则。</p>
+</blockquote>
+<h5 id="_4">为什么"身体化"才是终态？——杨振宁的"物理直觉"</h5>
+<blockquote>
+<p><strong>杨振宁</strong>：
+<em>"培养物理直觉，就是让你的本能反应就是正确的。
+天才的本质，就是本能做出最正确的反应。"</em></p>
+</blockquote>
+<p>物理学史上反复出现一种现象：</p>
+<ul>
+<li>拉马努金"梦到"公式 → 几十年后被一一证明。</li>
+<li>狄拉克写出方程 → 推出反物质，后来真的找到。</li>
+<li>费曼物理直觉先行，数学推导跟在后面。</li>
+<li>杨振宁本人凭对称性的"直觉感"写下规范场论 → 后来成为标准模型基石。</li>
+</ul>
+<p>他们的共同模式是：</p>
+<div class="highlight"><pre><span></span><code>直觉先行（本能写下）
+       ↓
+后续推导验证
+       ↓
+发现是对的
+</code></pre></div>
+
+<p>这不是运气。这是<strong>原则被训练到本能层</strong>之后的自然产物——
+就像咏春高手不是"想"中线在哪，他的身体<strong>就是</strong>中线。</p>
+<p><strong>迁移到大模型工程：</strong></p>
+<table>
+<thead>
+<tr>
+<th>阶段</th>
+<th>表现</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>新手</td>
+<td>看到代码 → 查文档 → 推理 → 给出判断（10 分钟）</td>
+</tr>
+<tr>
+<td>中级</td>
+<td>看到代码 → 想起类似情况 → 推理 → 判断（1 分钟）</td>
+</tr>
+<tr>
+<td>高手</td>
+<td>看到代码 → <strong>本能感觉哪里不对</strong> → 再推导验证（5 秒 + 5 分钟）</td>
+</tr>
+</tbody>
+</table>
+<blockquote>
+<p>高手 review AI 代码时，<strong>先有"这里不对劲"的直觉，再去推导原因</strong>。
+这就是杨振宁说的"本能反应就是正确的"。</p>
+<p>高中生没有这种直觉——AI 给什么，就是什么。</p>
+</blockquote>
+<h5 id="_5">怎么训出这种直觉？</h5>
+<p>不是靠读得多，是靠<strong>反复在原则上做"压缩练习"</strong>：</p>
+<ol>
+<li><strong>每次踩坑后，把教训压缩成一条不超过一句话的原则。</strong>
+   （例："fp16 下 layernorm 必爆 → 数值精度不够的地方一定要 fp32"）</li>
+<li><strong>反复用这条原则去预判下一段新代码 / 新论文。</strong>
+   （主动找机会"在看推导前先猜结论"）</li>
+<li><strong>猜对了 → 原则强化。猜错了 → 原则修正。</strong></li>
+<li><strong>持续几年后，原则不再需要"想"——它就是你看代码的方式。</strong></li>
+</ol>
+<blockquote>
+<p>这就是咏春的"黐手"训练——不是练招式，是练<strong>反应本身</strong>。
+写代码的人也一样：练的不是 API，是<strong>对代码的直觉</strong>。</p>
+</blockquote>
+<p><strong>这是 AI 时代真正稀缺的东西。</strong>
+AI 可以替你查文档、写代码、跑实验——
+但 AI 不能替你"长"出那种"看一眼就知道不对劲"的本能。
+<strong>那只能靠你自己，年复一年，把原则训进身体里。</strong></p>
+<h3 id="_6">差距的真正来源</h3>
+<div class="highlight"><pre><span></span><code>高中生 + CC：
+   AI 生成 → 直接 Accept → 跑通 → 完成 ✅
+
+资深工程师 + CC：
+   AI 生成 → 图像化 / Lisp 化 / 原则化
+          → 真正理解 → 判断 → 决定接不接受 ✅
+</code></pre></div>
+
+<p>中间多出来的那一步——
+<strong>"把 AI 输出翻译成大脑能高效消化的形式"</strong>——
+就是 Karpathy 说的"理解"，
+也是高中生暂时还做不到、但资深工程师必须<strong>每天做</strong>的事。</p>
+<blockquote>
+<p>AI 越强，<strong>输入端的理解带宽</strong>就越是瓶颈。
+谁在提升这个带宽，谁就在拉开差距。</p>
+</blockquote>
+<h2 id="ai_3">二·七、高维突破点 × AI 扩充面：人机分工的真正形态</h2>
+<blockquote>
+<p>上一节说"把 AI 输出变成你大脑的有效表示"。
+再深一层是：<strong>基于这个有效表示，提出 AI 自己提不出来的"高维突破点"。</strong></p>
+</blockquote>
+<p>人类不可能在 <strong>数据规模、参数量、训练算力</strong> 上 PK 大模型——
+但人类可以在<strong>更高的维度</strong>上突破。</p>
+<h3 id="ai_4">高手的高维武器（这些原则不需要 AI 辅助）</h3>
+<h4 id="1-principle-of-least-action">1. 最小作用原理（Principle of Least Action）</h4>
+<p>物理学的本质原则：自然用<strong>最少的动作</strong>完成事情。
+迁移到工程：</p>
+<ul>
+<li>这个 feature 的最小实现路径是什么？</li>
+<li>这个 bug 的最小复现是什么？</li>
+<li>这次训练能砍掉的最大开销是什么？</li>
+</ul>
+<blockquote>
+<p>高手扫一眼就看得出哪里"动作多余"。
+高中生看到的是 AI 给出的 500 行实现，<strong>看不到那 50 行就够</strong>。</p>
+</blockquote>
+<h4 id="2-minimum-viable">2. 最小可运行（Minimum Viable）</h4>
+<p>不是"完整版本"，是"<strong>能验证假设的最小切片</strong>"。</p>
+<ul>
+<li>训一个 1B 模型验证 trick？不，先训 100M。</li>
+<li>改 attention 实现要全套测？不，先让 forward pass 数值对得上。</li>
+<li>试一个新的 RL 思路？不，先在 GridWorld 上验证三天。</li>
+</ul>
+<blockquote>
+<p>高手的第一反应永远是"<strong>这事的最小验证版是什么</strong>"。
+高中生让 CC 生成一个完整工程，然后训不动了。</p>
+</blockquote>
+<h4 id="3_1">3. "为什么不行"（反向思维 / 失败先验）</h4>
+<p>正向问"怎么做" → AI 很会答。
+反向问"<strong>这个方向为什么不行 / 已经失败过 / 注定会爆</strong>" → 这才是高手的雷达。</p>
+<ul>
+<li>这个架构为什么 OpenAI 三年前试过然后放弃了？</li>
+<li>这个数据集为什么"看起来很大"但其实没用？</li>
+<li>这个 metric 为什么会骗人？</li>
+</ul>
+<blockquote>
+<p>高手 5 秒否决一个错误方向，省下 5 周。
+高中生让 AI 把这个错误方向<strong>完整实现</strong>了一遍，然后才发现不行。</p>
+</blockquote>
+<h3 id="_7">人机分工的真正形态：点 × 面</h3>
+<div class="highlight"><pre><span></span><code>高手：
+   提出 1 个有效的突破点（高维 / 难 / 稀缺）
+            │
+            ▼
+   AI：把这 1 个点扩充成 1 个面（低维 / 易 / 量产）
+            │
+            ▼
+   ✅ 一次有效的工作
+
+------------------------------------------------------------
+
+高中生：
+   提不出有效的点（不会最小作用 / 不知道为什么不行）
+            │
+            ▼
+   AI：扩充出一个看起来很大、但根上就错的面
+            │
+            ▼
+   ❌ 忙了一周，方向是错的
+</code></pre></div>
+
+<table>
+<thead>
+<tr>
+<th>角色</th>
+<th>输出</th>
+<th>维度</th>
+<th>稀缺性</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><strong>高手</strong></td>
+<td>1 个突破点 / 1 个有效问题</td>
+<td>高</td>
+<td>极稀缺</td>
+</tr>
+<tr>
+<td><strong>AI</strong></td>
+<td>1 个面 / 量化扩充</td>
+<td>低</td>
+<td>接近无限</td>
+</tr>
+</tbody>
+</table>
+<blockquote>
+<p>AI 的优势是 <strong>"面的产能"</strong>。
+人类的优势是 <strong>"点的精度"</strong>。</p>
+<p>一个错的点 × 无限大的面 = <strong>0</strong>。
+一个对的点 × 无限大的面 = <strong>一切</strong>。</p>
+</blockquote>
+<h3 id="_8">所以核心能力链是这样</h3>
+<ol>
+<li><strong>把 AI 的输出转化成你大脑里的有效表示</strong> （二·六：图像化 / Lisp 化 / 原则化）</li>
+<li><strong>基于这个有效表示，提出一个高维度的、有效的突破点</strong> （本节：最小作用 / 最小可运行 / 为什么不行）</li>
+<li><strong>让 AI 把这个点扩充成面，再用你的判断接住它</strong> （二、二·五：审判 + 兜底）</li>
+</ol>
+<p>这三步，<strong>没有一步可以外包给 AI</strong>。
+这三步，<strong>就是 Karpathy 说的"理解"在工程中的真实样子</strong>。</p>
+<h2 id="_9">二·八、落到地面：在大模型训练里，高手到底在做什么？</h2>
+<p>前面所有抽象的"判断 / 理解 / 突破点"，落到具体的训练工作里，长这样：</p>
+<h3 id="_10">模式对比</h3>
+<table>
+<thead>
+<tr>
+<th>场景</th>
+<th>高中生模式</th>
+<th>高手模式</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><strong>遇到报错</strong></td>
+<td>复制粘贴给 AI → 改 → 又报错 → 又贴 → ...</td>
+<td>先做最小复现 → 定位 root cause → 改一行</td>
+</tr>
+<tr>
+<td><strong>SFT 数据</strong></td>
+<td>用现成数据集，一次喂完</td>
+<td><strong>设计合成数据 pipeline：生成 → 训练 → 评估 → 看 bad case → 反向生成新数据 → 再训</strong></td>
+</tr>
+<tr>
+<td><strong>训练节奏</strong></td>
+<td><code>python train.py</code> 一把梭</td>
+<td><strong>步步为营</strong>：每个 checkpoint 评估，决定下一步训什么 / 砍什么</td>
+</tr>
+<tr>
+<td><strong>质量提升</strong></td>
+<td>加更多数据 / 加更大模型</td>
+<td><strong>设计 RL</strong>：DPO / PPO / GRPO / RLAIF / Constitutional / reward model 迭代</td>
+</tr>
+<tr>
+<td><strong>评估</strong></td>
+<td>看几条 sample"像不像人话"</td>
+<td>分维度 eval set + 难例集 + 人类偏好评测 + 回归监控</td>
+</tr>
+<tr>
+<td><strong>失败处理</strong></td>
+<td>重跑</td>
+<td>root cause → 假设 → 实验设计 → 验证 → 写进团队记忆</td>
+</tr>
+</tbody>
+</table>
+<h3 id="_11">三个高手才会做的具体动作</h3>
+<h4 id="1-sft">1. SFT 合成数据的迭代设计</h4>
+<p>不是"找一份数据集训完拉倒"，而是把数据当成<strong>可迭代的产品</strong>：</p>
+<div class="highlight"><pre><span></span><code>v0 数据  →  训练  →  eval 找 bad case
+                              │
+                              ▼
+   设计专门针对 bad case 的合成数据 prompt
+                              │
+                              ▼
+v1 数据（v0 + 针对性增强） →  训练  →  eval
+                              │
+                              ▼
+                  ……步步为营，每轮都更靠近目标
+</code></pre></div>
+
+<blockquote>
+<p>关键不是"生成更多数据"，是"<strong>生成正确的下一批数据</strong>"。
+高中生不知道 bad case 长什么样、也不知道该补什么数据。
+高手能从 100 条 bad output 里抽出 3 类失败模式，然后<strong>精确地</strong>合成对应数据。</p>
+</blockquote>
+<h4 id="2-rl">2. RL 方法的选型与设计</h4>
+<p>不是"听说 RLHF 牛就上 RLHF"，而是：</p>
+<ul>
+<li>这个任务有没有可验证 reward？→ 有 → 直接 RLVR / GRPO。</li>
+<li>没有 → 能不能用 LLM-as-judge？→ 能 → RLAIF。</li>
+<li>都不行 → 收人类偏好 → DPO / PPO。</li>
+<li>reward hacking 了？→ 加约束 / 加 KL 惩罚 / 改 reward model 设计。</li>
+</ul>
+<blockquote>
+<p>RL 不是一个"按钮"，是一套<strong>系统设计问题</strong>。
+选错 RL 方法，烧 10 万美金算力换来一个更糟的模型——这种事天天发生。</p>
+</blockquote>
+<h4 id="3_2">3. 步步为营的训练节奏</h4>
+<p>每个 checkpoint 都要回答三个问题：</p>
+<ol>
+<li><strong>比上一个 checkpoint 强在哪？弱在哪？</strong></li>
+<li><strong>下一步该补什么数据 / 改什么 hyperparam / 加什么 RL 信号？</strong></li>
+<li><strong>要不要回退？</strong>（高中生从不回退，高手回退是常态）</li>
+</ol>
+<blockquote>
+<p>训练不是一条直线，是一棵<strong>有剪枝的搜索树</strong>。
+高中生在跑直线，高手在走树。</p>
+</blockquote>
+<h3 id="_12">高手设计的是"训练系统"，不是"训练脚本"</h3>
+<div class="highlight"><pre><span></span><code>高中生 + CC：
+   写一个 train.py → 跑 → 出问题贴给 AI → 改 → 跑 → 玩具完成 ✅
+
+高手 + CC：
+   设计一个迭代系统：
+     ├── 数据生成 / 清洗 / 配比策略
+     ├── 训练 / checkpoint / 回退机制
+     ├── 评估 / bad case 收集 / 反向喂数据
+     ├── RL 设计 / reward 监控 / hacking 防御
+     └── 每轮记录假设、实验、结论
+   ↓
+   不是&quot;一次训练&quot;，是&quot;**会自己进化的训练流程**&quot;
+</code></pre></div>
+
+<blockquote>
+<p>高中生让 AI 帮他<strong>写代码</strong>。
+高手让 AI 帮他<strong>实现系统的某一部分</strong>——但<strong>系统是他自己设计的</strong>。</p>
+</blockquote>
+<p>这才是 Karpathy 说的"导演"：
+镜头 AI 来扛，<strong>剧本你来写</strong>。</p>
+<h2 id="harness">二·九、Harness（马具）工程：缰绳即护城河</h2>
+<blockquote>
+<p>当下最前沿的 agent 思想，叫 <strong>harness 工程——马具之意</strong>。
+用好 AI 就像给烈马上缰绳：
+<strong>没有马具，AI 是脱缰的野马；有了马具，AI 才是能拉车、能打仗的力量。</strong></p>
+</blockquote>
+<h3 id="_13">为什么需要马具？</h3>
+<table>
+<thead>
+<tr>
+<th>野马 = 模型本身</th>
+<th>马具 = harness 各组件</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>有强大动力</td>
+<td><strong>工具（tools）</strong>：蹄铁与鞍，决定它能踏向哪里</td>
+</tr>
+<tr>
+<td>没有方向</td>
+<td><strong>上下文工程</strong>：缰绳，决定它当下看什么、不看什么</td>
+</tr>
+<tr>
+<td>一步可能往沟里走</td>
+<td><strong>记忆（memory）</strong>：路记，让走过的路不白走</td>
+</tr>
+<tr>
+<td>摔倒就完蛋</td>
+<td><strong>恢复机制（recovery）</strong>：备马，摔了能站起来继续</td>
+</tr>
+<tr>
+<td>不知道对错</td>
+<td><strong>评估 / verifier</strong>：教练，每一步反馈对不对</td>
+</tr>
+</tbody>
+</table>
+<blockquote>
+<p>高中生用 CC：让 AI 自己跑——跑哪儿是哪儿。
+高手用 CC：<strong>先设计 harness</strong>——AI 在缰绳里跑，每一步都是有效的。</p>
+</blockquote>
+<h3 id="harness_1">Harness 不只是推理时的脚手架——它直接进训练</h3>
+<p>这是新一代 agent 思想<strong>最深的一层</strong>：</p>
+<div class="highlight"><pre><span></span><code>传统视角：
+   训练 → 模型 → 套个 agent 框架去用
+
+新视角（harness × RL 协同设计）：
+   ┌─→ 设计 harness ──┐
+   │                   ├─→ harness 当训练环境 → RL → 模型天生适配
+   └─→ 设计训练目标 ──┘
+</code></pre></div>
+
+<p>具体例子：</p>
+<ul>
+<li><strong>可验证 reward（RLVR）</strong>：需要 harness 能自动判定对错——agent 的 verifier 直接成为训练信号。</li>
+<li><strong>工具使用能力</strong>：不是预训练学来的，是<strong>在带工具的 harness 里 RL 训出来的</strong>。</li>
+<li><strong>长程任务规划</strong>：需要 harness 提供合理的子任务边界——边界设计错了，RL 学不到东西。</li>
+<li><strong>Constitutional AI</strong>：那个"宪法"本身就是 harness 的一部分——它既约束推理，也约束训练。</li>
+<li><strong>Claude Code 的能力</strong>：来自于 Anthropic 把 Claude Code 的 harness 直接当成训练环境去 RL。</li>
+</ul>
+<blockquote>
+<p>模型 ≠ 产品。
+<strong>模型 + harness = 产品。</strong>
+而且 harness 设计得好不好，<strong>反过来决定模型该长什么样</strong>。</p>
+</blockquote>
+<h3 id="_14">整体化优化：合力打出去才是王道</h3>
+<div class="highlight"><pre><span></span><code>高中生的画面：
+   [模型]  独自挥拳 → 没招式 → 打哪算哪
+
+高手的画面：
+        ┌──── harness（马具 / 招式）─────┐
+        │                                  │
+  [数据] [模型] [RL] [eval] [tools] [memory]
+        │                                  │
+        └─────────── 协同优化 ─────────────┘
+                       │
+                       ▼
+                  一记真正的&quot;合力拳&quot;
+</code></pre></div>
+
+<p>整体化优化 = 数据 / 模型 / RL / harness / eval <strong>同时</strong>调。
+任何一个单独优化都没用——
+<strong>真正的工程是合力打出去。</strong></p>
+<h3 id="nano-gpt-vs-claude">落回到 nano-GPT vs Claude 的鸿沟</h3>
+<table>
+<thead>
+<tr>
+<th>维度</th>
+<th>高中生 + nanoGPT-SFT</th>
+<th>Claude 级别</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>模型本体</td>
+<td>✅（CC 帮得上）</td>
+<td>✅</td>
+</tr>
+<tr>
+<td>Harness 设计</td>
+<td>❌（不知道这是什么）</td>
+<td>✅（专门团队多年迭代）</td>
+</tr>
+<tr>
+<td>RL × Harness 协同</td>
+<td>❌</td>
+<td>✅（<strong>最核心的护城河</strong>）</td>
+</tr>
+<tr>
+<td>整体合力优化</td>
+<td>❌</td>
+<td>✅</td>
+</tr>
+</tbody>
+</table>
+<blockquote>
+<p>训练一个 SFT 小模型 vs 训出 Claude，差的从来不是参数量。
+<strong>差的是马具，是合力，是整套缰绳。</strong></p>
+<p>高中生还在练拳，高手已经在设计马场。</p>
+</blockquote>
+<h2 id="agent">二·十、自循环递归训练：用 agent 反向喂养模型</h2>
+<blockquote>
+<p>上一节说 harness 是模型的缰绳。
+<strong>再深一层：harness 还能反过来——用 agent 去训练这个模型自己。</strong></p>
+<p>这是当下最前沿的"自进化模型"思想——
+<strong>模型自己造数据、自己评分、自己迭代、自己变强。</strong></p>
+</blockquote>
+<h3 id="_15">三种训练范式的演进</h3>
+<table>
+<thead>
+<tr>
+<th>范式</th>
+<th>关键回路</th>
+<th>人类的位置</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>监督学习</td>
+<td>人类标注 → 模型</td>
+<td>全程在回路里</td>
+</tr>
+<tr>
+<td>RLHF</td>
+<td>人类偏好 → reward model → RL → 模型</td>
+<td>在偏好标注层</td>
+</tr>
+<tr>
+<td><strong>自循环 / 自进化</strong></td>
+<td><strong>agent 执行 → 自动 verifier → 训练信号 → 模型 → 更强 agent → ……</strong></td>
+<td><strong>被移出关键回路，只剩"设计回路"的位置</strong></td>
+</tr>
+</tbody>
+</table>
+<p>不是"AI 替人写代码"。
+是 <strong>"AI 替人训练 AI"</strong>。</p>
+<h3 id="swe-agent-rl">具体例子：SWE-agent × RL</h3>
+<p>设计一个 SWE 智能体，让它：</p>
+<ol>
+<li>拿一堆真实 GitHub issue。</li>
+<li>在沙盒里读代码、改代码、跑测试。</li>
+<li>测试通过 → reward = 1；不通过 → reward = 0。</li>
+<li>把这些 trajectory 喂给 RL → 模型学会"在真实仓库里 debug"。</li>
+</ol>
+<div class="highlight"><pre><span></span><code>真实 issue ──→ SWE-agent 尝试解决 ──→ 自动跑测试
+                                          │
+                                          ▼
+                            通过 / 不通过 = 自动 reward
+                                          │
+                                          ▼
+                          RL 训练  → 模型 debug 能力 ↑
+                                          │
+                                          ▼
+                     更强模型 → SWE-agent 表现更好 → ……（递归）
+</code></pre></div>
+
+<p><strong>关键</strong>：reward 不需要人类来标，<strong>测试套件就是 verifier</strong>。
+人类被踢出了执行回路——只剩下<strong>"设计这个回路"</strong>的工程师。</p>
+<h3 id="2">这一思想的家族（最近 2 年的前沿都在这里）</h3>
+<table>
+<thead>
+<tr>
+<th>名字</th>
+<th>自循环的形式</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><strong>AlphaProof / AlphaGeometry</strong></td>
+<td>模型生成证明 → 形式化验证器自动判对错 → 自己训自己</td>
+</tr>
+<tr>
+<td><strong>STaR / ReST</strong></td>
+<td>模型生成推理链 → 用最终答案过滤 → 留下对的回放，自己训自己</td>
+</tr>
+<tr>
+<td><strong>Self-Rewarding LM</strong>（Meta）</td>
+<td>模型既是策略也是 reward model → 自己评自己 → 自己训自己</td>
+</tr>
+<tr>
+<td><strong>RLVR</strong>（DeepSeek-R1 等）</td>
+<td>任何带 verifier 的任务都能 RL：数学题、代码、单元测试</td>
+</tr>
+<tr>
+<td><strong>Constitutional AI / RLAIF</strong></td>
+<td>用模型替代人类做偏好标注 → 自己改自己</td>
+</tr>
+<tr>
+<td><strong>SWE-agent × RL</strong></td>
+<td>真实仓库 + 测试 = 训练信号 → debug 能力自我进化</td>
+</tr>
+<tr>
+<td><strong>Agent Workflow → Distill</strong></td>
+<td>强 agent 跑出高质量 trajectory → 蒸馏回模型权重</td>
+</tr>
+</tbody>
+</table>
+<p>共同结构：</p>
+<blockquote>
+<p><strong>找一个能自动判对错的环境 → 把 agent 扔进去 → 让 agent 的成功率成为训练信号 → 模型在这个环境里递归自我提升。</strong></p>
+</blockquote>
+<h3 id="_16">为什么这是高手才做的事？</h3>
+<p>设计一个自循环训练系统，要回答的问题<strong>没有一个 AI 能替你答</strong>：</p>
+<ul>
+<li><strong>找 verifier</strong>：哪些任务有可自动验证的"对"？（debug 有：跑测试。聊天没有：所以才需要 reward model。）</li>
+<li><strong>设计 agent</strong>：什么样的 harness 能采到高质量 trajectory？</li>
+<li><strong>防 reward hacking</strong>：模型会不会找到 verifier 的漏洞而非真的解决问题？（极常见，也极致命）</li>
+<li><strong>课程设计</strong>：先训简单 issue 还是先训难的？是否做难度排序？</li>
+<li><strong>数据多样性</strong>：怎么避免模型在自循环里"坍塌"成单一模式（mode collapse）？</li>
+<li><strong>防过拟合到 verifier</strong>：测试通过 ≠ 代码真的对。</li>
+<li><strong>算力分配</strong>：探索 vs 利用、agent rollout vs RL update 的比例如何？</li>
+</ul>
+<blockquote>
+<p>这些问题的答案 <strong>决定了整个系统能不能自我进化</strong>——
+答错一个，模型在循环里<strong>越训越蠢</strong>（mode collapse / reward hacking / verifier 漂移）。</p>
+<p>高中生连这些问题都问不出来。</p>
+</blockquote>
+<h3 id="ai_5">AI 时代工程能力的三层抽象</h3>
+<div class="highlight"><pre><span></span><code>第一层：用 AI 写代码                        ← 高中生 + CC
+                                              │
+                                              ▼
+第二层：用 AI 跑 agent，完成任务              ← 入门工程师
+                                              │
+                                              ▼
+第三层：用 agent 反过来训练 AI，让 AI 自己变强 ← 最前沿研究员 / 高级工程师
+</code></pre></div>
+
+<p>每往下一层，<strong>人类被移出回路一次</strong>——
+但<strong>设计这个回路的工程能力</strong>，反而越来越稀缺、越来越值钱。</p>
+<div class="highlight"><pre><span></span><code>       价值 ↑
+            │                    ⭐ 设计自循环
+            │                  /
+            │                /
+            │             ⭐ 设计 agent harness
+            │           /
+            │         /
+            │      ⭐ 用 AI 写代码
+            │    /
+            └──────────────────→  人类被移出回路的程度
+</code></pre></div>
+
+<p><strong>人类离执行越远，离设计越近，价值越高。</strong></p>
+<h3 id="_17">落回到主线</h3>
+<blockquote>
+<p>Karpathy 说"理解不能外包"。
+在自循环训练这里，<strong>最不能外包的"理解"就是：</strong></p>
+<blockquote>
+<p><strong>"我设计的这个循环，到底会让模型变强，还是变蠢？"</strong></p>
+</blockquote>
+<p>这个问题没有任何 AI 能替你回答。
+这就是高级工程师在 AI 时代真正的位置——
+<strong>不是写代码的人，不是跑 agent 的人，是设计"AI 自我进化回路"的人。</strong></p>
+</blockquote>
+<h2 id="ai_6">三、所以高级工程师在 AI 时代的定位</h2>
+<p>不是"写得更快的码农"，而是 Karpathy 说的那种<strong>"导演"</strong>：</p>
+<ol>
+<li><strong>训练的指导者</strong>：知道往哪个方向调、为什么这么调、什么时候停。</li>
+<li><strong>代码的审判者</strong>：在 AI 输出的 diff 里，能 5 秒抓出那条会让训练悄悄出错的语句。</li>
+<li><strong>从零构建的能力者</strong>：CC 是杠杆，不是拐杖；杠杆断了，你照样能走路。</li>
+<li><strong>锯齿山谷的填补者</strong>：在模型摔下去的地方，用"理解"接住它。</li>
+<li><strong>方向的判断者</strong>：在按下 Enter 之前，决定这个方向值不值得被 AI 放大。</li>
+</ol>
+<h2 id="_18">四、给自己的检查清单</h2>
+<p><strong>关于"手写"（手 vs AI）</strong></p>
+<ul>
+<li>[ ] 不用 CC，我能在 2 小时内手敲出一个最小可训练的 Transformer 吗？</li>
+<li>[ ] 我能解释 nano-GPT 每一行代码背后的数学原因吗？</li>
+</ul>
+<p><strong>关于"判断"（看 AI 输出对不对）</strong></p>
+<ul>
+<li>[ ] 给我一段 AI 写的训练代码，我能在不跑它的情况下找出 3 个潜在 bug 吗？</li>
+<li>[ ] 我能从 loss 曲线判断："这次训练已经废了，不用等 epoch 跑完"吗？</li>
+<li>[ ] 我能设计一个实验，把"模型变好"归因到具体的某个改动上吗？</li>
+</ul>
+<p><strong>关于"理解带宽"（把 AI 输出转成大脑的有效表示）</strong></p>
+<ul>
+<li>[ ] 看完 AI 给的复杂代码 / 论文，我能在 5 分钟内画出一张图来概括它吗？</li>
+<li>[ ] 我能用 30 行 S-表达式重写 AI 给的 500 行内容吗？</li>
+<li>[ ] 我能从一段技术细节里抽出"招式 vs 原则"，并只把原则记下来吗？</li>
+</ul>
+<p><strong>关于"高维突破点"（提出 AI 提不出来的问题）</strong></p>
+<ul>
+<li>[ ] 不用 AI，我能在 5 分钟内提出 3 个"这个方向为什么不行"的理由吗？</li>
+<li>[ ] 面对一个新需求，我的第一反应是"<strong>最小可运行版本是什么</strong>"吗？</li>
+<li>[ ] 我能在 AI 给我"看起来完整"的方案前，先看出哪里"动作多余"吗？</li>
+</ul>
+<blockquote>
+<p>答得出来，你就还在 AI 之上。
+答不出来，你就在被高中生追上。</p>
+</blockquote>
+<hr />
+<p><em>"Why you not student?"——不是嘲讽，是提醒：
+当工具把每个人都变成"学生"，你凭什么继续是"老师"？</em></p>
+<hr />
+<h2 id="_19">参考</h2>
+<ul>
+<li>机器之心，《Karpathy：很多 App 就不该出生、人类唯一护城河只剩理解、CPU 将沦为配角》，2026-05-01
+  （Andrej Karpathy 在 Sequoia AI Ascent 2026 的炉边对谈）</li>
+</ul>
+<blockquote>
+<p>全文金句：</p>
+<blockquote>
+<p><strong>"你可以外包你的『思考』，但你不能外包你的『理解』。"</strong> —— Andrej Karpathy</p>
+</blockquote>
+</blockquote>
+    </div>
+  </article>
+
+</main>
+</body>
+</html>
