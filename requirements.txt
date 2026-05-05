@@ -1,0 +1,2 @@
+markdown>=3.5
+pygments>=2.17

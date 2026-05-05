@@ -1,0 +1,57 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Hello, world · Steve Chan — xlisp</title>
+<link rel="stylesheet" href="../style.css">
+</head>
+<body>
+<main class="wrap post">
+
+  <nav class="topnav">
+    <a href="../index.html">← home</a>
+  </nav>
+
+  <article>
+    <header class="post-header">
+      <h1>Hello, world</h1>
+      <p class="meta">2026-05-06 · Steve Chan</p>
+    </header>
+
+    <div class="content">
+<h1 id="hello-world">Hello, world</h1>
+<p>Welcome to my notebook. This site is generated from plain markdown files
+that live in <code>docs/</code>. Each time I run <code>python build.py</code> the script walks
+the folder, renders every <code>.md</code> into <code>posts/&lt;slug&gt;.html</code>, and rebuilds the
+home page.</p>
+<h2 id="why-bother">Why bother</h2>
+<p>I read a lot of posts, papers and code. I want a quiet place to write
+about three things:</p>
+<ul>
+<li><strong>Reinforcement learning</strong> — algorithms, tricks, failure modes</li>
+<li><strong>Large language models</strong> — training, alignment, agents, tooling</li>
+<li><strong>Lisp &amp; Emacs</strong> — small languages and hackable editors</li>
+</ul>
+<h2 id="a-taste-of-code">A taste of code</h2>
+<div class="highlight"><pre><span></span><code><span class="k">def</span><span class="w"> </span><span class="nf">reward</span><span class="p">(</span><span class="n">state</span><span class="p">,</span> <span class="n">action</span><span class="p">):</span>
+<span class="w">    </span><span class="sd">&quot;&quot;&quot;Toy reward — replace with something real.&quot;&quot;&quot;</span>
+    <span class="k">return</span> <span class="o">-</span><span class="nb">abs</span><span class="p">(</span><span class="n">state</span><span class="o">.</span><span class="n">target</span> <span class="o">-</span> <span class="n">action</span><span class="p">)</span>
+</code></pre></div>
+
+<div class="highlight"><pre><span></span><code><span class="p">(</span><span class="kd">defn </span><span class="nv">fib</span><span class="w"> </span><span class="p">[</span><span class="nv">n</span><span class="p">]</span>
+<span class="w">  </span><span class="p">(</span><span class="k">loop </span><span class="p">[</span><span class="nv">a</span><span class="w"> </span><span class="mi">0</span><span class="w"> </span><span class="nv">b</span><span class="w"> </span><span class="mi">1</span><span class="w"> </span><span class="nv">i</span><span class="w"> </span><span class="mi">0</span><span class="p">]</span>
+<span class="w">    </span><span class="p">(</span><span class="k">if </span><span class="p">(</span><span class="nb">= </span><span class="nv">i</span><span class="w"> </span><span class="nv">n</span><span class="p">)</span><span class="w"> </span><span class="nv">a</span>
+<span class="w">        </span><span class="p">(</span><span class="nf">recur</span><span class="w"> </span><span class="nv">b</span><span class="w"> </span><span class="p">(</span><span class="nb">+ </span><span class="nv">a</span><span class="w"> </span><span class="nv">b</span><span class="p">)</span><span class="w"> </span><span class="p">(</span><span class="nb">inc </span><span class="nv">i</span><span class="p">)))))</span>
+</code></pre></div>
+
+<blockquote>
+<p>The best way to predict the future is to invent it. — Alan Kay</p>
+</blockquote>
+<p>More to come — see you next post.</p>
+    </div>
+  </article>
+
+</main>
+</body>
+</html>
