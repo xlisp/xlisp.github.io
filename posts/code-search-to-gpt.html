@@ -1,0 +1,733 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>从代码语义搜索到 GPT 写代码：五代范式、三次质变与一条贯穿始终的"搜索维度提升"主线 · Steve Chan — xlisp</title>
+<link rel="stylesheet" href="../style.css">
+</head>
+<body>
+<main class="wrap post">
+
+  <nav class="topnav">
+    <a href="../index.html">← home</a>
+  </nav>
+
+  <article>
+    <header class="post-header">
+      <h1>从代码语义搜索到 GPT 写代码：五代范式、三次质变与一条贯穿始终的"搜索维度提升"主线</h1>
+      <p class="meta">2026-05-06 · Steve Chan</p>
+    </header>
+
+    <div class="content">
+<h1 id="gpt">从代码语义搜索到 GPT 写代码：五代范式、三次质变与一条贯穿始终的"搜索维度提升"主线</h1>
+<blockquote>
+<p>程序员"想要一段代码"这件事，三十年里被改写了五次。每一次都不是把上一代擦掉，而是<strong>给搜索空间加一个新维度</strong>：</p>
+<ul>
+<li><strong>1990s — 词法维度</strong>：<code>grep</code> / <code>ctags</code> / <code>ack</code> —— 在<strong>字符串</strong>这一个维度上找。</li>
+<li><strong>2010s — 结构 + 图维度</strong>：Sourcegraph / OpenGrok / LSIF / SCIP / CodeQL / Semgrep / Joern —— 把代码升维成 <strong>AST + 符号引用 + 控制流 + 数据流</strong>的图，用类 SQL / Datalog / Cypher 的查询语言搜。</li>
+<li><strong>2013 — 连续向量维度</strong>：Word2Vec / code2vec / CodeBERT —— 第一次把"相似度"从离散字符串/图节点搬到 $\mathbb{R}^{768}$，用内积代替 <code>==</code>。</li>
+<li><strong>2015 — 时间维度</strong>：Seq2Seq + Bahdanau attention —— 从"找一段已有代码"到"自回归一个 token 一个 token 写出来"，搜索沿时间轴展开。</li>
+<li><strong>2020 起 — 多层多头维度</strong>：GPT / Codex / CodeGPT —— 12 层 × 12 头，每生成 1 token = 144 次高维 attention 检索。<strong>不再需要标注配对数据，任何源代码都是训练样本</strong>。</li>
+</ul>
+<p><strong>一条贯穿始终的主线</strong>：每一代都给"搜索"加一个新维度，让"相同含义的代码"在更高维空间里靠得更近。前两代的维度是<strong>离散结构</strong>（字符串、AST、引用图），中间一代是<strong>连续向量</strong>，后两代把搜索本身嵌入了<strong>时间和深度</strong>。三次最关键的质变发生在维度类型切换的边界上：<strong>离散结构 → 连续向量</strong>、<strong>检索 → 生成</strong>、<strong>配对监督 → 自监督序列</strong>。</p>
+<p>本文用本仓库 <code>model.py</code> / <code>tokenizer.py</code> 的具体行号、一个可跑的 seq2seq demo，把这条维度提升史钉到代码层。</p>
+</blockquote>
+<hr />
+<h2 id="_1">目录</h2>
+<ol>
+<li><a href="#1-五代范式总览表">五代范式总览表</a></li>
+<li><a href="#2-第一代词法搜索grep--ctags--正则">第一代：词法搜索（grep / ctags / 正则）</a></li>
+<li><a href="#3-第二代静态分析--图查询sourcegraph--lsif--codeql--joern">第二代：静态分析 + 图查询（Sourcegraph / LSIF / CodeQL / Joern）</a></li>
+<li><a href="#4-第三代word2vec--代码向量化搜索第一次连续化">第三代：Word2Vec → 代码向量化搜索（第一次连续化）</a></li>
+<li><a href="#5-第四代seq2seq--用-注释-代码-对子训练让模型从描述生成代码">第四代：Seq2Seq —— 用 (注释, 代码) 对子训练，让模型从描述生成代码</a></li>
+<li><a href="#6-一段能跑的-seq2seq-demo注释--代码">一段能跑的 Seq2Seq Demo：注释 → 代码</a></li>
+<li><a href="#7-第五代gpt--decoder-only--自监督把配对变成序列">第五代：GPT —— decoder-only + 自监督，把"配对"变成"序列"</a></li>
+<li><a href="#8-搜索维度的进化史把五代放在同一张坐标系">搜索维度的进化史：把五代放在同一张坐标系</a></li>
+<li><a href="#9-三次关键性转变的本质在维度图上看就是三次维度跃迁">三次关键性转变的本质（在维度图上看就是三次维度跃迁）</a></li>
+<li><a href="#10-codegpt-在这条进化线上的位置">CodeGPT 在这条进化线上的位置</a></li>
+<li><a href="#11-小结">小结</a></li>
+</ol>
+<hr />
+<h2 id="1">1. 五代范式总览表</h2>
+<table>
+<thead>
+<tr>
+<th>代际</th>
+<th>搜索空间维度</th>
+<th>输入 → 输出</th>
+<th>核心数据结构</th>
+<th>关键操作</th>
+<th>训练数据</th>
+<th>失败模式</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>1. 词法搜索</td>
+<td><strong>字符串</strong>（1 维离散）</td>
+<td>关键词 → 已有代码片段</td>
+<td>倒排索引 + Trigram</td>
+<td>字符串/正则匹配，TF-IDF</td>
+<td>无（只建索引）</td>
+<td>同义、跨命名风格、跨语言全失效</td>
+</tr>
+<tr>
+<td>2. 静态分析 + 图查询</td>
+<td><strong>AST + 符号 + 引用 + 控制流 + 数据流</strong>（多维离散结构）</td>
+<td>模式 / 图 query → 命中节点 / 路径</td>
+<td>LSIF/SCIP 索引、Code Property Graph</td>
+<td>树/图遍历、Datalog（CodeQL）、Cypher（Joern）、模式合一（Semgrep）</td>
+<td>无（仍是建索引）/ 弱训练（语言服务器规则）</td>
+<td>必须懂查询语言；跨概念近似仍失效；不会"写"代码</td>
+</tr>
+<tr>
+<td>3. 向量化代码搜索</td>
+<td><strong>连续 $\mathbb{R}^d$</strong>（首次连续化，典型 d=128/384/768）</td>
+<td>自然语言 / 代码 → 已有代码片段</td>
+<td>Embedding 矩阵 + ANN（HNSW/IVF/PQ）</td>
+<td><code>q @ V.T</code> 内积</td>
+<td>大量无标注代码（Word2Vec/CodeBERT 自监督）</td>
+<td>只能"找"，不能写不存在的组合</td>
+</tr>
+<tr>
+<td>4. Seq2Seq 生成</td>
+<td><strong>$\mathbb{R}^d$ + 时间轴 T</strong>（连续 + 时序展开）</td>
+<td>自然语言 → <strong>新生成的代码</strong></td>
+<td>Encoder-Decoder（RNN/LSTM）+ attention</td>
+<td>encode → context vector → decode 自回归</td>
+<td><strong>有监督配对</strong> <code>(comment, code)</code></td>
+<td>配对数据稀缺；信息瓶颈；长程依赖弱</td>
+</tr>
+<tr>
+<td>5. GPT 生成</td>
+<td><strong>$\mathbb{R}^d$ × T × L 层 × H 头</strong>（深度 + 多头并行高维检索）</td>
+<td>自然语言（或半段代码）→ 新代码</td>
+<td>Decoder-only Transformer，权重 <code>W</code></td>
+<td>一次 forward = <code>L × H</code> 次 attention 检索 + 自回归采样</td>
+<td>海量<strong>未标注</strong>源代码（注释和代码天然相邻）</td>
+<td>幻觉、上下文长度、对齐</td>
+</tr>
+</tbody>
+</table>
+<p><strong>搜索维度从 1（字符串）→ 多维离散结构（AST/图）→ 连续向量 → 加时间轴 → 加深度和多头</strong>。每加一维，"含义相同的代码"在新空间里都靠得更近一点。"问题"和"答案"在表征空间里的距离也越来越近：
+<strong>字符串距离 → 图编辑距离 → 余弦距离 → 编码-解码距离 → 同一个权重张量内部的距离。</strong></p>
+<hr />
+<h2 id="2-grep-ctags">2. 第一代：词法搜索（grep / ctags / 正则）</h2>
+<p>最早的"代码搜索"就是工程师在仓库里跑 <code>grep</code>：</p>
+<div class="highlight"><pre><span></span><code>grep<span class="w"> </span>-rn<span class="w"> </span><span class="s2">&quot;def fibonacci&quot;</span><span class="w"> </span>.
+ctags<span class="w"> </span>-R<span class="w"> </span>.
+ack<span class="w"> </span>--python<span class="w"> </span><span class="s2">&quot;TODO&quot;</span>
+ripgrep<span class="w"> </span><span class="s2">&quot;^class \w+\(.*Mixin\)&quot;</span><span class="w"> </span>--type<span class="w"> </span>py<span class="w">        </span><span class="c1"># 现代化的 grep，trigram 索引</span>
+</code></pre></div>
+
+<p>GitHub code search 早期、Google Code Search（已下线）走的也是这个思路的工业版：<strong>倒排索引 + 正则 + 少量符号元数据</strong>。</p>
+<div class="highlight"><pre><span></span><code><span class="c1"># 伪代码：第一代代码搜索的核心</span>
+<span class="k">def</span><span class="w"> </span><span class="nf">code_search</span><span class="p">(</span><span class="n">query</span><span class="p">:</span> <span class="nb">str</span><span class="p">,</span> <span class="n">files</span><span class="p">:</span> <span class="nb">list</span><span class="p">[</span><span class="nb">str</span><span class="p">])</span> <span class="o">-&gt;</span> <span class="nb">list</span><span class="p">[</span><span class="nb">str</span><span class="p">]:</span>
+    <span class="n">pattern</span> <span class="o">=</span> <span class="n">re</span><span class="o">.</span><span class="n">compile</span><span class="p">(</span><span class="n">query</span><span class="p">)</span>
+    <span class="n">hits</span> <span class="o">=</span> <span class="p">[]</span>
+    <span class="k">for</span> <span class="n">f</span> <span class="ow">in</span> <span class="n">files</span><span class="p">:</span>
+        <span class="k">for</span> <span class="n">i</span><span class="p">,</span> <span class="n">line</span> <span class="ow">in</span> <span class="nb">enumerate</span><span class="p">(</span><span class="nb">open</span><span class="p">(</span><span class="n">f</span><span class="p">)):</span>
+            <span class="k">if</span> <span class="n">pattern</span><span class="o">.</span><span class="n">search</span><span class="p">(</span><span class="n">line</span><span class="p">):</span>
+                <span class="n">hits</span><span class="o">.</span><span class="n">append</span><span class="p">((</span><span class="n">f</span><span class="p">,</span> <span class="n">i</span><span class="p">,</span> <span class="n">line</span><span class="p">))</span>
+    <span class="k">return</span> <span class="n">rank_by_tfidf</span><span class="p">(</span><span class="n">hits</span><span class="p">,</span> <span class="n">query</span><span class="p">)</span>
+</code></pre></div>
+
+<p>它工作得很好，前提是你<strong>记得函数大概叫什么名字</strong>。一旦换问法就崩：</p>
+<ul>
+<li>想找"对列表去重保持顺序"——不知道关键字是 <code>dict.fromkeys</code> 还是 <code>OrderedDict</code>，搜不到。</li>
+<li>想跨语言迁移——Python 的 <code>for x in xs</code> 和 JS 的 <code>for (const x of xs)</code> 在字符串上没有任何重合。</li>
+<li>想搜"读文件并按行处理"——这是<strong>意图</strong>，不是字符串。</li>
+</ul>
+<p>字符串匹配这一代的天花板就在这里：<strong>搜索空间只有 1 维（字符），没有"结构"也没有"含义"概念</strong>。</p>
+<p>下一代要加的第一个新维度，是<strong>代码本身的结构</strong>——AST、符号引用、控制流、数据流。</p>
+<hr />
+<h2 id="3-sourcegraph-lsif-codeql-joern">3. 第二代：静态分析 + 图查询（Sourcegraph / LSIF / CodeQL / Joern）</h2>
+<p>2010 年代中期开始，业界意识到代码不是字符串，而是<strong>结构</strong>：函数定义、引用、类型、调用图、控制流图、数据流图。如果把这些结构提前算出来、建索引、再用专门的查询语言去搜——召回率立刻上一个台阶。<strong>这一代仍然是"搜索"，但搜索空间从 1 维字符串扩展到了多维离散结构图</strong>。</p>
+<p>代表工具：</p>
+<table>
+<thead>
+<tr>
+<th>工具</th>
+<th>哲学</th>
+<th>加了什么维度</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><strong>Sourcegraph</strong></td>
+<td>"Google for code" + LSIF/SCIP 预计算的 goto-definition/find-references</td>
+<td><strong>符号引用图</strong>（跨仓库跨语言）</td>
+</tr>
+<tr>
+<td><strong>OpenGrok</strong>（Sun，2006）</td>
+<td>ctags 基础上的 web 化代码搜索</td>
+<td>符号 + 类层级</td>
+</tr>
+<tr>
+<td><strong>LSIF</strong>（Microsoft, 2019） / <strong>SCIP</strong>（Sourcegraph, 2022）</td>
+<td>把 Language Server 的结果（hover / def / refs）序列化成索引文件</td>
+<td>标准化的符号引用图，跨编辑器/跨工具</td>
+</tr>
+<tr>
+<td><strong>CodeQL</strong>（GitHub / Semmle）</td>
+<td>"把代码当成关系数据库"，写类 Datalog 的 QL 查询</td>
+<td>AST + 类型 + 数据流 + 污点分析</td>
+</tr>
+<tr>
+<td><strong>Semgrep</strong></td>
+<td>AST 模式合一（pattern unification）+ 轻量数据流</td>
+<td>AST + 元变量绑定</td>
+</tr>
+<tr>
+<td><strong>Joern</strong> / <strong>Code Property Graph</strong></td>
+<td>把 AST + CFG + DFG 合成<strong>一张图</strong>，用 Cypher-like 语言查</td>
+<td>AST ∪ 控制流 ∪ 数据流</td>
+</tr>
+</tbody>
+</table>
+<h3 id="31-sourcegraph">3.1 Sourcegraph 的本质：静态分析 + 高维空间搜索 + 图查询</h3>
+<p>Sourcegraph 自己的实现就是这三件事拼起来的：</p>
+<ol>
+<li><strong>静态分析（升维）</strong>：用每种语言的 LSP 服务器在 CI 里把代码"过一遍"，产出 LSIF / SCIP 索引——里面有每个 token 的<strong>定义位置、所有引用、类型、所属符号</strong>。这一步把代码从"字符流"升维成了"带语义边的图"。</li>
+<li><strong>倒排 + 多维索引（建索引）</strong>：对 trigram 建 zoekt 倒排索引（仍然是第一代的字符层），同时把 LSIF/SCIP 图写到结构化存储，两套并行。</li>
+<li><strong>图查询（搜索）</strong>：用户搜 <code>repo:foo func:HandleRequest</code> —— 这条 query 不是字符串匹配，而是<strong>在符号引用图上做模式匹配</strong>，返回的是"所有定义/调用了 <code>HandleRequest</code> 的位置"。</li>
+</ol>
+<div class="highlight"><pre><span></span><code><span class="c1"># 伪代码：Sourcegraph-style 跨仓库 &quot;find references&quot;</span>
+<span class="k">def</span><span class="w"> </span><span class="nf">find_references</span><span class="p">(</span><span class="n">symbol_id</span><span class="p">:</span> <span class="nb">str</span><span class="p">,</span> <span class="n">scip_index</span><span class="p">:</span> <span class="n">Graph</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="nb">list</span><span class="p">[</span><span class="n">Location</span><span class="p">]:</span>
+    <span class="c1"># symbol_id 是跨仓库稳定的全局符号，例如 &quot;github.com/foo/bar/pkg.HandleRequest&quot;</span>
+    <span class="c1"># SCIP 图里每个节点是一个符号，每条边是 &quot;definition&quot; / &quot;reference&quot; / &quot;implementation&quot;</span>
+    <span class="k">return</span> <span class="p">[</span><span class="n">edge</span><span class="o">.</span><span class="n">location</span> <span class="k">for</span> <span class="n">edge</span> <span class="ow">in</span> <span class="n">scip_index</span><span class="o">.</span><span class="n">edges_to</span><span class="p">(</span><span class="n">symbol_id</span><span class="p">)</span>
+            <span class="k">if</span> <span class="n">edge</span><span class="o">.</span><span class="n">kind</span> <span class="ow">in</span> <span class="p">{</span><span class="s2">&quot;reference&quot;</span><span class="p">,</span> <span class="s2">&quot;implementation&quot;</span><span class="p">}]</span>
+</code></pre></div>
+
+<p>注意这一行 <code>scip_index.edges_to(symbol_id)</code>——它不是 <code>grep</code>，而是<strong>在一张提前算好的图上做邻居查询</strong>。这张图就是新维度。</p>
+<h3 id="32-codeql">3.2 CodeQL：把代码变成关系数据库</h3>
+<p>CodeQL 把这个思路推到极致——代码不是字符串、不是树，而是<strong>一组关系表</strong>。然后你用类 Datalog 的 QL 写查询：</p>
+<div class="highlight"><pre><span></span><code><span class="c1">// 找所有 &quot;未经验证就被传给 sql.Exec 的字符串&quot;——SQL 注入</span>
+<span class="k k-Builtin">import</span><span class="w"> </span><span class="nv">go</span>
+
+<span class="k k-Builtin">from</span><span class="w"> </span><span class="nc">DataFlow</span><span class="p">::</span><span class="nc">Node</span><span class="w"> </span><span class="nv">source</span><span class="p">,</span><span class="w"> </span><span class="nc">DataFlow</span><span class="p">::</span><span class="nc">Node</span><span class="w"> </span><span class="nv">sink</span>
+<span class="k k-Builtin">where</span>
+<span class="w">  </span><span class="nv">source</span><span class="w"> </span><span class="k k-Builtin">instanceof</span><span class="w"> </span><span class="nc">UntrustedFlowSource</span><span class="w"> </span><span class="k k-Builtin">and</span>
+<span class="w">  </span><span class="nv">sink</span><span class="p">.</span><span class="nv">asExpr</span><span class="p">().</span><span class="nv">getParent</span><span class="o">*</span><span class="p">()</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="nv">any</span><span class="p">(</span><span class="nc">SqlExec</span><span class="w"> </span><span class="nv">call</span><span class="p">).</span><span class="nv">getQuery</span><span class="p">()</span><span class="w"> </span><span class="k k-Builtin">and</span>
+<span class="w">  </span><span class="nc">TaintTracking</span><span class="p">::</span><span class="nv">localTaint</span><span class="p">(</span><span class="nv">source</span><span class="p">,</span><span class="w"> </span><span class="nv">sink</span><span class="p">)</span>
+<span class="k k-Builtin">select</span><span class="w"> </span><span class="nv">sink</span><span class="p">,</span><span class="w"> </span><span class="s">&quot;tainted SQL query from $@&quot;</span><span class="p">,</span><span class="w"> </span><span class="nv">source</span><span class="p">,</span><span class="w"> </span><span class="s">&quot;untrusted input&quot;</span>
+</code></pre></div>
+
+<p>这段 query 在干什么？<strong>在数据流图上做带条件的可达性搜索</strong>——和 §4 的向量内积、§7 的 attention 是<strong>同一类操作</strong>（"从一个点出发，找满足条件的邻居"），只是底层空间不是 $\mathbb{R}^d$ 而是离散的关系图。</p>
+<h3 id="33-joern-code-property-graph-ast-cfg-dfg">3.3 Joern / Code Property Graph：把 AST + CFG + DFG 合成一张图</h3>
+<p>CPG 的精髓是<strong>一个节点同时承载语法、控制、数据三个角度的边</strong>。比如一行 <code>x = read_input()</code> 在 CPG 里是一个节点，向上连 AST 父节点（赋值表达式），向左右连 CFG（前驱/后继语句），向下连 DFG（<code>x</code> 后续被谁读）。Cypher 风格的查询：</p>
+<div class="highlight"><pre><span></span><code><span class="c1">// Joern: 找所有 &quot;从 read_input 流到 system 调用&quot;</span>
+<span class="n">cpg</span><span class="p">.</span><span class="k">call</span><span class="p">(</span><span class="s">&quot;read_input&quot;</span><span class="p">).</span><span class="n">reachableBy</span><span class="p">(</span><span class="n">cpg</span><span class="p">.</span><span class="k">call</span><span class="p">(</span><span class="s">&quot;system&quot;</span><span class="p">)).</span><span class="n">l</span>
+</code></pre></div>
+
+<p><code>reachableBy</code> 又是一次"高维空间里的可达性搜索"——只不过空间是<strong>代码属性图</strong>。</p>
+<h3 id="34">3.4 这一代的本质：用结构升维代替向量升维</h3>
+<p>第一代的搜索空间是<strong>1 维</strong>（字符）；第二代的搜索空间是<strong>多维离散结构</strong>——节点是符号/AST 节点，边是引用/控制流/数据流。它<strong>没有"连续向量"概念，也没有学习参数</strong>——所有维度都是规则定义的，靠静态分析提前算出来。</p>
+<p>这一代的厉害之处是：<strong>第一次能精确回答"语义相同但字面不同"的查询</strong>。<code>x.foo()</code> 和 <code>(*p).foo()</code> 在 AST 上是不同字符串，但在 SCIP 引用图里指向同一个符号。CodeQL 能找到所有"通过任意路径把用户输入传给 SQL exec"的代码，无论变量名怎么换、控制流多绕。</p>
+<p>但它有两个根本天花板：</p>
+<ol>
+<li><strong>必须能形式化定义"想找什么"</strong>——查询是显式规则，不会泛化。"找一段大概在做认证的代码"这种<strong>意图查询</strong>还是无能为力。</li>
+<li><strong>不会写代码</strong>——它只能在已有图上找已有节点；写一段不在库里的新代码，需要的是<strong>生成式</strong>模型。</li>
+</ol>
+<p>突破第一个天花板要走"连续向量"路线（第三代 Word2Vec）；突破第二个要走"自回归生成"路线（第四代 Seq2Seq）。下一节就是第一次"连续化"——把图节点的离散标签替换成 $\mathbb{R}^d$ 里的稠密向量。</p>
+<hr />
+<h2 id="4-word2vec">4. 第三代：Word2Vec → 代码向量化搜索（第一次连续化）</h2>
+<p>2013 年 Mikolov 提出 Word2Vec，把"相似度"从字符串搬到了 $\mathbb{R}^d$。其核心假设是 J.R. Firth 1957 年的一句话：</p>
+<blockquote>
+<p><em>You shall know a word by the company it keeps.</em>
+一个词的含义由它周围的词决定。</p>
+</blockquote>
+<h3 id="41-word2vec">4.1 Word2Vec 的本质：一个超简的"邻居预测"</h3>
+<p>Skip-gram 的目标函数就是"用中心词预测它的上下文"：</p>
+<div class="highlight"><pre><span></span><code><span class="c1"># Word2Vec Skip-gram 的核心 —— 不到 10 行 PyTorch</span>
+<span class="kn">import</span><span class="w"> </span><span class="nn">torch</span><span class="o">,</span><span class="w"> </span><span class="nn">torch.nn</span><span class="w"> </span><span class="k">as</span><span class="w"> </span><span class="nn">nn</span><span class="o">,</span><span class="w"> </span><span class="nn">torch.nn.functional</span><span class="w"> </span><span class="k">as</span><span class="w"> </span><span class="nn">F</span>
+
+<span class="k">class</span><span class="w"> </span><span class="nc">SkipGram</span><span class="p">(</span><span class="n">nn</span><span class="o">.</span><span class="n">Module</span><span class="p">):</span>
+    <span class="k">def</span><span class="w"> </span><span class="fm">__init__</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">vocab_size</span><span class="p">,</span> <span class="n">dim</span><span class="o">=</span><span class="mi">128</span><span class="p">):</span>
+        <span class="nb">super</span><span class="p">()</span><span class="o">.</span><span class="fm">__init__</span><span class="p">()</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">in_emb</span>  <span class="o">=</span> <span class="n">nn</span><span class="o">.</span><span class="n">Embedding</span><span class="p">(</span><span class="n">vocab_size</span><span class="p">,</span> <span class="n">dim</span><span class="p">)</span>   <span class="c1"># 中心词 embedding</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">out_emb</span> <span class="o">=</span> <span class="n">nn</span><span class="o">.</span><span class="n">Embedding</span><span class="p">(</span><span class="n">vocab_size</span><span class="p">,</span> <span class="n">dim</span><span class="p">)</span>   <span class="c1"># 上下文 embedding</span>
+
+    <span class="k">def</span><span class="w"> </span><span class="nf">forward</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">center</span><span class="p">,</span> <span class="n">context</span><span class="p">):</span>
+        <span class="c1"># logits[i] = &lt;in_emb[center], out_emb[i]&gt;</span>
+        <span class="n">v</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">in_emb</span><span class="p">(</span><span class="n">center</span><span class="p">)</span>                <span class="c1"># (B, d)</span>
+        <span class="n">logits</span> <span class="o">=</span> <span class="n">v</span> <span class="o">@</span> <span class="bp">self</span><span class="o">.</span><span class="n">out_emb</span><span class="o">.</span><span class="n">weight</span><span class="o">.</span><span class="n">T</span>     <span class="c1"># (B, vocab)</span>
+        <span class="k">return</span> <span class="n">F</span><span class="o">.</span><span class="n">cross_entropy</span><span class="p">(</span><span class="n">logits</span><span class="p">,</span> <span class="n">context</span><span class="p">)</span>
+</code></pre></div>
+
+<p>训练完之后，<code>in_emb.weight</code> 这张 <code>(vocab_size, d)</code> 的查表就是"语义坐标系"。<code>king - man + woman ≈ queen</code> 那个著名加减法就是它的副产品。</p>
+<p><strong>对应到本仓库</strong>：<code>model.py:183</code> 的 <code>tok_emb = self.transformer.wte(idx)</code> 做的事情<strong>和 Word2Vec 的查表完全同构</strong>——都是 token ID 进、向量出。区别只是 GPT 的 <code>wte</code> 是和 12 层 Transformer 一起端到端训练的，而 Word2Vec 是单独训完就锁住的。</p>
+<h3 id="42-code2vec-codebert">4.2 用到代码上：code2vec / CodeBERT</h3>
+<p>把同样的思路搬到代码：把 token 序列（甚至 AST path）输入一个小网络（code2vec 用 attention pooling，CodeBERT 用 BERT），输出一个固定维度向量。然后整套向量搜索（Faiss / HNSW）就可以用了：</p>
+<div class="highlight"><pre><span></span><code><span class="c1"># 代码向量化搜索：把整个仓库的函数都 encode 成 (N, d) 的矩阵</span>
+<span class="kn">import</span><span class="w"> </span><span class="nn">faiss</span><span class="o">,</span><span class="w"> </span><span class="nn">numpy</span><span class="w"> </span><span class="k">as</span><span class="w"> </span><span class="nn">np</span>
+<span class="kn">from</span><span class="w"> </span><span class="nn">sentence_transformers</span><span class="w"> </span><span class="kn">import</span> <span class="n">SentenceTransformer</span>
+
+<span class="n">encoder</span> <span class="o">=</span> <span class="n">SentenceTransformer</span><span class="p">(</span><span class="s1">&#39;microsoft/codebert-base&#39;</span><span class="p">)</span>
+<span class="n">funcs</span> <span class="o">=</span> <span class="p">[</span><span class="nb">open</span><span class="p">(</span><span class="n">p</span><span class="p">)</span><span class="o">.</span><span class="n">read</span><span class="p">()</span> <span class="k">for</span> <span class="n">p</span> <span class="ow">in</span> <span class="n">glob</span><span class="p">(</span><span class="s1">&#39;repo/**/*.py&#39;</span><span class="p">)]</span>   <span class="c1"># 假装 N = 1e5</span>
+<span class="n">V</span> <span class="o">=</span> <span class="n">encoder</span><span class="o">.</span><span class="n">encode</span><span class="p">(</span><span class="n">funcs</span><span class="p">,</span> <span class="n">normalize_embeddings</span><span class="o">=</span><span class="kc">True</span><span class="p">)</span>     <span class="c1"># (N, 768)</span>
+
+<span class="n">index</span> <span class="o">=</span> <span class="n">faiss</span><span class="o">.</span><span class="n">IndexHNSWFlat</span><span class="p">(</span><span class="mi">768</span><span class="p">,</span> <span class="n">M</span><span class="o">=</span><span class="mi">32</span><span class="p">)</span>
+<span class="n">index</span><span class="o">.</span><span class="n">add</span><span class="p">(</span><span class="n">V</span><span class="o">.</span><span class="n">astype</span><span class="p">(</span><span class="s1">&#39;float32&#39;</span><span class="p">))</span>
+
+<span class="n">q</span> <span class="o">=</span> <span class="n">encoder</span><span class="o">.</span><span class="n">encode</span><span class="p">([</span><span class="s2">&quot;read a file line by line&quot;</span><span class="p">],</span> <span class="n">normalize_embeddings</span><span class="o">=</span><span class="kc">True</span><span class="p">)</span>
+<span class="n">D</span><span class="p">,</span> <span class="n">I</span> <span class="o">=</span> <span class="n">index</span><span class="o">.</span><span class="n">search</span><span class="p">(</span><span class="n">q</span><span class="o">.</span><span class="n">astype</span><span class="p">(</span><span class="s1">&#39;float32&#39;</span><span class="p">),</span> <span class="n">k</span><span class="o">=</span><span class="mi">5</span><span class="p">)</span>            <span class="c1"># 找 top-5 最相似函数</span>
+</code></pre></div>
+
+<p>突然之间，"读文件并按行处理"这种<strong>意图查询</strong>可以工作了：因为 encoder 学过 <code>with open(...) as f: for line in f</code> 的上下文邻居，它会把这段代码的向量放在意图查询附近。</p>
+<h3 id="43">4.3 但这一代仍然只能"找"，不能"写"</h3>
+<p>向量搜索能召回<strong>已存在的</strong>代码片段，无法合成不在库里的组合。如果用户问"用 numpy 实现一个带 dropout 的 self-attention"，而你的库里没有这段，向量搜索只能给出最接近的几个函数让你自己拼。</p>
+<p><strong>第一次质变（离散 → 连续）让"找"变得强大，但还差一次质变才能"写"。</strong></p>
+<hr />
+<h2 id="5-seq2seq">5. 第四代：Seq2Seq —— 用 (注释, 代码) 对子训练，让模型从描述生成代码</h2>
+<p>2014 年 Sutskever / Cho 等人提出 Seq2Seq：用一个 RNN（<strong>encoder</strong>）把变长输入压成一个 context vector，再用另一个 RNN（<strong>decoder</strong>）从这个 context 一个 token 一个 token 地"写出"输出。</p>
+<div class="highlight"><pre><span></span><code>&quot;sum a list&quot;  →  [Encoder LSTM]  →  c  →  [Decoder LSTM]  →  &quot;def sum_list(xs): return sum(xs)&quot;
+                  压缩信息              定长向量            自回归展开
+</code></pre></div>
+
+<p>应用到代码合成：训练数据是 <strong>(docstring / 注释, function body)</strong> 配对：</p>
+<div class="highlight"><pre><span></span><code><span class="c1"># 训练样本（CodeSearchNet, CONALA 等数据集都是这种结构）</span>
+<span class="p">{</span><span class="s2">&quot;comment&quot;</span><span class="p">:</span> <span class="s2">&quot;Compute factorial of n recursively&quot;</span><span class="p">,</span>
+ <span class="s2">&quot;code&quot;</span><span class="p">:</span>    <span class="s2">&quot;def fact(n):</span><span class="se">\n</span><span class="s2">    return 1 if n &lt;= 1 else n * fact(n - 1)&quot;</span><span class="p">}</span>
+</code></pre></div>
+
+<p>这里发生了<strong>第二次质变</strong>——<strong>检索 → 生成</strong>：</p>
+<table>
+<thead>
+<tr>
+<th>第三代向量搜索</th>
+<th>第四代 Seq2Seq</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>答案必须存在于库中</td>
+<td>答案是逐 token 现场生成的</td>
+</tr>
+<tr>
+<td>输出 = 一段已有代码</td>
+<td>输出 = 一个新序列</td>
+</tr>
+<tr>
+<td>训练目标：让相似的对靠近</td>
+<td>训练目标：<code>F.cross_entropy(logits, target_token)</code></td>
+</tr>
+<tr>
+<td>没有"长度"概念</td>
+<td>自回归 + <code>&lt;eos&gt;</code>，长度由模型决定</td>
+</tr>
+</tbody>
+</table>
+<p>但 Seq2Seq 有两个先天痛点，是它后来被 Transformer 取代的根本原因：</p>
+<ol>
+<li><strong>信息瓶颈</strong>：encoder 把任意长输入压成一个固定向量 <code>c</code>，长输入信息丢失严重。Bahdanau 2014 / Luong 2015 的 attention 就是为了解决这个——decoder 每一步可以"回头看" encoder 全部隐状态。这正是 Transformer 的种子。</li>
+<li><strong>配对数据稀缺</strong>：必须人工/启发式构造 <code>(comment, code)</code> 对子。CodeSearchNet 数据集 ≈ 6M 对，但 GitHub 上有上百亿行代码——<strong>99% 的训练信号被这种"必须配对"的范式扔掉了</strong>。</li>
+</ol>
+<p>第二个痛点是第四代被第五代彻底超越的真正原因，详见 §7。</p>
+<hr />
+<h2 id="6-seq2seq-demo">6. 一段能跑的 Seq2Seq Demo：注释 → 代码</h2>
+<p>下面是一个最小可运行的 LSTM Seq2Seq + Bahdanau attention，用 (注释, 代码) 对子训练。<strong>只依赖本项目已有的 <code>torch</code> / <code>numpy</code> / <code>tiktoken</code></strong>，没有引入新包。把它存成 <code>seq2seq_demo.py</code> 就能跑：</p>
+<div class="highlight"><pre><span></span><code><span class="sd">&quot;&quot;&quot;</span>
+<span class="sd">Minimal seq2seq demo: train on (comment, code) pairs, sample code from a comment.</span>
+
+<span class="sd">Run:</span>
+<span class="sd">    python seq2seq_demo.py            # train ~30s on CPU, then sample</span>
+<span class="sd">&quot;&quot;&quot;</span>
+<span class="kn">import</span><span class="w"> </span><span class="nn">torch</span><span class="o">,</span><span class="w"> </span><span class="nn">torch.nn</span><span class="w"> </span><span class="k">as</span><span class="w"> </span><span class="nn">nn</span><span class="o">,</span><span class="w"> </span><span class="nn">torch.nn.functional</span><span class="w"> </span><span class="k">as</span><span class="w"> </span><span class="nn">F</span>
+<span class="kn">import</span><span class="w"> </span><span class="nn">tiktoken</span>
+
+<span class="c1"># ---------- 1. 玩具数据集：(注释, 代码) 配对 ----------</span>
+<span class="n">PAIRS</span> <span class="o">=</span> <span class="p">[</span>
+    <span class="p">(</span><span class="s2">&quot;add two numbers&quot;</span><span class="p">,</span>                <span class="s2">&quot;def add(a, b):</span><span class="se">\n</span><span class="s2">    return a + b&quot;</span><span class="p">),</span>
+    <span class="p">(</span><span class="s2">&quot;multiply two numbers&quot;</span><span class="p">,</span>           <span class="s2">&quot;def mul(a, b):</span><span class="se">\n</span><span class="s2">    return a * b&quot;</span><span class="p">),</span>
+    <span class="p">(</span><span class="s2">&quot;subtract b from a&quot;</span><span class="p">,</span>              <span class="s2">&quot;def sub(a, b):</span><span class="se">\n</span><span class="s2">    return a - b&quot;</span><span class="p">),</span>
+    <span class="p">(</span><span class="s2">&quot;square a number&quot;</span><span class="p">,</span>                <span class="s2">&quot;def square(x):</span><span class="se">\n</span><span class="s2">    return x * x&quot;</span><span class="p">),</span>
+    <span class="p">(</span><span class="s2">&quot;compute factorial recursively&quot;</span><span class="p">,</span>  <span class="s2">&quot;def fact(n):</span><span class="se">\n</span><span class="s2">    return 1 if n &lt;= 1 else n * fact(n-1)&quot;</span><span class="p">),</span>
+    <span class="p">(</span><span class="s2">&quot;return the maximum of two&quot;</span><span class="p">,</span>      <span class="s2">&quot;def max2(a, b):</span><span class="se">\n</span><span class="s2">    return a if a &gt; b else b&quot;</span><span class="p">),</span>
+    <span class="p">(</span><span class="s2">&quot;check if number is even&quot;</span><span class="p">,</span>        <span class="s2">&quot;def is_even(n):</span><span class="se">\n</span><span class="s2">    return n % 2 == 0&quot;</span><span class="p">),</span>
+    <span class="p">(</span><span class="s2">&quot;sum a list&quot;</span><span class="p">,</span>                     <span class="s2">&quot;def sum_list(xs):</span><span class="se">\n</span><span class="s2">    return sum(xs)&quot;</span><span class="p">),</span>
+    <span class="p">(</span><span class="s2">&quot;length of a list&quot;</span><span class="p">,</span>               <span class="s2">&quot;def length(xs):</span><span class="se">\n</span><span class="s2">    return len(xs)&quot;</span><span class="p">),</span>
+    <span class="p">(</span><span class="s2">&quot;reverse a list&quot;</span><span class="p">,</span>                 <span class="s2">&quot;def reverse(xs):</span><span class="se">\n</span><span class="s2">    return xs[::-1]&quot;</span><span class="p">),</span>
+<span class="p">]</span> <span class="o">*</span> <span class="mi">80</span>   <span class="c1"># 重复多次让小模型学得动</span>
+
+<span class="c1"># 复用本项目的 tiktoken GPT-2 BPE，再加一个 &lt;bos&gt;/&lt;eos&gt;/&lt;pad&gt;</span>
+<span class="n">enc</span> <span class="o">=</span> <span class="n">tiktoken</span><span class="o">.</span><span class="n">get_encoding</span><span class="p">(</span><span class="s2">&quot;gpt2&quot;</span><span class="p">)</span>
+<span class="n">BOS</span><span class="p">,</span> <span class="n">EOS</span><span class="p">,</span> <span class="n">PAD</span> <span class="o">=</span> <span class="mi">50256</span><span class="p">,</span> <span class="mi">50257</span><span class="p">,</span> <span class="mi">50258</span>      <span class="c1"># 只在本 demo 内有效</span>
+<span class="n">VOCAB</span> <span class="o">=</span> <span class="mi">50259</span>
+
+<span class="k">def</span><span class="w"> </span><span class="nf">encode</span><span class="p">(</span><span class="n">s</span><span class="p">,</span> <span class="n">add_eos</span><span class="o">=</span><span class="kc">True</span><span class="p">):</span>
+    <span class="n">ids</span> <span class="o">=</span> <span class="n">enc</span><span class="o">.</span><span class="n">encode_ordinary</span><span class="p">(</span><span class="n">s</span><span class="p">)</span>
+    <span class="k">return</span> <span class="n">ids</span> <span class="o">+</span> <span class="p">([</span><span class="n">EOS</span><span class="p">]</span> <span class="k">if</span> <span class="n">add_eos</span> <span class="k">else</span> <span class="p">[])</span>
+
+<span class="c1"># 把每条样本变成 (src_ids, tgt_ids)</span>
+<span class="n">data</span> <span class="o">=</span> <span class="p">[(</span><span class="n">torch</span><span class="o">.</span><span class="n">tensor</span><span class="p">(</span><span class="n">encode</span><span class="p">(</span><span class="n">c</span><span class="p">)),</span> <span class="n">torch</span><span class="o">.</span><span class="n">tensor</span><span class="p">([</span><span class="n">BOS</span><span class="p">]</span> <span class="o">+</span> <span class="n">encode</span><span class="p">(</span><span class="n">k</span><span class="p">)))</span> <span class="k">for</span> <span class="n">c</span><span class="p">,</span> <span class="n">k</span> <span class="ow">in</span> <span class="n">PAIRS</span><span class="p">]</span>
+
+<span class="c1"># ---------- 2. 模型：Encoder LSTM + Bahdanau Attention + Decoder LSTM ----------</span>
+<span class="k">class</span><span class="w"> </span><span class="nc">Encoder</span><span class="p">(</span><span class="n">nn</span><span class="o">.</span><span class="n">Module</span><span class="p">):</span>
+    <span class="k">def</span><span class="w"> </span><span class="fm">__init__</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">vocab</span><span class="p">,</span> <span class="n">d</span><span class="o">=</span><span class="mi">128</span><span class="p">):</span>
+        <span class="nb">super</span><span class="p">()</span><span class="o">.</span><span class="fm">__init__</span><span class="p">()</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">emb</span> <span class="o">=</span> <span class="n">nn</span><span class="o">.</span><span class="n">Embedding</span><span class="p">(</span><span class="n">vocab</span><span class="p">,</span> <span class="n">d</span><span class="p">)</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">rnn</span> <span class="o">=</span> <span class="n">nn</span><span class="o">.</span><span class="n">LSTM</span><span class="p">(</span><span class="n">d</span><span class="p">,</span> <span class="n">d</span><span class="p">,</span> <span class="n">batch_first</span><span class="o">=</span><span class="kc">True</span><span class="p">,</span> <span class="n">bidirectional</span><span class="o">=</span><span class="kc">True</span><span class="p">)</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">proj</span> <span class="o">=</span> <span class="n">nn</span><span class="o">.</span><span class="n">Linear</span><span class="p">(</span><span class="mi">2</span><span class="o">*</span><span class="n">d</span><span class="p">,</span> <span class="n">d</span><span class="p">)</span>             <span class="c1"># 把 BiLSTM 输出降回 d 维</span>
+
+    <span class="k">def</span><span class="w"> </span><span class="nf">forward</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">src</span><span class="p">):</span>
+        <span class="n">h</span><span class="p">,</span> <span class="n">_</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">rnn</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">emb</span><span class="p">(</span><span class="n">src</span><span class="p">))</span>            <span class="c1"># (B, T, 2d)</span>
+        <span class="k">return</span> <span class="bp">self</span><span class="o">.</span><span class="n">proj</span><span class="p">(</span><span class="n">h</span><span class="p">)</span>                       <span class="c1"># (B, T, d)</span>
+
+<span class="k">class</span><span class="w"> </span><span class="nc">Attention</span><span class="p">(</span><span class="n">nn</span><span class="o">.</span><span class="n">Module</span><span class="p">):</span>
+<span class="w">    </span><span class="sd">&quot;&quot;&quot;Bahdanau (additive) attention —— seq2seq 时代的标志性发明。&quot;&quot;&quot;</span>
+    <span class="k">def</span><span class="w"> </span><span class="fm">__init__</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">d</span><span class="o">=</span><span class="mi">128</span><span class="p">):</span>
+        <span class="nb">super</span><span class="p">()</span><span class="o">.</span><span class="fm">__init__</span><span class="p">()</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">W</span> <span class="o">=</span> <span class="n">nn</span><span class="o">.</span><span class="n">Linear</span><span class="p">(</span><span class="mi">2</span><span class="o">*</span><span class="n">d</span><span class="p">,</span> <span class="n">d</span><span class="p">);</span> <span class="bp">self</span><span class="o">.</span><span class="n">v</span> <span class="o">=</span> <span class="n">nn</span><span class="o">.</span><span class="n">Linear</span><span class="p">(</span><span class="n">d</span><span class="p">,</span> <span class="mi">1</span><span class="p">)</span>
+
+    <span class="k">def</span><span class="w"> </span><span class="nf">forward</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">dec_h</span><span class="p">,</span> <span class="n">enc_h</span><span class="p">):</span>
+        <span class="c1"># dec_h: (B, d)   enc_h: (B, T, d)</span>
+        <span class="n">T</span> <span class="o">=</span> <span class="n">enc_h</span><span class="o">.</span><span class="n">size</span><span class="p">(</span><span class="mi">1</span><span class="p">)</span>
+        <span class="n">cat</span> <span class="o">=</span> <span class="n">torch</span><span class="o">.</span><span class="n">cat</span><span class="p">([</span><span class="n">dec_h</span><span class="o">.</span><span class="n">unsqueeze</span><span class="p">(</span><span class="mi">1</span><span class="p">)</span><span class="o">.</span><span class="n">expand</span><span class="p">(</span><span class="o">-</span><span class="mi">1</span><span class="p">,</span> <span class="n">T</span><span class="p">,</span> <span class="o">-</span><span class="mi">1</span><span class="p">),</span> <span class="n">enc_h</span><span class="p">],</span> <span class="n">dim</span><span class="o">=-</span><span class="mi">1</span><span class="p">)</span>
+        <span class="n">score</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">v</span><span class="p">(</span><span class="n">torch</span><span class="o">.</span><span class="n">tanh</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">W</span><span class="p">(</span><span class="n">cat</span><span class="p">)))</span><span class="o">.</span><span class="n">squeeze</span><span class="p">(</span><span class="o">-</span><span class="mi">1</span><span class="p">)</span>   <span class="c1"># (B, T)</span>
+        <span class="n">a</span> <span class="o">=</span> <span class="n">F</span><span class="o">.</span><span class="n">softmax</span><span class="p">(</span><span class="n">score</span><span class="p">,</span> <span class="n">dim</span><span class="o">=-</span><span class="mi">1</span><span class="p">)</span>
+        <span class="n">ctx</span> <span class="o">=</span> <span class="p">(</span><span class="n">a</span><span class="o">.</span><span class="n">unsqueeze</span><span class="p">(</span><span class="o">-</span><span class="mi">1</span><span class="p">)</span> <span class="o">*</span> <span class="n">enc_h</span><span class="p">)</span><span class="o">.</span><span class="n">sum</span><span class="p">(</span><span class="n">dim</span><span class="o">=</span><span class="mi">1</span><span class="p">)</span>            <span class="c1"># (B, d)</span>
+        <span class="k">return</span> <span class="n">ctx</span>
+
+<span class="k">class</span><span class="w"> </span><span class="nc">Decoder</span><span class="p">(</span><span class="n">nn</span><span class="o">.</span><span class="n">Module</span><span class="p">):</span>
+    <span class="k">def</span><span class="w"> </span><span class="fm">__init__</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">vocab</span><span class="p">,</span> <span class="n">d</span><span class="o">=</span><span class="mi">128</span><span class="p">):</span>
+        <span class="nb">super</span><span class="p">()</span><span class="o">.</span><span class="fm">__init__</span><span class="p">()</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">emb</span> <span class="o">=</span> <span class="n">nn</span><span class="o">.</span><span class="n">Embedding</span><span class="p">(</span><span class="n">vocab</span><span class="p">,</span> <span class="n">d</span><span class="p">)</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">rnn</span> <span class="o">=</span> <span class="n">nn</span><span class="o">.</span><span class="n">LSTMCell</span><span class="p">(</span><span class="mi">2</span><span class="o">*</span><span class="n">d</span><span class="p">,</span> <span class="n">d</span><span class="p">)</span>            <span class="c1"># 输入 = emb + context</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">attn</span> <span class="o">=</span> <span class="n">Attention</span><span class="p">(</span><span class="n">d</span><span class="p">)</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">out</span> <span class="o">=</span> <span class="n">nn</span><span class="o">.</span><span class="n">Linear</span><span class="p">(</span><span class="n">d</span><span class="p">,</span> <span class="n">vocab</span><span class="p">)</span>
+
+    <span class="k">def</span><span class="w"> </span><span class="nf">step</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">prev_tok</span><span class="p">,</span> <span class="n">h</span><span class="p">,</span> <span class="n">c</span><span class="p">,</span> <span class="n">enc_h</span><span class="p">):</span>
+        <span class="n">ctx</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">attn</span><span class="p">(</span><span class="n">h</span><span class="p">,</span> <span class="n">enc_h</span><span class="p">)</span>                              <span class="c1"># (B, d)</span>
+        <span class="n">x</span> <span class="o">=</span> <span class="n">torch</span><span class="o">.</span><span class="n">cat</span><span class="p">([</span><span class="bp">self</span><span class="o">.</span><span class="n">emb</span><span class="p">(</span><span class="n">prev_tok</span><span class="p">),</span> <span class="n">ctx</span><span class="p">],</span> <span class="n">dim</span><span class="o">=-</span><span class="mi">1</span><span class="p">)</span>       <span class="c1"># (B, 2d)</span>
+        <span class="n">h</span><span class="p">,</span> <span class="n">c</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">rnn</span><span class="p">(</span><span class="n">x</span><span class="p">,</span> <span class="p">(</span><span class="n">h</span><span class="p">,</span> <span class="n">c</span><span class="p">))</span>
+        <span class="k">return</span> <span class="bp">self</span><span class="o">.</span><span class="n">out</span><span class="p">(</span><span class="n">h</span><span class="p">),</span> <span class="n">h</span><span class="p">,</span> <span class="n">c</span>                               <span class="c1"># logits, new state</span>
+
+<span class="k">class</span><span class="w"> </span><span class="nc">Seq2Seq</span><span class="p">(</span><span class="n">nn</span><span class="o">.</span><span class="n">Module</span><span class="p">):</span>
+    <span class="k">def</span><span class="w"> </span><span class="fm">__init__</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">vocab</span><span class="p">,</span> <span class="n">d</span><span class="o">=</span><span class="mi">128</span><span class="p">):</span>
+        <span class="nb">super</span><span class="p">()</span><span class="o">.</span><span class="fm">__init__</span><span class="p">()</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">enc</span> <span class="o">=</span> <span class="n">Encoder</span><span class="p">(</span><span class="n">vocab</span><span class="p">,</span> <span class="n">d</span><span class="p">);</span> <span class="bp">self</span><span class="o">.</span><span class="n">dec</span> <span class="o">=</span> <span class="n">Decoder</span><span class="p">(</span><span class="n">vocab</span><span class="p">,</span> <span class="n">d</span><span class="p">);</span> <span class="bp">self</span><span class="o">.</span><span class="n">d</span> <span class="o">=</span> <span class="n">d</span>
+
+    <span class="k">def</span><span class="w"> </span><span class="nf">forward</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">src</span><span class="p">,</span> <span class="n">tgt</span><span class="p">):</span>
+        <span class="n">enc_h</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">enc</span><span class="p">(</span><span class="n">src</span><span class="p">)</span>                                  <span class="c1"># (1, T_src, d)</span>
+        <span class="n">h</span> <span class="o">=</span> <span class="n">enc_h</span><span class="o">.</span><span class="n">mean</span><span class="p">(</span><span class="n">dim</span><span class="o">=</span><span class="mi">1</span><span class="p">);</span> <span class="n">c</span> <span class="o">=</span> <span class="n">torch</span><span class="o">.</span><span class="n">zeros_like</span><span class="p">(</span><span class="n">h</span><span class="p">)</span>         <span class="c1"># 初始化 decoder state</span>
+        <span class="n">loss</span> <span class="o">=</span> <span class="mf">0.0</span>
+        <span class="k">for</span> <span class="n">t</span> <span class="ow">in</span> <span class="nb">range</span><span class="p">(</span><span class="n">tgt</span><span class="o">.</span><span class="n">size</span><span class="p">(</span><span class="mi">1</span><span class="p">)</span> <span class="o">-</span> <span class="mi">1</span><span class="p">):</span>
+            <span class="n">logits</span><span class="p">,</span> <span class="n">h</span><span class="p">,</span> <span class="n">c</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">dec</span><span class="o">.</span><span class="n">step</span><span class="p">(</span><span class="n">tgt</span><span class="p">[:,</span> <span class="n">t</span><span class="p">],</span> <span class="n">h</span><span class="p">,</span> <span class="n">c</span><span class="p">,</span> <span class="n">enc_h</span><span class="p">)</span>
+            <span class="n">loss</span> <span class="o">=</span> <span class="n">loss</span> <span class="o">+</span> <span class="n">F</span><span class="o">.</span><span class="n">cross_entropy</span><span class="p">(</span><span class="n">logits</span><span class="p">,</span> <span class="n">tgt</span><span class="p">[:,</span> <span class="n">t</span><span class="o">+</span><span class="mi">1</span><span class="p">])</span>
+        <span class="k">return</span> <span class="n">loss</span> <span class="o">/</span> <span class="p">(</span><span class="n">tgt</span><span class="o">.</span><span class="n">size</span><span class="p">(</span><span class="mi">1</span><span class="p">)</span> <span class="o">-</span> <span class="mi">1</span><span class="p">)</span>
+
+    <span class="nd">@torch</span><span class="o">.</span><span class="n">no_grad</span><span class="p">()</span>
+    <span class="k">def</span><span class="w"> </span><span class="nf">generate</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">src</span><span class="p">,</span> <span class="n">max_len</span><span class="o">=</span><span class="mi">80</span><span class="p">):</span>
+        <span class="n">enc_h</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">enc</span><span class="p">(</span><span class="n">src</span><span class="p">)</span>
+        <span class="n">h</span> <span class="o">=</span> <span class="n">enc_h</span><span class="o">.</span><span class="n">mean</span><span class="p">(</span><span class="n">dim</span><span class="o">=</span><span class="mi">1</span><span class="p">);</span> <span class="n">c</span> <span class="o">=</span> <span class="n">torch</span><span class="o">.</span><span class="n">zeros_like</span><span class="p">(</span><span class="n">h</span><span class="p">)</span>
+        <span class="n">cur</span> <span class="o">=</span> <span class="n">torch</span><span class="o">.</span><span class="n">tensor</span><span class="p">([[</span><span class="n">BOS</span><span class="p">]])</span>
+        <span class="n">out</span> <span class="o">=</span> <span class="p">[]</span>
+        <span class="k">for</span> <span class="n">_</span> <span class="ow">in</span> <span class="nb">range</span><span class="p">(</span><span class="n">max_len</span><span class="p">):</span>
+            <span class="n">logits</span><span class="p">,</span> <span class="n">h</span><span class="p">,</span> <span class="n">c</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">dec</span><span class="o">.</span><span class="n">step</span><span class="p">(</span><span class="n">cur</span><span class="p">[:,</span> <span class="o">-</span><span class="mi">1</span><span class="p">],</span> <span class="n">h</span><span class="p">,</span> <span class="n">c</span><span class="p">,</span> <span class="n">enc_h</span><span class="p">)</span>
+            <span class="n">nxt</span> <span class="o">=</span> <span class="n">logits</span><span class="o">.</span><span class="n">argmax</span><span class="p">(</span><span class="n">dim</span><span class="o">=-</span><span class="mi">1</span><span class="p">)</span>
+            <span class="k">if</span> <span class="n">nxt</span><span class="o">.</span><span class="n">item</span><span class="p">()</span> <span class="o">==</span> <span class="n">EOS</span><span class="p">:</span> <span class="k">break</span>
+            <span class="n">out</span><span class="o">.</span><span class="n">append</span><span class="p">(</span><span class="n">nxt</span><span class="o">.</span><span class="n">item</span><span class="p">())</span>
+            <span class="n">cur</span> <span class="o">=</span> <span class="n">torch</span><span class="o">.</span><span class="n">cat</span><span class="p">([</span><span class="n">cur</span><span class="p">,</span> <span class="n">nxt</span><span class="o">.</span><span class="n">unsqueeze</span><span class="p">(</span><span class="mi">0</span><span class="p">)],</span> <span class="n">dim</span><span class="o">=</span><span class="mi">1</span><span class="p">)</span>
+        <span class="k">return</span> <span class="n">enc</span><span class="o">.</span><span class="n">decode</span><span class="p">(</span><span class="n">out</span><span class="p">)</span>
+
+<span class="c1"># ---------- 3. 训练 ----------</span>
+<span class="n">torch</span><span class="o">.</span><span class="n">manual_seed</span><span class="p">(</span><span class="mi">0</span><span class="p">)</span>
+<span class="n">model</span> <span class="o">=</span> <span class="n">Seq2Seq</span><span class="p">(</span><span class="n">VOCAB</span><span class="p">)</span>
+<span class="n">opt</span> <span class="o">=</span> <span class="n">torch</span><span class="o">.</span><span class="n">optim</span><span class="o">.</span><span class="n">AdamW</span><span class="p">(</span><span class="n">model</span><span class="o">.</span><span class="n">parameters</span><span class="p">(),</span> <span class="n">lr</span><span class="o">=</span><span class="mf">3e-3</span><span class="p">)</span>
+<span class="k">for</span> <span class="n">epoch</span> <span class="ow">in</span> <span class="nb">range</span><span class="p">(</span><span class="mi">8</span><span class="p">):</span>
+    <span class="n">total</span> <span class="o">=</span> <span class="mf">0.0</span>
+    <span class="k">for</span> <span class="n">src</span><span class="p">,</span> <span class="n">tgt</span> <span class="ow">in</span> <span class="n">data</span><span class="p">:</span>
+        <span class="n">loss</span> <span class="o">=</span> <span class="n">model</span><span class="p">(</span><span class="n">src</span><span class="o">.</span><span class="n">unsqueeze</span><span class="p">(</span><span class="mi">0</span><span class="p">),</span> <span class="n">tgt</span><span class="o">.</span><span class="n">unsqueeze</span><span class="p">(</span><span class="mi">0</span><span class="p">))</span>
+        <span class="n">opt</span><span class="o">.</span><span class="n">zero_grad</span><span class="p">();</span> <span class="n">loss</span><span class="o">.</span><span class="n">backward</span><span class="p">();</span> <span class="n">opt</span><span class="o">.</span><span class="n">step</span><span class="p">()</span>
+        <span class="n">total</span> <span class="o">+=</span> <span class="n">loss</span><span class="o">.</span><span class="n">item</span><span class="p">()</span>
+    <span class="nb">print</span><span class="p">(</span><span class="sa">f</span><span class="s2">&quot;epoch </span><span class="si">{</span><span class="n">epoch</span><span class="si">}</span><span class="s2">  loss=</span><span class="si">{</span><span class="n">total</span><span class="o">/</span><span class="nb">len</span><span class="p">(</span><span class="n">data</span><span class="p">)</span><span class="si">:</span><span class="s2">.3f</span><span class="si">}</span><span class="s2">&quot;</span><span class="p">)</span>
+
+<span class="c1"># ---------- 4. 推理：自然语言 → 代码 ----------</span>
+<span class="k">for</span> <span class="n">prompt</span> <span class="ow">in</span> <span class="p">[</span><span class="s2">&quot;add two numbers&quot;</span><span class="p">,</span> <span class="s2">&quot;reverse a list&quot;</span><span class="p">,</span> <span class="s2">&quot;check if number is even&quot;</span><span class="p">]:</span>
+    <span class="n">src</span> <span class="o">=</span> <span class="n">torch</span><span class="o">.</span><span class="n">tensor</span><span class="p">(</span><span class="n">encode</span><span class="p">(</span><span class="n">prompt</span><span class="p">))</span><span class="o">.</span><span class="n">unsqueeze</span><span class="p">(</span><span class="mi">0</span><span class="p">)</span>
+    <span class="nb">print</span><span class="p">(</span><span class="sa">f</span><span class="s2">&quot;</span><span class="se">\n</span><span class="s2">&gt;&gt;&gt; </span><span class="si">{</span><span class="n">prompt</span><span class="si">}</span><span class="se">\n</span><span class="si">{</span><span class="n">model</span><span class="o">.</span><span class="n">generate</span><span class="p">(</span><span class="n">src</span><span class="p">)</span><span class="si">}</span><span class="s2">&quot;</span><span class="p">)</span>
+</code></pre></div>
+
+<p>跑完之后你会看到 loss 从 ~7 掉到 ~0.5，模型大致能从注释生成对应的函数体。<strong>这就是第四代的全部精髓</strong>：</p>
+<ul>
+<li>Encoder（<code>self.enc</code>）= 把变长注释压成 <code>(T_src, d)</code> 的隐状态序列；</li>
+<li>Attention（<code>self.attn</code>）= decoder 每步<strong>重新挑选</strong> encoder 哪几个位置最相关——这是后来 Transformer 全套 attention 的祖先；</li>
+<li>Decoder（<code>self.dec</code>）= 自回归 LSTMCell，一个 token 一个 token 写代码；</li>
+<li>Loss = <code>F.cross_entropy</code>（和 <code>model.py:192</code> 完全是同一个函数）。</li>
+</ul>
+<p>但你也立刻能看到它的天花板——只能学会训练对子里出现过的模式。给它一个稍微跨域的 prompt（比如 "implement quicksort"），它就开始胡说。原因正是 §4 末尾说的：<strong>配对数据太贵，信号太稀疏</strong>。</p>
+<hr />
+<h2 id="7-gpt-decoder-only">7. 第五代：GPT —— decoder-only + 自监督，把"配对"变成"序列"</h2>
+<p>GPT 在架构上做了三件事，每一件都是对 Seq2Seq 的根本性改写：</p>
+<h3 id="71-encoderdecoder-only">7.1 砍掉 Encoder：decoder-only</h3>
+<p>Seq2Seq 把"理解输入"和"生成输出"分到两个网络。GPT 直接合并成一个：把 prompt 和 completion<strong>拼成一段</strong>，全部喂给同一个 decoder，靠<strong>因果掩码</strong>保证生成时只能看左边。</p>
+<div class="highlight"><pre><span></span><code><span class="c1"># 这就是 model.py:46-49 + 67 那个 tril mask 的全部意义</span>
+<span class="n">torch</span><span class="o">.</span><span class="n">tril</span><span class="p">(</span><span class="n">torch</span><span class="o">.</span><span class="n">ones</span><span class="p">(</span><span class="n">T</span><span class="p">,</span> <span class="n">T</span><span class="p">))</span>             <span class="c1"># 下三角为 1</span>
+<span class="n">att</span> <span class="o">=</span> <span class="n">att</span><span class="o">.</span><span class="n">masked_fill</span><span class="p">(</span><span class="n">mask</span> <span class="o">==</span> <span class="mi">0</span><span class="p">,</span> <span class="o">-</span><span class="n">inf</span><span class="p">)</span>   <span class="c1"># 上三角设 -inf —— 看不到未来</span>
+</code></pre></div>
+
+<p>收益：encoder 和 decoder 共享一套权重 <code>W</code>，参数效率翻倍；同时<strong>任何序列</strong>都能直接当训练数据，不需要切分输入/输出。</p>
+<h3 id="72-comment-code">7.2 把 (comment, code) 配对消化成"一段序列"</h3>
+<p>这是第三次质变的核心。Seq2Seq 时代你必须提前标好：</p>
+<div class="highlight"><pre><span></span><code>src: &quot;compute factorial recursively&quot;
+tgt: &quot;def fact(n): return 1 if n&lt;=1 else n*fact(n-1)&quot;
+</code></pre></div>
+
+<p>而在 GPT 时代，GitHub 上一份普通的 Python 文件本身就是训练样本：</p>
+<div class="highlight"><pre><span></span><code><span class="k">def</span><span class="w"> </span><span class="nf">fact</span><span class="p">(</span><span class="n">n</span><span class="p">):</span>
+<span class="w">    </span><span class="sd">&quot;&quot;&quot;Compute factorial of n recursively.&quot;&quot;&quot;</span>   <span class="c1"># 这就是注释</span>
+    <span class="k">return</span> <span class="mi">1</span> <span class="k">if</span> <span class="n">n</span> <span class="o">&lt;=</span> <span class="mi">1</span> <span class="k">else</span> <span class="n">n</span> <span class="o">*</span> <span class="n">fact</span><span class="p">(</span><span class="n">n</span> <span class="o">-</span> <span class="mi">1</span><span class="p">)</span>     <span class="c1"># 这就是代码</span>
+</code></pre></div>
+
+<p>模型只是在做 next-token prediction，但<strong>注释和代码天然在序列上相邻</strong>——预测下一行代码时模型必须利用上面的 docstring 当上下文，于是它<strong>自动学会了"注释 → 代码"的映射</strong>，根本不需要标注。这是为什么 GPT 时代训练数据规模一下子从 6M 对（CodeSearchNet）跃升到上百亿 token：<strong>全网代码都是数据</strong>。</p>
+<h3 id="73-attention-rnn">7.3 Attention 替换 RNN：彻底解决信息瓶颈</h3>
+<p>Seq2Seq 必须用一个固定向量 <code>c</code> 串起 encoder 和 decoder，attention 只是补丁。Transformer 直接把整条序列摊平：每个位置都能直接看到前面所有位置（<code>model.py:53-70</code>）。<strong>信息瓶颈消失了</strong>。配合 KV cache、long context、scaling laws，这条路一直走到了今天的 GPT-4 / Claude。</p>
+<h3 id="74-fim-seq2seq">7.4 FIM：把 seq2seq 的"中间填空"也自监督化</h3>
+<p><code>(prefix, middle, suffix)</code> 任务在 seq2seq 时代必须人工切分配对。本项目用的 FIM trick（<code>tokenizer.py</code> 的 <code>&lt;|fim_prefix|&gt;</code> / <code>&lt;|fim_middle|&gt;</code> / <code>&lt;|fim_suffix|&gt;</code>，<code>model.py:121-124</code> 的 ID 默认值，<code>train.py:get_batch</code> 的 50% 概率变换）让自监督流水线<strong>顺手</strong>学会了中间填空——再次把"需要标注的能力"压回到"自监督序列"里。这是第三次质变在 CodeGPT 上的具体实现。</p>
+<hr />
+<h2 id="8">8. 搜索维度的进化史：把五代放在同一张坐标系</h2>
+<p>到此为止可以看出一条更深的规律——<strong>这五代根本就是同一个故事</strong>：「搜索」一直在做，每一代只是<strong>给搜索空间加一个新维度</strong>。把它画在同一张坐标系里：</p>
+<div class="highlight"><pre><span></span><code>代际    搜索空间                                      维度类型              单次查询的&quot;操作&quot;
+─────  ────────────────────────────────────────────  ────────────────────  ──────────────────────────────────
+1.     字符串                                         1 维离散              re.search / 倒排索引查表
+2.     字符串 + AST + 引用 + CFG + DFG                多维离散结构          图遍历 / Datalog / Cypher
+3.     字符串 + 结构 + ℝ^d                            + 1 个连续维度        q @ V.T  内积
+4.     字符串 + 结构 + ℝ^d + 时间轴 T                  + 1 个时序维度        encode → ctx → decode 自回归
+5.     字符串 + 结构 + ℝ^d × T × L 层 × H 头           + 深度 + 多头并行     一次 forward = L·H 次高维 attention
+                                                       (CodeGPT: L=12, H=12,
+                                                        即 144 次/token)
+</code></pre></div>
+
+<h3 id="81">8.1 一个统一的伪代码视角</h3>
+<p>把五代的"核心操作"用同一个伪代码框架表达，区别全在 <code>space</code> 和 <code>metric</code> 两个参数上：</p>
+<div class="highlight"><pre><span></span><code><span class="c1"># 五代搜索的统一形式</span>
+<span class="k">def</span><span class="w"> </span><span class="nf">search</span><span class="p">(</span><span class="n">query</span><span class="p">,</span> <span class="n">space</span><span class="p">,</span> <span class="n">metric</span><span class="p">,</span> <span class="n">k</span><span class="o">=</span><span class="mi">5</span><span class="p">):</span>
+<span class="w">    </span><span class="sd">&quot;&quot;&quot;</span>
+<span class="sd">    space:  被搜索的对象集合（已建索引）</span>
+<span class="sd">    metric: 衡量 query 和 space 中元素相似度的函数</span>
+<span class="sd">    &quot;&quot;&quot;</span>
+    <span class="k">return</span> <span class="n">top_k</span><span class="p">(</span><span class="n">space</span><span class="p">,</span> <span class="n">key</span><span class="o">=</span><span class="k">lambda</span> <span class="n">x</span><span class="p">:</span> <span class="n">metric</span><span class="p">(</span><span class="n">query</span><span class="p">,</span> <span class="n">x</span><span class="p">),</span> <span class="n">k</span><span class="o">=</span><span class="n">k</span><span class="p">)</span>
+
+<span class="c1"># 第一代：space = 倒排索引里的文档；metric = TF-IDF / 子串匹配</span>
+<span class="c1"># 第二代：space = SCIP/CPG 图节点；   metric = 图模式合一 / Datalog 规则可满足性</span>
+<span class="c1"># 第三代：space = ANN 索引里的向量；  metric = q @ v  (内积 / 余弦)</span>
+<span class="c1"># 第四代:  space 在每一步动态变化，   metric = decoder_state · encoder_h  (Bahdanau attention)</span>
+<span class="c1">#         &quot;搜索&quot;沿时间轴展开 T 次</span>
+<span class="c1"># 第五代:  space = 历史 token 的 K, V 矩阵； metric = q @ k.T （softmax）</span>
+<span class="c1">#         在 L 层 × H 头的高维空间里反复搜索 L·H·T 次</span>
+</code></pre></div>
+
+<p>最后一行就是 <code>model.py:66-70</code>：</p>
+<div class="highlight"><pre><span></span><code><span class="c1"># model.py:66-70 —— 第五代每一层每一头都在做的搜索</span>
+<span class="n">att</span> <span class="o">=</span> <span class="p">(</span><span class="n">q</span> <span class="o">@</span> <span class="n">k</span><span class="o">.</span><span class="n">transpose</span><span class="p">(</span><span class="o">-</span><span class="mi">2</span><span class="p">,</span> <span class="o">-</span><span class="mi">1</span><span class="p">))</span> <span class="o">*</span> <span class="p">(</span><span class="mf">1.0</span> <span class="o">/</span> <span class="n">math</span><span class="o">.</span><span class="n">sqrt</span><span class="p">(</span><span class="n">k</span><span class="o">.</span><span class="n">size</span><span class="p">(</span><span class="o">-</span><span class="mi">1</span><span class="p">)))</span>   <span class="c1"># q · K^T = &quot;和谁相似？&quot;</span>
+<span class="n">att</span> <span class="o">=</span> <span class="n">att</span><span class="o">.</span><span class="n">masked_fill</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">bias</span><span class="p">[:,</span> <span class="p">:,</span> <span class="p">:</span><span class="n">T</span><span class="p">,</span> <span class="p">:</span><span class="n">T</span><span class="p">]</span> <span class="o">==</span> <span class="mi">0</span><span class="p">,</span> <span class="nb">float</span><span class="p">(</span><span class="s1">&#39;-inf&#39;</span><span class="p">))</span>  <span class="c1"># 因果掩码：只搜过去</span>
+<span class="n">att</span> <span class="o">=</span> <span class="n">F</span><span class="o">.</span><span class="n">softmax</span><span class="p">(</span><span class="n">att</span><span class="p">,</span> <span class="n">dim</span><span class="o">=-</span><span class="mi">1</span><span class="p">)</span>                                       <span class="c1"># 归一化为软分布</span>
+<span class="n">y</span> <span class="o">=</span> <span class="n">att</span> <span class="o">@</span> <span class="n">v</span>                                                        <span class="c1"># 按相似度加权拷贝 V</span>
+</code></pre></div>
+
+<p>把它和 §3.1 的 Sourcegraph <code>scip_index.edges_to(symbol_id)</code>、§4 的 <code>doc_vecs @ q_vec</code>、§5 的 Bahdanau <code>softmax(score) @ enc_h</code> 摆在一起——<strong>它们是同一种操作的不同投影</strong>：在某个空间里找邻居。区别只是<strong>空间的维度和性质</strong>：</p>
+<table>
+<thead>
+<tr>
+<th>操作</th>
+<th>空间</th>
+<th>距离/相似度</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>re.search(pat, doc)</code></td>
+<td>字符串</td>
+<td>子串/正则匹配（0/1）</td>
+</tr>
+<tr>
+<td><code>scip_index.edges_to(sym)</code></td>
+<td>离散符号引用图</td>
+<td>图上 1 跳邻接（0/1）</td>
+</tr>
+<tr>
+<td><code>cpg.reachableBy(...)</code></td>
+<td>Code Property Graph</td>
+<td>图上多跳可达（带数据流约束）</td>
+</tr>
+<tr>
+<td><code>doc_vecs @ q_vec</code></td>
+<td>$\mathbb{R}^{768}$</td>
+<td>内积/余弦（连续）</td>
+</tr>
+<tr>
+<td><code>softmax(score) @ enc_h</code></td>
+<td>$\mathbb{R}^d \times T_{src}$</td>
+<td>Bahdanau 加权（连续 + 时序）</td>
+</tr>
+<tr>
+<td><code>model.py:66-70</code> 的 attention</td>
+<td>$\mathbb{R}^d \times T \times L \times H$</td>
+<td>Q-K 内积 + softmax + 加权 V</td>
+</tr>
+</tbody>
+</table>
+<h3 id="82">8.2 维度提升带来的两个直接好处</h3>
+<p>每加一个维度，召回曲线和"能解决的问题"都跳一档：</p>
+<ol>
+<li>
+<p><strong>"含义相同字面不同"的代码越来越好找</strong>。
+   - 1 维（字符串）：改个变量名就找不到。
+   - 多维离散结构（CPG）：能找到所有"在同一控制流里把用户输入流到危险 sink"的代码。
+   - 连续向量：能找到"功能相近，但根本没共享 token"的代码（Python <code>for ... in</code> ↔ JS <code>for ... of</code>）。
+   - GPT 的 144 次 attention：把上面这些<strong>全部当 building block 复用</strong>，再叠 12 层抽象。</p>
+</li>
+<li>
+<p><strong>能"写"出库里不存在的组合</strong>。一旦搜索空间从离散变成连续，softmax 就能在两个邻居之间<strong>插值</strong>——而插值出来的点对应"训练集里没见过但合乎语法语义的代码"。这就是"生成"的数学本质：<strong>在连续高维空间里取一个介于已知点之间的位置</strong>。第二代再强大也插值不出新代码，因为离散图节点之间没有"中间状态"。</p>
+</li>
+</ol>
+<h3 id="83">8.3 为什么"搜索维度"是统一视角而不是比喻</h3>
+<p>如果把所有五代写成一个张量的形状，差异一目了然：</p>
+<div class="highlight"><pre><span></span><code>第一代  shape = (T_query,)                    char level
+第二代  shape = (N_nodes, K_edge_types)       discrete graph
+第三代  shape = (N_docs, d)                   first continuous axis
+第四代  shape = (T, d)                        + time axis
+第五代  shape = (T, d, L, H)                  + depth + heads
+</code></pre></div>
+
+<p>每加一维，存储和算力 cost 都涨一截，但<strong>模型能区分的"代码邻居"密度也指数级上升</strong>。这正是 scaling laws 描述的现象——不是参数变多就变聪明，而是<strong>搜索空间的有效维度变高</strong>，"每条 query 的搜索精度"才指数级上升。</p>
+<h3 id="84-rag-prompt">8.4 RAG = 把第二代/第三代检索拼回第五代的 prompt</h3>
+<p>理解了这个视角，RAG 就不再是"外挂记忆"那么模糊的概念，而是<strong>精确的"维度回收"</strong>：</p>
+<ul>
+<li>第五代 GPT 的 <code>block_size</code>（CodeGPT 是 1024，GPT-4 是 ~128k）有上限；</li>
+<li>你的私有代码库可能是 1e9 token，<strong>装不进 prompt</strong>；</li>
+<li>解法：用第三代向量搜索（或第二代 SCIP 图搜索）从私有库里<strong>先召回</strong>几段最相关的代码，再拼到 GPT 的 prompt 里。</li>
+</ul>
+<p>这就是为什么 Sourcegraph + LLM 是一套漂亮的组合：Sourcegraph 用第二代图搜索给出<strong>精确</strong>的引用/调用，向量搜索给出<strong>模糊语义</strong>召回，GPT 在它们的并集上做生成。三代搜索叠在一起，每一代各自负责自己最擅长的维度。</p>
+<hr />
+<h2 id="9">9. 三次关键性转变的本质（在维度图上看就是三次维度跃迁）</h2>
+<p>把上面五代之间的边界标出来，最重要的三条线分别对应<strong>维度类型的切换</strong>：</p>
+<table>
+<thead>
+<tr>
+<th>转变</th>
+<th>边界</th>
+<th>维度跃迁</th>
+<th>数学上发生了什么</th>
+<th>训练数据规模变化</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><strong>#1 离散结构 → 连续向量</strong></td>
+<td>第二代 → 第三代</td>
+<td>离散图节点 → $\mathbb{R}^d$</td>
+<td>相似度从 <code>图同构 / Datalog 可满足</code> 变成 <code>q @ V.T</code> —— 第一次有了"软语义近邻"和<strong>插值</strong></td>
+<td>不变（仍是无标注）</td>
+</tr>
+<tr>
+<td><strong>#2 检索 → 生成</strong></td>
+<td>第三代 → 第四代</td>
+<td>加一个<strong>时间维 T</strong></td>
+<td>从"找最近向量"变成"沿时间轴自回归 + cross-entropy" —— 第一次能写出<strong>库里没有</strong>的代码</td>
+<td>仍需配对，规模约 1e6 对</td>
+</tr>
+<tr>
+<td><strong>#3 配对 → 自监督序列</strong></td>
+<td>第四代 → 第五代</td>
+<td>加<strong>深度 L 和多头 H</strong></td>
+<td>把 encoder-decoder 折叠成 decoder-only + causal mask；任何序列都是数据</td>
+<td><strong>1e4 倍跃升</strong>，1e6 → 1e10+ token</td>
+</tr>
+</tbody>
+</table>
+<p>第一代到第二代的边界没列进"质变"——因为它<strong>仍然是离散结构搜索</strong>，只是从 1 维字符升到了多维图。它是搜索维度史里非常关键的一步（让代码搜索第一次能跨命名风格、跨调用层级），但<strong>类型上没变</strong>。真正的类型切换发生在三次质变上。</p>
+<p>第三次转变是规模变革的真正源头：<strong>前两次是"如何更好地表征"，第三次是"如何把全世界的代码都变成数据"。</strong> Scaling laws、emergent abilities、in-context learning 都建立在这次转变之上——没有自监督，单靠人工标注永远训不出 GPT-3 这个量级的模型。</p>
+<p>另一种理解视角：<strong>每一次转变都把上一代的"必须人来做的事"消化进了模型自己</strong>：</p>
+<ul>
+<li>第一代：人来想关键词；</li>
+<li>第二代：人来写 Datalog/Cypher 查询（Sourcegraph 替你预算了 SCIP 图）；</li>
+<li>第三代：人来想 query 描述（embedding 模型替你想了同义词、跨语言同形结构）；</li>
+<li>第四代：人来标 (comment, code) 配对（seq2seq 替你学了从描述到代码）；</li>
+<li>第五代：模型靠相邻 token 自己学（不需要人标配对了）。</li>
+</ul>
+<p>下一次转变（也许已经在发生）是 <strong>从"自监督序列"到"自我对弈/RL 反馈"</strong>——模型自己生成数据、自己评分、自己迭代。这是另一篇文档（<a href="SYNTHETIC_DATA.md"><code>SYNTHETIC_DATA.md</code></a> / <a href="SFT_FORGETTING_AND_MOE.md"><code>SFT_FORGETTING_AND_MOE.md</code></a>）的内容。</p>
+<hr />
+<h2 id="10-codegpt">10. CodeGPT 在这条进化线上的位置</h2>
+<p>把本仓库的代码逐行对到上面五代里：</p>
+<table>
+<thead>
+<tr>
+<th>仓库元素</th>
+<th>属于哪一代的设计</th>
+<th>对应行号</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>tokenizer.py</code> GPT-2 BPE + 16 个语言特殊 token</td>
+<td>第三代（分布式表示）的延续</td>
+<td><code>tokenizer.py</code> SPECIAL_TOKENS</td>
+</tr>
+<tr>
+<td><code>wte = nn.Embedding(50304, 768)</code></td>
+<td>第三代 Word2Vec 的端到端版本</td>
+<td><code>model.py:183</code></td>
+</tr>
+<tr>
+<td><code>CausalSelfAttention.forward</code> 里的 <code>q @ k.T + softmax + @ v</code></td>
+<td>第五代的核心；同时也是第四代 Bahdanau attention 的"自注意力"推广</td>
+<td><code>model.py:51-73</code></td>
+</tr>
+<tr>
+<td><code>tril</code> 因果掩码</td>
+<td>第五代 decoder-only 的标志</td>
+<td><code>model.py:46-49</code>、<code>67</code></td>
+</tr>
+<tr>
+<td><code>F.cross_entropy(..., ignore_index=-1)</code></td>
+<td>四代以来的同一个 loss —— seq2seq 也用、GPT 也用</td>
+<td><code>model.py:192</code></td>
+</tr>
+<tr>
+<td><code>apply_fim_transform</code> + <code>&lt;|fim_*|&gt;</code></td>
+<td>第五代把 seq2seq 的"中间填空"自监督化</td>
+<td><code>tokenizer.py</code>、<code>train.py:get_batch</code></td>
+</tr>
+<tr>
+<td><code>generate()</code> 里的 <code>top_k</code> / <code>top_p</code> / <code>repetition_penalty</code></td>
+<td>第五代的采样脚手架——和 seq2seq beam search 的精神延续</td>
+<td><code>model.py:279-310</code>（约）</td>
+</tr>
+</tbody>
+</table>
+<p><strong>一个有意思的点</strong>：<code>model.py</code> 里那一行 <code>tok_emb = self.transformer.wte(idx)</code>（第 183 行）和 §4 里那个 10 行的 Word2Vec Skip-gram 在数学上是同一类操作——查表、得到 token 的语义坐标。区别只是 GPT 把这张表和 12 层 Transformer 一起端到端训练，让坐标系<strong>随上下文动态精调</strong>（contextualized embedding）。所以"GPT 杀死 Word2Vec"并不准确——更准确的说法是：<strong>GPT 把 Word2Vec 内化成了自己的第一层</strong>，然后又叠了 12 层注意力上去。</p>
+<p>同样的关系也成立于 Seq2Seq：<strong>GPT 没有否定 Seq2Seq，而是把它压扁成了 decoder-only</strong>。Bahdanau attention 那个 <code>softmax(score) · enc_h</code> 的式子，几乎一字不差地出现在 <code>model.py:66-70</code> 的自注意力里。</p>
+<p><strong>对第二代（Sourcegraph / CodeQL / Joern）也是同样的关系</strong>：CodeGPT 没有"否定"图查询，而是把"在图上找邻居"的能力<strong>通过梯度下降隐式学进了权重</strong>——GPT 的多头里有些头会自动学到"指向同一个变量的所有引用"、"同一函数的所有调用点"，这就是第二代静态分析图被压成连续向量后的样子。所以工业界最强的代码工具往往是 <strong>Sourcegraph + GPT</strong> 的组合：精确的图搜索 + 软语义生成，各自占据自己最擅长的维度（参见 §8.4 RAG 部分）。</p>
+<hr />
+<h2 id="11">11. 小结</h2>
+<p>五代演化、三次质变，本质是<strong>同一件事</strong>：搜索维度的持续提升。</p>
+<blockquote>
+<p><strong>代码生成的进化史 = 搜索空间维度提升的历史 = "程序员要做的事"逐步被模型吸收的历史。</strong></p>
+<ul>
+<li>grep 时代：搜索空间 = 字符串；人想关键词、人写代码。</li>
+<li>Sourcegraph / CodeQL 时代：+ AST + 引用图 + 控制流 + 数据流；人写图查询语言，<strong>仍然只能找现成代码</strong>。</li>
+<li>Word2Vec 时代：+ 连续向量 $\mathbb{R}^d$；模型替你想同义词，人还是要写代码——但<strong>第一次有了"插值"能力</strong>。</li>
+<li>Seq2Seq 时代：+ 时间维 T；模型替你写代码，但人还要标注 (注释, 代码) 对子。</li>
+<li>GPT 时代：+ 深度 L + 多头 H；连配对都不用标了——模型从 GitHub 上"读"出来。<strong>每生成 1 个 token = 144 次高维空间检索</strong>。</li>
+</ul>
+</blockquote>
+<p>每一代加进去的维度都不会丢——GPT 内部保留了前面所有代际的能力：第一代查表（<code>wte</code> embedding 查表）、第二代结构搜索（多头中"指向同一符号的所有引用"那种头）、第三代向量内积（每层 attention 的 <code>q @ k.T</code>）、第四代时序展开（自回归生成）。<strong>第五代是前四代的叠加态</strong>。</p>
+<p>这条线还没有走到尽头。下一站是模型把"评估自己"和"造自己的训练数据"也吸收进去（参见 <a href="SYNTHETIC_DATA.md"><code>SYNTHETIC_DATA.md</code></a>、<a href="SFT_RL_INFERENCE_MECHANICS.md"><code>SFT_RL_INFERENCE_MECHANICS.md</code></a>）。但每一次转变背后的逻辑是一样的：<strong>找到目前还需要人来做的那一步，把它变成可微分、可自监督的张量操作；同时给搜索空间加一个新维度</strong>。</p>
+<hr />
+<h2 id="_2">延伸阅读</h2>
+<ul>
+<li><a href="GPT_AS_SUPER_SEARCH.md"><code>GPT_AS_SUPER_SEARCH.md</code></a> — 把 GPT 当成"第四代搜索引擎"，从另一个视角讲同一件事</li>
+<li><a href="DEEP_DIVE.md"><code>DEEP_DIVE.md</code></a> — RNN → LSTM → Seq2Seq → Transformer → GPT 的架构演化细节</li>
+<li><a href="COMPRESSION_IS_INTELLIGENCE.md"><code>COMPRESSION_IS_INTELLIGENCE.md</code></a> — 为什么"预测下一个 token"这个 loss 能学出代码能力</li>
+<li><a href="SYNTHETIC_DATA.md"><code>SYNTHETIC_DATA.md</code></a> — 第四代之后的方向：模型自己造训练数据</li>
+</ul>
+    </div>
+  </article>
+
+</main>
+</body>
+</html>
