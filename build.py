@@ -161,6 +161,34 @@ def render_post(info: dict, body_html: str, post_tpl: str) -> None:
     write(POSTS / f"{info['slug']}.html", page)
 
 
+def parse_existing_index() -> list[dict]:
+    """Recover post info from the previously rendered index.html, if present."""
+    f = ROOT / "index.html"
+    if not f.exists():
+        return []
+    text = f.read_text(encoding="utf-8")
+    items: list[dict] = []
+    for li in re.finditer(
+        r'<li><span class="post-date">([^<]+)</span>\s*'
+        r'<a href="([^"]+)">(.*?)</a>'
+        r'(?:\s*<span class="post-summary">—\s*(.*?)</span>)?\s*</li>',
+        text,
+        re.S,
+    ):
+        date, href, title, summary = li.groups()
+        slug_m = re.match(r"posts/(.+)\.html$", href)
+        items.append(
+            {
+                "title": html.unescape(title.strip()),
+                "date": date.strip(),
+                "slug": slug_m.group(1) if slug_m else href,
+                "summary": html.unescape((summary or "").strip()),
+                "href": href,
+            }
+        )
+    return items
+
+
 def render_index(posts: list[dict], index_tpl: str) -> None:
     posts = sorted(posts, key=lambda p: p["date"], reverse=True)
     if posts:
@@ -228,14 +256,16 @@ def build(targets: list[Path] | None = None) -> None:
     index_tpl = read_template("index.html")
 
     if targets is None:
-        # full rebuild — clear existing rendered posts
-        for p in POSTS.glob("*.html"):
-            p.unlink()
         target_set: set[Path] = set(DOCS.glob("*.md"))
     else:
         target_set = set(targets)
 
-    posts: list[dict] = []
+    by_slug: dict[str, dict] = {
+        p["slug"]: p
+        for p in parse_existing_index()
+        if (POSTS / f"{p['slug']}.html").exists()
+    }
+
     rendered_count = 0
     for md_path in sorted(DOCS.glob("*.md")):
         should_render = md_path in target_set
@@ -243,8 +273,9 @@ def build(targets: list[Path] | None = None) -> None:
         if should_render and body_html is not None:
             render_post(info, body_html, post_tpl)
             rendered_count += 1
-        posts.append(info)
+        by_slug[info["slug"]] = info
 
+    posts = list(by_slug.values())
     render_index(posts, index_tpl)
     copy_assets()
 
