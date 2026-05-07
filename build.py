@@ -8,12 +8,15 @@ Static site generator for xlisp.github.io.
 
 Usage:
     pip install markdown pygments
-    python build.py
+    python build.py                    # full rebuild (renders every docs/*.md)
+    python build.py path/to/foo.md     # incremental: render only foo.md, then refresh index
+    python build.py a.md b.md ...      # multiple files OK
 """
 
 from __future__ import annotations
 
 import datetime as dt
+import html
 import re
 import shutil
 import sys
@@ -37,6 +40,10 @@ ASSETS = ROOT / "assets"
 
 SITE_TITLE = "Steve Chan — xlisp"
 AUTHOR = "Steve Chan"
+SITE_DESCRIPTION = (
+    "Steve Chan — Clojure / Emacs / Python Lisp hacker. Notes on machine "
+    "learning, deep learning, reinforcement learning, and large language models."
+)
 
 
 def slugify(name: str) -> str:
@@ -77,12 +84,28 @@ def render_markdown(body: str) -> tuple[str, str | None]:
             "codehilite": {"guess_lang": False, "css_class": "highlight"},
         },
     )
-    html = md.convert(body)
+    out = md.convert(body)
     title = None
-    m = re.search(r"<h1[^>]*>(.*?)</h1>", html, re.S)
+    m = re.search(r"<h1[^>]*>(.*?)</h1>", out, re.S)
     if m:
         title = re.sub(r"<[^>]+>", "", m.group(1)).strip()
-    return html, title
+    return out, title
+
+
+def first_paragraph_text(body: str, limit: int = 160) -> str:
+    """Extract a plain-text snippet from the body for use as a description."""
+    for raw in body.splitlines():
+        line = raw.strip()
+        if not line:
+            continue
+        if line.startswith(("#", ">", "-", "*", "`", "|", "!")):
+            continue
+        line = re.sub(r"!\[[^\]]*\]\([^)]+\)", "", line)
+        line = re.sub(r"\[([^\]]+)\]\([^)]+\)", r"\1", line)
+        line = re.sub(r"[*_`]+", "", line).strip()
+        if line:
+            return line if len(line) <= limit else line[: limit - 1].rstrip() + "…"
+    return ""
 
 
 def read_template(name: str) -> str:
@@ -95,57 +118,60 @@ def write(path: Path, content: str) -> None:
     print(f"  wrote {path.relative_to(ROOT)}")
 
 
-def build() -> None:
-    if not DOCS.exists():
-        DOCS.mkdir(parents=True)
-    if POSTS.exists():
-        for p in POSTS.glob("*.html"):
-            p.unlink()
-    POSTS.mkdir(exist_ok=True)
+def post_meta(md_path: Path, render_html: bool) -> tuple[dict, str | None]:
+    """Read a markdown file, return (meta-dict, rendered-html-or-None)."""
+    raw = md_path.read_text(encoding="utf-8")
+    meta, body = parse_front_matter(raw)
+    rendered = None
+    h1_title = None
+    if render_html:
+        rendered, h1_title = render_markdown(body)
+    else:
+        m = re.search(r"^#\s+(.+)$", body, re.M)
+        if m:
+            h1_title = m.group(1).strip()
 
-    post_tpl = read_template("post.html")
-    index_tpl = read_template("index.html")
+    title = meta.get("title") or h1_title or md_path.stem
+    date = meta.get("date") or dt.date.fromtimestamp(md_path.stat().st_mtime).isoformat()
+    slug = meta.get("slug") or slugify(md_path.stem)
+    summary = meta.get("summary") or first_paragraph_text(body)
 
-    posts: list[dict] = []
-    for md_path in sorted(DOCS.glob("*.md")):
-        raw = md_path.read_text(encoding="utf-8")
-        meta, body = parse_front_matter(raw)
-        html, h1_title = render_markdown(body)
+    return (
+        {
+            "title": title,
+            "date": date,
+            "slug": slug,
+            "summary": summary,
+            "href": f"posts/{slug}.html",
+        },
+        rendered,
+    )
 
-        title = meta.get("title") or h1_title or md_path.stem
-        date = meta.get("date") or dt.date.fromtimestamp(
-            md_path.stat().st_mtime
-        ).isoformat()
-        slug = meta.get("slug") or slugify(md_path.stem)
-        summary = meta.get("summary", "")
 
-        out_path = POSTS / f"{slug}.html"
-        page = (
-            post_tpl.replace("{{title}}", title)
-            .replace("{{date}}", date)
-            .replace("{{author}}", AUTHOR)
-            .replace("{{site_title}}", SITE_TITLE)
-            .replace("{{content}}", html)
-        )
-        write(out_path, page)
+def render_post(info: dict, body_html: str, post_tpl: str) -> None:
+    description = info["summary"] or SITE_DESCRIPTION
+    page = (
+        post_tpl.replace("{{title}}", html.escape(info["title"]))
+        .replace("{{date}}", info["date"])
+        .replace("{{author}}", AUTHOR)
+        .replace("{{site_title}}", SITE_TITLE)
+        .replace("{{description}}", html.escape(description, quote=True))
+        .replace("{{content}}", body_html)
+    )
+    write(POSTS / f"{info['slug']}.html", page)
 
-        posts.append(
-            {
-                "title": title,
-                "date": date,
-                "slug": slug,
-                "summary": summary,
-                "href": f"posts/{slug}.html",
-            }
-        )
 
-    posts.sort(key=lambda p: p["date"], reverse=True)
-
+def render_index(posts: list[dict], index_tpl: str) -> None:
+    posts = sorted(posts, key=lambda p: p["date"], reverse=True)
     if posts:
         items = "\n".join(
             f'        <li><span class="post-date">{p["date"]}</span> '
-            f'<a href="{p["href"]}">{p["title"]}</a>'
-            + (f' <span class="post-summary">— {p["summary"]}</span>' if p["summary"] else "")
+            f'<a href="{p["href"]}">{html.escape(p["title"])}</a>'
+            + (
+                f' <span class="post-summary">— {html.escape(p["summary"])}</span>'
+                if p["summary"]
+                else ""
+            )
             + "</li>"
             for p in posts
         )
@@ -156,18 +182,85 @@ def build() -> None:
             "<code>docs/</code> and run <code>python build.py</code>.</p>"
         )
 
-    index_html = index_tpl.replace("{{site_title}}", SITE_TITLE).replace(
-        "{{post_list}}", post_list
-    ).replace("{{year}}", str(dt.date.today().year))
+    index_html = (
+        index_tpl.replace("{{site_title}}", SITE_TITLE)
+        .replace("{{description}}", html.escape(SITE_DESCRIPTION, quote=True))
+        .replace("{{post_list}}", post_list)
+        .replace("{{year}}", str(dt.date.today().year))
+    )
     write(ROOT / "index.html", index_html)
 
+
+def copy_assets() -> None:
     if ASSETS.exists():
         for css in ASSETS.glob("*.css"):
             shutil.copy2(css, ROOT / css.name)
 
-    print(f"\nBuilt {len(posts)} post(s).")
+
+def resolve_targets(args: list[str]) -> list[Path]:
+    """Return md paths to render. Files outside docs/ are copied into docs/."""
+    out: list[Path] = []
+    for a in args:
+        p = Path(a).expanduser().resolve()
+        if not p.exists():
+            sys.stderr.write(f"file not found: {a}\n")
+            sys.exit(1)
+        if p.suffix.lower() != ".md":
+            sys.stderr.write(f"not a markdown file: {a}\n")
+            sys.exit(1)
+        DOCS.mkdir(parents=True, exist_ok=True)
+        try:
+            p.relative_to(DOCS)
+            out.append(p)
+        except ValueError:
+            dst = DOCS / p.name
+            shutil.copy2(p, dst)
+            print(f"  copied {p} -> {dst.relative_to(ROOT)}")
+            out.append(dst)
+    return out
+
+
+def build(targets: list[Path] | None = None) -> None:
+    DOCS.mkdir(parents=True, exist_ok=True)
+    POSTS.mkdir(exist_ok=True)
+
+    post_tpl = read_template("post.html")
+    index_tpl = read_template("index.html")
+
+    if targets is None:
+        # full rebuild — clear existing rendered posts
+        for p in POSTS.glob("*.html"):
+            p.unlink()
+        target_set: set[Path] = set(DOCS.glob("*.md"))
+    else:
+        target_set = set(targets)
+
+    posts: list[dict] = []
+    rendered_count = 0
+    for md_path in sorted(DOCS.glob("*.md")):
+        should_render = md_path in target_set
+        info, body_html = post_meta(md_path, render_html=should_render)
+        if should_render and body_html is not None:
+            render_post(info, body_html, post_tpl)
+            rendered_count += 1
+        posts.append(info)
+
+    render_index(posts, index_tpl)
+    copy_assets()
+
+    if targets is None:
+        print(f"\nFull build: rendered {rendered_count} post(s).")
+    else:
+        names = ", ".join(p.name for p in targets)
+        print(f"\nIncremental build: rendered {rendered_count} post(s) ({names}); index refreshed.")
 
 
 if __name__ == "__main__":
-    print("Building xlisp.github.io ...")
-    build()
+    args = sys.argv[1:]
+    if args:
+        targets = resolve_targets(args)
+        print(f"Building xlisp.github.io (incremental: {len(targets)} file) ...")
+        build(targets=targets)
+    else:
+        print("Building xlisp.github.io (full) ...")
+        build()
