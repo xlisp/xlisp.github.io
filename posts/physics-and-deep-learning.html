@@ -848,44 +848,144 @@
     </div>
   </article>
 
-  <section class="ask-ai" id="ask-ai">
-    <h2>Ask AI about this article</h2>
-    <p class="ask-ai-hint" id="ask-ai-hint">
-      Powered by Chrome built-in AI (Gemini Nano). Runs entirely on your device — no data leaves the browser.
-    </p>
-    <div class="ask-ai-controls">
-      <input id="ask-ai-input" type="text" placeholder="Ask anything about this post…" disabled>
-      <button id="ask-ai-btn" disabled>Ask</button>
-    </div>
-    <pre class="ask-ai-status" id="ask-ai-status"></pre>
-    <div class="ask-ai-answer" id="ask-ai-answer"></div>
-  </section>
-
 </main>
+
+<!-- Floating Ask-AI chat widget -->
+<button class="ai-fab" id="ai-fab" aria-label="Ask AI about this article" title="Ask AI about this article">
+  <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+    <path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"/>
+  </svg>
+  <span class="ai-fab-label">Ask AI</span>
+</button>
+
+<div class="ai-panel" id="ai-panel" role="dialog" aria-labelledby="ai-panel-title" aria-hidden="true">
+  <header class="ai-panel-head">
+    <div class="ai-panel-title-wrap">
+      <span class="ai-dot"></span>
+      <h3 id="ai-panel-title">Ask AI about this post</h3>
+    </div>
+    <div class="ai-panel-actions">
+      <button class="ai-icon-btn" id="ai-clear" title="Clear conversation" aria-label="Clear">
+        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><polyline points="3 6 5 6 21 6"/><path d="M19 6l-1 14a2 2 0 0 1-2 2H8a2 2 0 0 1-2-2L5 6"/><path d="M10 11v6M14 11v6"/><path d="M9 6V4a1 1 0 0 1 1-1h4a1 1 0 0 1 1 1v2"/></svg>
+      </button>
+      <button class="ai-icon-btn" id="ai-close" title="Close" aria-label="Close">
+        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>
+      </button>
+    </div>
+  </header>
+
+  <div class="ai-messages" id="ai-messages">
+    <div class="ai-empty" id="ai-empty">
+      <p class="ai-empty-title">On-device AI · Gemini Nano</p>
+      <p class="ai-empty-sub">Ask anything about this article. Runs in your browser — nothing leaves your device.</p>
+    </div>
+  </div>
+
+  <div class="ai-status" id="ai-status" hidden></div>
+
+  <form class="ai-composer" id="ai-form">
+    <textarea id="ai-input" rows="1" placeholder="Ask about this post…" autocomplete="off"></textarea>
+    <button type="submit" id="ai-send" class="ai-send" aria-label="Send" disabled>
+      <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><line x1="22" y1="2" x2="11" y2="13"/><polygon points="22 2 15 22 11 13 2 9 22 2"/></svg>
+    </button>
+  </form>
+</div>
 
 <script>
 (function () {
   const POST_TITLE = "\u7269\u7406\u5b66\u7684\u5f71\u5b50\uff1a\u91cf\u5b50\u529b\u5b66\u4e0e\u7edf\u8ba1\u529b\u5b66\u5982\u4f55\u5851\u9020\u4e86\u6df1\u5ea6\u5b66\u4e60";
   const contentEl = document.querySelector('article .content');
-  const inputEl = document.getElementById('ask-ai-input');
-  const btnEl = document.getElementById('ask-ai-btn');
-  const statusEl = document.getElementById('ask-ai-status');
-  const answerEl = document.getElementById('ask-ai-answer');
-  const hintEl = document.getElementById('ask-ai-hint');
 
-  function setStatus(msg, cls) {
-    statusEl.textContent = msg || '';
-    statusEl.className = 'ask-ai-status' + (cls ? ' ' + cls : '');
-  }
+  const fab = document.getElementById('ai-fab');
+  const panel = document.getElementById('ai-panel');
+  const closeBtn = document.getElementById('ai-close');
+  const clearBtn = document.getElementById('ai-clear');
+  const msgsEl = document.getElementById('ai-messages');
+  const emptyEl = document.getElementById('ai-empty');
+  const statusEl = document.getElementById('ai-status');
+  const formEl = document.getElementById('ai-form');
+  const inputEl = document.getElementById('ai-input');
+  const sendBtn = document.getElementById('ai-send');
 
   function articleText() {
     if (!contentEl) return '';
-    const t = (contentEl.innerText || contentEl.textContent || '').trim();
-    return t.replace(/\s+\n/g, '\n').replace(/\n{3,}/g, '\n\n');
+    return (contentEl.innerText || contentEl.textContent || '')
+      .replace(/[ \t]+\n/g, '\n')
+      .replace(/\n{3,}/g, '\n\n')
+      .trim();
   }
 
+  function setStatus(msg, cls) {
+    if (!msg) { statusEl.hidden = true; statusEl.textContent = ''; statusEl.className = 'ai-status'; return; }
+    statusEl.hidden = false;
+    statusEl.textContent = msg;
+    statusEl.className = 'ai-status' + (cls ? ' ' + cls : '');
+  }
+
+  function hideEmpty() { if (emptyEl) emptyEl.style.display = 'none'; }
+
+  function appendBubble(role, text) {
+    hideEmpty();
+    const wrap = document.createElement('div');
+    wrap.className = 'ai-msg ai-msg-' + role;
+    const bubble = document.createElement('div');
+    bubble.className = 'ai-bubble';
+    bubble.textContent = text;
+    wrap.appendChild(bubble);
+    msgsEl.appendChild(wrap);
+    msgsEl.scrollTop = msgsEl.scrollHeight;
+    return bubble;
+  }
+
+  function appendTyping() {
+    hideEmpty();
+    const wrap = document.createElement('div');
+    wrap.className = 'ai-msg ai-msg-assistant ai-typing';
+    wrap.innerHTML = '<div class="ai-bubble"><span class="ai-dots"><i></i><i></i><i></i></span></div>';
+    msgsEl.appendChild(wrap);
+    msgsEl.scrollTop = msgsEl.scrollHeight;
+    return wrap;
+  }
+
+  function autoSize() {
+    inputEl.style.height = 'auto';
+    inputEl.style.height = Math.min(inputEl.scrollHeight, 140) + 'px';
+  }
+
+  function openPanel() {
+    panel.classList.add('open');
+    panel.setAttribute('aria-hidden', 'false');
+    fab.classList.add('hidden');
+    setTimeout(() => inputEl.focus(), 50);
+  }
+  function closePanel() {
+    panel.classList.remove('open');
+    panel.setAttribute('aria-hidden', 'true');
+    fab.classList.remove('hidden');
+  }
+
+  fab.addEventListener('click', openPanel);
+  closeBtn.addEventListener('click', closePanel);
+  document.addEventListener('keydown', e => {
+    if (e.key === 'Escape' && panel.classList.contains('open')) closePanel();
+  });
+
+  // ---- LanguageModel session ----
   let session = null;
   let creating = null;
+  let history = [];
+
+  function buildSystemPrompt() {
+    // Keep article context modest — Gemini Nano's input quota is small.
+    const article = articleText().slice(0, 4000);
+    return (
+      'You are a concise, helpful assistant answering questions about a blog post. ' +
+      'Use the article below as your primary source. If the answer is not in it, say so briefly and answer generally. ' +
+      'Reply in the same language as the user\'s question. Keep answers short unless asked for detail.\n\n' +
+      '=== ARTICLE TITLE ===\n' + POST_TITLE + '\n\n' +
+      '=== ARTICLE CONTENT ===\n' + article
+    );
+  }
 
   async function ensureSession() {
     if (session) return session;
@@ -893,32 +993,29 @@
 
     if (!('LanguageModel' in self)) {
       throw new Error(
-        'Your browser does not support the on-device LanguageModel API. ' +
-        'Use Chrome 138+ (desktop) or enable "Prompt API for Gemini Nano" in chrome://flags.'
+        'On-device AI not available. Use Chrome 138+ on desktop, or enable ' +
+        '"Prompt API for Gemini Nano" in chrome://flags.'
       );
     }
 
-    setStatus('Checking model availability…', 'info');
+    setStatus('Checking model…', 'info');
     const status = await LanguageModel.availability();
     if (status === 'unavailable') {
-      throw new Error('On-device model is unavailable on this device (hardware/OS does not meet requirements).');
+      throw new Error('Model unavailable on this device.');
     }
 
-    const article = articleText().slice(0, 12000);
-    const systemPrompt =
-      'You are a concise assistant answering questions about a blog post. ' +
-      'Use only the article content below as your source of truth. ' +
-      'If the answer is not in the article, say so briefly. ' +
-      'Reply in the same language as the user\'s question.\n\n' +
-      '=== ARTICLE TITLE ===\n' + POST_TITLE + '\n\n' +
-      '=== ARTICLE CONTENT ===\n' + article;
-
     creating = (async () => {
-      setStatus(status === 'available' ? 'Loading model…' : 'Downloading model (one-time, ~2GB)…', 'info');
+      // Only show download UI when the model isn't already there.
+      const willDownload = (status !== 'available');
+      if (willDownload) setStatus('Preparing model (first run downloads ~2GB)…', 'info');
+      else setStatus('Warming up…', 'info');
+
       const s = await LanguageModel.create({
-        initialPrompts: [{ role: 'system', content: systemPrompt }],
+        initialPrompts: [{ role: 'system', content: buildSystemPrompt() }],
         monitor(m) {
           m.addEventListener('downloadprogress', e => {
+            // Skip the spurious 0% event Chrome fires for cached models.
+            if (!willDownload && e.loaded === 0) return;
             const pct = (e.loaded * 100).toFixed(1);
             setStatus('Downloading model: ' + pct + '%', 'info');
           });
@@ -929,50 +1026,89 @@
       return s;
     })();
 
-    try {
-      return await creating;
-    } finally {
-      creating = null;
-    }
+    try { return await creating; }
+    finally { creating = null; }
   }
 
-  async function ask() {
-    const q = inputEl.value.trim();
-    if (!q) return;
-    btnEl.disabled = true;
+  async function ask(q) {
+    appendBubble('user', q);
+    history.push({ role: 'user', content: q });
+
+    sendBtn.disabled = true;
     inputEl.disabled = true;
-    answerEl.textContent = '';
+    const typing = appendTyping();
+
+    let answerBubble = null;
+    let acc = '';
     try {
       const s = await ensureSession();
-      setStatus('Thinking…', 'info');
       const stream = s.promptStreaming(q);
-      let first = true;
       for await (const chunk of stream) {
-        if (first) { setStatus(''); first = false; }
-        answerEl.textContent += chunk;
+        if (!answerBubble) {
+          typing.remove();
+          const wrap = document.createElement('div');
+          wrap.className = 'ai-msg ai-msg-assistant';
+          answerBubble = document.createElement('div');
+          answerBubble.className = 'ai-bubble';
+          wrap.appendChild(answerBubble);
+          msgsEl.appendChild(wrap);
+        }
+        acc += chunk;
+        answerBubble.textContent = acc;
+        msgsEl.scrollTop = msgsEl.scrollHeight;
       }
-      if (first) setStatus('');
+      if (acc) history.push({ role: 'assistant', content: acc });
+      else { typing.remove(); appendBubble('assistant', '(no response)'); }
     } catch (e) {
-      setStatus('Error: ' + e.message, 'bad');
+      if (typing && typing.parentNode) typing.remove();
+      const err = document.createElement('div');
+      err.className = 'ai-msg ai-msg-error';
+      err.innerHTML = '<div class="ai-bubble">⚠ ' + (e && e.message ? e.message : String(e)) + '</div>';
+      msgsEl.appendChild(err);
+      msgsEl.scrollTop = msgsEl.scrollHeight;
     } finally {
-      btnEl.disabled = false;
+      sendBtn.disabled = !inputEl.value.trim();
       inputEl.disabled = false;
       inputEl.focus();
     }
   }
 
-  if ('LanguageModel' in self) {
-    inputEl.disabled = false;
-    btnEl.disabled = false;
-    btnEl.addEventListener('click', ask);
-    inputEl.addEventListener('keydown', e => {
-      if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); ask(); }
-    });
-  } else {
-    hintEl.textContent =
-      'On-device AI not detected. This feature needs Chrome 138+ (desktop) with built-in Gemini Nano. ' +
-      'Older Chrome: enable "Prompt API for Gemini Nano" in chrome://flags.';
-    hintEl.classList.add('bad');
+  formEl.addEventListener('submit', e => {
+    e.preventDefault();
+    const q = inputEl.value.trim();
+    if (!q) return;
+    inputEl.value = '';
+    autoSize();
+    sendBtn.disabled = true;
+    ask(q);
+  });
+
+  inputEl.addEventListener('input', () => {
+    autoSize();
+    sendBtn.disabled = !inputEl.value.trim();
+  });
+  inputEl.addEventListener('keydown', e => {
+    if (e.key === 'Enter' && !e.shiftKey) {
+      e.preventDefault();
+      formEl.requestSubmit();
+    }
+  });
+
+  clearBtn.addEventListener('click', () => {
+    msgsEl.innerHTML = '';
+    msgsEl.appendChild(emptyEl);
+    emptyEl.style.display = '';
+    history = [];
+    if (session && session.destroy) { try { session.destroy(); } catch (_) {} }
+    session = null;
+    setStatus('');
+  });
+
+  if (!('LanguageModel' in self)) {
+    fab.addEventListener('click', () => {
+      openPanel();
+      setStatus('On-device AI not detected. Use Chrome 138+ desktop, or enable "Prompt API for Gemini Nano" in chrome://flags.', 'bad');
+    }, { once: true });
   }
 })();
 </script>
