@@ -770,6 +770,7 @@ footer {
   gap: 0.4rem;
   box-shadow: 0 14px 32px rgba(0, 0, 0, 0.55), 0 4px 10px rgba(121, 192, 255, 0.18);
 }
+.notes-composer[hidden] { display: none; }
 .notes-composer-close {
   position: absolute;
   top: 0.35rem;
