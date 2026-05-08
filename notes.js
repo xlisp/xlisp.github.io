@@ -20,8 +20,12 @@
   const IDB_STORE = 'comments';
   const IDB_VERSION = 1;
 
+  // DataScript 1.7.8's JS bundle uses plain JS strings for user-defined attrs
+  // (NOT leading-colon "keyword" strings — that path stores them as a different
+  // type and breaks the EAVT comparator). Queries below match by passing attrs
+  // as string literals, e.g. `[?e "comment/article" ?a]`.
   const SCHEMA = {
-    'comment/parent': { ':db/valueType': ':db.type/ref' }
+    'comment/parent': { 'db/valueType': 'db.type/ref' }
   };
 
   // ---------- IndexedDB helpers ----------
@@ -115,11 +119,11 @@
 
   function listComments() {
     const rows = ds.q(
-      '[:find ?e :in $ ?a :where [?e :comment/article ?a]]',
+      '[:find ?e :in $ ?a :where [?e "comment/article" ?a]]',
       ds.db(conn), ARTICLE_ID
     );
     return rows.map(r => r[0]).map(id => {
-      const e = ds.pull(ds.db(conn), '[*]', id);
+      const e = ds.pull(ds.db(conn), '["*"]', id);
       return {
         id,
         text: pv(e, 'comment/text') || '',
