@@ -40,6 +40,7 @@ a:hover {
   margin: 0 auto;
   padding: 3rem 1.5rem 5rem;
 }
+.wrap.post { max-width: 960px; }
 
 /* Hero */
 .hero { margin-bottom: 3rem; }
@@ -769,11 +770,32 @@ footer {
   gap: 0.4rem;
   box-shadow: 0 14px 32px rgba(0, 0, 0, 0.55), 0 4px 10px rgba(121, 192, 255, 0.18);
 }
+.notes-composer-close {
+  position: absolute;
+  top: 0.35rem;
+  right: 0.35rem;
+  width: 24px;
+  height: 24px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  background: transparent;
+  border: 1px solid transparent;
+  border-radius: 6px;
+  color: var(--fg-dim);
+  cursor: pointer;
+  transition: background 0.15s ease, color 0.15s ease, border-color 0.15s ease;
+}
+.notes-composer-close:hover {
+  color: var(--fg);
+  background: rgba(255, 255, 255, 0.04);
+  border-color: var(--rule);
+}
 .notes-composer-quote {
   font-size: 0.78rem;
   color: var(--fg-dim);
   border-left: 2px solid var(--accent);
-  padding: 0.2rem 0.55rem;
+  padding: 0.2rem 1.8rem 0.2rem 0.55rem;
   background: rgba(255, 255, 255, 0.02);
   border-radius: 0 4px 4px 0;
   font-style: italic;
@@ -882,4 +904,30 @@ footer {
     width: auto;
     height: min(70vh, 600px);
   }
+
+  /* Mobile doesn't support on-device AI (Gemini Nano) — hide widget entirely. */
+  .ai-fab, .ai-panel { display: none !important; }
+
+  /* Inline composer becomes a bottom sheet so it never falls off-screen. */
+  .notes-composer {
+    position: fixed !important;
+    top: auto !important;
+    left: 0.5rem !important;
+    right: 0.5rem !important;
+    bottom: 0.5rem !important;
+    width: auto !important;
+    max-width: none !important;
+  }
+  .notes-composer-quote { max-height: 80px; }
+
+  /* Selection toolbar: keep within viewport. */
+  .notes-toolbar { max-width: calc(100vw - 16px); }
+
+  /* Article page: tighter side padding and prevent long content from overflowing. */
+  .wrap.post { padding-left: 1rem; padding-right: 1rem; }
+  .post-header h1 { font-size: 1.55rem; word-break: break-word; }
+  .content { word-wrap: break-word; overflow-wrap: anywhere; }
+  .content pre { font-size: 0.78rem; padding: 0.7rem 0.8rem; }
+  .content table { display: block; overflow-x: auto; max-width: 100%; }
+  .content img { height: auto; }
 }

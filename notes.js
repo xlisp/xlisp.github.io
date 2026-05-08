@@ -288,6 +288,9 @@
 </div>
 
 <div class="notes-composer" id="notes-composer" hidden>
+  <button class="notes-composer-close" id="notes-composer-close" type="button" aria-label="Close" title="Close (Esc)">
+    <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>
+  </button>
   <div class="notes-composer-quote" id="notes-composer-quote"></div>
   <textarea id="notes-composer-text" rows="3" placeholder="Your note…"></textarea>
   <div class="notes-composer-actions">
@@ -566,8 +569,9 @@
       }
     });
 
-    // Inline composer save/cancel
+    // Inline composer save/cancel/close
     $('notes-composer-cancel').addEventListener('click', closeComposer);
+    $('notes-composer-close').addEventListener('click', closeComposer);
     $('notes-composer-save').addEventListener('click', () => {
       if (!pendingSelection) { closeComposer(); return; }
       const text = $('notes-composer-text').value.trim();
