@@ -33,7 +33,6 @@
     </header>
 
     <div class="content">
-<h1 id="y-wx-b-codegpt">深度学习是可微分编程：从 y = wx + b 讲到 CodeGPT</h1>
 <blockquote>
 <p>2018 年初，Yann LeCun 在 Facebook 上宣告："Deep Learning est mort. Vive Differentiable Programming!"（深度学习已死，可微分编程万岁！）这不是修辞，而是一个架构视角的转变：神经网络不是一类特殊的统计模型，它就是一段<strong>带可学习参数的程序</strong>，只不过这段程序的每一步都是可微分的，可以被梯度下降自动"编译"出参数。</p>
 <p>本文从最小的线性方程讲起，一路加结构——非线性、注意力、残差、多层堆叠——直到 <code>CodeGPT.forward()</code>。每一步都展示：我们不是在"训练一个模型"，我们是在<strong>写一段程序</strong>，然后让 <code>loss.backward()</code> 替我们填空。</p>

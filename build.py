@@ -70,7 +70,8 @@ def parse_front_matter(text: str) -> tuple[dict, str]:
 
 
 def render_markdown(body: str) -> tuple[str, str | None]:
-    """Return (html, first_h1_title)."""
+    """Return (html, first_h1_title). The first <h1> is stripped from html
+    because the post template already renders the title in its header."""
     md = markdown.Markdown(
         extensions=[
             "extra",
@@ -86,9 +87,10 @@ def render_markdown(body: str) -> tuple[str, str | None]:
     )
     out = md.convert(body)
     title = None
-    m = re.search(r"<h1[^>]*>(.*?)</h1>", out, re.S)
+    m = re.search(r"<h1[^>]*>(.*?)</h1>\s*", out, re.S)
     if m:
         title = re.sub(r"<[^>]+>", "", m.group(1)).strip()
+        out = out[: m.start()] + out[m.end() :]
     return out, title
 
 
@@ -194,13 +196,7 @@ def render_index(posts: list[dict], index_tpl: str) -> None:
     if posts:
         items = "\n".join(
             f'        <li><span class="post-date">{p["date"]}</span> '
-            f'<a href="{p["href"]}">{html.escape(p["title"])}</a>'
-            + (
-                f' <span class="post-summary">— {html.escape(p["summary"])}</span>'
-                if p["summary"]
-                else ""
-            )
-            + "</li>"
+            f'<a href="{p["href"]}">{html.escape(p["title"])}</a></li>'
             for p in posts
         )
         post_list = f'      <ul class="post-list">\n{items}\n      </ul>'

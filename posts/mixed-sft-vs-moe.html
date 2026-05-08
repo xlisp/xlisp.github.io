@@ -33,7 +33,6 @@
     </header>
 
     <div class="content">
-<h1 id="sft-vs-moe">混合 SFT vs MoE：同一思路吗？</h1>
 <p>v6 用 <code>sft_code + sft_funcall</code> 混合数据联合训练一个模型，同时获得写代码和调工具两种能力。这和 <strong>MoE (Mixture of Experts)</strong> 是一回事吗？</p>
 <p><strong>一句话答案</strong>：<strong>不是</strong>。动机有重叠（让一个模型拥有多种能力），但实现层完全不同 —— 一个是<strong>数据工程</strong>，一个是<strong>架构工程</strong>。</p>
 <h2 id="1">1. 两者到底在做什么</h2>

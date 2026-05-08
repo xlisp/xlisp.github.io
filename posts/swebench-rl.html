@@ -33,7 +33,6 @@
     </header>
 
     <div class="content">
-<h1 id="grpo-on-swe-bench-train-docker-in-the-loop-rl">GRPO on SWE-bench Train: Docker-in-the-Loop RL</h1>
 <h2 id="_1">一句话总结</h2>
 <p>在原有 MBPP RL（"给题 → 写函数 → 跑 assert"）之后，追加一个以 <strong>SWE-bench train</strong> 为环境的 RL 阶段：模型读 GitHub issue → 生成 unified diff 补丁 → 在 Docker 容器里 <code>git apply</code> + 跑测试 → 通过率作为 reward。这迫使模型学会一种全新的能力：<strong>在真实仓库上下文中定位并修复 bug</strong>。</p>
 <h2 id="_2">为什么这能提升模型能力</h2>
