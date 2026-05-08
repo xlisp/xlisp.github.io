@@ -10,7 +10,11 @@
   // ---------- Constants ----------
   const ARTICLE_ID = (location.pathname.split('/').pop() || 'index')
     .replace(/\.html?$/i, '') || 'index';
-  const ARTICLE_TITLE = (document.title || ARTICLE_ID).split('·')[0].trim();
+  const ARTICLE_TITLE = (() => {
+    const h1 = document.querySelector('article .post-header h1');
+    if (h1 && h1.textContent.trim()) return h1.textContent.trim();
+    return (document.title || ARTICLE_ID).split('·')[0].trim();
+  })();
 
   const IDB_NAME = 'xlisp_notes';
   const IDB_STORE = 'comments';
@@ -61,7 +65,6 @@
   }
 
   // ---------- DataScript helpers ----------
-  // pull results may use ':comment/text' or 'comment/text' — normalize
   function pv(obj, attr) {
     if (obj == null) return undefined;
     if (obj[':' + attr] !== undefined) return obj[':' + attr];
@@ -73,18 +76,17 @@
     return pv(v, 'db/id') ?? null;
   }
   function newId() {
-    // Fits in safe integer range for the foreseeable future.
     return Date.now() * 1000 + Math.floor(Math.random() * 999);
   }
 
   let idb = null;
   let conn = null;
+  let activeReplyId = null; // comment id currently showing inline reply box
 
   async function loadFromIDB() {
     const all = await idbGetAll(idb);
     const mine = all.filter(c => c.article === ARTICLE_ID);
     if (!mine.length) return;
-    // Order parents before children so refs resolve.
     mine.sort((a, b) => (a.parentId == null ? 0 : 1) - (b.parentId == null ? 0 : 1));
     const tx = mine.map(c => {
       const m = {
@@ -105,8 +107,7 @@
       '[:find ?e :in $ ?a :where [?e :comment/article ?a]]',
       ds.db(conn), ARTICLE_ID
     );
-    const ids = rows.map(r => r[0]);
-    return ids.map(id => {
+    return rows.map(r => r[0]).map(id => {
       const e = ds.pull(ds.db(conn), '[*]', id);
       return {
         id,
@@ -194,7 +195,7 @@
   }
   function exportMarkdown() {
     const tree = buildTree(listComments());
-    let md = `# Notes — ${ARTICLE_TITLE}\n\n_Article: ${ARTICLE_ID}_\n\n`;
+    let md = `# ${ARTICLE_TITLE}\n\n_Article: ${ARTICLE_ID}_\n\n`;
     if (!tree.length) md += '_(no notes)_\n';
     else for (const n of tree) md += nodeToMarkdown(n, 0);
     return md;
@@ -209,11 +210,6 @@
   }
 
   // ---------- DOM ----------
-  function el(html) {
-    const t = document.createElement('template');
-    t.innerHTML = html.trim();
-    return t.content.firstChild;
-  }
   function escapeHtml(s) {
     return String(s).replace(/[&<>"']/g, c => ({
       '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;'
@@ -262,29 +258,26 @@
   </button>
 </div>
 
-<div class="notes-modal-overlay" id="notes-modal" hidden>
-  <div class="notes-modal" role="dialog" aria-labelledby="notes-modal-title">
-    <h4 id="notes-modal-title">Add comment</h4>
-    <div class="notes-modal-quote" id="notes-modal-quote" hidden></div>
-    <textarea id="notes-modal-text" rows="4" placeholder="Your note…"></textarea>
-    <div class="notes-modal-actions">
-      <button class="notes-btn-secondary" id="notes-modal-cancel" type="button">Cancel</button>
-      <button class="notes-btn-primary" id="notes-modal-save" type="button">Save</button>
-    </div>
+<div class="notes-composer" id="notes-composer" hidden>
+  <div class="notes-composer-quote" id="notes-composer-quote"></div>
+  <textarea id="notes-composer-text" rows="3" placeholder="Your note…"></textarea>
+  <div class="notes-composer-actions">
+    <button class="notes-btn-secondary" id="notes-composer-cancel" type="button">Cancel</button>
+    <button class="notes-btn-primary" id="notes-composer-save" type="button">Save</button>
   </div>
 </div>
     `);
   }
 
   // ---------- Rendering ----------
-  function renderEmpty() {
-    return '<p class="notes-empty">Select text in the article and tap <b>💬 Comment</b> to start an outline note.</p>';
-  }
   function renderNode(node) {
     const li = document.createElement('li');
     li.className = 'notes-node';
     li.dataset.id = String(node.id);
-    li.innerHTML = `
+
+    const inner = document.createElement('div');
+    inner.className = 'notes-node-body';
+    inner.innerHTML = `
       ${node.selected ? `<div class="notes-quote" title="Selected from article">"${escapeHtml(node.selected)}"</div>` : ''}
       <div class="notes-text">${escapeHtml(node.text)}</div>
       <div class="notes-actions">
@@ -293,6 +286,25 @@
         <button data-act="delete" type="button" title="Delete this note + replies">🗑 Delete</button>
       </div>
     `;
+    li.appendChild(inner);
+
+    if (activeReplyId === node.id) {
+      const composer = document.createElement('div');
+      composer.className = 'notes-reply-composer';
+      composer.innerHTML = `
+        <textarea rows="2" placeholder="Reply…"></textarea>
+        <div class="notes-composer-actions">
+          <button class="notes-btn-secondary" data-act="reply-cancel" type="button">Cancel</button>
+          <button class="notes-btn-primary" data-act="reply-save" type="button">Save</button>
+        </div>
+      `;
+      li.appendChild(composer);
+      setTimeout(() => {
+        const ta = composer.querySelector('textarea');
+        if (ta) ta.focus();
+      }, 30);
+    }
+
     if (node.children && node.children.length) {
       const ul = document.createElement('ul');
       ul.className = 'notes-children';
@@ -307,14 +319,30 @@
     const tree = buildTree(all);
     const container = $('notes-tree');
     container.innerHTML = '';
+
+    // Article title is the root of the outline.
+    const root = document.createElement('div');
+    root.className = 'notes-root-block';
+    root.innerHTML = `
+      <div class="notes-root-title">
+        <span class="notes-root-icon" aria-hidden="true">📄</span>
+        <span class="notes-root-text">${escapeHtml(ARTICLE_TITLE)}</span>
+      </div>
+    `;
+    container.appendChild(root);
+
     if (!tree.length) {
-      container.innerHTML = renderEmpty();
+      const hint = document.createElement('p');
+      hint.className = 'notes-empty';
+      hint.innerHTML = 'Select any text in the article — a <b>💬 Comment</b> button appears below the selection. Each note becomes a child of this title.';
+      root.appendChild(hint);
     } else {
       const ul = document.createElement('ul');
       ul.className = 'notes-children notes-root';
       for (const n of tree) ul.appendChild(renderNode(n));
-      container.appendChild(ul);
+      root.appendChild(ul);
     }
+
     const countEl = $('notes-count');
     if (all.length) {
       countEl.hidden = false;
@@ -324,11 +352,10 @@
     }
   }
 
-  // ---------- Toolbar ----------
+  // ---------- Selection toolbar ----------
   function showToolbar(rect) {
     const tb = $('notes-tb');
     tb.hidden = false;
-    // Position above selection, centered horizontally.
     const top = window.scrollY + rect.top - tb.offsetHeight - 8;
     const left = window.scrollX + rect.left + rect.width / 2 - tb.offsetWidth / 2;
     tb.style.top = Math.max(8, top) + 'px';
@@ -339,27 +366,47 @@
     if (tb) tb.hidden = true;
   }
 
-  // ---------- Modal ----------
-  let modalCallback = null;
-  function openModal({ title, quote, onSave }) {
-    $('notes-modal-title').textContent = title;
-    const qe = $('notes-modal-quote');
-    if (quote) {
-      qe.hidden = false;
-      qe.textContent = '"' + quote + '"';
-    } else {
-      qe.hidden = true;
-      qe.textContent = '';
+  // ---------- Inline composer (anchored to selection) ----------
+  let pendingSelection = null; // { text }
+
+  function positionComposer(rect) {
+    const cmp = $('notes-composer');
+    // Show first so we can read its size.
+    cmp.style.visibility = 'hidden';
+    cmp.hidden = false;
+    const w = cmp.offsetWidth || 340;
+    const h = cmp.offsetHeight || 160;
+    const margin = 12;
+    const vw = window.innerWidth;
+    const vh = window.innerHeight;
+
+    // Prefer below the selection; flip above if not enough room.
+    let top = rect.bottom + 10;
+    if (top + h > vh - margin && rect.top - 10 - h > margin) {
+      top = rect.top - 10 - h;
     }
-    $('notes-modal-text').value = '';
-    $('notes-modal').hidden = false;
-    setTimeout(() => $('notes-modal-text').focus(), 30);
-    modalCallback = onSave;
+    let left = rect.left;
+    if (left + w > vw - margin) left = vw - margin - w;
+    if (left < margin) left = margin;
+
+    cmp.style.top = (window.scrollY + top) + 'px';
+    cmp.style.left = (window.scrollX + left) + 'px';
+    cmp.style.visibility = '';
   }
-  function closeModal() {
-    $('notes-modal').hidden = true;
-    modalCallback = null;
+
+  function openComposer(text, rect) {
+    pendingSelection = { text };
+    $('notes-composer-quote').textContent = '"' + text + '"';
+    $('notes-composer-quote').hidden = !text;
+    $('notes-composer-text').value = '';
+    positionComposer(rect);
+    setTimeout(() => $('notes-composer-text').focus(), 30);
   }
+  function closeComposer() {
+    $('notes-composer').hidden = true;
+    pendingSelection = null;
+  }
+  function composerOpen() { return !$('notes-composer').hidden; }
 
   // ---------- Panel ----------
   function openPanel() {
@@ -373,7 +420,7 @@
     $('notes-fab').classList.remove('hidden');
   }
 
-  // ---------- Toast ----------
+  // ---------- Toast / clipboard / download ----------
   function toast(msg, bad) {
     const el = document.createElement('div');
     el.className = 'notes-toast' + (bad ? ' bad' : '');
@@ -390,7 +437,6 @@
       await navigator.clipboard.writeText(s);
       toast('Copied to clipboard');
     } catch (_) {
-      // Fallback
       const ta = document.createElement('textarea');
       ta.value = s;
       ta.style.position = 'fixed';
@@ -402,7 +448,6 @@
       finally { ta.remove(); }
     }
   }
-
   function downloadFile(filename, content, mime) {
     const blob = new Blob([content], { type: mime });
     const url = URL.createObjectURL(blob);
@@ -440,14 +485,11 @@
     $('notes-fab').addEventListener('click', openPanel);
     $('notes-close').addEventListener('click', closePanel);
 
-    // Export
+    // Export / copy-all
     $('notes-export').addEventListener('click', () => {
-      const md = exportMarkdown();
-      downloadFile(`notes-${ARTICLE_ID}.md`, md, 'text/markdown;charset=utf-8');
+      downloadFile(`notes-${ARTICLE_ID}.md`, exportMarkdown(), 'text/markdown;charset=utf-8');
     });
-    $('notes-copy-all').addEventListener('click', () => {
-      copyText(exportMarkdown());
-    });
+    $('notes-copy-all').addEventListener('click', () => copyText(exportMarkdown()));
 
     // Tree click delegation
     $('notes-tree').addEventListener('click', e => {
@@ -458,11 +500,17 @@
       const id = Number(node.dataset.id);
       const act = btn.dataset.act;
       if (act === 'reply') {
-        openModal({
-          title: 'Reply',
-          quote: '',
-          onSave: text => { if (text && text.trim()) addComment({ text: text.trim(), parentId: id }); }
-        });
+        activeReplyId = (activeReplyId === id) ? null : id;
+        render();
+      } else if (act === 'reply-cancel') {
+        activeReplyId = null;
+        render();
+      } else if (act === 'reply-save') {
+        const ta = btn.closest('.notes-reply-composer').querySelector('textarea');
+        const txt = ta.value.trim();
+        activeReplyId = null;
+        if (txt) addComment({ text: txt, parentId: id });
+        else render();
       } else if (act === 'copy') {
         const tree = buildTree(listComments());
         const n = findInTree(tree, id);
@@ -471,30 +519,47 @@
         if (confirm('Delete this note and all its replies?')) deleteComment(id);
       }
     });
+    // Cmd/Ctrl+Enter inside reply composer saves
+    $('notes-tree').addEventListener('keydown', e => {
+      const ta = e.target.closest('.notes-reply-composer textarea');
+      if (!ta) return;
+      if (e.key === 'Escape') {
+        activeReplyId = null;
+        render();
+      } else if ((e.metaKey || e.ctrlKey) && e.key === 'Enter') {
+        const node = ta.closest('.notes-node');
+        if (!node) return;
+        const id = Number(node.dataset.id);
+        const txt = ta.value.trim();
+        activeReplyId = null;
+        if (txt) addComment({ text: txt, parentId: id });
+        else render();
+      }
+    });
 
-    // Modal
-    $('notes-modal-cancel').addEventListener('click', closeModal);
-    $('notes-modal-save').addEventListener('click', () => {
-      const text = $('notes-modal-text').value;
-      const cb = modalCallback;
-      closeModal();
-      if (cb) cb(text);
+    // Inline composer save/cancel
+    $('notes-composer-cancel').addEventListener('click', closeComposer);
+    $('notes-composer-save').addEventListener('click', () => {
+      if (!pendingSelection) { closeComposer(); return; }
+      const text = $('notes-composer-text').value.trim();
+      const sel = pendingSelection.text;
+      closeComposer();
+      if (text) addComment({ selected: sel, text });
     });
-    $('notes-modal').addEventListener('click', e => {
-      if (e.target.id === 'notes-modal') closeModal();
-    });
-    $('notes-modal-text').addEventListener('keydown', e => {
-      if (e.key === 'Escape') closeModal();
-      if ((e.metaKey || e.ctrlKey) && e.key === 'Enter') $('notes-modal-save').click();
+    $('notes-composer-text').addEventListener('keydown', e => {
+      if (e.key === 'Escape') closeComposer();
+      else if ((e.metaKey || e.ctrlKey) && e.key === 'Enter') $('notes-composer-save').click();
     });
 
-    // Selection toolbar
+    // Selection toolbar wiring
     const article = document.querySelector('article .content');
     if (article) {
       let pendingShow = null;
       document.addEventListener('selectionchange', () => {
         clearTimeout(pendingShow);
         pendingShow = setTimeout(() => {
+          // Don't disturb composer-open state.
+          if (composerOpen()) return;
           const sel = window.getSelection();
           if (!sel || sel.isCollapsed || !sel.toString().trim()) {
             hideToolbar();
@@ -510,29 +575,37 @@
           showToolbar(rect);
         }, 30);
       });
-      // Don't lose selection when clicking the toolbar.
+
+      // Don't drop the selection when clicking the toolbar.
       $('notes-tb').addEventListener('mousedown', e => e.preventDefault());
       $('notes-tb-comment').addEventListener('click', () => {
         const sel = window.getSelection();
         const text = sel ? sel.toString().trim() : '';
         if (!text) return;
+        const rect = sel.getRangeAt(0).getBoundingClientRect();
         hideToolbar();
-        openPanel();
-        openModal({
-          title: 'New comment',
-          quote: text,
-          onSave: note => { if (note && note.trim()) addComment({ selected: text, text: note.trim() }); }
-        });
-        if (sel) sel.removeAllRanges();
+        openComposer(text, rect);
       });
+
+      // Click outside the composer (or article) closes it.
+      document.addEventListener('mousedown', e => {
+        if (!composerOpen()) return;
+        if (e.target.closest('#notes-composer')) return;
+        // Clicking elsewhere cancels the in-flight composer.
+        closeComposer();
+      });
+
       window.addEventListener('scroll', hideToolbar, { passive: true });
-      window.addEventListener('resize', hideToolbar, { passive: true });
+      window.addEventListener('resize', () => {
+        hideToolbar();
+        if (composerOpen()) closeComposer();
+      }, { passive: true });
     }
 
-    // Esc closes panel/modal
+    // Esc closes panel
     document.addEventListener('keydown', e => {
       if (e.key !== 'Escape') return;
-      if (!$('notes-modal').hidden) { closeModal(); return; }
+      if (composerOpen()) { closeComposer(); return; }
       if ($('notes-panel').classList.contains('open')) closePanel();
     });
   }
