@@ -75,16 +75,22 @@
     if (typeof v === 'number') return v;
     return pv(v, 'db/id') ?? null;
   }
-  function newId() {
-    return Date.now() * 1000 + Math.floor(Math.random() * 999);
-  }
+  // ID counter — kept small so DataScript's eid validation accepts it.
+  // We assign these as :db/id so IDB rows and DataScript eids stay in sync.
+  let _idCounter = 0;
+  function newId() { return ++_idCounter; }
 
   let idb = null;
   let conn = null;
-  let activeReplyId = null; // comment id currently showing inline reply box
+  let activeReplyId = null;
 
   async function loadFromIDB() {
     const all = await idbGetAll(idb);
+    // Counter must clear every existing IDB id (across all articles) so we don't
+    // collide on idbPut, and every existing DataScript eid for this article.
+    if (all.length) {
+      _idCounter = Math.max(_idCounter, ...all.map(c => Number(c.id) || 0));
+    }
     const mine = all.filter(c => c.article === ARTICLE_ID);
     if (!mine.length) return;
     mine.sort((a, b) => (a.parentId == null ? 0 : 1) - (b.parentId == null ? 0 : 1));
@@ -99,7 +105,12 @@
       if (c.parentId != null) m['comment/parent'] = c.parentId;
       return m;
     });
-    ds.transact(conn, tx);
+    try {
+      ds.transact(conn, tx);
+    } catch (e) {
+      console.error('[notes] transact (load) failed', e, tx);
+      throw e;
+    }
   }
 
   function listComments() {
@@ -137,8 +148,22 @@
       'comment/created-at': createdAt
     }];
     if (parentId) tx[0]['comment/parent'] = parentId;
-    ds.transact(conn, tx);
-    await idbPut(idb, item);
+    try {
+      ds.transact(conn, tx);
+    } catch (e) {
+      console.error('[notes] transact (add) failed', e, tx);
+      // Roll back the local counter so it doesn't drift past actual data.
+      if (id === _idCounter) _idCounter -= 1;
+      toast('Save failed — see console', true);
+      return;
+    }
+    try {
+      await idbPut(idb, item);
+    } catch (e) {
+      console.error('[notes] idbPut failed', e, item);
+      toast('Storage write failed', true);
+      return;
+    }
     render();
   }
 
