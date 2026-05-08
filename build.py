@@ -17,6 +17,7 @@ from __future__ import annotations
 
 import datetime as dt
 import html
+import json
 import re
 import shutil
 import sys
@@ -154,6 +155,7 @@ def render_post(info: dict, body_html: str, post_tpl: str) -> None:
     description = info["summary"] or SITE_DESCRIPTION
     page = (
         post_tpl.replace("{{title}}", html.escape(info["title"]))
+        .replace("{{title_json}}", json.dumps(info["title"]))
         .replace("{{date}}", info["date"])
         .replace("{{author}}", AUTHOR)
         .replace("{{site_title}}", SITE_TITLE)

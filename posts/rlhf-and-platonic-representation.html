@@ -769,6 +769,134 @@ RLHF:   模型学到了 P(good_code | code) —— 在所有代码中，什么�
     </div>
   </article>
 
+  <section class="ask-ai" id="ask-ai">
+    <h2>Ask AI about this article</h2>
+    <p class="ask-ai-hint" id="ask-ai-hint">
+      Powered by Chrome built-in AI (Gemini Nano). Runs entirely on your device — no data leaves the browser.
+    </p>
+    <div class="ask-ai-controls">
+      <input id="ask-ai-input" type="text" placeholder="Ask anything about this post…" disabled>
+      <button id="ask-ai-btn" disabled>Ask</button>
+    </div>
+    <pre class="ask-ai-status" id="ask-ai-status"></pre>
+    <div class="ask-ai-answer" id="ask-ai-answer"></div>
+  </section>
+
 </main>
+
+<script>
+(function () {
+  const POST_TITLE = "\u5f3a\u5316\u5b66\u4e60\u5bf9\u9f50\u4e0e\u67cf\u62c9\u56fe\u8868\u5f81\uff1aChatGPT \u6210\u529f\u7684\u53e6\u5916\u4e24\u5757\u62fc\u56fe";
+  const contentEl = document.querySelector('article .content');
+  const inputEl = document.getElementById('ask-ai-input');
+  const btnEl = document.getElementById('ask-ai-btn');
+  const statusEl = document.getElementById('ask-ai-status');
+  const answerEl = document.getElementById('ask-ai-answer');
+  const hintEl = document.getElementById('ask-ai-hint');
+
+  function setStatus(msg, cls) {
+    statusEl.textContent = msg || '';
+    statusEl.className = 'ask-ai-status' + (cls ? ' ' + cls : '');
+  }
+
+  function articleText() {
+    if (!contentEl) return '';
+    const t = (contentEl.innerText || contentEl.textContent || '').trim();
+    return t.replace(/\s+\n/g, '\n').replace(/\n{3,}/g, '\n\n');
+  }
+
+  let session = null;
+  let creating = null;
+
+  async function ensureSession() {
+    if (session) return session;
+    if (creating) return creating;
+
+    if (!('LanguageModel' in self)) {
+      throw new Error(
+        'Your browser does not support the on-device LanguageModel API. ' +
+        'Use Chrome 138+ (desktop) or enable "Prompt API for Gemini Nano" in chrome://flags.'
+      );
+    }
+
+    setStatus('Checking model availability…', 'info');
+    const status = await LanguageModel.availability();
+    if (status === 'unavailable') {
+      throw new Error('On-device model is unavailable on this device (hardware/OS does not meet requirements).');
+    }
+
+    const article = articleText().slice(0, 12000);
+    const systemPrompt =
+      'You are a concise assistant answering questions about a blog post. ' +
+      'Use only the article content below as your source of truth. ' +
+      'If the answer is not in the article, say so briefly. ' +
+      'Reply in the same language as the user\'s question.\n\n' +
+      '=== ARTICLE TITLE ===\n' + POST_TITLE + '\n\n' +
+      '=== ARTICLE CONTENT ===\n' + article;
+
+    creating = (async () => {
+      setStatus(status === 'available' ? 'Loading model…' : 'Downloading model (one-time, ~2GB)…', 'info');
+      const s = await LanguageModel.create({
+        initialPrompts: [{ role: 'system', content: systemPrompt }],
+        monitor(m) {
+          m.addEventListener('downloadprogress', e => {
+            const pct = (e.loaded * 100).toFixed(1);
+            setStatus('Downloading model: ' + pct + '%', 'info');
+          });
+        }
+      });
+      session = s;
+      setStatus('');
+      return s;
+    })();
+
+    try {
+      return await creating;
+    } finally {
+      creating = null;
+    }
+  }
+
+  async function ask() {
+    const q = inputEl.value.trim();
+    if (!q) return;
+    btnEl.disabled = true;
+    inputEl.disabled = true;
+    answerEl.textContent = '';
+    try {
+      const s = await ensureSession();
+      setStatus('Thinking…', 'info');
+      const stream = s.promptStreaming(q);
+      let first = true;
+      for await (const chunk of stream) {
+        if (first) { setStatus(''); first = false; }
+        answerEl.textContent += chunk;
+      }
+      if (first) setStatus('');
+    } catch (e) {
+      setStatus('Error: ' + e.message, 'bad');
+    } finally {
+      btnEl.disabled = false;
+      inputEl.disabled = false;
+      inputEl.focus();
+    }
+  }
+
+  if ('LanguageModel' in self) {
+    inputEl.disabled = false;
+    btnEl.disabled = false;
+    btnEl.addEventListener('click', ask);
+    inputEl.addEventListener('keydown', e => {
+      if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); ask(); }
+    });
+  } else {
+    hintEl.textContent =
+      'On-device AI not detected. This feature needs Chrome 138+ (desktop) with built-in Gemini Nano. ' +
+      'Older Chrome: enable "Prompt API for Gemini Nano" in chrome://flags.';
+    hintEl.classList.add('bad');
+  }
+})();
+</script>
+
 </body>
 </html>
