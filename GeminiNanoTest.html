@@ -1,0 +1,143 @@
+<!DOCTYPE html>
+<html lang="zh">
+<head>
+<meta charset="UTF-8">
+<title>Chrome 内置 AI 检测</title>
+<style>
+  body { font-family: -apple-system, sans-serif; max-width: 720px; margin: 2em auto; padding: 0 1em; }
+  pre { background: #f4f4f4; padding: 1em; border-radius: 6px; white-space: pre-wrap; word-break: break-all; }
+  button { padding: .6em 1.2em; font-size: 1em; cursor: pointer; }
+  .ok { color: #0a7d28; }
+  .bad { color: #c0392b; }
+  .info { color: #2c5fa0; }
+</style>
+</head>
+<body>
+
+<h1>Chrome 内置 AI (Gemini Nano) 检测</h1>
+
+<p>浏览器:<code id="ua"></code></p>
+
+<button id="run">开始检测</button>
+
+<h3>检测日志</h3>
+<pre id="log">点上面按钮开始…</pre>
+
+<h3>简单对话测试</h3>
+<input id="q" type="text" value="用一句话介绍你自己" style="width:60%;padding:.4em;">
+<button id="ask" disabled>提问</button>
+<pre id="answer"></pre>
+
+<script>
+const logEl = document.getElementById('log');
+const ansEl = document.getElementById('answer');
+document.getElementById('ua').textContent = navigator.userAgent;
+
+let session = null;
+
+function log(msg, cls = '') {
+  const line = document.createElement('div');
+  if (cls) line.className = cls;
+  line.textContent = msg;
+  logEl.appendChild(line);
+}
+
+document.getElementById('run').addEventListener('click', async () => {
+  logEl.textContent = '';
+
+  // 1. 检查全局对象
+  log('1) 检查 LanguageModel API…');
+  if (!('LanguageModel' in self)) {
+    log('   ✗ 当前浏览器没有 LanguageModel API。', 'bad');
+    log('   需要 Chrome 138+ 桌面版,或 Edge 138+。', 'info');
+    log('   如果你是 Chrome 较旧版,可在 chrome://flags 搜索 "Prompt API for Gemini Nano" 启用。', 'info');
+    return;
+  }
+  log('   ✓ LanguageModel 存在', 'ok');
+
+  // 2. 查询可用性
+  log('2) 查询模型可用性 (LanguageModel.availability)…');
+  let status;
+  try {
+    status = await LanguageModel.availability();
+  } catch (e) {
+    log('   ✗ 调用失败: ' + e.message, 'bad');
+    return;
+  }
+  log('   状态: ' + status, status === 'available' ? 'ok' : 'info');
+
+  // 状态含义说明
+  const meanings = {
+    'unavailable': '设备不支持 (硬件/系统不达标,通常需要 4GB+ 显存和足够空间)',
+    'downloadable': '支持但模型未下载,首次创建 session 时会触发下载 (~2GB)',
+    'downloading': '模型正在下载中',
+    'available': '模型已就绪,可立即使用'
+  };
+  if (meanings[status]) log('   含义: ' + meanings[status], 'info');
+
+  if (status === 'unavailable') {
+    log('   ✗ 无法继续。', 'bad');
+    return;
+  }
+
+  // 3. 查询模型参数
+  log('3) 查询模型参数 (LanguageModel.params)…');
+  try {
+    const params = await LanguageModel.params();
+    log('   ' + JSON.stringify(params, null, 2));
+  } catch (e) {
+    log('   (无法获取参数: ' + e.message + ')', 'info');
+  }
+
+  // 4. 创建 session
+  log('4) 创建 session…');
+  try {
+    session = await LanguageModel.create({
+      monitor(m) {
+        m.addEventListener('downloadprogress', e => {
+          const pct = (e.loaded * 100).toFixed(1);
+          log('   下载进度: ' + pct + '%', 'info');
+        });
+      }
+    });
+    log('   ✓ Session 创建成功', 'ok');
+  } catch (e) {
+    log('   ✗ 创建失败: ' + e.message, 'bad');
+    return;
+  }
+
+  // 5. 试跑一次
+  log('5) 试跑 prompt: "你好"…');
+  try {
+    const reply = await session.prompt('你好');
+    log('   ✓ 回复: ' + reply, 'ok');
+  } catch (e) {
+    log('   ✗ 调用失败: ' + e.message, 'bad');
+    return;
+  }
+
+  log('');
+  log('🎉 全部通过!你的 Chrome 可以使用本地 AI。', 'ok');
+  document.getElementById('ask').disabled = false;
+});
+
+// 自由问答
+document.getElementById('ask').addEventListener('click', async () => {
+  if (!session) return;
+  const q = document.getElementById('q').value.trim();
+  if (!q) return;
+  ansEl.textContent = '思考中…';
+  try {
+    ansEl.textContent = '';
+    const stream = session.promptStreaming(q);
+    for await (const chunk of stream) {
+      ansEl.textContent += chunk;
+    }
+  } catch (e) {
+    ansEl.textContent = '错误: ' + e.message;
+  }
+});
+</script>
+
+</body>
+</html>
