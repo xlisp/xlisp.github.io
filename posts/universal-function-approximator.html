@@ -1,0 +1,1461 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>万能函数模拟器：大模型就是用微积分从数据里&quot;积分&quot;出来的函数 P · Steve Chan — xlisp</title>
+<meta name="description" content="1. 一句话拼图：大模型 = 函数 P + 微积分反推">
+<meta name="author" content="Steve Chan">
+<link rel="icon" type="image/jpeg" href="../icon.jpeg">
+<link rel="apple-touch-icon" href="../icon.jpeg">
+<meta property="og:type" content="article">
+<meta property="og:title" content="万能函数模拟器：大模型就是用微积分从数据里&quot;积分&quot;出来的函数 P">
+<meta property="og:description" content="1. 一句话拼图：大模型 = 函数 P + 微积分反推">
+<meta property="og:image" content="../icon.jpeg">
+<meta property="og:site_name" content="Steve Chan — xlisp">
+<meta name="twitter:card" content="summary_large_image">
+<meta name="twitter:title" content="万能函数模拟器：大模型就是用微积分从数据里&quot;积分&quot;出来的函数 P">
+<meta name="twitter:description" content="1. 一句话拼图：大模型 = 函数 P + 微积分反推">
+<meta name="twitter:image" content="../icon.jpeg">
+<link rel="stylesheet" href="../style.css?v=notes4">
+</head>
+<body>
+<main class="wrap post">
+
+  <nav class="topnav">
+    <a href="../index.html">← home</a>
+  </nav>
+
+  <article>
+    <header class="post-header">
+      <h1>万能函数模拟器：大模型就是用微积分从数据里&quot;积分&quot;出来的函数 P</h1>
+      <p class="meta">2026-05-13 · Steve Chan</p>
+    </header>
+
+    <div class="content">
+<blockquote>
+<p>问一个最朴素的问题：<strong>GPT 到底是什么？</strong></p>
+<p>不同视角给出不同的答案——序列模型、Transformer、自回归生成器、压缩器、超级搜索引擎、可微分程序、神经-符号混合系统……这些都对，但<strong>最底层的那张图只有一张</strong>：</p>
+<blockquote>
+<p><strong>GPT 是一个用微积分（可微分编程）从海量离散文本数据里"反推"出来的函数 $P(y \mid x)$。</strong></p>
+</blockquote>
+<p>这里的"反推"两个字是字面意思——和 17 世纪牛顿用观测数据反推行星轨道、20 世纪气象台用观测数据反推大气方程是同一件事，只不过这次反推的不是连续轨迹，而是定义在词表上的<strong>条件概率分布族</strong>。</p>
+<p>本文从"万能函数模拟器（Universal Function Simulator）"这个最古老的视角切入，把"为什么神经网络能模拟任何函数"、"为什么必须是微积分"、"离散文本怎么被一个函数捕获"、"矩阵和概率分别充当什么角色"——这四件事钉死在 <code>model.py</code> 的具体行号上。读完之后，再看 <code>forward()</code>（<code>model.py:177-198</code>），就只剩一句话：</p>
+<blockquote>
+<p><strong>一段 124M 参数的函数 $P_\theta$，在所有上下文 $x$ 上输出下一个 token 的概率分布——这个 $P_\theta$ 是被几十万次梯度下降"积分"出来的万能函数近似。</strong></p>
+</blockquote>
+</blockquote>
+<hr />
+<h2 id="_1">目录</h2>
+<ol>
+<li><a href="#1-一句话拼图大模型--函数-p--微积分反推">一句话拼图：大模型 = 函数 P + 微积分反推</a></li>
+<li><a href="#2-万能函数模拟器通用近似定理的工程含义">万能函数模拟器：通用近似定理的工程含义</a></li>
+<li><a href="#3-万能函数思想的家谱泰勒傅立叶神经网络">万能函数思想的家谱：泰勒、傅立叶、神经网络</a></li>
+<li><a href="#4-微积分的力量从算变化到反推原函数">微积分的力量：从"算变化"到"反推原函数"</a></li>
+<li><a href="#5-离散文本如何变成找函数-p-的问题">离散文本如何变成"找函数 P"的问题</a></li>
+<li><a href="#6-可微分编程把找函数变成跑梯度下降">可微分编程：把"找函数"变成"跑梯度下降"</a></li>
+<li><a href="#7-矩阵就是参数化的万能函数一行-nnlinear-的全部秘密">矩阵就是参数化的万能函数：一行 nn.Linear 的全部秘密</a></li>
+<li><a href="#8-概率视角在概率单纯形上积分出一族函数">概率视角：在概率单纯形上"积分"出一族函数</a></li>
+<li><a href="#9-万能函数-p-的反推机器cross-entropy--autograd--sgd">万能函数 P 的反推机器：cross-entropy + autograd + SGD</a></li>
+<li><a href="#10-codegpt-就是一个-124m-维参数空间里的万能函数实例">CodeGPT 就是一个 124M 维参数空间里的万能函数实例</a></li>
+<li><a href="#11-万能函数-p-的边界能模拟什么模拟不了什么">万能函数 P 的边界：能模拟什么，模拟不了什么</a></li>
+<li><a href="#12-与本项目其他文档的联系">与本项目其他文档的联系</a></li>
+</ol>
+<hr />
+<h2 id="1-p">1. 一句话拼图：大模型 = 函数 P + 微积分反推</h2>
+<p>先把全文的结论摆出来。<code>model.py:177-198</code> 这段 <code>forward</code>：</p>
+<div class="highlight"><pre><span></span><code><span class="c1"># model.py:177</span>
+<span class="k">def</span><span class="w"> </span><span class="nf">forward</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">idx</span><span class="p">,</span> <span class="n">targets</span><span class="o">=</span><span class="kc">None</span><span class="p">):</span>
+    <span class="o">...</span>
+    <span class="n">tok_emb</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">transformer</span><span class="o">.</span><span class="n">wte</span><span class="p">(</span><span class="n">idx</span><span class="p">)</span>       <span class="c1"># 离散 token id  → 连续向量</span>
+    <span class="n">pos_emb</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">transformer</span><span class="o">.</span><span class="n">wpe</span><span class="p">(</span><span class="n">pos</span><span class="p">)</span>
+    <span class="n">x</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">transformer</span><span class="o">.</span><span class="n">drop</span><span class="p">(</span><span class="n">tok_emb</span> <span class="o">+</span> <span class="n">pos_emb</span><span class="p">)</span>
+    <span class="k">for</span> <span class="n">block</span> <span class="ow">in</span> <span class="bp">self</span><span class="o">.</span><span class="n">transformer</span><span class="o">.</span><span class="n">h</span><span class="p">:</span>          <span class="c1"># 12 层 Block 复合映射</span>
+        <span class="n">x</span> <span class="o">=</span> <span class="n">block</span><span class="p">(</span><span class="n">x</span><span class="p">)</span>
+    <span class="n">x</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">transformer</span><span class="o">.</span><span class="n">ln_f</span><span class="p">(</span><span class="n">x</span><span class="p">)</span>
+    <span class="n">logits</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">lm_head</span><span class="p">(</span><span class="n">x</span><span class="p">)</span>                  <span class="c1"># 连续向量 → 词表 logits</span>
+    <span class="n">loss</span> <span class="o">=</span> <span class="n">F</span><span class="o">.</span><span class="n">cross_entropy</span><span class="p">(</span><span class="n">logits</span><span class="o">.</span><span class="n">view</span><span class="p">(</span><span class="o">-</span><span class="mi">1</span><span class="p">,</span> <span class="n">logits</span><span class="o">.</span><span class="n">size</span><span class="p">(</span><span class="o">-</span><span class="mi">1</span><span class="p">)),</span>
+                           <span class="n">targets</span><span class="o">.</span><span class="n">view</span><span class="p">(</span><span class="o">-</span><span class="mi">1</span><span class="p">),</span> <span class="n">ignore_index</span><span class="o">=-</span><span class="mi">1</span><span class="p">)</span>
+</code></pre></div>
+
+<p>把它当一个函数来读：</p>
+<div class="highlight"><pre><span></span><code>P_θ : (token id 序列 x)  ────────►  (词表上的概率分布 P(y | x))
+       └────────────── 124M 参数 θ ──────────────┘
+</code></pre></div>
+
+<ul>
+<li>$x$ 是离散符号（token id 的序列）；</li>
+<li>$P_\theta(\cdot \mid x)$ 是一个长度 50304 的概率向量（参见 <a href="./PROBABILITY_AS_AREA_MATRIX_AS_MAP.md">PROBABILITY_AS_AREA_MATRIX_AS_MAP.md</a> §3）；</li>
+<li>$\theta$ 是被训练出来的 124M 个实数参数。</li>
+</ul>
+<p>整个 GPT 训练干的事就一句话：</p>
+<blockquote>
+<p><strong>给定海量观测样本 ${(x_i, y_i)}$，找一组参数 $\theta$，让 $P_\theta(y \mid x)$ 尽量贴住背后那个真实存在但未知的 $P^*(y \mid x)$</strong>。</p>
+</blockquote>
+<p>"找参数 $\theta$" 这件事在数学上叫<strong>函数逼近</strong>，工程上叫<strong>训练</strong>。它的可行性靠两条腿撑着：</p>
+<ol>
+<li><strong>万能函数模拟器</strong>：足够宽 + 足够深的可微分程序可以<strong>逼近</strong>任意一个我们想要的函数 $P^*$（§2、§3）。</li>
+<li><strong>微积分</strong>：靠 <code>loss.backward()</code> 自动求导 + SGD 一小步一小步走，从一个随机初始化的 $\theta_0$ "积分"到一个好用的 $\theta^*$（§4、§6、§9）。</li>
+</ol>
+<p>剩下所有节都是把这十几行代码展开来讲：万能函数模拟器为什么能成立、微积分凭什么搞定离散语言、矩阵和概率分别是这台机器里的哪个零件。</p>
+<hr />
+<h2 id="2">2. 万能函数模拟器：通用近似定理的工程含义</h2>
+<h3 id="21">2.1 一个"过于强"的数学事实</h3>
+<p>1989 年，Cybenko 和 Hornik 各自证明了<strong>通用近似定理（Universal Approximation Theorem）</strong>：</p>
+<blockquote>
+<p>给定任意一个连续函数 $f : \mathbb{R}^n \to \mathbb{R}^m$ 和任意精度 $\varepsilon &gt; 0$，<strong>存在</strong>一个单隐层前馈网络，使得它和 $f$ 在任意紧集上的差距处处小于 $\varepsilon$。</p>
+</blockquote>
+<p>翻译成工程语言：<strong>只要你给我足够多的神经元，我可以拟合任何连续函数到任意精度</strong>。</p>
+<p>这是个看起来"过于强"的结论——它没有限制 $f$ 是线性的、不要求 $f$ 解析、不要求 $f$ 有任何特殊结构。听起来像一台<strong>万能函数模拟器</strong>。</p>
+<h3 id="22-50">2.2 二维玩具版：50 行代码就能感受到</h3>
+<p>不必信教科书的证明，自己跑一次就能信。我们让一个单隐层 MLP 拟合 $\sin(3x) + 0.3 \cos(7x)$ 这种带高频抖动的曲线：</p>
+<div class="highlight"><pre><span></span><code><span class="kn">import</span><span class="w"> </span><span class="nn">torch</span><span class="o">,</span><span class="w"> </span><span class="nn">torch.nn</span><span class="w"> </span><span class="k">as</span><span class="w"> </span><span class="nn">nn</span>
+<span class="kn">import</span><span class="w"> </span><span class="nn">torch.nn.functional</span><span class="w"> </span><span class="k">as</span><span class="w"> </span><span class="nn">F</span>
+
+<span class="n">x</span> <span class="o">=</span> <span class="n">torch</span><span class="o">.</span><span class="n">linspace</span><span class="p">(</span><span class="o">-</span><span class="mi">3</span><span class="p">,</span> <span class="mi">3</span><span class="p">,</span> <span class="mi">200</span><span class="p">)</span><span class="o">.</span><span class="n">unsqueeze</span><span class="p">(</span><span class="mi">1</span><span class="p">)</span>             <span class="c1"># (200, 1)</span>
+<span class="n">y</span> <span class="o">=</span> <span class="n">torch</span><span class="o">.</span><span class="n">sin</span><span class="p">(</span><span class="mi">3</span><span class="o">*</span><span class="n">x</span><span class="p">)</span> <span class="o">+</span> <span class="mf">0.3</span><span class="o">*</span><span class="n">torch</span><span class="o">.</span><span class="n">cos</span><span class="p">(</span><span class="mi">7</span><span class="o">*</span><span class="n">x</span><span class="p">)</span>                 <span class="c1"># 目标:一条很抖的曲线</span>
+
+<span class="c1"># 一个最简单的万能函数模拟器:单隐层 MLP</span>
+<span class="k">class</span><span class="w"> </span><span class="nc">TinyApproximator</span><span class="p">(</span><span class="n">nn</span><span class="o">.</span><span class="n">Module</span><span class="p">):</span>
+    <span class="k">def</span><span class="w"> </span><span class="fm">__init__</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">hidden</span><span class="o">=</span><span class="mi">128</span><span class="p">):</span>
+        <span class="nb">super</span><span class="p">()</span><span class="o">.</span><span class="fm">__init__</span><span class="p">()</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">fc1</span> <span class="o">=</span> <span class="n">nn</span><span class="o">.</span><span class="n">Linear</span><span class="p">(</span><span class="mi">1</span><span class="p">,</span> <span class="n">hidden</span><span class="p">)</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">fc2</span> <span class="o">=</span> <span class="n">nn</span><span class="o">.</span><span class="n">Linear</span><span class="p">(</span><span class="n">hidden</span><span class="p">,</span> <span class="mi">1</span><span class="p">)</span>
+    <span class="k">def</span><span class="w"> </span><span class="nf">forward</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">x</span><span class="p">):</span>
+        <span class="k">return</span> <span class="bp">self</span><span class="o">.</span><span class="n">fc2</span><span class="p">(</span><span class="n">torch</span><span class="o">.</span><span class="n">tanh</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">fc1</span><span class="p">(</span><span class="n">x</span><span class="p">)))</span>
+
+<span class="n">net</span> <span class="o">=</span> <span class="n">TinyApproximator</span><span class="p">(</span><span class="n">hidden</span><span class="o">=</span><span class="mi">128</span><span class="p">)</span>
+<span class="n">opt</span> <span class="o">=</span> <span class="n">torch</span><span class="o">.</span><span class="n">optim</span><span class="o">.</span><span class="n">Adam</span><span class="p">(</span><span class="n">net</span><span class="o">.</span><span class="n">parameters</span><span class="p">(),</span> <span class="n">lr</span><span class="o">=</span><span class="mf">1e-2</span><span class="p">)</span>
+<span class="k">for</span> <span class="n">_</span> <span class="ow">in</span> <span class="nb">range</span><span class="p">(</span><span class="mi">2000</span><span class="p">):</span>
+    <span class="n">opt</span><span class="o">.</span><span class="n">zero_grad</span><span class="p">()</span>
+    <span class="n">loss</span> <span class="o">=</span> <span class="n">F</span><span class="o">.</span><span class="n">mse_loss</span><span class="p">(</span><span class="n">net</span><span class="p">(</span><span class="n">x</span><span class="p">),</span> <span class="n">y</span><span class="p">)</span>                        <span class="c1"># ← 唯一的&quot;目标&quot;</span>
+    <span class="n">loss</span><span class="o">.</span><span class="n">backward</span><span class="p">()</span>                                     <span class="c1"># ← 唯一的&quot;反推规则&quot;</span>
+    <span class="n">opt</span><span class="o">.</span><span class="n">step</span><span class="p">()</span>
+
+<span class="nb">print</span><span class="p">(</span><span class="n">loss</span><span class="o">.</span><span class="n">item</span><span class="p">())</span>   <span class="c1"># ≈ 1e-4,曲线已经被压住</span>
+</code></pre></div>
+
+<p>把 <code>net(x)</code> 和 <code>y</code> 画到一起，两条曲线几乎重合。<strong>没有人告诉网络这是 sin 和 cos，没有写任何三角公式</strong>——只是一段两行 <code>nn.Linear</code> 的可微分程序 + 一个 MSE loss + 反向传播。</p>
+<p>这就是"万能函数模拟器"在最朴素意义下的样子：<strong>一段带 $128$ 个可调旋钮的可微分程序，在被 2000 步梯度下降"扭"完之后，就成了 $\sin(3x) + 0.3\cos(7x)$ 的良好近似</strong>。</p>
+<h3 id="23-sin-py-mid-x">2.3 三层升级：从拟合 sin 到拟合 $P(y \mid x)$</h3>
+<p>把上面那段代码做三处升级，就一路升到 CodeGPT：</p>
+<table>
+<thead>
+<tr>
+<th>升级</th>
+<th>TinyApproximator</th>
+<th>CodeGPT</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><strong>输入维度</strong></td>
+<td>1 维实数 <code>x</code></td>
+<td>1024 维 token id 序列（<code>block_size=1024</code>）</td>
+</tr>
+<tr>
+<td><strong>输出对象</strong></td>
+<td>1 维实数 <code>y</code></td>
+<td>50304 维概率向量（<code>vocab_size=50304</code>）</td>
+</tr>
+<tr>
+<td><strong>中间层</strong></td>
+<td>单隐层 128 维 + tanh</td>
+<td>12 层 Block × 768 维 + GELU + Attention</td>
+</tr>
+<tr>
+<td><strong>损失函数</strong></td>
+<td><code>F.mse_loss</code>（连续值用 L2）</td>
+<td><code>F.cross_entropy</code>（离散类别）</td>
+</tr>
+<tr>
+<td><strong>参数量</strong></td>
+<td>~400 个</td>
+<td>~124M 个</td>
+</tr>
+</tbody>
+</table>
+<p>但<strong>结构完全一致</strong>：一段可微分程序 + 一个 loss + 反向传播。区别只在维度大小和 loss 选哪种。</p>
+<blockquote>
+<p><strong>大模型的全部"魔法"——通用近似定理决定了它"理论上能做到"，剩下的全是工程上的"实际让它做到"</strong>。</p>
+</blockquote>
+<h3 id="24">2.4 "存在"和"找得到"是两回事</h3>
+<p>通用近似定理有一个常被忽略的细节：它只说<strong>存在</strong>这样一个网络，<strong>没说怎么找到</strong>。</p>
+<p>可以打个比方：定理告诉你"这片森林里一定有一棵能让你穿越的大树"——但没告诉你它长在哪、有多远、要砍掉多少藤蔓才到得了。</p>
+<p>这就是为什么"万能函数模拟器"必须配上"微积分"才能跑起来——<strong>微积分告诉我们怎么从随机的 $\theta_0$ 一步步走到那棵大树</strong>。这是 §4 的主题。</p>
+<p>但在跳到微积分之前，还有一件事必须先讲清楚：<strong>"用一组简单函数搭出任意复杂函数"这个想法,不是 1989 年才被发明的</strong>。它是一条三百年的家谱——泰勒、傅立叶、小波、神经网络——同一主题在不同基函数上的反复回响。下一节先把这条家谱拉直，再回到微积分。</p>
+<hr />
+<h2 id="3">3. 万能函数思想的家谱：泰勒、傅立叶、神经网络</h2>
+<p>通用近似定理(UAT)只是"万能函数"思想链条的<strong>最新一环</strong>;前面还有泰勒级数、傅立叶级数、Weierstrass 逼近定理、小波分析。它们共享一个统一框架,只在<strong>"基函数选什么"</strong>和<strong>"系数怎么定"</strong>这两件事上有差异。把这条家谱拉直,神经网络的"承"与"新"就一目了然——它承接了三百年来"用简单基搭复杂函数"的传统,新意在于<strong>基函数本身能从数据学出来</strong>。</p>
+<h3 id="31-1989">3.1 通用近似不是 1989 年才有的</h3>
+<p>数学史上有一条贯穿三百年的主线:</p>
+<table>
+<thead>
+<tr>
+<th>年代</th>
+<th>谁</th>
+<th>想法</th>
+<th>用什么"基"</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>1715</td>
+<td>Taylor</td>
+<td>任何光滑函数可以用多项式逼近</td>
+<td>${1, x, x^2, x^3, \ldots}$</td>
+</tr>
+<tr>
+<td>1807</td>
+<td>Fourier</td>
+<td>任何周期信号可以用 sin/cos 叠加</td>
+<td>${1, \sin nx, \cos nx}$</td>
+</tr>
+<tr>
+<td>1885</td>
+<td>Weierstrass</td>
+<td>闭区间上连续函数可以用多项式一致逼近</td>
+<td>${1, x, x^2, \ldots}$(稠密性)</td>
+</tr>
+<tr>
+<td>1936</td>
+<td>Kolmogorov</td>
+<td>$n$ 元连续函数 = 一元函数嵌套</td>
+<td>一元函数(为 UAT 埋伏笔)</td>
+</tr>
+<tr>
+<td>1989</td>
+<td>Cybenko / Hornik</td>
+<td>单隐层神经网络逼近任意连续函数</td>
+<td>${\sigma(w^\top x + b)}$(可学习)</td>
+</tr>
+<tr>
+<td>1990s</td>
+<td>Daubechies / Mallat</td>
+<td>小波分析:局部 + 多尺度逼近</td>
+<td>${\psi_{j,k}(x)}$(自相似基)</td>
+</tr>
+</tbody>
+</table>
+<p>每一行都在说<strong>同一句话</strong>:"给一组简单基函数,任意复杂函数可以表示为它们的(无穷)线性组合"。但每一行选了不同的<strong>基</strong>——多项式、三角、神经元、小波。下面三节先看最老的两位玩家。</p>
+<h3 id="32">3.2 泰勒级数:多项式作为万能基</h3>
+<p>牛顿 / 莱布尼茨发明微积分之后,Taylor 在 1715 年给出第一种"万能函数"的写法:任何光滑函数 $f$ 在 $a$ 点附近,可以展开成</p>
+<p>$$
+f(x) \;=\; \sum_{n=0}^{\infty} \frac{f^{(n)}(a)}{n!} (x-a)^n
+$$</p>
+<p>翻译成代码——用前 $N$ 项的泰勒展开逼近 $\sin x$:</p>
+<div class="highlight"><pre><span></span><code><span class="kn">import</span><span class="w"> </span><span class="nn">torch</span><span class="o">,</span><span class="w"> </span><span class="nn">math</span>
+
+<span class="k">def</span><span class="w"> </span><span class="nf">taylor_sin</span><span class="p">(</span><span class="n">x</span><span class="p">,</span> <span class="n">N</span><span class="o">=</span><span class="mi">10</span><span class="p">):</span>
+<span class="w">    </span><span class="sd">&quot;&quot;&quot;sin 的泰勒展开:x - x^3/3! + x^5/5! - x^7/7! + ...&quot;&quot;&quot;</span>
+    <span class="n">result</span> <span class="o">=</span> <span class="n">torch</span><span class="o">.</span><span class="n">zeros_like</span><span class="p">(</span><span class="n">x</span><span class="p">)</span>
+    <span class="k">for</span> <span class="n">n</span> <span class="ow">in</span> <span class="nb">range</span><span class="p">(</span><span class="n">N</span><span class="p">):</span>
+        <span class="n">sign</span> <span class="o">=</span> <span class="p">(</span><span class="o">-</span><span class="mi">1</span><span class="p">)</span><span class="o">**</span><span class="n">n</span>
+        <span class="n">result</span> <span class="o">=</span> <span class="n">result</span> <span class="o">+</span> <span class="n">sign</span> <span class="o">*</span> <span class="n">x</span><span class="o">**</span><span class="p">(</span><span class="mi">2</span><span class="o">*</span><span class="n">n</span><span class="o">+</span><span class="mi">1</span><span class="p">)</span> <span class="o">/</span> <span class="n">math</span><span class="o">.</span><span class="n">factorial</span><span class="p">(</span><span class="mi">2</span><span class="o">*</span><span class="n">n</span><span class="o">+</span><span class="mi">1</span><span class="p">)</span>
+    <span class="k">return</span> <span class="n">result</span>
+
+<span class="n">x</span> <span class="o">=</span> <span class="n">torch</span><span class="o">.</span><span class="n">linspace</span><span class="p">(</span><span class="o">-</span><span class="mi">3</span><span class="p">,</span> <span class="mi">3</span><span class="p">,</span> <span class="mi">100</span><span class="p">)</span>
+<span class="n">y_true</span>   <span class="o">=</span> <span class="n">torch</span><span class="o">.</span><span class="n">sin</span><span class="p">(</span><span class="n">x</span><span class="p">)</span>
+<span class="n">y_approx</span> <span class="o">=</span> <span class="n">taylor_sin</span><span class="p">(</span><span class="n">x</span><span class="p">,</span> <span class="n">N</span><span class="o">=</span><span class="mi">10</span><span class="p">)</span>
+<span class="nb">print</span><span class="p">((</span><span class="n">y_true</span> <span class="o">-</span> <span class="n">y_approx</span><span class="p">)</span><span class="o">.</span><span class="n">abs</span><span class="p">()</span><span class="o">.</span><span class="n">max</span><span class="p">())</span>   <span class="c1"># ≈ 1e-5,几乎完美</span>
+</code></pre></div>
+
+<p>注意几件事:</p>
+<ol>
+<li><strong>基函数预先定死</strong>:${1, x, x^2, x^3, \ldots}$ 这套多项式基,Taylor 没"学"出来,是数学规定好的;</li>
+<li><strong>系数 $\frac{f^{(n)}(a)}{n!}$ 也是分析地算出来的</strong>——对 $f$ 求 $n$ 阶导,代入 $a$;</li>
+<li><strong>局部展开</strong>:展开点 $a$ 越远,逼近越差。</li>
+</ol>
+<p>这是"万能函数"思想的第一个工程化样本——但它要求 $f$ 必须<strong>已知且光滑</strong>,所以只能"算"不能"学"。</p>
+<h3 id="33-sincos">3.3 傅立叶级数:sin/cos 作为万能基</h3>
+<p>Fourier 在 1807 年提出更大胆的主张:<strong>任何周期信号都可以写成 sin 和 cos 的(无穷)叠加</strong>。这就是"一切信号都可以用 sin/cos 组合变形表示"——音频、图像、通信、量子力学的底层语言两百年来都建立在这一句话上。</p>
+<p>用代码逼近一个方波看:</p>
+<div class="highlight"><pre><span></span><code><span class="kn">import</span><span class="w"> </span><span class="nn">torch</span><span class="o">,</span><span class="w"> </span><span class="nn">math</span>
+
+<span class="k">def</span><span class="w"> </span><span class="nf">fourier_square</span><span class="p">(</span><span class="n">x</span><span class="p">,</span> <span class="n">N</span><span class="o">=</span><span class="mi">20</span><span class="p">):</span>
+<span class="w">    </span><span class="sd">&quot;&quot;&quot;方波的傅立叶级数:sin(x) + sin(3x)/3 + sin(5x)/5 + ...&quot;&quot;&quot;</span>
+    <span class="n">result</span> <span class="o">=</span> <span class="n">torch</span><span class="o">.</span><span class="n">zeros_like</span><span class="p">(</span><span class="n">x</span><span class="p">)</span>
+    <span class="k">for</span> <span class="n">n</span> <span class="ow">in</span> <span class="nb">range</span><span class="p">(</span><span class="mi">1</span><span class="p">,</span> <span class="mi">2</span><span class="o">*</span><span class="n">N</span><span class="p">,</span> <span class="mi">2</span><span class="p">):</span>     <span class="c1"># 只取奇数次谐波</span>
+        <span class="n">result</span> <span class="o">=</span> <span class="n">result</span> <span class="o">+</span> <span class="n">torch</span><span class="o">.</span><span class="n">sin</span><span class="p">(</span><span class="n">n</span> <span class="o">*</span> <span class="n">x</span><span class="p">)</span> <span class="o">/</span> <span class="n">n</span>
+    <span class="k">return</span> <span class="n">result</span> <span class="o">*</span> <span class="p">(</span><span class="mi">4</span> <span class="o">/</span> <span class="n">math</span><span class="o">.</span><span class="n">pi</span><span class="p">)</span>
+
+<span class="n">x</span> <span class="o">=</span> <span class="n">torch</span><span class="o">.</span><span class="n">linspace</span><span class="p">(</span><span class="o">-</span><span class="n">math</span><span class="o">.</span><span class="n">pi</span><span class="p">,</span> <span class="n">math</span><span class="o">.</span><span class="n">pi</span><span class="p">,</span> <span class="mi">1000</span><span class="p">)</span>
+<span class="n">y</span> <span class="o">=</span> <span class="n">fourier_square</span><span class="p">(</span><span class="n">x</span><span class="p">,</span> <span class="n">N</span><span class="o">=</span><span class="mi">20</span><span class="p">)</span>
+<span class="c1"># 把 y 画出来:已经是一个清晰的方波(只是边角有 Gibbs 振荡)</span>
+</code></pre></div>
+
+<p>只用 20 个 sin 项,就能把方波这种"不连续、有跳跃"的奇形怪状信号近似得相当像样。<strong>连方波这种带跳跃的函数都能被光滑的 sin/cos 叠加出来</strong>——这是 Fourier 当年震惊整个数学界的发现。</p>
+<p>把它推广到非周期信号就是<strong>傅立叶变换</strong>——在"时域"和"频域"之间互译:</p>
+<div class="highlight"><pre><span></span><code><span class="kn">import</span><span class="w"> </span><span class="nn">torch</span>
+<span class="n">signal</span>   <span class="o">=</span> <span class="n">torch</span><span class="o">.</span><span class="n">sin</span><span class="p">(</span><span class="mi">2</span><span class="o">*</span><span class="n">math</span><span class="o">.</span><span class="n">pi</span><span class="o">*</span><span class="mi">5</span><span class="o">*</span><span class="n">torch</span><span class="o">.</span><span class="n">linspace</span><span class="p">(</span><span class="mi">0</span><span class="p">,</span><span class="mi">1</span><span class="p">,</span><span class="mi">256</span><span class="p">))</span> \
+         <span class="o">+</span> <span class="mf">0.5</span><span class="o">*</span><span class="n">torch</span><span class="o">.</span><span class="n">sin</span><span class="p">(</span><span class="mi">2</span><span class="o">*</span><span class="n">math</span><span class="o">.</span><span class="n">pi</span><span class="o">*</span><span class="mi">12</span><span class="o">*</span><span class="n">torch</span><span class="o">.</span><span class="n">linspace</span><span class="p">(</span><span class="mi">0</span><span class="p">,</span><span class="mi">1</span><span class="p">,</span><span class="mi">256</span><span class="p">))</span>
+<span class="n">spectrum</span> <span class="o">=</span> <span class="n">torch</span><span class="o">.</span><span class="n">fft</span><span class="o">.</span><span class="n">fft</span><span class="p">(</span><span class="n">signal</span><span class="p">)</span>         <span class="c1"># 时域 → 频域:能看到 5Hz、12Hz 两个峰</span>
+<span class="n">recovered</span> <span class="o">=</span> <span class="n">torch</span><span class="o">.</span><span class="n">fft</span><span class="o">.</span><span class="n">ifft</span><span class="p">(</span><span class="n">spectrum</span><span class="p">)</span>     <span class="c1"># 频域 → 时域:精确还原</span>
+</code></pre></div>
+
+<p><strong>任何信号 = 一族 sin/cos 的加权和</strong>——这是历史上第一个真正"万能"的信号模拟器。但和泰勒一样有限制:</p>
+<ol>
+<li><strong>基函数预先定死</strong>:${\sin nx, \cos nx}$ 这套基不是学出来的;</li>
+<li><strong>系数靠数学公式算</strong>:$a_n = \frac{1}{\pi}\int f(x)\cos nx \, dx$;</li>
+<li><strong>基是"全局"的</strong>:每个 sin 占满整个 x 轴,信号的局部突变要靠很多高频项压住(就是 Gibbs 振荡的来源)。</li>
+</ol>
+<p>第三点正是小波分析后来要补的——基函数应该"既看大尺度、又看小尺度",于是有了 $\psi_{j,k}(x) = 2^{j/2}\psi(2^j x - k)$ 的多尺度自相似设计。但小波依然属于"基函数预先定死"的家族。</p>
+<h3 id="34">3.4 统一框架:万能函数 = 基 × 系数 的线性组合</h3>
+<p>把泰勒、傅立叶、小波、神经网络放到一张表上,<strong>结构惊人地一致</strong>:</p>
+<table>
+<thead>
+<tr>
+<th>万能函数</th>
+<th>基函数 $\phi_i(x)$</th>
+<th>系数 $c_i$</th>
+<th>系数从哪来</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>泰勒级数</td>
+<td>$(x-a)^n / n!$</td>
+<td>$f^{(n)}(a)$</td>
+<td>解析求导</td>
+</tr>
+<tr>
+<td>傅立叶级数</td>
+<td>$\sin nx, \cos nx$</td>
+<td>$a_n, b_n$</td>
+<td>积分公式</td>
+</tr>
+<tr>
+<td>小波分解</td>
+<td>$\psi_{j,k}(x)$</td>
+<td>$\langle f, \psi_{j,k}\rangle$</td>
+<td>内积</td>
+</tr>
+<tr>
+<td><strong>单隐层 MLP</strong></td>
+<td>$\sigma(w_i^\top x + b_i)$</td>
+<td>输出层权重 $W_{2,i}$</td>
+<td><strong>梯度下降学</strong></td>
+</tr>
+</tbody>
+</table>
+<p>所有万能函数都长成这个样子:</p>
+<p>$$
+f(x) \;\approx\; \sum_{i=1}^{N} c_i \cdot \phi_i(x)
+$$</p>
+<p>——线性组合,系数加权,基函数堆叠。"万能性"来自基函数的<strong>完备性</strong>(complete basis):基足够多,组合空间就足够大,能逼近的函数族就足够广。</p>
+<p>写成 PyTorch,单隐层 MLP 的 forward 一行代码就是这个公式:</p>
+<div class="highlight"><pre><span></span><code><span class="c1"># §2 那段 TinyApproximator 的本质</span>
+<span class="k">def</span><span class="w"> </span><span class="nf">forward</span><span class="p">(</span><span class="n">x</span><span class="p">):</span>
+    <span class="n">phi</span> <span class="o">=</span> <span class="n">torch</span><span class="o">.</span><span class="n">tanh</span><span class="p">(</span><span class="n">W1</span> <span class="o">@</span> <span class="n">x</span> <span class="o">+</span> <span class="n">b1</span><span class="p">)</span>    <span class="c1"># N 个基函数 σ(w_i^T x + b_i) 同时算出来</span>
+    <span class="k">return</span> <span class="n">W2</span> <span class="o">@</span> <span class="n">phi</span>                   <span class="c1"># 加权求和:Σ c_i * φ_i(x)</span>
+</code></pre></div>
+
+<p><code>W1</code> 的每一行就是一个 $w_i$——决定了"第 $i$ 个基函数长什么样";<code>W2</code> 那一行就是那一组系数 $c_i$。§2 那段拟合 $\sin(3x) + 0.3\cos(7x)$ 的代码做的正是这件事——<strong>用 128 个 $\tanh$ 基函数 + 128 个学出来的系数,逼近一条带高频抖动的曲线</strong>。</p>
+<h3 id="35">3.5 神经网络的关键飞跃:基函数本身被学出来</h3>
+<p>把上表最右一列再看一眼——前三行的系数都是用<strong>分析/积分</strong>算出来的,神经网络是用<strong>梯度下降学</strong>的。但这只是表面差异。<strong>更深的差异在基函数本身</strong>:</p>
+<table>
+<thead>
+<tr>
+<th></th>
+<th>基函数 $\phi_i$</th>
+<th>是否可调</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>泰勒</td>
+<td>$(x-a)^n$</td>
+<td>死(无可调参数)</td>
+</tr>
+<tr>
+<td>傅立叶</td>
+<td>$\sin nx, \cos nx$</td>
+<td>死(频率 $n$ 是固定整数)</td>
+</tr>
+<tr>
+<td>小波</td>
+<td>$\psi_{j,k}(x) = 2^{j/2}\psi(2^j x - k)$</td>
+<td>死(母小波 $\psi$ 选定后只能平移缩放)</td>
+</tr>
+<tr>
+<td><strong>MLP</strong></td>
+<td>$\sigma(w^\top x + b)$</td>
+<td><strong>活($w, b$ 自己学</strong>)</td>
+</tr>
+</tbody>
+</table>
+<p>这才是 1989 年 Cybenko/Hornik 的真正突破——<strong>基函数不再预先定死,而是和系数一起从数据里学出来</strong>。</p>
+<p>直觉上的差别:</p>
+<ul>
+<li><strong>泰勒/傅立叶</strong>:像给你一套<strong>通用积木</strong>(每种形状预先做好),让你拼一个具体形状。形状越复杂,需要的积木越多;</li>
+<li><strong>神经网络</strong>:像给你一团<strong>橡皮泥</strong>——你可以现场捏出最适合手头任务的"积木形状",再用少量这种定制积木拼。</li>
+</ul>
+<p>代码上看,这个"学基函数"的能力来自每一行 <code>nn.Linear</code>:</p>
+<div class="highlight"><pre><span></span><code><span class="c1"># model.py:36</span>
+<span class="bp">self</span><span class="o">.</span><span class="n">c_attn</span> <span class="o">=</span> <span class="n">nn</span><span class="o">.</span><span class="n">Linear</span><span class="p">(</span><span class="n">config</span><span class="o">.</span><span class="n">n_embd</span><span class="p">,</span> <span class="mi">3</span> <span class="o">*</span> <span class="n">config</span><span class="o">.</span><span class="n">n_embd</span><span class="p">,</span> <span class="n">bias</span><span class="o">=</span><span class="n">config</span><span class="o">.</span><span class="n">bias</span><span class="p">)</span>
+<span class="c1"># 这里的 W 是可学习的——也就是&quot;基函数 σ(W·x + b) 的 W 是 trainable&quot;</span>
+</code></pre></div>
+
+<p>每个 <code>nn.Linear</code> 都在为下一层的非线性激活准备"基函数的形状"。梯度下降每跑一步,都在调整这些 $w_i$,让基函数族更适合当前任务。</p>
+<p><strong>这就是为什么神经网络比固定基万能函数更高效</strong>:</p>
+<ul>
+<li>用傅立叶逼近 GitHub 上的 Python 代码——需要海量 sin/cos 项,因为 sin/cos 对"代码结构"完全不敏感;</li>
+<li>用神经网络逼近同样的东西——基函数会自动演化成"代码 token 模式"、"括号嵌套"、"变量定义结构"这种<strong>任务相关</strong>的形状,效率高几个数量级。</li>
+</ul>
+<p>§4(微积分反推) 把"基函数怎么被学"这件事的机制讲清楚——靠 <code>loss.backward()</code> 沿链式法则把误差信号传到每个 $w_i$ 上,梯度下降按这个信号扭基函数。</p>
+<h3 id="36-sincos-transformer">3.6 现代回响:sin/cos 在 Transformer 里依然在工作</h3>
+<p>值得指出的是——<strong>Fourier 的 sin/cos 思想并没有被神经网络淘汰</strong>,反而在 Transformer 的关键位置上回归:</p>
+<h4 id="a-transformer-fourier">(a) 原版 Transformer 的位置编码就是 Fourier 基</h4>
+<p>2017 年 Vaswani 那篇 Transformer 论文里,位置编码不是学出来的,而是写死的 sin/cos:</p>
+<p>$$
+\text{PE}(pos, 2i)   = \sin(pos / 10000^{2i/d}), \quad
+\text{PE}(pos, 2i+1) = \cos(pos / 10000^{2i/d})
+$$</p>
+<div class="highlight"><pre><span></span><code><span class="kn">import</span><span class="w"> </span><span class="nn">torch</span><span class="o">,</span><span class="w"> </span><span class="nn">math</span>
+<span class="k">def</span><span class="w"> </span><span class="nf">sinusoidal_pos_emb</span><span class="p">(</span><span class="n">T</span><span class="p">,</span> <span class="n">d_model</span><span class="p">):</span>
+<span class="w">    </span><span class="sd">&quot;&quot;&quot;原版 Transformer 位置编码:用 d/2 个频率的 sin/cos 表示位置&quot;&quot;&quot;</span>
+    <span class="n">pos</span> <span class="o">=</span> <span class="n">torch</span><span class="o">.</span><span class="n">arange</span><span class="p">(</span><span class="n">T</span><span class="p">)</span><span class="o">.</span><span class="n">unsqueeze</span><span class="p">(</span><span class="mi">1</span><span class="p">)</span>
+    <span class="n">i</span>   <span class="o">=</span> <span class="n">torch</span><span class="o">.</span><span class="n">arange</span><span class="p">(</span><span class="n">d_model</span> <span class="o">//</span> <span class="mi">2</span><span class="p">)</span><span class="o">.</span><span class="n">unsqueeze</span><span class="p">(</span><span class="mi">0</span><span class="p">)</span>
+    <span class="n">angle</span> <span class="o">=</span> <span class="n">pos</span> <span class="o">/</span> <span class="p">(</span><span class="mi">10000</span> <span class="o">**</span> <span class="p">(</span><span class="mi">2</span><span class="o">*</span><span class="n">i</span> <span class="o">/</span> <span class="n">d_model</span><span class="p">))</span>
+    <span class="k">return</span> <span class="n">torch</span><span class="o">.</span><span class="n">cat</span><span class="p">([</span><span class="n">torch</span><span class="o">.</span><span class="n">sin</span><span class="p">(</span><span class="n">angle</span><span class="p">),</span> <span class="n">torch</span><span class="o">.</span><span class="n">cos</span><span class="p">(</span><span class="n">angle</span><span class="p">)],</span> <span class="n">dim</span><span class="o">=-</span><span class="mi">1</span><span class="p">)</span>
+</code></pre></div>
+
+<p>这就是 §3.3 那个傅立叶基的字面应用——把"序列位置"这个一维变量,展开成 $d/2$ 个不同频率的 sin/cos。"位置"的所有有用特征(相邻、远距、周期模式)都藏在这些频率分量里。</p>
+<p>CodeGPT 用的是<strong>可学习的位置编码</strong> <code>wpe = nn.Embedding(block_size, n_embd)</code>(<code>model.py:146</code>),把 sin/cos 那一套换成自由参数——这是基函数从"死"到"活"的又一次替代。</p>
+<h4 id="b-rope-sincos-q-k">(b) RoPE:让 sin/cos 直接旋转 Q 和 K</h4>
+<p>2021 年提出的 <strong>RoPE(Rotary Position Embedding)</strong>——本项目训练报告 <code>docs/training-report-2026-03-21/</code> 里的 autoresearch 升级就采用了它——更进一步,<strong>把 sin/cos 嵌进 attention 内部</strong>:让 Q 和 K 在不同位置上以不同角度旋转。</p>
+<div class="highlight"><pre><span></span><code><span class="kn">import</span><span class="w"> </span><span class="nn">math</span><span class="o">,</span><span class="w"> </span><span class="nn">torch</span>
+
+<span class="k">def</span><span class="w"> </span><span class="nf">rope_pair</span><span class="p">(</span><span class="n">q_a</span><span class="p">,</span> <span class="n">q_b</span><span class="p">,</span> <span class="n">m</span><span class="p">,</span> <span class="n">theta</span><span class="p">):</span>
+<span class="w">    </span><span class="sd">&quot;&quot;&quot;把 (q_a, q_b) 看作复平面上的向量,按角度 m·θ 旋转&quot;&quot;&quot;</span>
+    <span class="n">c</span><span class="p">,</span> <span class="n">s</span> <span class="o">=</span> <span class="n">math</span><span class="o">.</span><span class="n">cos</span><span class="p">(</span><span class="n">m</span><span class="o">*</span><span class="n">theta</span><span class="p">),</span> <span class="n">math</span><span class="o">.</span><span class="n">sin</span><span class="p">(</span><span class="n">m</span><span class="o">*</span><span class="n">theta</span><span class="p">)</span>
+    <span class="k">return</span> <span class="n">q_a</span><span class="o">*</span><span class="n">c</span> <span class="o">-</span> <span class="n">q_b</span><span class="o">*</span><span class="n">s</span><span class="p">,</span> <span class="n">q_a</span><span class="o">*</span><span class="n">s</span> <span class="o">+</span> <span class="n">q_b</span><span class="o">*</span><span class="n">c</span>
+</code></pre></div>
+
+<p>这是 Fourier 思想做位置感知的极致写法——<strong>sin/cos 的旋转性质直接服务于"相对位置 = 两点旋转角差"这种几何直觉</strong>。点积 $Q_m \cdot K_n$ 自动只依赖 $m-n$ 这个相对距离,而不依赖绝对位置 $m, n$。</p>
+<h4 id="c-attention">(c) Attention 本质上就是一种"在学出来的基上展开"</h4>
+<p>更宏观地看——attention 里 <code>softmax(QK^T) @ V</code> 的过程,<strong>Q 在 K 群里找匹配,按相似度加权 V</strong>——也可以理解为"在一组学出来的基(K 们)上展开 V"。这和 Fourier 把信号展开到频域、wavelet 把信号展开到时频域,精神上是同一件事:</p>
+<table>
+<thead>
+<tr>
+<th></th>
+<th>基函数</th>
+<th>展开系数</th>
+<th>输出</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>Fourier</td>
+<td>$\sin nx, \cos nx$(死的)</td>
+<td>积分得到的 $a_n, b_n$</td>
+<td>$\sum a_n \cos nx + b_n \sin nx$</td>
+</tr>
+<tr>
+<td>Wavelet</td>
+<td>$\psi_{j,k}$(死的)</td>
+<td>$\langle f, \psi_{j,k}\rangle$</td>
+<td>$\sum \langle f, \psi_{j,k}\rangle \psi_{j,k}$</td>
+</tr>
+<tr>
+<td>Attention</td>
+<td>每个位置的 K(活的)</td>
+<td>$\text{softmax}(QK^\top)$</td>
+<td>$\sum \text{softmax}(QK^\top)_i \cdot V_i$</td>
+</tr>
+</tbody>
+</table>
+<p>attention 不是"什么神奇的新机制",它就是<strong>学版本的 Fourier 展开</strong>——基(K)和系数($\text{softmax}(QK^\top)$)都从数据学(参见 <a href="./GPT_AS_SUPER_SEARCH.md">GPT_AS_SUPER_SEARCH.md</a>)。</p>
+<h4 id="d">(d) 一句话总结这一节</h4>
+<blockquote>
+<p><strong>从泰勒到傅立叶到神经网络,"万能函数模拟器"是同一个主题的三种基</strong>。神经网络没有取代前两者——它在 sin/cos 这样的经典基不够用时,<strong>学一组任务相关的基</strong>接管;但在位置编码、attention、信号建模等场景里,Fourier 那套思想依然在 Transformer 内部静静工作。</p>
+</blockquote>
+<p>理解了这条家谱,你就能看清:LLM 不是凭空出现的"AI 神迹"——它是数学家三百年来"用简单基函数搭复杂函数"传统的最新继承者,只是这次基函数自己能动了。</p>
+<hr />
+<h2 id="4">4. 微积分的力量：从"算变化"到"反推原函数"</h2>
+<p><a href="./DIFFERENTIABLE_PROGRAMMING.md">DIFFERENTIABLE_PROGRAMMING.md §2</a> 已经把微积分的来历讲过了：牛顿 / 莱布尼茨在 17 世纪发明微积分，让人类第一次能描述"瞬时变化"和"反推原函数"。本节只补充一个角度——<strong>为什么"反推原函数"恰好是大模型训练的精神原型</strong>。</p>
+<h3 id="31">3.1 微积分的两半：导数 + 积分</h3>
+<div class="highlight"><pre><span></span><code><span class="c1"># 导数:已知位置 x(t),求每一时刻的速度 dx/dt</span>
+<span class="kn">import</span><span class="w"> </span><span class="nn">torch</span>
+<span class="n">t</span> <span class="o">=</span> <span class="n">torch</span><span class="o">.</span><span class="n">linspace</span><span class="p">(</span><span class="mi">0</span><span class="p">,</span> <span class="mi">10</span><span class="p">,</span> <span class="mi">1000</span><span class="p">,</span> <span class="n">requires_grad</span><span class="o">=</span><span class="kc">True</span><span class="p">)</span>
+<span class="n">x</span> <span class="o">=</span> <span class="n">torch</span><span class="o">.</span><span class="n">sin</span><span class="p">(</span><span class="n">t</span><span class="p">)</span>                          <span class="c1"># 位置</span>
+<span class="n">v</span> <span class="o">=</span> <span class="n">torch</span><span class="o">.</span><span class="n">autograd</span><span class="o">.</span><span class="n">grad</span><span class="p">(</span><span class="n">x</span><span class="o">.</span><span class="n">sum</span><span class="p">(),</span> <span class="n">t</span><span class="p">)[</span><span class="mi">0</span><span class="p">]</span>    <span class="c1"># 速度 = dx/dt = cos(t)</span>
+
+<span class="c1"># 积分:已知速度 v(t),反推原函数 x(t)</span>
+<span class="n">dt</span> <span class="o">=</span> <span class="p">(</span><span class="n">t</span><span class="p">[</span><span class="mi">1</span><span class="p">]</span> <span class="o">-</span> <span class="n">t</span><span class="p">[</span><span class="mi">0</span><span class="p">])</span><span class="o">.</span><span class="n">item</span><span class="p">()</span>
+<span class="n">x_reconstructed</span> <span class="o">=</span> <span class="n">torch</span><span class="o">.</span><span class="n">cumsum</span><span class="p">(</span><span class="n">v</span> <span class="o">*</span> <span class="n">dt</span><span class="p">,</span> <span class="n">dim</span><span class="o">=</span><span class="mi">0</span><span class="p">)</span>   <span class="c1"># 积分恢复原函数</span>
+</code></pre></div>
+
+<p><strong>导数</strong>：把变化率算出来。
+<strong>积分</strong>：从变化率反推回原函数。</p>
+<p>牛顿-莱布尼茨基本定理告诉我们这两半是互逆的。这个对偶后来反复出现：</p>
+<ul>
+<li>物理里：力 ↔ 位移（牛顿第二定律 $F = m \ddot{x}$）</li>
+<li>控制论里：误差 ↔ 控制信号</li>
+<li>ML 里：<strong>梯度 ↔ 参数更新</strong></li>
+<li>GPT 里：<strong>loss 的梯度 ↔ 整个 $P_\theta$ 的形状</strong></li>
+</ul>
+<h3 id="32_1">3.2 "反推原函数"在科学史上的样板</h3>
+<p>牛顿的样板任务是：<strong>观测到的是一颗行星每晚的位置（采样点），背后存在一条连续轨迹 $\vec r(t)$（原函数）——能不能从前者反推后者</strong>？</p>
+<p>牛顿的答案：写下 $\vec F = m \ddot{\vec r}$ + 万有引力定律 → <strong>解一个二阶微分方程</strong>。一旦给出初始条件，行星明晚的位置就由方程预测——人类<strong>第一次能用数学预测未来</strong>。</p>
+<p>到了 20 世纪气象学：观测到的是上千个气象站的离散读数，背后存在大气的连续场 $T(x,y,z,t)$、$p(x,y,z,t)$、$\vec v(x,y,z,t)$（原函数族）——用 <strong>Navier-Stokes 方程 + 数值离散化</strong>反推。今天打开手机看明天的天气，就是这个反推流程在算。</p>
+<p>到了 21 世纪大模型：观测到的是几万亿 token 的离散文本（采样点），背后存在某个真实的语言条件分布 $P^<em>(y \mid x)$（原函数）——</em><em>用什么方程反推</em>*？</p>
+<blockquote>
+<p><strong>没有 Navier-Stokes 这么干净的方程。所以我们写一段神经网络当"通用方程模板"——这就是万能函数模拟器登场的理由</strong>。</p>
+</blockquote>
+<p>天体物理里方程是人类发现的；天气方程是物理学家在 18-19 世纪推出来的；语言"方程"我们目前没找到——但通用近似定理保证：<strong>总有一个足够大的神经网络能近似它</strong>。剩下的就是让微积分把那个网络的参数"积分"出来。</p>
+<h3 id="33">3.3 三个"反推"的并列结构</h3>
+<table>
+<thead>
+<tr>
+<th>反推任务</th>
+<th>观测（采样点）</th>
+<th>待反推的原函数</th>
+<th>反推机制</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>行星轨道</td>
+<td>每晚天文观测</td>
+<td>连续轨迹 $\vec r(t)$</td>
+<td>$\vec F = m \ddot{\vec r}$ + 万有引力定律 + 积分</td>
+</tr>
+<tr>
+<td>明天天气</td>
+<td>上千气象站读数</td>
+<td>大气场 $T, p, \vec v$</td>
+<td>Navier-Stokes + 网格离散化 + 数值积分</td>
+</tr>
+<tr>
+<td>下一个 token</td>
+<td>几万亿 token 训练语料</td>
+<td>$P^*(y \mid x)$</td>
+<td>神经网络 + cross-entropy + SGD</td>
+</tr>
+</tbody>
+</table>
+<p>注意第三行的最后一格——它和前两行没有本质区别。<strong>SGD 就是大模型时代的"数值积分"</strong>：</p>
+<ul>
+<li>每次 <code>loss.backward()</code> 算出梯度，等价于物理里"算出此刻的力"；</li>
+<li>每次 <code>optimizer.step()</code> 走一小步，等价于"按这个力把粒子推一点"；</li>
+<li>几十万步累积下来，参数 $\theta$ 从随机起点"积分"到一个能让 loss 很小的点——<strong>这就是从离散观测里反推出原函数 $P^*$ 的全部数学</strong>。</li>
+</ul>
+<h3 id="34-autograd">3.4 链式法则：autograd 的核心一行</h3>
+<p>把"反推"的引擎拆开看，里面只有一条规则——<strong>链式法则</strong>：</p>
+<p>$$
+\frac{\partial L}{\partial \theta} \;=\; \frac{\partial L}{\partial y} \cdot \frac{\partial y}{\partial h} \cdot \frac{\partial h}{\partial \theta}
+$$</p>
+<p>用代码看更直白：</p>
+<div class="highlight"><pre><span></span><code><span class="kn">import</span><span class="w"> </span><span class="nn">torch</span>
+<span class="n">x</span> <span class="o">=</span> <span class="n">torch</span><span class="o">.</span><span class="n">tensor</span><span class="p">(</span><span class="mf">2.0</span><span class="p">)</span>
+<span class="n">theta</span> <span class="o">=</span> <span class="n">torch</span><span class="o">.</span><span class="n">tensor</span><span class="p">(</span><span class="mf">3.0</span><span class="p">,</span> <span class="n">requires_grad</span><span class="o">=</span><span class="kc">True</span><span class="p">)</span>
+
+<span class="c1"># 一段三层组合的&quot;程序&quot;</span>
+<span class="n">h</span> <span class="o">=</span> <span class="n">theta</span> <span class="o">*</span> <span class="n">x</span>         <span class="c1"># h = θ·x       ∂h/∂θ = x = 2</span>
+<span class="n">y</span> <span class="o">=</span> <span class="n">h</span> <span class="o">**</span> <span class="mi">2</span>            <span class="c1"># y = h²        ∂y/∂h = 2h = 12</span>
+<span class="n">L</span> <span class="o">=</span> <span class="p">(</span><span class="n">y</span> <span class="o">-</span> <span class="mi">10</span><span class="p">)</span> <span class="o">**</span> <span class="mi">2</span>     <span class="c1"># L = (y-10)²   ∂L/∂y = 2(y-10) = 52</span>
+
+<span class="n">L</span><span class="o">.</span><span class="n">backward</span><span class="p">()</span>
+<span class="nb">print</span><span class="p">(</span><span class="n">theta</span><span class="o">.</span><span class="n">grad</span><span class="p">)</span>     <span class="c1"># = 52 * 12 * 2 = 1248,正好是链式法则连乘</span>
+</code></pre></div>
+
+<p><code>loss.backward()</code> 不是魔法——它就是把上面三步<strong>沿前向计算图反向连乘</strong>。每个原子操作（乘法、平方、ReLU、矩阵乘、softmax）都在 PyTorch 里登记了它的导数规则，autograd 把这些规则按图组装起来，<strong>像莱布尼茨当年用 <code>dy/dx</code> 在纸上推符号一样自动化</strong>。</p>
+<blockquote>
+<p>大模型里那个 124M 维梯度向量 $\nabla_\theta L$，本质上就是链式法则的工业化产物。你每次写 <code>loss.backward()</code>，调用的是一台沿莱布尼茨道路造了 300 年的"符号求导机器"。</p>
+</blockquote>
+<hr />
+<h2 id="5-p">5. 离散文本如何变成"找函数 P"的问题</h2>
+<p>牛顿的微积分活在连续空间——位置、速度、温度都是实数。但 token 是离散符号，词表里的原子，没有"半个 token"这种东西。</p>
+<p>那微积分凭什么管得了语言？答案藏在三层"翻译"里。</p>
+<h3 id="41">4.1 第一层翻译：离散选择 → 概率分布</h3>
+<p>设词表有 $V = 50304$ 个 token（CodeGPT 的设置，见 <code>tokenizer.py:VOCAB_SIZE</code>）。给定上下文 $x$，下一个 token $y$ 是 $V$ 个离散选项之一——<strong>这个选择本身是离散的</strong>。</p>
+<p>但<strong>"在 V 个选项上的概率分布"是连续的</strong>——它是一个长度 $V$、各分量 $\in [0,1]$、总和为 1 的向量。这种向量住在一个叫<strong>概率单纯形（probability simplex）</strong>的连续流形上：</p>
+<div class="highlight"><pre><span></span><code><span class="c1"># 一个 V 维概率向量就是单纯形里的一个点</span>
+<span class="n">probs</span> <span class="o">=</span> <span class="n">torch</span><span class="o">.</span><span class="n">tensor</span><span class="p">([</span><span class="mf">0.7</span><span class="p">,</span> <span class="mf">0.2</span><span class="p">,</span> <span class="mf">0.05</span><span class="p">,</span> <span class="mf">0.05</span><span class="p">])</span>
+<span class="n">probs</span><span class="o">.</span><span class="n">sum</span><span class="p">()</span>                     <span class="c1"># tensor(1.0)</span>
+<span class="p">(</span><span class="n">probs</span> <span class="o">&gt;=</span> <span class="mi">0</span><span class="p">)</span><span class="o">.</span><span class="n">all</span><span class="p">()</span>              <span class="c1"># tensor(True)</span>
+</code></pre></div>
+
+<p>所以<strong>"找一个最优的下一个 token"是离散决策问题，而"找一个最优的概率分布"是连续优化问题</strong>——后者可以做微积分。</p>
+<h3 id="42-id">4.2 第二层翻译：离散 id → 连续向量</h3>
+<p>把第一层翻译落到代码里——具体怎么把 token id 这种整数喂给可微分程序？答案：<code>nn.Embedding</code>。</p>
+<div class="highlight"><pre><span></span><code><span class="c1"># model.py:145</span>
+<span class="bp">self</span><span class="o">.</span><span class="n">transformer</span><span class="o">.</span><span class="n">wte</span> <span class="o">=</span> <span class="n">nn</span><span class="o">.</span><span class="n">Embedding</span><span class="p">(</span><span class="n">config</span><span class="o">.</span><span class="n">vocab_size</span><span class="p">,</span> <span class="n">config</span><span class="o">.</span><span class="n">n_embd</span><span class="p">)</span>
+<span class="c1"># 形状:(50304, 768)</span>
+
+<span class="c1"># model.py:183</span>
+<span class="n">tok_emb</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">transformer</span><span class="o">.</span><span class="n">wte</span><span class="p">(</span><span class="n">idx</span><span class="p">)</span>   <span class="c1"># 离散 id (B, T) → 连续向量 (B, T, 768)</span>
+</code></pre></div>
+
+<p><code>wte</code> 是一张 $(50304, 768)$ 的大表。每个 token id 对应表里的一行——一个 768 维实向量。整张表的所有元素都是 <code>requires_grad=True</code> 的实数参数，可以被梯度下降调整（详情见 <a href="./PROBABILITY_AS_AREA_MATRIX_AS_MAP.md">PROBABILITY_AS_AREA_MATRIX_AS_MAP.md §8</a>）。</p>
+<p><strong>所以离散性只出现在最开头（id 进表）和最末尾（采样出 token）两次</strong>。中间所有运算——embedding 查表、attention、MLP、softmax——都在连续空间里跑：</p>
+<div class="highlight"><pre><span></span><code>离散 id ──[wte]──► 连续向量 ──[12 个 Block]──► 连续向量 ──[lm_head]──► 连续 logits ──[softmax]──► 连续概率 ──[multinomial]──► 离散 id
+   ↑                                                                                                              ↓
+   └──────────────────────  整段可微分,梯度能一路反传  ──────────────────────────────────────────────────────────────┘
+</code></pre></div>
+
+<p>这是离散语言能被微积分捕获的工程秘密：<strong>把离散性挤到两头，中间留出一个完全可微的"管道"</strong>。管道里的所有参数都被梯度下降"扭"到位。</p>
+<h3 id="43-p">4.3 第三层翻译：找 P 是个<strong>带约束的连续优化问题</strong></h3>
+<p>把前两层合起来——"反推 $P^*(y \mid x)$"这件事就被翻译成一个标准的连续优化问题：</p>
+<div class="highlight"><pre><span></span><code><span class="c1"># 伪代码:大模型训练的本质</span>
+<span class="k">def</span><span class="w"> </span><span class="nf">train</span><span class="p">():</span>
+    <span class="n">theta</span> <span class="o">=</span> <span class="n">init_random_params</span><span class="p">(</span><span class="n">num_params</span><span class="o">=</span><span class="mi">124_000_000</span><span class="p">)</span>         <span class="c1"># 起点</span>
+    <span class="k">for</span> <span class="n">batch</span> <span class="ow">in</span> <span class="n">dataset</span><span class="p">:</span>
+        <span class="n">x</span><span class="p">,</span> <span class="n">y_true</span> <span class="o">=</span> <span class="n">batch</span>
+        <span class="n">p_theta</span> <span class="o">=</span> <span class="n">forward</span><span class="p">(</span><span class="n">x</span><span class="p">,</span> <span class="n">theta</span><span class="p">)</span>                            <span class="c1"># 一个 50304 维概率向量</span>
+        <span class="n">loss</span> <span class="o">=</span> <span class="o">-</span><span class="n">log</span><span class="p">(</span><span class="n">p_theta</span><span class="p">[</span><span class="n">y_true</span><span class="p">])</span>                           <span class="c1"># 看正确答案那一格的&quot;面积&quot;</span>
+        <span class="n">grad</span> <span class="o">=</span> <span class="n">autograd</span><span class="p">(</span><span class="n">loss</span><span class="p">,</span> <span class="n">theta</span><span class="p">)</span>                           <span class="c1"># 链式法则反推梯度</span>
+        <span class="n">theta</span> <span class="o">=</span> <span class="n">theta</span> <span class="o">-</span> <span class="n">lr</span> <span class="o">*</span> <span class="n">grad</span>                              <span class="c1"># 沿梯度走一小步</span>
+</code></pre></div>
+
+<p>抽象一层看：</p>
+<blockquote>
+<p><strong>从离散观测 ${(x_i, y_i)}$ 反推连续函数 $P_\theta$ → 一个 124M 维空间里的最小化问题 → 用梯度下降数值地"积分"到最优点 $\theta^*$</strong></p>
+</blockquote>
+<p>这一节回答了开头的疑惑："离散符号怎么会被微积分捕获？"——答案是：<strong>它不是直接被捕获，是先被翻译成"在概率单纯形上找一个最优函数"这个连续问题</strong>。Embedding 是翻译器，softmax 是翻译器，cross-entropy 是评价器，autograd 是反推机器。</p>
+<hr />
+<h2 id="6">6. 可微分编程：把"找函数"变成"跑梯度下降"</h2>
+<p><a href="./DIFFERENTIABLE_PROGRAMMING.md">DIFFERENTIABLE_PROGRAMMING.md</a> 已经详细讲过"深度学习就是可微分编程"。本节只补充一个新视角——<strong>可微分编程是怎么把"找函数 P"这件听起来很哲学的事，变成"写程序 + 跑梯度下降"这件很工程的事</strong>。</p>
+<h3 id="51">5.1 "找函数"这件事的三种范式</h3>
+<p>把"给一堆 $(x, y)$ 数据对，找一个函数 $f$ 让 $f(x) \approx y$"这件事放在历史长河里看，三种范式各自的解法是：</p>
+<table>
+<thead>
+<tr>
+<th>范式</th>
+<th>谁写函数 $f$</th>
+<th>怎么找参数</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><strong>符号主义</strong></td>
+<td>人手写规则（"if x is a verb, then ..."）</td>
+<td>不需要"参数"，规则就是答案</td>
+</tr>
+<tr>
+<td><strong>贝叶斯网络</strong></td>
+<td>人画图结构 + 写 CPT 模板</td>
+<td>数据估计 CPT 数值（MLE / EM）</td>
+</tr>
+<tr>
+<td><strong>可微分编程（深度学习）</strong></td>
+<td>人写<strong>架构</strong>（多少层、用什么 op）</td>
+<td><strong>梯度下降</strong>自动写出 124M 个参数</td>
+</tr>
+</tbody>
+</table>
+<p>详情参见 <a href="./SYMBOLIC_BAYES_NEURAL.md">SYMBOLIC_BAYES_NEURAL.md</a>。<strong>深度学习的关键差异是：函数的"血肉"全部交给数据自动写</strong>。人只写函数的"骨架"——也就是 <code>model.py</code> 里那 400 行架构代码。</p>
+<h3 id="52">5.2 "万能函数模拟器"的代码实现：两件事</h3>
+<p>回到通用近似定理：它告诉我们"足够大的网络存在"，但没告诉我们具体是什么样的网络。从工程角度，把它变成可执行的"万能函数模拟器"需要两件事：</p>
+<p><strong>(a) 一个表达力足够的</strong>架构<strong>模板</strong>。意思是：架构本身要能承载任意复杂的函数。CodeGPT 的整段 <code>forward</code> 就是这样一个模板：</p>
+<div class="highlight"><pre><span></span><code><span class="c1"># model.py:177-198</span>
+<span class="k">def</span><span class="w"> </span><span class="nf">forward</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">idx</span><span class="p">,</span> <span class="n">targets</span><span class="o">=</span><span class="kc">None</span><span class="p">):</span>
+    <span class="n">tok_emb</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">transformer</span><span class="o">.</span><span class="n">wte</span><span class="p">(</span><span class="n">idx</span><span class="p">)</span>       <span class="c1"># 离散 → 连续 embedding</span>
+    <span class="n">pos_emb</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">transformer</span><span class="o">.</span><span class="n">wpe</span><span class="p">(</span><span class="n">pos</span><span class="p">)</span>
+    <span class="n">x</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">transformer</span><span class="o">.</span><span class="n">drop</span><span class="p">(</span><span class="n">tok_emb</span> <span class="o">+</span> <span class="n">pos_emb</span><span class="p">)</span>
+    <span class="k">for</span> <span class="n">block</span> <span class="ow">in</span> <span class="bp">self</span><span class="o">.</span><span class="n">transformer</span><span class="o">.</span><span class="n">h</span><span class="p">:</span>          <span class="c1"># 12 层 Block 复合</span>
+        <span class="n">x</span> <span class="o">=</span> <span class="n">block</span><span class="p">(</span><span class="n">x</span><span class="p">)</span>
+    <span class="n">x</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">transformer</span><span class="o">.</span><span class="n">ln_f</span><span class="p">(</span><span class="n">x</span><span class="p">)</span>
+    <span class="n">logits</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">lm_head</span><span class="p">(</span><span class="n">x</span><span class="p">)</span>
+    <span class="o">...</span>
+</code></pre></div>
+
+<p>每个 <code>nn.Linear</code>、<code>nn.Embedding</code>、<code>LayerNorm</code> 都是带可调参数的零件。整套架构组合起来，理论上能逼近任意"上下文 → 下一个 token 概率分布"的映射。</p>
+<p><strong>(b) 一个能自动调节参数的</strong>反推机器**。意思是：给定一个 loss，要能自动算出每个参数应该往哪个方向调。这就是 <code>loss.backward()</code> + <code>optimizer.step()</code> 那一对：</p>
+<div class="highlight"><pre><span></span><code><span class="c1"># train.py 主循环简化版</span>
+<span class="n">logits</span><span class="p">,</span> <span class="n">loss</span> <span class="o">=</span> <span class="n">model</span><span class="p">(</span><span class="n">X</span><span class="p">,</span> <span class="n">Y</span><span class="p">)</span>        <span class="c1"># 前向跑一遍架构,得到 loss</span>
+<span class="n">loss</span><span class="o">.</span><span class="n">backward</span><span class="p">()</span>                    <span class="c1"># autograd 沿前向图反推梯度</span>
+<span class="n">optimizer</span><span class="o">.</span><span class="n">step</span><span class="p">()</span>                   <span class="c1"># 按梯度更新每一个参数</span>
+<span class="n">optimizer</span><span class="o">.</span><span class="n">zero_grad</span><span class="p">()</span>
+</code></pre></div>
+
+<blockquote>
+<p><strong>(a) 是"万能函数模拟器"的本体——一段可微分程序。</strong>
+<strong>(b) 是"万能函数模拟器"的反推机器——<code>autograd</code> + <code>optimizer</code>。</strong></p>
+</blockquote>
+<h3 id="53">5.3 训练 = 编译，推理 = 执行</h3>
+<p>这是可微分编程视角下最反直觉但最准确的类比：</p>
+<div class="highlight"><pre><span></span><code>传统编程:  人  ─[写代码]─► 程序        ─[执行]─►  结果
+可微分编程: 数据 ─[训练]──► 参数化程序   ─[执行]─►  结果
+                  ↑                          ↑
+              &quot;编译&quot;参数                  &quot;执行&quot;forward
+</code></pre></div>
+
+<ul>
+<li><strong>架构</strong>（人写的）相当于一段 C 程序的源码——决定了"程序结构"；</li>
+<li><strong>参数</strong>（梯度下降写的）相当于编译后的二进制——决定了"程序的具体行为"；</li>
+<li><strong>训练</strong>就是"编译过程"——把数据"编译"成参数；</li>
+<li><strong>推理</strong>就是"执行"——跑一遍带参数的程序。</li>
+</ul>
+<p>所以"找万能函数 P"这件事在可微分编程里的精确说法是：</p>
+<blockquote>
+<p><strong>写一段架构（=源码），用数据梯度下降（=编译器）把它编译成 124M 个具体参数（=二进制），运行时就是一段确定性的函数 $P_\theta$</strong>。</p>
+</blockquote>
+<h3 id="54-p">5.4 "函数 P"的两种含义</h3>
+<p>需要澄清一个常见混淆——"找函数 P"里的 "P" 到底指什么？两个含义都对，但要分清：</p>
+<table>
+<thead>
+<tr>
+<th>含义</th>
+<th>代码对应</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><strong>函数体</strong> $P_\theta$（输入 $x$，输出概率向量）</td>
+<td>整段 <code>forward()</code>（<code>model.py:177-198</code>）</td>
+</tr>
+<tr>
+<td><strong>函数值</strong> $P_\theta(y \mid x)$（具体某个 $(x,y)$ 处的概率值）</td>
+<td><code>F.softmax(logits, dim=-1)[..., y]</code>（<code>model.py:301</code>）</td>
+</tr>
+</tbody>
+</table>
+<p>训练的目标是<strong>函数体逼近函数体</strong>——让我们的 $P_\theta$ 这个映射尽量接近未知的 $P^*$ 这个映射。但训练时能直接看到的只是函数值——我们用 cross-entropy 看模型在每个观测样本 $(x_i, y_i)$ 处的函数值有多接近 1。</p>
+<blockquote>
+<p><strong>从函数值反推函数体——这正是"反推原函数"在大模型时代的具体形式</strong>。</p>
+</blockquote>
+<hr />
+<h2 id="7-nnlinear">7. 矩阵就是参数化的万能函数：一行 nn.Linear 的全部秘密</h2>
+<p><a href="./PROBABILITY_AS_AREA_MATRIX_AS_MAP.md">PROBABILITY_AS_AREA_MATRIX_AS_MAP.md</a> 详细讲了"矩阵就是映射"。这一节专门补充另一个角度——<strong>为什么矩阵是"万能函数模拟器"的天然零件</strong>。</p>
+<h3 id="61-nnlinear">6.1 一行 nn.Linear = 一个可调旋钮库</h3>
+<div class="highlight"><pre><span></span><code><span class="n">fc</span> <span class="o">=</span> <span class="n">nn</span><span class="o">.</span><span class="n">Linear</span><span class="p">(</span><span class="n">in_features</span><span class="o">=</span><span class="mi">768</span><span class="p">,</span> <span class="n">out_features</span><span class="o">=</span><span class="mi">3072</span><span class="p">,</span> <span class="n">bias</span><span class="o">=</span><span class="kc">False</span><span class="p">)</span>
+<span class="c1"># 等价于: 一个 (3072, 768) 的可学习矩阵</span>
+<span class="c1"># 等价于: 3072 × 768 = 2,359,296 个可调旋钮</span>
+</code></pre></div>
+
+<p><code>nn.Linear</code> 是可微分编程里<strong>最便宜的"通用零件"</strong>：</p>
+<ul>
+<li>它有大量参数（一行就是上百万个旋钮）；</li>
+<li>每个参数都可微（<code>∂(Wx)/∂W_{ij} = x_j</code>）；</li>
+<li>矩阵乘法处处可导，梯度能畅通反传；</li>
+<li>高度并行（GPU SIMD 的母语）。</li>
+</ul>
+<p><strong>任何想得到的线性变换都能用矩阵实现</strong>：旋转、拉伸、投影、降维、升维……所以单看"线性"，它已经覆盖了一个巨大的函数空间。</p>
+<h3 id="62">6.2 矩阵 + 非线性 = 万能函数</h3>
+<p>但只有线性还不够——堆叠多层线性等价于一层线性，没赚到（参见 <a href="./DIFFERENTIABLE_PROGRAMMING.md">DIFFERENTIABLE_PROGRAMMING.md §5</a>）。</p>
+<p>通用近似定理的真正配方是 <strong>"线性 + 非线性激活"</strong> 的交替堆叠。CodeGPT 的 MLP（<code>model.py:76-90</code>）就是最纯的样本：</p>
+<div class="highlight"><pre><span></span><code><span class="k">class</span><span class="w"> </span><span class="nc">MLP</span><span class="p">(</span><span class="n">nn</span><span class="o">.</span><span class="n">Module</span><span class="p">):</span>
+    <span class="k">def</span><span class="w"> </span><span class="fm">__init__</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">config</span><span class="p">):</span>
+        <span class="nb">super</span><span class="p">()</span><span class="o">.</span><span class="fm">__init__</span><span class="p">()</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">c_fc</span>   <span class="o">=</span> <span class="n">nn</span><span class="o">.</span><span class="n">Linear</span><span class="p">(</span><span class="n">config</span><span class="o">.</span><span class="n">n_embd</span><span class="p">,</span> <span class="mi">4</span> <span class="o">*</span> <span class="n">config</span><span class="o">.</span><span class="n">n_embd</span><span class="p">)</span>  <span class="c1"># 升维 768 → 3072</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">gelu</span>   <span class="o">=</span> <span class="n">nn</span><span class="o">.</span><span class="n">GELU</span><span class="p">()</span>                                     <span class="c1"># 非线性</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">c_proj</span> <span class="o">=</span> <span class="n">nn</span><span class="o">.</span><span class="n">Linear</span><span class="p">(</span><span class="mi">4</span> <span class="o">*</span> <span class="n">config</span><span class="o">.</span><span class="n">n_embd</span><span class="p">,</span> <span class="n">config</span><span class="o">.</span><span class="n">n_embd</span><span class="p">)</span>  <span class="c1"># 降维 3072 → 768</span>
+
+    <span class="k">def</span><span class="w"> </span><span class="nf">forward</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">x</span><span class="p">):</span>
+        <span class="k">return</span> <span class="bp">self</span><span class="o">.</span><span class="n">c_proj</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">gelu</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">c_fc</span><span class="p">(</span><span class="n">x</span><span class="p">)))</span>
+</code></pre></div>
+
+<p>这就是单隐层 MLP 的写法。理论上，<strong>只要 c_fc 升维得足够宽，这一个 MLP 就能逼近任意连续函数 $\mathbb{R}^{768} \to \mathbb{R}^{768}$</strong>——通用近似定理直接保证。</p>
+<h3 id="63-gpt">6.3 为什么 GPT 不只用单隐层？</h3>
+<p>通用近似定理保证"单隐层就够"，但<strong>没说要多宽</strong>。要逼近一个复杂函数到给定精度，单隐层可能需要指数多个神经元——参数量爆炸到不可训。</p>
+<p>工程上的妙手是：<strong>用多层 + 残差</strong> 把"指数宽"换成"线性深"：</p>
+<div class="highlight"><pre><span></span><code><span class="c1"># model.py:186-187</span>
+<span class="k">for</span> <span class="n">block</span> <span class="ow">in</span> <span class="bp">self</span><span class="o">.</span><span class="n">transformer</span><span class="o">.</span><span class="n">h</span><span class="p">:</span>    <span class="c1"># 12 层</span>
+    <span class="n">x</span> <span class="o">=</span> <span class="n">block</span><span class="p">(</span><span class="n">x</span><span class="p">)</span>
+</code></pre></div>
+
+<p>每层不需要太宽（768 维），但 12 层复合起来表达力就上去了。从函数视角看：</p>
+<p>$$
+P_\theta = f_{12} \circ f_{11} \circ \cdots \circ f_1
+$$</p>
+<p>每个 $f_i$ 都是一个"小"的可微函数（attention + MLP + LayerNorm + residual）；它们的<strong>复合</strong>才是最终的 $P_\theta$。这正是"深度学习"里"深度"两个字的工程意义——<strong>用层数换宽度，让万能函数模拟器实际能训得动</strong>。</p>
+<h3 id="64-codegpt-nnlinear">6.4 一张矩阵清单：CodeGPT 用了多少个 nn.Linear？</h3>
+<p><code>model.py</code> 里所有 <code>nn.Linear</code> 累加起来，就是这台万能函数模拟器的全部"线性零件"：</p>
+<table>
+<thead>
+<tr>
+<th>位置</th>
+<th>名称</th>
+<th>形状</th>
+<th>参数量</th>
+<th>角色</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>入口</td>
+<td><code>wte</code>（<code>model.py:145</code>）</td>
+<td>(50304, 768)</td>
+<td>38.6M</td>
+<td>离散 id → 连续向量</td>
+</tr>
+<tr>
+<td>入口</td>
+<td><code>wpe</code>（<code>model.py:146</code>）</td>
+<td>(1024, 768)</td>
+<td>0.79M</td>
+<td>位置 → 连续向量</td>
+</tr>
+<tr>
+<td>每层 attn</td>
+<td><code>c_attn</code>（<code>model.py:36</code>）</td>
+<td>(768, 2304)</td>
+<td>1.77M</td>
+<td>x → Q/K/V 三联体</td>
+</tr>
+<tr>
+<td>每层 attn</td>
+<td><code>c_proj</code>（<code>model.py:37</code>）</td>
+<td>(768, 768)</td>
+<td>0.59M</td>
+<td>多头输出投影</td>
+</tr>
+<tr>
+<td>每层 mlp</td>
+<td><code>c_fc</code>（<code>model.py:80</code>）</td>
+<td>(768, 3072)</td>
+<td>2.36M</td>
+<td>MLP 升维</td>
+</tr>
+<tr>
+<td>每层 mlp</td>
+<td><code>c_proj</code>（<code>model.py:82</code>）</td>
+<td>(3072, 768)</td>
+<td>2.36M</td>
+<td>MLP 降维</td>
+</tr>
+<tr>
+<td>出口</td>
+<td><code>lm_head</code>（<code>model.py:151</code>）</td>
+<td>(768, 50304)</td>
+<td>与 <code>wte</code> 权重共享</td>
+<td></td>
+</tr>
+</tbody>
+</table>
+<p>把每层的参数量 × 12 加起来 + 入口 + 出口 ≈ 124M。<strong>这就是"一个 124M 维参数空间里的万能函数实例"的字面意思</strong>——124M 个可调旋钮被组织成约 80 个 <code>nn.Linear</code>，再被 GELU / softmax / residual 连接起来。</p>
+<hr />
+<h2 id="8">8. 概率视角：在概率单纯形上"积分"出一族函数</h2>
+<p>到目前为止我们说 $P_\theta$ 是"一个函数"。但更精确的说法是：<strong>它是一族函数</strong>——给每个上下文 $x$ 一个长度 50304 的概率向量。</p>
+<h3 id="71">7.1 概率单纯形：一族向量的几何家</h3>
+<p>一个长度 $V$、各分量 $\in [0,1]$、总和为 1 的向量，住在 $\mathbb{R}^V$ 里的一个<strong>几何体</strong>上：</p>
+<ul>
+<li>$V = 2$（两类分类）：单纯形是一条线段 $[0,1]$（一个概率值 $p$ 就够，另一维是 $1-p$）；</li>
+<li>$V = 3$：单纯形是个二维三角形（三个分量在三角形顶点之一）；</li>
+<li>$V = 50304$（CodeGPT）：单纯形是一个 50303 维的"超三角形"。</li>
+</ul>
+<div class="highlight"><pre><span></span><code><span class="c1"># 一个 V 维点是否在单纯形上?</span>
+<span class="k">def</span><span class="w"> </span><span class="nf">is_on_simplex</span><span class="p">(</span><span class="n">p</span><span class="p">,</span> <span class="n">eps</span><span class="o">=</span><span class="mf">1e-6</span><span class="p">):</span>
+    <span class="k">return</span> <span class="p">(</span><span class="n">p</span> <span class="o">&gt;=</span> <span class="mi">0</span><span class="p">)</span><span class="o">.</span><span class="n">all</span><span class="p">()</span> <span class="ow">and</span> <span class="nb">abs</span><span class="p">(</span><span class="n">p</span><span class="o">.</span><span class="n">sum</span><span class="p">()</span> <span class="o">-</span> <span class="mf">1.0</span><span class="p">)</span> <span class="o">&lt;</span> <span class="n">eps</span>
+
+<span class="n">probs</span> <span class="o">=</span> <span class="n">F</span><span class="o">.</span><span class="n">softmax</span><span class="p">(</span><span class="n">torch</span><span class="o">.</span><span class="n">randn</span><span class="p">(</span><span class="mi">50304</span><span class="p">),</span> <span class="n">dim</span><span class="o">=-</span><span class="mi">1</span><span class="p">)</span>
+<span class="nb">print</span><span class="p">(</span><span class="n">is_on_simplex</span><span class="p">(</span><span class="n">probs</span><span class="p">))</span>     <span class="c1"># True</span>
+</code></pre></div>
+
+<p><strong>$P_\theta$ 干的事就是：每个输入上下文 $x$ → 单纯形上的一个点</strong>。所有可能的上下文加起来，$P_\theta$ 描绘了"上下文空间 → 单纯形"的一整张图——这就是"一族函数"或者说"函数族 / function family"。</p>
+<h3 id="72-p">7.2 "万能函数 P"的精确含义</h3>
+<p>把上节的几何观加进来，"万能函数 P"的完整意思是：</p>
+<blockquote>
+<p><strong>存在一个真实但未知的映射 $P^* : \text{所有可能上下文} \to \text{概率单纯形}$，我们想用神经网络反推它</strong>。</p>
+</blockquote>
+<p>这个 $P^*$ 是"语言/代码本身的统计规律"——人类几千年写下来的每段文本背后都隐含着这样一个分布。它是不可枚举的（上下文是无穷的），但训练语料给了我们海量采样点。</p>
+<p>CodeGPT 训练的本质是：</p>
+<div class="highlight"><pre><span></span><code>反推过程:
+   未知的真理 P*          可观测的样本(语料)         可训练的近似 P_θ
+   ┌──────────┐         ┌──────────────────┐        ┌──────────────┐
+   │ 全部上下文 │  采样 → │  (x_i, y_i) i=1..N │ 拟合 → │ 124M 参数的 │
+   │ → 单纯形  │         │                  │        │  神经网络    │
+   └──────────┘         └──────────────────┘        └──────────────┘
+        ↑                                                 │
+        └─────────── 训练完后,P_θ ≈ P* ────────────────────┘
+</code></pre></div>
+
+<p>每次 <code>loss.backward()</code> + <code>optimizer.step()</code>，<strong>整族函数 $P_\theta$ 的形状在 124M 维参数空间里被"挪动了一小步"</strong>——挪到那些"实际观察到的 token 序列概率更高"的方向。</p>
+<h3 id="73">7.3 大模型里其实有四种概率分布</h3>
+<p><a href="./PROBABILITY_AS_AREA_MATRIX_AS_MAP.md">PROBABILITY_AS_AREA_MATRIX_AS_MAP.md §13</a> 已经做过完整盘点。这里只把它们和"万能函数 P"对齐一遍：</p>
+<table>
+<thead>
+<tr>
+<th>分布</th>
+<th>在哪</th>
+<th>作用于 P 的哪个环节</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><strong>类别分布</strong>（输出）</td>
+<td><code>softmax(logits)</code>（<code>model.py:301</code>）</td>
+<td>$P_\theta(\cdot \mid x)$ 输出的那块面积——P 的"值域"</td>
+</tr>
+<tr>
+<td><strong>高斯</strong>（内部装修）</td>
+<td>初始化、LayerNorm、GELU</td>
+<td>$P_\theta$ 的内部参数空间的几何约束</td>
+</tr>
+<tr>
+<td><strong>伯努利</strong>（开关）</td>
+<td>Dropout、FIM 触发</td>
+<td>训练时让 P 的轨迹有随机性,防过拟合</td>
+</tr>
+<tr>
+<td><strong>均匀</strong>（采样）</td>
+<td>FIM 切点、shuffle、batch 选</td>
+<td>让训练数据采样无偏</td>
+</tr>
+</tbody>
+</table>
+<p><strong>所以"找函数 P"实际上是在多种概率结构的协作下完成的</strong>：高斯负责内部装修，伯努利和均匀负责训练随机性，类别分布才是 P 的真实输出形态。</p>
+<h3 id="74">7.4 概率视角和万能函数视角的统一</h3>
+<p>最后一个角度——为什么 GPT 的输出非要是"概率分布"而不能直接吐 token？</p>
+<p>因为离散选择不可微（不能对 <code>argmax</code> 求导）。而<strong>通用近似定理只对连续函数有效</strong>——你要让"万能函数模拟器"工作，就必须让输出是连续可微的。</p>
+<ul>
+<li><strong>离散选择 → 离散概率向量</strong>：把"选哪个"换成"在每个上的权重"，离散变连续；</li>
+<li><strong>连续概率向量 → 万能函数模拟</strong>：现在 $P_\theta$ 是连续映射，通用近似定理才能套上去；</li>
+<li><strong>训练完了再 multinomial 抽样</strong>：最终输出还是离散 token，回到符号世界。</li>
+</ul>
+<blockquote>
+<p><strong>"概率"在大模型里不是"诚实地表达不确定性"那种哲学姿态——它首先是数学上的必要妥协，让微积分和通用近似定理能在离散符号系统上工作</strong>。</p>
+</blockquote>
+<hr />
+<h2 id="9-p-cross-entropy-autograd-sgd">9. 万能函数 P 的反推机器：cross-entropy + autograd + SGD</h2>
+<p>理论说完，看一下"反推机器"具体长什么样。三个零件：</p>
+<h3 id="81-1cross-entropy">8.1 零件 1：cross-entropy——"反推方向"的量化器</h3>
+<div class="highlight"><pre><span></span><code><span class="c1"># model.py:192</span>
+<span class="n">loss</span> <span class="o">=</span> <span class="n">F</span><span class="o">.</span><span class="n">cross_entropy</span><span class="p">(</span><span class="n">logits</span><span class="o">.</span><span class="n">view</span><span class="p">(</span><span class="o">-</span><span class="mi">1</span><span class="p">,</span> <span class="n">logits</span><span class="o">.</span><span class="n">size</span><span class="p">(</span><span class="o">-</span><span class="mi">1</span><span class="p">)),</span>
+                       <span class="n">targets</span><span class="o">.</span><span class="n">view</span><span class="p">(</span><span class="o">-</span><span class="mi">1</span><span class="p">),</span> <span class="n">ignore_index</span><span class="o">=-</span><span class="mi">1</span><span class="p">)</span>
+</code></pre></div>
+
+<p>这一行做的事：<strong>衡量当前 $P_\theta$ 离真理 $P^*$ 有多远</strong>。具体怎么衡量？看模型在"正确答案那一格"上铺了多少面积（详见 <a href="./PROBABILITY_AS_AREA_MATRIX_AS_MAP.md">PROBABILITY_AS_AREA_MATRIX_AS_MAP.md §5</a>）：</p>
+<p>$$
+\mathcal{L}(\theta) \;=\; -\frac{1}{N}\sum_{i=1}^{N} \log P_\theta(y_i \mid x_i)
+$$</p>
+<p>为什么是 <code>cross_entropy</code> 而不是 MSE 或者别的？因为它在数学上<strong>等价于最大似然估计</strong>——而最大似然估计在统计学上就是"反推未知分布的最优方法"。在 KL 散度的语言下：</p>
+<p>$$
+\mathrm{argmin}<em>\theta\,\mathcal{L}(\theta) \;=\; \mathrm{argmin}</em>\theta\,\mathrm{KL}(P^* \,|\, P_\theta)
+$$</p>
+<blockquote>
+<p><strong>cross-entropy 是"反推原函数"这件事的标准答案</strong>——所有想从离散观测里反推概率分布的人，最终都会写出这一行。</p>
+</blockquote>
+<h3 id="82-2autograd">8.2 零件 2：autograd——"反推路径"的自动计算器</h3>
+<div class="highlight"><pre><span></span><code><span class="n">loss</span><span class="o">.</span><span class="n">backward</span><span class="p">()</span>    <span class="c1"># ← autograd 干活</span>
+</code></pre></div>
+
+<p>这一行做的事：<strong>对 124M 个参数中的每一个，算出 "把它调大 0.0001，loss 会变化多少"</strong>。</p>
+<p>它不是数值微分（不是真的去试探 0.0001），是符号微分：每个原子 op（<code>nn.Linear</code>、<code>F.softmax</code>、<code>F.cross_entropy</code>）都登记了自己的求导规则，autograd 沿着 forward 的计算图反向连乘——把链式法则机械化执行（详见 §4.4）。</p>
+<p>124M 个梯度算完，等价于在 124M 维参数空间里给出了一个<strong>"反推方向向量" $\nabla_\theta L$</strong>——它指向"让 loss 增加最快"的方向，反方向就是"让 P_θ 更贴近 P*"的方向。</p>
+<h3 id="83-3sgd-adam">8.3 零件 3：SGD / Adam——"反推步进"的工程封装</h3>
+<div class="highlight"><pre><span></span><code><span class="n">optimizer</span><span class="o">.</span><span class="n">step</span><span class="p">()</span>        <span class="c1"># 沿反方向走一小步</span>
+<span class="n">optimizer</span><span class="o">.</span><span class="n">zero_grad</span><span class="p">()</span>   <span class="c1"># 清梯度,准备下一步</span>
+</code></pre></div>
+
+<p>最朴素版本就一行：</p>
+<div class="highlight"><pre><span></span><code><span class="k">with</span> <span class="n">torch</span><span class="o">.</span><span class="n">no_grad</span><span class="p">():</span>
+    <span class="k">for</span> <span class="n">p</span> <span class="ow">in</span> <span class="n">model</span><span class="o">.</span><span class="n">parameters</span><span class="p">():</span>
+        <span class="n">p</span> <span class="o">-=</span> <span class="n">lr</span> <span class="o">*</span> <span class="n">p</span><span class="o">.</span><span class="n">grad</span>
+</code></pre></div>
+
+<p>每一次 <code>step</code> 把 124M 维参数往"反梯度方向"挪动 <code>lr</code>（一般 $10^{-4}$）那么大一小步。配合 Adam 这种自适应学习率优化器，可以让不同参数有不同的步长——具体见 <code>train.py</code>。</p>
+<p>把这三件事拧在一起就是 train.py 的主循环：</p>
+<div class="highlight"><pre><span></span><code><span class="c1"># train.py 训练循环简化版</span>
+<span class="k">for</span> <span class="n">batch</span> <span class="ow">in</span> <span class="n">dataloader</span><span class="p">:</span>
+    <span class="n">X</span><span class="p">,</span> <span class="n">Y</span> <span class="o">=</span> <span class="n">batch</span>
+    <span class="n">logits</span><span class="p">,</span> <span class="n">loss</span> <span class="o">=</span> <span class="n">model</span><span class="p">(</span><span class="n">X</span><span class="p">,</span> <span class="n">Y</span><span class="p">)</span>    <span class="c1"># 前向:跑一遍 P_θ</span>
+    <span class="n">loss</span><span class="o">.</span><span class="n">backward</span><span class="p">()</span>                <span class="c1"># autograd:算反推方向</span>
+    <span class="n">optimizer</span><span class="o">.</span><span class="n">step</span><span class="p">()</span>               <span class="c1"># 走一小步</span>
+    <span class="n">optimizer</span><span class="o">.</span><span class="n">zero_grad</span><span class="p">()</span>          <span class="c1"># 清干净</span>
+</code></pre></div>
+
+<p>几十万到几百万次循环之后，$\theta$ 就从随机初始化"积分"到了一个让 loss 很小的点——<strong>这就是"万能函数模拟器" + "微积分反推机器"协作的全部内容</strong>。</p>
+<h3 id="84-mini-batch">8.4 一个工程细节：为什么必须用 mini-batch？</h3>
+<p>理论上"梯度下降"应该用整个数据集的梯度（叫"批梯度下降"）。但实际中我们只用一个小 batch（CodeGPT 训练默认 batch_size=12 或 32）。原因：</p>
+<ul>
+<li><strong>算力不允许</strong>：用 100B token 数据集每步全计算一遍要算到天荒地老；</li>
+<li><strong>统计上够用</strong>：CLT 告诉我们 mini-batch 梯度是真实梯度的近似高斯样本，只要 batch 不太小，方向就接近正确（参见 <a href="./PROBABILITY_AS_AREA_MATRIX_AS_MAP.md">PROBABILITY_AS_AREA_MATRIX_AS_MAP.md §13.3</a>）；</li>
+<li><strong>噪声有益</strong>：mini-batch 自带的随机性能帮助逃出鞍点和局部极小——梯度下降变成 <strong>Langevin 动力学</strong>（参见 <a href="./PHYSICS_AND_DEEP_LEARNING.md">PHYSICS_AND_DEEP_LEARNING.md</a>）。</li>
+</ul>
+<blockquote>
+<p>所以现代意义下的"反推机器"严格来说叫 <strong>SGD = 随机梯度下降 = 带噪声的微积分反推</strong>。噪声不是 bug，是 feature。</p>
+</blockquote>
+<hr />
+<h2 id="10-codegpt-124m">10. CodeGPT 就是一个 124M 维参数空间里的万能函数实例</h2>
+<p>把前面所有节合在一起，从"万能函数模拟器"视角看本项目，可以画出这张完整的对应图：</p>
+<div class="highlight"><pre><span></span><code>┌─────────────────────────────────────────────────────────────────────┐
+│  通用近似定理: 存在足够大的可微分程序能近似任意 P*                  │
+│                            ↓                                        │
+│  CodeGPT.__init__ 写下了一个 124M 参数的可微分程序模板               │
+│       架构骨架: model.py:136-198 整个 CodeGPT 类                     │
+│            ↓                                                        │
+│  forward(idx, targets): 用当前参数 θ 跑一次 P_θ(y | x)              │
+│       model.py:177-198                                              │
+│            ↓                                                        │
+│  cross_entropy: 衡量 P_θ 离观测样本 (x_i, y_i) 有多远                │
+│       model.py:192                                                  │
+│            ↓                                                        │
+│  autograd (loss.backward): 链式法则算出 ∇_θ L                       │
+│            ↓                                                        │
+│  optimizer.step: 沿 -∇_θ L 走一小步,把 P_θ 向 P* 推一点              │
+│            ↓                                                        │
+│  重复 N 次,得到训练好的 θ*。  P_{θ*} ≈ P*                            │
+│            ↓                                                        │
+│  推理(sample.py): 用 P_{θ*} 反复自回归生成下一个 token              │
+└─────────────────────────────────────────────────────────────────────┘
+</code></pre></div>
+
+<h3 id="91">9.1 把项目代码逐行钉到这张图上</h3>
+<table>
+<thead>
+<tr>
+<th>这张图里的角色</th>
+<th>CodeGPT 里的代码</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>万能函数模板（架构）</td>
+<td><code>class CodeGPT(nn.Module)</code>（<code>model.py:136</code>）</td>
+</tr>
+<tr>
+<td>离散 → 连续（embedding）</td>
+<td><code>wte</code>、<code>wpe</code>（<code>model.py:145-146</code>）</td>
+</tr>
+<tr>
+<td>多层复合（深度堆叠）</td>
+<td><code>for block in self.transformer.h</code>（<code>model.py:186-187</code>）</td>
+</tr>
+<tr>
+<td>万能函数的非线性</td>
+<td><code>nn.GELU()</code>（<code>model.py:81</code>）</td>
+</tr>
+<tr>
+<td>可微的"查表"（attention）</td>
+<td><code>model.py:51-73</code> 整个 <code>CausalSelfAttention.forward</code></td>
+</tr>
+<tr>
+<td>万能函数 → 概率分布</td>
+<td><code>F.softmax</code>（<code>model.py:301</code>）</td>
+</tr>
+<tr>
+<td>衡量与真理的距离</td>
+<td><code>F.cross_entropy</code>（<code>model.py:192</code>）</td>
+</tr>
+<tr>
+<td>反推方向自动计算</td>
+<td><code>loss.backward()</code>（<code>train.py</code> 训练循环）</td>
+</tr>
+<tr>
+<td>沿反推方向走一步</td>
+<td><code>optimizer.step()</code></td>
+</tr>
+<tr>
+<td>FIM: 给 P 添一个新维度的条件</td>
+<td><code>apply_fim_transform</code>（<code>tokenizer.py</code>）</td>
+</tr>
+<tr>
+<td>推理时调控 P 的形状</td>
+<td>temperature/top-k/top-p（<code>model.py:279-302</code>）</td>
+</tr>
+</tbody>
+</table>
+<p>读 <code>model.py</code> 的时候不妨在脑子里把每一行翻译成"这是万能函数模拟器的哪个零件"——所有 400 行代码都能精准对位。</p>
+<h3 id="92-124m">9.2 训练 = 在 124M 维空间里走一条曲线</h3>
+<p>把训练过程想象成在 124M 维参数空间里"走路"：</p>
+<ul>
+<li>起点 $\theta_0$：纯随机的高斯初始化（<code>model.py:171-175</code>）；</li>
+<li>每一步：算出当前 batch 上的梯度，沿反方向迈 $\text{lr} \cdot |\nabla|$ 这么远；</li>
+<li>终点 $\theta^*$：让 loss 在整个语料上很小的点；</li>
+<li><strong>整条路径就是一次"数值积分"</strong>——把"梯度场"沿着 SGD 的 Euler 步法积分出一条 trajectory。</li>
+</ul>
+<p>数学上，SGD 是 Langevin 方程的数值离散化（参见 <a href="./PHYSICS_AND_DEEP_LEARNING.md">PHYSICS_AND_DEEP_LEARNING.md</a>）；几何上，残差网络是 ODE 的离散化（同篇）。所以<strong>整条训练曲线 = 数值积分</strong>，<strong>整条残差堆叠 = 数值积分</strong>——大模型从训练到推理，全是不同尺度上的"微积分操作"。</p>
+<h3 id="93-p_theta-forward">9.3 推理 = 万能函数 $P_{\theta^*}$ 的 forward 执行</h3>
+<p>训练完之后，整个模型变成一个确定性的函数 $P_{\theta^*}$（除了 dropout 在 eval 模式下被关闭，行为完全可重现）。</p>
+<p>每次推理就是一次纯 forward：</p>
+<div class="highlight"><pre><span></span><code><span class="c1"># sample.py 推理核心(简化)</span>
+<span class="k">while</span> <span class="ow">not</span> <span class="n">done</span><span class="p">:</span>
+    <span class="n">logits</span><span class="p">,</span> <span class="n">_</span> <span class="o">=</span> <span class="n">model</span><span class="p">(</span><span class="n">idx</span><span class="p">)</span>                            <span class="c1"># 跑一次 P_{θ*}</span>
+    <span class="n">logits</span> <span class="o">=</span> <span class="n">logits</span><span class="p">[:,</span> <span class="o">-</span><span class="mi">1</span><span class="p">,</span> <span class="p">:]</span> <span class="o">/</span> <span class="n">temperature</span>           <span class="c1"># 取最后一个位置 + 调温度</span>
+    <span class="n">probs</span> <span class="o">=</span> <span class="n">F</span><span class="o">.</span><span class="n">softmax</span><span class="p">(</span><span class="n">logits</span><span class="p">,</span> <span class="n">dim</span><span class="o">=-</span><span class="mi">1</span><span class="p">)</span>                 <span class="c1"># 50304 根柱子的面积</span>
+    <span class="n">next_token</span> <span class="o">=</span> <span class="n">torch</span><span class="o">.</span><span class="n">multinomial</span><span class="p">(</span><span class="n">probs</span><span class="p">,</span> <span class="mi">1</span><span class="p">)</span>          <span class="c1"># 按面积比例抽样</span>
+    <span class="n">idx</span> <span class="o">=</span> <span class="n">torch</span><span class="o">.</span><span class="n">cat</span><span class="p">([</span><span class="n">idx</span><span class="p">,</span> <span class="n">next_token</span><span class="p">],</span> <span class="n">dim</span><span class="o">=</span><span class="mi">1</span><span class="p">)</span>
+</code></pre></div>
+
+<p>每生成一个 token，就是<strong>让万能函数 $P_{\theta^*}$ 在当前上下文上输出一个分布，从分布里抽一个</strong>。重复这一过程，从单个 token 自回归地长出整段代码——但每一次 forward 都是同一个 $P_{\theta^*}$ 在不同上下文上的求值。</p>
+<blockquote>
+<p><strong>训练写权重，推理用权重</strong>——参见 <a href="./SFT_RL_INFERENCE_MECHANICS.md">SFT_RL_INFERENCE_MECHANICS.md</a>，这一对偶在那里有更详细的展开。</p>
+</blockquote>
+<hr />
+<h2 id="11-p">11. 万能函数 P 的边界：能模拟什么，模拟不了什么</h2>
+<p>通用近似定理"在数学上"很强大，但万能函数模拟器在工程上<strong>仍然有边界</strong>。这一节做一次诚实清算。</p>
+<h3 id="101">10.1 通用近似定理的"小字条款"</h3>
+<p>把定理重新读一遍，注意四个限定词：</p>
+<blockquote>
+<p>给定<strong>任意一个连续函数</strong> $f$ 和<strong>任意精度</strong> $\varepsilon$，<strong>存在</strong>一个单隐层前馈网络，使得它和 $f$ 在<strong>任意紧集</strong>上差距小于 $\varepsilon$。</p>
+</blockquote>
+<p>每个限定词都暗藏一个工程问题：</p>
+<table>
+<thead>
+<tr>
+<th>限定</th>
+<th>暗示的问题</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><strong>连续函数</strong></td>
+<td>真实的 $P^*$ 是不是连续的?数据分布有断裂怎么办?</td>
+</tr>
+<tr>
+<td><strong>任意精度</strong></td>
+<td>没说要多大的网络。要想 $\varepsilon = 0.01$ 可能需要 10^9 参数,要 $\varepsilon = 0.001$ 可能需要 10^{15}</td>
+</tr>
+<tr>
+<td><strong>存在</strong></td>
+<td>不保证能找到。SGD 可能卡在局部极小或鞍点</td>
+</tr>
+<tr>
+<td><strong>紧集</strong></td>
+<td>训练分布之外没保证。这就是泛化和外推问题的根源</td>
+</tr>
+</tbody>
+</table>
+<p>所以理论上的"万能"不等于工程上的"无所不能"。</p>
+<h3 id="102">10.2 万能函数模拟器<strong>做得到</strong>的</h3>
+<p>在足够数据 + 足够参数 + 充分训练的条件下，下列任务大模型能做得很好：</p>
+<ul>
+<li><strong>统计规律</strong>：哪些 token 在哪些上下文里高频出现——这是它最擅长的。</li>
+<li><strong>结构识别</strong>：括号匹配、缩进、代码 AST 形态——只要训练里见过类似模式，能很好泛化。</li>
+<li><strong>相似插值</strong>：训练里见过 $f(x_1)$ 和 $f(x_2)$，对于"语义上"在它们之间的 $x$ 也能猜得不错。</li>
+<li><strong>多语言迁移</strong>：Python 的 <code>for</code> 和 JS 的 <code>for</code> 在表示空间里会自动靠近（参见 <a href="./GPT_AS_SUPER_SEARCH.md">GPT_AS_SUPER_SEARCH.md</a>）。</li>
+</ul>
+<h3 id="103">10.3 万能函数模拟器<strong>做不到</strong>的</h3>
+<ul>
+<li><strong>精确算术</strong>：万能函数模拟器是"软"的（softmax 是连续插值），不擅长精确的多位数乘法。Calculator-style tool use 是必要补丁。</li>
+<li><strong>可证明的逻辑链</strong>：长推理链的概率会衰减，且没有形式系统的保证。Lean / Coq / verifier 是必要补丁。</li>
+<li><strong>训练分布外的外推</strong>：通用近似定理只在紧集内保证。训练全是 Python 2，部署在 Rust 上必然失效——i.i.d. 假设破。</li>
+<li><strong>真实时间状态</strong>：模型里没有"实时时钟"或"外部世界"——它是一个<strong>纯函数</strong>，无副作用、无记忆。Tool use / RAG / 长上下文是必要补丁（参见 <a href="./RAG_VS_SFT.md">RAG_VS_SFT.md</a>）。</li>
+</ul>
+<h3 id="104-llm-">10.4 为什么现代 LLM 系统都是"神经-符号混合"</h3>
+<p>把上面两小节合在一起，就直接推出当下的工程现实：</p>
+<blockquote>
+<p><strong>没有任何真实落地的 LLM 系统是"纯万能函数 P"</strong>——它都是 "$P_\theta$ + 一堆符号代码（脚手架）" 的混合架构。</p>
+</blockquote>
+<p>详情见 <a href="./SYMBOLIC_BAYES_NEURAL.md">SYMBOLIC_BAYES_NEURAL.md</a> 和 <a href="./SFT_RL_INFERENCE_MECHANICS.md">SFT_RL_INFERENCE_MECHANICS.md</a>。简单说：</p>
+<ul>
+<li><strong>$P_\theta$ 负责"统计 + 插值"</strong>：它擅长的部分；</li>
+<li><strong>符号脚手架（chat template、stop_tokens、tool dispatch、RAG retriever、verifier）负责"硬规则 + 外部世界"</strong>：它做不到的部分。</li>
+</ul>
+<p>CodeGPT 的"脚手架"目前还很简单——<code>sample.py</code> 里的 <code>stop_tokens</code>、<code>temperature</code>、FIM 模板——但已经满足这种混合架构的最小样本。</p>
+<h3 id="105">10.5 边界本身就是研究前沿</h3>
+<p>正因为"万能函数模拟器"有这些边界，整个 LLM 研究的下一波就是<strong>扩展这些边界</strong>：</p>
+<ul>
+<li>Tool use → 让函数 $P$ 能调用外部计算；</li>
+<li>Long-context → 让 $P$ 的输入空间变大；</li>
+<li>Test-time compute / o1 / R1 → 让 $P$ 在推理时也用计算反推（不止训练时）；</li>
+<li>MoE → 让 $P$ 内部条件化路由（参见 <a href="./SFT_FORGETTING_AND_MOE.md">SFT_FORGETTING_AND_MOE.md</a>）；</li>
+<li>Multi-modal → 让 $P$ 接受文本之外的模态。</li>
+</ul>
+<p>每一项都是<strong>给"万能函数模拟器"加一个新维度，让它能近似更广的 $P^*$</strong>。从这个意义上讲，通用近似定理 + 可微分编程 = 当代 AI 的元方法论——所有进展都可以理解为"换一种方式扩充这台万能函数模拟器"。</p>
+<hr />
+<h2 id="12">12. 与本项目其他文档的联系</h2>
+<p>这篇的位置是"最底层视角"——把大模型化简到一句话："用微积分从数据里反推出来的函数 P"。其他文档从不同角度展开这一句话：</p>
+<ul>
+<li><strong>结构怎么演化</strong>：<a href="./DEEP_DIVE.md">DEEP_DIVE.md</a> 讲从 RNN 到 Transformer，万能函数模拟器的架构是怎么进化的。</li>
+<li><strong>目标为什么是 cross-entropy</strong>：<a href="./COMPRESSION_IS_INTELLIGENCE.md">COMPRESSION_IS_INTELLIGENCE.md</a> 讲 cross-entropy = 压缩 = 智能。</li>
+<li><strong>可微分编程的全貌</strong>：<a href="./DIFFERENTIABLE_PROGRAMMING.md">DIFFERENTIABLE_PROGRAMMING.md</a> 详细讲"为什么 PyTorch 是一门语言"。</li>
+<li><strong>概率和矩阵的几何直觉</strong>：<a href="./PROBABILITY_AS_AREA_MATRIX_AS_MAP.md">PROBABILITY_AS_AREA_MATRIX_AS_MAP.md</a> 详细讲"概率是面积、矩阵是映射"。</li>
+<li><strong>物理学的对应</strong>：<a href="./PHYSICS_AND_DEEP_LEARNING.md">PHYSICS_AND_DEEP_LEARNING.md</a> 讲 SGD 是 Langevin 动力学、softmax 是玻尔兹曼分布。</li>
+<li><strong>和其他范式的对比</strong>：<a href="./SYMBOLIC_BAYES_NEURAL.md">SYMBOLIC_BAYES_NEURAL.md</a> 讲符号主义/贝叶斯/深度学习三种"找 P"的范式。</li>
+<li><strong>训练之后怎么落地</strong>：<a href="./SFT_RL_INFERENCE_MECHANICS.md">SFT_RL_INFERENCE_MECHANICS.md</a> 讲"$P_\theta$ + 脚手架"的工程现实。</li>
+<li><strong>找到 P 之后怎么用它检索</strong>：<a href="./GPT_AS_SUPER_SEARCH.md">GPT_AS_SUPER_SEARCH.md</a> 讲 attention = 在 P 内部做的 144 次高维搜索。</li>
+</ul>
+<hr />
+<h2 id="_2">结语：站在万能函数模拟器肩膀上回看大模型</h2>
+<p>回到开头那一句话——</p>
+<blockquote>
+<p><strong>GPT 是一个用微积分（可微分编程）从海量离散文本数据里"反推"出来的函数 $P(y \mid x)$</strong>。</p>
+</blockquote>
+<p>把这句话和本项目代码逐一对位：</p>
+<div class="highlight"><pre><span></span><code><span class="c1"># 函数 P 的本体</span>
+<span class="k">def</span><span class="w"> </span><span class="nf">forward</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">idx</span><span class="p">,</span> <span class="n">targets</span><span class="o">=</span><span class="kc">None</span><span class="p">):</span>   <span class="c1"># model.py:177</span>
+    <span class="o">...</span>
+<span class="c1"># 反推机器</span>
+<span class="n">loss</span><span class="o">.</span><span class="n">backward</span><span class="p">()</span>                          <span class="c1"># autograd</span>
+<span class="n">optimizer</span><span class="o">.</span><span class="n">step</span><span class="p">()</span>                         <span class="c1"># SGD</span>
+<span class="c1"># 衡量 P 离真理多远</span>
+<span class="n">F</span><span class="o">.</span><span class="n">cross_entropy</span><span class="p">(</span><span class="o">...</span><span class="p">)</span>                     <span class="c1"># model.py:192</span>
+<span class="c1"># 离散 → 连续的翻译</span>
+<span class="bp">self</span><span class="o">.</span><span class="n">transformer</span><span class="o">.</span><span class="n">wte</span><span class="p">(</span><span class="n">idx</span><span class="p">)</span>                <span class="c1"># model.py:183</span>
+<span class="n">F</span><span class="o">.</span><span class="n">softmax</span><span class="p">(</span><span class="n">logits</span><span class="p">,</span> <span class="n">dim</span><span class="o">=-</span><span class="mi">1</span><span class="p">)</span>                <span class="c1"># model.py:301</span>
+</code></pre></div>
+
+<p>这五行加起来就是"万能函数 P + 微积分反推"的全部代码骨架。剩下所有的东西——多头注意力、残差连接、LayerNorm、FIM、temperature——都是这个骨架的<strong>精细化、工程化、定制化</strong>。</p>
+<blockquote>
+<p>通用近似定理告诉我们这件事<strong>理论上能成</strong>；微积分告诉我们<strong>怎么把它做出来</strong>；离散数据 + 概率单纯形告诉我们<strong>离散符号怎么变成可微问题</strong>；<code>nn.Linear</code> + <code>nn.GELU</code> 告诉我们<strong>用什么零件搭起来</strong>；<code>loss.backward()</code> 告诉我们<strong>怎么自动调零件</strong>。</p>
+</blockquote>
+<p>理解了这条线，再看 <code>model.py</code> 的任意一行，都是这台"万能函数模拟器"的一个具体零件——零件简单，组合起来就是当代 AI 的全部。</p>
+<p><strong>CodeGPT 就是一个 124M 维参数空间里的一个万能函数实例——它由人写的架构（骨架）和梯度下降写的参数（血肉）合成，由微积分粘合，由数据塑形</strong>。这就是从万能函数模拟器视角看到的，大模型最朴素也最准确的样子。</p>
+    </div>
+  </article>
+
+</main>
+
+<!-- Floating Ask-AI chat widget -->
+<button class="ai-fab" id="ai-fab" aria-label="Ask AI about this article" title="Ask AI about this article">
+  <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+    <path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"/>
+  </svg>
+  <span class="ai-fab-label">Ask AI</span>
+</button>
+
+<div class="ai-panel" id="ai-panel" role="dialog" aria-labelledby="ai-panel-title" aria-hidden="true">
+  <header class="ai-panel-head">
+    <div class="ai-panel-title-wrap">
+      <span class="ai-dot"></span>
+      <h3 id="ai-panel-title">Ask AI about this post</h3>
+    </div>
+    <div class="ai-panel-actions">
+      <button class="ai-icon-btn" id="ai-clear" title="Clear conversation" aria-label="Clear">
+        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><polyline points="3 6 5 6 21 6"/><path d="M19 6l-1 14a2 2 0 0 1-2 2H8a2 2 0 0 1-2-2L5 6"/><path d="M10 11v6M14 11v6"/><path d="M9 6V4a1 1 0 0 1 1-1h4a1 1 0 0 1 1 1v2"/></svg>
+      </button>
+      <button class="ai-icon-btn" id="ai-close" title="Minimize" aria-label="Minimize">
+        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><polyline points="6 9 12 15 18 9"/></svg>
+      </button>
+    </div>
+  </header>
+
+  <div class="ai-messages" id="ai-messages">
+    <div class="ai-empty" id="ai-empty">
+      <p class="ai-empty-title">On-device AI · Gemini Nano</p>
+      <p class="ai-empty-sub">Ask anything about this article. Runs in your browser — nothing leaves your device.</p>
+    </div>
+  </div>
+
+  <div class="ai-status" id="ai-status" hidden></div>
+
+  <form class="ai-composer" id="ai-form">
+    <textarea id="ai-input" rows="1" placeholder="Ask about this post…" autocomplete="off"></textarea>
+    <button type="submit" id="ai-send" class="ai-send" aria-label="Send" disabled>
+      <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><line x1="22" y1="2" x2="11" y2="13"/><polygon points="22 2 15 22 11 13 2 9 22 2"/></svg>
+    </button>
+  </form>
+</div>
+
+<script>
+(function () {
+  const POST_TITLE = "\u4e07\u80fd\u51fd\u6570\u6a21\u62df\u5668\uff1a\u5927\u6a21\u578b\u5c31\u662f\u7528\u5fae\u79ef\u5206\u4ece\u6570\u636e\u91cc\"\u79ef\u5206\"\u51fa\u6765\u7684\u51fd\u6570 P";
+  const contentEl = document.querySelector('article .content');
+
+  const fab = document.getElementById('ai-fab');
+  const panel = document.getElementById('ai-panel');
+  const closeBtn = document.getElementById('ai-close');
+  const clearBtn = document.getElementById('ai-clear');
+  const msgsEl = document.getElementById('ai-messages');
+  const emptyEl = document.getElementById('ai-empty');
+  const statusEl = document.getElementById('ai-status');
+  const formEl = document.getElementById('ai-form');
+  const inputEl = document.getElementById('ai-input');
+  const sendBtn = document.getElementById('ai-send');
+
+  function articleText() {
+    if (!contentEl) return '';
+    return (contentEl.innerText || contentEl.textContent || '')
+      .replace(/[ \t]+\n/g, '\n')
+      .replace(/\n{3,}/g, '\n\n')
+      .trim();
+  }
+
+  function setStatus(msg, cls) {
+    if (!msg) { statusEl.hidden = true; statusEl.textContent = ''; statusEl.className = 'ai-status'; return; }
+    statusEl.hidden = false;
+    statusEl.textContent = msg;
+    statusEl.className = 'ai-status' + (cls ? ' ' + cls : '');
+  }
+
+  function hideEmpty() { if (emptyEl) emptyEl.style.display = 'none'; }
+
+  function appendBubble(role, text) {
+    hideEmpty();
+    const wrap = document.createElement('div');
+    wrap.className = 'ai-msg ai-msg-' + role;
+    const bubble = document.createElement('div');
+    bubble.className = 'ai-bubble';
+    bubble.textContent = text;
+    wrap.appendChild(bubble);
+    msgsEl.appendChild(wrap);
+    msgsEl.scrollTop = msgsEl.scrollHeight;
+    return bubble;
+  }
+
+  function appendTyping() {
+    hideEmpty();
+    const wrap = document.createElement('div');
+    wrap.className = 'ai-msg ai-msg-assistant ai-typing';
+    wrap.innerHTML = '<div class="ai-bubble"><span class="ai-dots"><i></i><i></i><i></i></span></div>';
+    msgsEl.appendChild(wrap);
+    msgsEl.scrollTop = msgsEl.scrollHeight;
+    return wrap;
+  }
+
+  function autoSize() {
+    inputEl.style.height = 'auto';
+    inputEl.style.height = Math.min(inputEl.scrollHeight, 140) + 'px';
+  }
+
+  function openPanel() {
+    panel.classList.add('open');
+    panel.setAttribute('aria-hidden', 'false');
+    fab.classList.add('hidden');
+    setTimeout(() => inputEl.focus(), 50);
+  }
+  function closePanel() {
+    panel.classList.remove('open');
+    panel.setAttribute('aria-hidden', 'true');
+    fab.classList.remove('hidden');
+  }
+
+  fab.addEventListener('click', openPanel);
+  closeBtn.addEventListener('click', closePanel);
+  document.addEventListener('keydown', e => {
+    if (e.key === 'Escape' && panel.classList.contains('open')) closePanel();
+  });
+
+  // ---- LanguageModel session ----
+  let session = null;
+  let creating = null;
+  let history = [];
+
+  function buildSystemPrompt() {
+    // Keep article context modest — Gemini Nano's input quota is small.
+    const article = articleText().slice(0, 4000);
+    return (
+      'You are a concise, helpful assistant answering questions about a blog post. ' +
+      'Use the article below as your primary source. If the answer is not in it, say so briefly and answer generally. ' +
+      'Reply in the same language as the user\'s question. Keep answers short unless asked for detail.\n\n' +
+      '=== ARTICLE TITLE ===\n' + POST_TITLE + '\n\n' +
+      '=== ARTICLE CONTENT ===\n' + article
+    );
+  }
+
+  async function ensureSession() {
+    if (session) return session;
+    if (creating) return creating;
+
+    if (!('LanguageModel' in self)) {
+      throw new Error(
+        'On-device AI not available. Use Chrome 138+ on desktop, or enable ' +
+        '"Prompt API for Gemini Nano" in chrome://flags.'
+      );
+    }
+
+    setStatus('Checking model…', 'info');
+    const status = await LanguageModel.availability();
+    if (status === 'unavailable') {
+      throw new Error('Model unavailable on this device.');
+    }
+
+    creating = (async () => {
+      // Only show download UI when the model isn't already there.
+      const willDownload = (status !== 'available');
+      if (willDownload) setStatus('Preparing model (first run downloads ~2GB)…', 'info');
+      else setStatus('Warming up…', 'info');
+
+      const s = await LanguageModel.create({
+        initialPrompts: [{ role: 'system', content: buildSystemPrompt() }],
+        monitor(m) {
+          m.addEventListener('downloadprogress', e => {
+            // Skip the spurious 0% event Chrome fires for cached models.
+            if (!willDownload && e.loaded === 0) return;
+            const pct = (e.loaded * 100).toFixed(1);
+            setStatus('Downloading model: ' + pct + '%', 'info');
+          });
+        }
+      });
+      session = s;
+      setStatus('');
+      return s;
+    })();
+
+    try { return await creating; }
+    finally { creating = null; }
+  }
+
+  async function ask(q) {
+    appendBubble('user', q);
+    history.push({ role: 'user', content: q });
+
+    sendBtn.disabled = true;
+    inputEl.disabled = true;
+    const typing = appendTyping();
+
+    let answerBubble = null;
+    let acc = '';
+    try {
+      const s = await ensureSession();
+      const stream = s.promptStreaming(q);
+      for await (const chunk of stream) {
+        if (!answerBubble) {
+          typing.remove();
+          const wrap = document.createElement('div');
+          wrap.className = 'ai-msg ai-msg-assistant';
+          answerBubble = document.createElement('div');
+          answerBubble.className = 'ai-bubble';
+          wrap.appendChild(answerBubble);
+          msgsEl.appendChild(wrap);
+        }
+        acc += chunk;
+        answerBubble.textContent = acc;
+        msgsEl.scrollTop = msgsEl.scrollHeight;
+      }
+      if (acc) history.push({ role: 'assistant', content: acc });
+      else { typing.remove(); appendBubble('assistant', '(no response)'); }
+    } catch (e) {
+      if (typing && typing.parentNode) typing.remove();
+      const err = document.createElement('div');
+      err.className = 'ai-msg ai-msg-error';
+      err.innerHTML = '<div class="ai-bubble">⚠ ' + (e && e.message ? e.message : String(e)) + '</div>';
+      msgsEl.appendChild(err);
+      msgsEl.scrollTop = msgsEl.scrollHeight;
+    } finally {
+      sendBtn.disabled = !inputEl.value.trim();
+      inputEl.disabled = false;
+      inputEl.focus();
+    }
+  }
+
+  formEl.addEventListener('submit', e => {
+    e.preventDefault();
+    const q = inputEl.value.trim();
+    if (!q) return;
+    inputEl.value = '';
+    autoSize();
+    sendBtn.disabled = true;
+    ask(q);
+  });
+
+  inputEl.addEventListener('input', () => {
+    autoSize();
+    sendBtn.disabled = !inputEl.value.trim();
+  });
+  inputEl.addEventListener('keydown', e => {
+    if (e.key === 'Enter' && !e.shiftKey) {
+      e.preventDefault();
+      formEl.requestSubmit();
+    }
+  });
+
+  clearBtn.addEventListener('click', () => {
+    msgsEl.innerHTML = '';
+    msgsEl.appendChild(emptyEl);
+    emptyEl.style.display = '';
+    history = [];
+    if (session && session.destroy) { try { session.destroy(); } catch (_) {} }
+    session = null;
+    setStatus('');
+  });
+
+  if (!('LanguageModel' in self)) {
+    fab.addEventListener('click', () => {
+      openPanel();
+      setStatus('On-device AI not detected. Use Chrome 138+ desktop, or enable "Prompt API for Gemini Nano" in chrome://flags.', 'bad');
+    }, { once: true });
+  }
+})();
+</script>
+
+<!-- Outline notes / comments — DataScript + IndexedDB -->
+<script src="https://github.com/tonsky/datascript/releases/download/1.7.8/datascript-1.7.8.min.js"></script>
+<script src="../notes.js?v=6"></script>
+
+</body>
+</html>
