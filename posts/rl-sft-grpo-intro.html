@@ -1,0 +1,602 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>LLM 训练技术详解：从 SFT 到 GRPO · Steve Chan — xlisp</title>
+<meta name="description" content="本文档介绍 MathGPT 项目中使用的核心训练技术，以及它们在强化学习历史脉络中的位置。">
+<meta name="author" content="Steve Chan">
+<link rel="icon" type="image/jpeg" href="../icon.jpeg">
+<link rel="apple-touch-icon" href="../icon.jpeg">
+<meta property="og:type" content="article">
+<meta property="og:title" content="LLM 训练技术详解：从 SFT 到 GRPO">
+<meta property="og:description" content="本文档介绍 MathGPT 项目中使用的核心训练技术，以及它们在强化学习历史脉络中的位置。">
+<meta property="og:image" content="../icon.jpeg">
+<meta property="og:site_name" content="Steve Chan — xlisp">
+<meta name="twitter:card" content="summary_large_image">
+<meta name="twitter:title" content="LLM 训练技术详解：从 SFT 到 GRPO">
+<meta name="twitter:description" content="本文档介绍 MathGPT 项目中使用的核心训练技术，以及它们在强化学习历史脉络中的位置。">
+<meta name="twitter:image" content="../icon.jpeg">
+<link rel="stylesheet" href="../style.css?v=notes4">
+</head>
+<body>
+<main class="wrap post">
+
+  <nav class="topnav">
+    <a href="../index.html">← home</a>
+  </nav>
+
+  <article>
+    <header class="post-header">
+      <h1>LLM 训练技术详解：从 SFT 到 GRPO</h1>
+      <p class="meta">2026-04-02 · Steve Chan</p>
+    </header>
+
+    <div class="content">
+<p>本文档介绍 MathGPT 项目中使用的核心训练技术，以及它们在强化学习历史脉络中的位置。</p>
+<hr />
+<h2 id="sft">一、监督微调（SFT）是什么？</h2>
+<h3 id="11">1.1 基本概念</h3>
+<p><strong>监督微调（Supervised Fine-Tuning，SFT）</strong> 是在预训练语言模型基础上，用带标签的对话数据继续训练，让模型学会"好的回答方式"。</p>
+<p>预训练阶段的模型（Base Model）只学会了"像人类写作"，可以预测下一个 token，但不知道什么是"有用的回答"。SFT 通过展示高质量的人类对话示例，教会模型：
+- 按照提问者的意图作答
+- 遵循特定格式（如 <code>&lt;|user_start|&gt;...&lt;|assistant_start|&gt;...</code>）
+- 在适当场合使用工具（如计算器 <code>&lt;|python_start|&gt;...&lt;|python_end|&gt;</code>）
+- 对数学问题展示推理步骤</p>
+<h3 id="12-sft">1.2 SFT 的训练过程</h3>
+<div class="highlight"><pre><span></span><code>输入序列:
+[BOS] &lt;|user_start|&gt; 苹果的颜色是什么？ &lt;|user_end|&gt; &lt;|assistant_start|&gt;
+
+目标序列:
+苹果通常是红色、绿色或黄色的。 &lt;|assistant_end|&gt;
+</code></pre></div>
+
+<p>训练时：
+- <strong>掩码（loss mask）</strong>：只计算助手回答部分的损失，用户问题不计入损失
+- <strong>损失函数</strong>：交叉熵（Cross-Entropy），衡量模型预测分布与真实 token 的差距
+- <strong>优化器</strong>：MuonAdamW（矩阵参数用 Muon，其余用 AdamW）</p>
+<h3 id="13-sft">1.3 SFT 训练数据混合</h3>
+<p>本项目 SFT 使用多种数据混合训练：</p>
+<table>
+<thead>
+<tr>
+<th>数据集</th>
+<th>样本数</th>
+<th>用途</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>SmolTalk</td>
+<td>460K</td>
+<td>通用对话能力</td>
+</tr>
+<tr>
+<td>MMLU</td>
+<td>300K（3 epoch）</td>
+<td>学科知识</td>
+</tr>
+<tr>
+<td>GSM8K</td>
+<td>32K（4 epoch）</td>
+<td>数学推理 + 工具调用</td>
+</tr>
+<tr>
+<td>SimpleSpelling</td>
+<td>200K</td>
+<td>拼写任务</td>
+</tr>
+<tr>
+<td>SpellingBee</td>
+<td>80K</td>
+<td>字母计数任务</td>
+</tr>
+</tbody>
+</table>
+<h3 id="14-sft-rl">1.4 为什么 SFT 之后还需要 RL？</h3>
+<p>SFT 有几个内在局限：</p>
+<ol>
+<li><strong>模仿而非创新</strong>：SFT 模型只会模仿训练数据的模式，对于新问题缺乏泛化能力</li>
+<li><strong>无法自我评价</strong>：模型不知道自己的回答是否正确，无法主动改进</li>
+<li><strong>奖励信号稀疏</strong>：SFT 对每个 token 平等对待，无法区分"关键的推理步骤"和"填充词"</li>
+<li><strong>数学特别难</strong>：数学问题需要精确的计算，而 SFT 训练目标允许小概率的错误 token</li>
+</ol>
+<p>这就是 RL 微调（RLFT）的动机所在。</p>
+<hr />
+<h2 id="mathgpt">二、MathGPT 的设计思路</h2>
+<h3 id="21">2.1 为什么选择这个架构？</h3>
+<p>本项目基于 <a href="https://github.com/karpathy/nanochat">nanochat</a> 框架，进行了 GTX 1080 适配。设计原则：</p>
+<p><strong>极简主义</strong>：
+- 不使用外部推理框架（无 LangChain、无 vLLM）
+- 所有组件自包含，便于理解和修改
+- 代码总量 &lt; 3000 行</p>
+<p><strong>完整流程</strong>：
+- 从头预训练（不依赖已有权重）
+- SFT → RL 完整管线
+- 推理引擎支持工具调用</p>
+<p><strong>GTX 1080 适配</strong>：</p>
+<div class="highlight"><pre><span></span><code>硬件限制 → 设计决策
+──────────────────────────────────────────────
+SM 6.1，无 bfloat16 → float32 计算
+VRAM 8 GB → depth=6, embd=384（73.5M 参数）
+无 Flash Attention → PyTorch SDPA
+无 torch.compile → 运行时检测，替换为恒等装饰器
+</code></pre></div>
+
+<h3 id="22-calculator-tool">2.2 工具调用设计（Calculator Tool）</h3>
+<p>模型通过特殊 token 调用计算器：</p>
+<div class="highlight"><pre><span></span><code>模型输出：...所以 Janet 每周储蓄 &lt;|python_start|&gt;16*7&lt;|python_end|&gt;
+引擎计算：eval(&quot;16*7&quot;) = 112
+强制注入：&lt;|output_start|&gt;112&lt;|output_end|&gt;
+模型继续：112 美元...
+</code></pre></div>
+
+<p>这个设计让小模型（73.5M）也能精确计算数值，不依赖模型本身的"记忆"来做算术。</p>
+<h3 id="23-kv-cache">2.3 KV Cache 推理引擎</h3>
+<p>推理引擎（<code>engine.py</code>）采用批量生成 + KV 缓存复用：</p>
+<ol>
+<li><strong>一次 prefill</strong>：对提示词做一次前向传播，缓存所有层的 KV</li>
+<li><strong>复制 KV Cache</strong>：将 batch=1 的缓存广播到 batch=N，用于并行采样</li>
+<li><strong>增量 decode</strong>：每步只推理一个新 token，KV 缓存在 FA3 中原地更新</li>
+</ol>
+<hr />
+<h2 id="dqn-grpo">三、强化学习发展历史：从 DQN 到 GRPO</h2>
+<h3 id="31-q-dqn2013-2015">3.1 深度 Q 网络（DQN，2013-2015）</h3>
+<p><strong>核心思想：</strong> 用深度神经网络近似 Q 函数（状态-动作值函数）</p>
+<div class="highlight"><pre><span></span><code>Q(s, a) = 即时奖励 r + γ × max_{a&#39;} Q(s&#39;, a&#39;)
+</code></pre></div>
+
+<p>DeepMind 的 DQN（2013）首次让智能体在不了解游戏规则的情况下，直接从像素学习打 Atari 游戏。</p>
+<p><strong>关键技术：</strong>
+- <strong>经验回放（Experience Replay）</strong>：存储 (s, a, r, s') 元组，打破时序相关性
+- <strong>目标网络（Target Network）</strong>：用滞后版本的网络计算目标值，稳定训练</p>
+<p><strong>局限性：</strong> DQN 只能处理离散动作空间（按哪个键），无法直接应用于生成文本（词表大小 32768 = 32768 种"动作"）。</p>
+<h3 id="32-policy-gradient2016">3.2 策略梯度方法（Policy Gradient，2016）</h3>
+<p><strong>核心思想：</strong> 直接优化策略 π(a|s)，不需要估计 Q 函数</p>
+<div class="highlight"><pre><span></span><code>∇J(θ) = E_{τ~π_θ}[∑_t ∇log π_θ(a_t|s_t) × G_t]
+</code></pre></div>
+
+<p>其中 G_t 是从 t 步开始的累积奖励。</p>
+<p><strong>REINFORCE 算法</strong> 是最简单的策略梯度实现：
+1. 用当前策略采样轨迹
+2. 计算每个动作的累积奖励
+3. 梯度上升：增大好动作的概率，减小坏动作的概率</p>
+<p>这直接可以应用于语言模型——每个生成的 token 就是一个"动作"！</p>
+<h3 id="33-ppo2017">3.3 PPO（近端策略优化，2017）</h3>
+<p><strong>问题：</strong> 朴素策略梯度不稳定——步长太大会让策略崩溃</p>
+<p><strong>PPO 解决方案：</strong> 限制每次更新中新旧策略的差异</p>
+<div class="highlight"><pre><span></span><code>L_PPO = E[min(r_t(θ) × A_t, clip(r_t(θ), 1-ε, 1+ε) × A_t)]
+
+其中 r_t(θ) = π_θ(a_t|s_t) / π_θ_old(a_t|s_t)（重要性采样比）
+</code></pre></div>
+
+<p>PPO 是后来 RLHF 的基础算法。</p>
+<h3 id="34-ai-rlhf2022">3.4 从游戏 AI 到语言模型：RLHF（2022）</h3>
+<p><strong>InstructGPT / ChatGPT（OpenAI, 2022）</strong> 将 RL 引入 LLM 训练，开创了 RLHF（Reinforcement Learning from Human Feedback）范式。</p>
+<p><strong>RLHF 三步流程：</strong></p>
+<div class="highlight"><pre><span></span><code>Step 1: SFT（监督微调）
+  人类示范 → 模型学会基本的回答格式
+
+Step 2: 奖励模型训练（Reward Model）
+  人类对比不同回答打分 → 训练一个&quot;打分器&quot;
+  输入：(问题 + 回答) → 输出：标量分数
+
+Step 3: PPO 强化学习
+  用奖励模型提供奖励信号，用 PPO 优化策略
+  同时加 KL 约束防止偏离 SFT 模型太远
+</code></pre></div>
+
+<p><strong>RLHF 的核心贡献：</strong>
+- 解决了"如何把人类主观偏好变成训练信号"的问题
+- 奖励模型充当代理人类判断</p>
+<p><strong>RLHF 的局限：</strong>
+- 需要大量人工标注对比数据（成本高）
+- 奖励模型可能被"游玩"（reward hacking）
+- PPO 实现复杂，需要 4 个模型同时在 GPU 上（policy, ref, reward, value）</p>
+<h3 id="35-grpo2024">3.5 GRPO（群体相对策略优化，2024）</h3>
+<p><strong>DeepSeek-Math（2024）</strong> 提出 GRPO，专门为数学推理设计，大幅简化 RLHF。</p>
+<p><strong>核心思想：</strong> 用"同组内的相对表现"代替独立的价值函数估计</p>
+<div class="highlight"><pre><span></span><code>对同一个问题，采样 G 条轨迹：
+{o_1, o_2, ..., o_G}，每条得到奖励 {r_1, r_2, ..., r_G}
+
+优势函数：
+A_i = (r_i - mean(r)) / std(r)
+
+（把组内平均分当基线，高于平均的是正优势，低于平均的是负优势）
+</code></pre></div>
+
+<p><strong>GRPO 损失函数：</strong></p>
+<div class="highlight"><pre><span></span><code>L_GRPO = -E[(min(r_t × A, clip(r_t, 1-ε, 1+ε) × A)) - β × KL(π_θ || π_ref)]
+</code></pre></div>
+
+<p><strong>与 PPO/RLHF 的关键区别：</strong></p>
+<table>
+<thead>
+<tr>
+<th>对比维度</th>
+<th>PPO/RLHF</th>
+<th>GRPO</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>价值函数（Critic）</td>
+<td>需要（额外大模型）</td>
+<td>不需要</td>
+</tr>
+<tr>
+<td>奖励模型</td>
+<td>需要（人工标注训练）</td>
+<td>不需要（规则奖励即可）</td>
+</tr>
+<tr>
+<td>基线计算</td>
+<td>价值函数预测</td>
+<td>同组均值</td>
+</tr>
+<tr>
+<td>实现复杂度</td>
+<td>高（4 个模型）</td>
+<td>低（2 个模型）</td>
+</tr>
+<tr>
+<td>适用场景</td>
+<td>通用对话对齐</td>
+<td>有明确正确答案的任务</td>
+</tr>
+</tbody>
+</table>
+<p><strong>为什么 GRPO 适合数学：</strong> 数学题有明确的对错标准（最终答案是否正确），不需要人工打分，奖励函数是确定性的（正确=1，错误=0）。</p>
+<h3 id="36-mathgpt-rl">3.6 MathGPT 使用的 RL 算法</h3>
+<p>本项目使用的是 <strong>简化版 REINFORCE（接近 GRPO）</strong>：</p>
+<div class="highlight"><pre><span></span><code><span class="c1"># 对同一个问题采样 num_samples 条轨迹</span>
+<span class="n">rewards</span> <span class="o">=</span> <span class="p">[</span><span class="mf">1.0</span> <span class="k">if</span> <span class="n">correct</span> <span class="k">else</span> <span class="mf">0.0</span> <span class="k">for</span> <span class="n">each</span> <span class="n">sample</span><span class="p">]</span>
+
+<span class="c1"># REINFORCE with baseline（组内均值作为基线）</span>
+<span class="n">advantage</span> <span class="o">=</span> <span class="n">reward</span> <span class="o">-</span> <span class="n">mean</span><span class="p">(</span><span class="n">rewards</span><span class="p">)</span>  <span class="c1"># 组内相对优势</span>
+
+<span class="c1"># 策略梯度损失</span>
+<span class="n">loss</span> <span class="o">=</span> <span class="o">-</span><span class="n">logprob</span> <span class="err">×</span> <span class="n">advantage</span>
+
+<span class="c1"># 只对采样 token（非强制注入的 token）计算梯度</span>
+</code></pre></div>
+
+<p><strong>与完整 GRPO 的区别：</strong>
+- 没有 KL 散度正则项（简化实现）
+- 没有 PPO-style clip（直接用 REINFORCE）
+- 奖励：基于规则（答案数字是否匹配）</p>
+<hr />
+<h2 id="rlhf-grpo">四、RLHF 和 GRPO 的关系图谱</h2>
+<div class="highlight"><pre><span></span><code>强化学习基础
+├── DQN（2013）：Q-learning + 深度网络，值函数近似
+│   └── 解决离散动作空间问题（Atari 游戏）
+│
+├── A3C / A2C（2016）：Actor-Critic，同时学策略和值函数
+│
+├── PPO（2017）：近端策略优化，稳定的策略梯度
+│   └── 成为 RLHF 的核心算法
+│
+└── REINFORCE（经典，Williams 1992）：
+    朴素策略梯度，简单但方差大
+
+应用于 LLM
+├── RLHF（2022, InstructGPT）
+│   ├── Step1: SFT 基础对话
+│   ├── Step2: 奖励模型（人工标注对比）
+│   └── Step3: PPO 强化学习（需要 Critic 网络）
+│
+├── DPO（2023, Direct Preference Optimization）
+│   └── 绕过显式奖励模型，直接优化偏好
+│
+├── GRPO（2024, DeepSeek-Math）
+│   ├── 无需奖励模型，规则奖励
+│   ├── 无需 Critic 网络，用组内均值做基线
+│   └── 专为有明确答案的任务设计
+│
+└── MathGPT（本项目）
+    └── 简化版 REINFORCE ≈ GRPO（无 KL 项，无 clip）
+</code></pre></div>
+
+<hr />
+<h2 id="grpo">五、为什么 GRPO 让小模型也能学数学？</h2>
+<p>一个有趣的现象是：GRPO 在推动数学能力方面比 SFT 更有效，即使模型参数量很小。</p>
+<p>原因分析：</p>
+<ol>
+<li>
+<p><strong>探索-利用权衡</strong>：SFT 只告诉模型"正确答案是什么"，但不告诉它为什么那条推理路径更好。GRPO 让模型自己探索不同的解题路径，只有得到正确答案的路径才被强化。</p>
+</li>
+<li>
+<p><strong>正确的归因</strong>：如果模型的推理过程有 5 个步骤，SFT 对每个步骤平等训练。GRPO 则只对"最终导致正确答案"的序列进行正向强化——即使模型偶然答对，那些 token 的概率也会被提高。</p>
+</li>
+<li>
+<p><strong>批判性思维</strong>：用不同采样得到的回答相互比较，模型能学到"在这类问题上，用哪种推理策略成功率更高"。</p>
+</li>
+<li>
+<p><strong>计算器协同</strong>：本项目的工具调用机制与 GRPO 天然契合——如果模型学会在关键计算步骤使用计算器（<code>&lt;|python_start|&gt;...&lt;|python_end|&gt;</code>），则最终答案的正确率会大幅提升，从而获得更多奖励信号。</p>
+</li>
+</ol>
+<hr />
+<h2 id="_1">参考文献</h2>
+<ul>
+<li>Mnih et al. (2013). <em>Playing Atari with Deep Reinforcement Learning</em>. DQN.</li>
+<li>Williams (1992). <em>Simple Statistical Gradient-Following Algorithms for Connectionist Reinforcement Learning</em>. REINFORCE.</li>
+<li>Schulman et al. (2017). <em>Proximal Policy Optimization Algorithms</em>. PPO.</li>
+<li>Ouyang et al. (2022). <em>Training language models to follow instructions with human feedback</em>. InstructGPT/RLHF.</li>
+<li>Rafailov et al. (2023). <em>Direct Preference Optimization</em>. DPO.</li>
+<li>Shao et al. (2024). <em>DeepSeekMath: Pushing the Limits of Mathematical Reasoning in Open Language Models</em>. GRPO.</li>
+<li>Karpathy (2024). <a href="https://github.com/karpathy/nanochat">nanochat</a>. 本项目基础框架.</li>
+</ul>
+    </div>
+  </article>
+
+</main>
+
+<!-- Floating Ask-AI chat widget -->
+<button class="ai-fab" id="ai-fab" aria-label="Ask AI about this article" title="Ask AI about this article">
+  <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+    <path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"/>
+  </svg>
+  <span class="ai-fab-label">Ask AI</span>
+</button>
+
+<div class="ai-panel" id="ai-panel" role="dialog" aria-labelledby="ai-panel-title" aria-hidden="true">
+  <header class="ai-panel-head">
+    <div class="ai-panel-title-wrap">
+      <span class="ai-dot"></span>
+      <h3 id="ai-panel-title">Ask AI about this post</h3>
+    </div>
+    <div class="ai-panel-actions">
+      <button class="ai-icon-btn" id="ai-clear" title="Clear conversation" aria-label="Clear">
+        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><polyline points="3 6 5 6 21 6"/><path d="M19 6l-1 14a2 2 0 0 1-2 2H8a2 2 0 0 1-2-2L5 6"/><path d="M10 11v6M14 11v6"/><path d="M9 6V4a1 1 0 0 1 1-1h4a1 1 0 0 1 1 1v2"/></svg>
+      </button>
+      <button class="ai-icon-btn" id="ai-close" title="Minimize" aria-label="Minimize">
+        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><polyline points="6 9 12 15 18 9"/></svg>
+      </button>
+    </div>
+  </header>
+
+  <div class="ai-messages" id="ai-messages">
+    <div class="ai-empty" id="ai-empty">
+      <p class="ai-empty-title">On-device AI · Gemini Nano</p>
+      <p class="ai-empty-sub">Ask anything about this article. Runs in your browser — nothing leaves your device.</p>
+    </div>
+  </div>
+
+  <div class="ai-status" id="ai-status" hidden></div>
+
+  <form class="ai-composer" id="ai-form">
+    <textarea id="ai-input" rows="1" placeholder="Ask about this post…" autocomplete="off"></textarea>
+    <button type="submit" id="ai-send" class="ai-send" aria-label="Send" disabled>
+      <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><line x1="22" y1="2" x2="11" y2="13"/><polygon points="22 2 15 22 11 13 2 9 22 2"/></svg>
+    </button>
+  </form>
+</div>
+
+<script>
+(function () {
+  const POST_TITLE = "LLM \u8bad\u7ec3\u6280\u672f\u8be6\u89e3\uff1a\u4ece SFT \u5230 GRPO";
+  const contentEl = document.querySelector('article .content');
+
+  const fab = document.getElementById('ai-fab');
+  const panel = document.getElementById('ai-panel');
+  const closeBtn = document.getElementById('ai-close');
+  const clearBtn = document.getElementById('ai-clear');
+  const msgsEl = document.getElementById('ai-messages');
+  const emptyEl = document.getElementById('ai-empty');
+  const statusEl = document.getElementById('ai-status');
+  const formEl = document.getElementById('ai-form');
+  const inputEl = document.getElementById('ai-input');
+  const sendBtn = document.getElementById('ai-send');
+
+  function articleText() {
+    if (!contentEl) return '';
+    return (contentEl.innerText || contentEl.textContent || '')
+      .replace(/[ \t]+\n/g, '\n')
+      .replace(/\n{3,}/g, '\n\n')
+      .trim();
+  }
+
+  function setStatus(msg, cls) {
+    if (!msg) { statusEl.hidden = true; statusEl.textContent = ''; statusEl.className = 'ai-status'; return; }
+    statusEl.hidden = false;
+    statusEl.textContent = msg;
+    statusEl.className = 'ai-status' + (cls ? ' ' + cls : '');
+  }
+
+  function hideEmpty() { if (emptyEl) emptyEl.style.display = 'none'; }
+
+  function appendBubble(role, text) {
+    hideEmpty();
+    const wrap = document.createElement('div');
+    wrap.className = 'ai-msg ai-msg-' + role;
+    const bubble = document.createElement('div');
+    bubble.className = 'ai-bubble';
+    bubble.textContent = text;
+    wrap.appendChild(bubble);
+    msgsEl.appendChild(wrap);
+    msgsEl.scrollTop = msgsEl.scrollHeight;
+    return bubble;
+  }
+
+  function appendTyping() {
+    hideEmpty();
+    const wrap = document.createElement('div');
+    wrap.className = 'ai-msg ai-msg-assistant ai-typing';
+    wrap.innerHTML = '<div class="ai-bubble"><span class="ai-dots"><i></i><i></i><i></i></span></div>';
+    msgsEl.appendChild(wrap);
+    msgsEl.scrollTop = msgsEl.scrollHeight;
+    return wrap;
+  }
+
+  function autoSize() {
+    inputEl.style.height = 'auto';
+    inputEl.style.height = Math.min(inputEl.scrollHeight, 140) + 'px';
+  }
+
+  function openPanel() {
+    panel.classList.add('open');
+    panel.setAttribute('aria-hidden', 'false');
+    fab.classList.add('hidden');
+    setTimeout(() => inputEl.focus(), 50);
+  }
+  function closePanel() {
+    panel.classList.remove('open');
+    panel.setAttribute('aria-hidden', 'true');
+    fab.classList.remove('hidden');
+  }
+
+  fab.addEventListener('click', openPanel);
+  closeBtn.addEventListener('click', closePanel);
+  document.addEventListener('keydown', e => {
+    if (e.key === 'Escape' && panel.classList.contains('open')) closePanel();
+  });
+
+  // ---- LanguageModel session ----
+  let session = null;
+  let creating = null;
+  let history = [];
+
+  function buildSystemPrompt() {
+    // Keep article context modest — Gemini Nano's input quota is small.
+    const article = articleText().slice(0, 4000);
+    return (
+      'You are a concise, helpful assistant answering questions about a blog post. ' +
+      'Use the article below as your primary source. If the answer is not in it, say so briefly and answer generally. ' +
+      'Reply in the same language as the user\'s question. Keep answers short unless asked for detail.\n\n' +
+      '=== ARTICLE TITLE ===\n' + POST_TITLE + '\n\n' +
+      '=== ARTICLE CONTENT ===\n' + article
+    );
+  }
+
+  async function ensureSession() {
+    if (session) return session;
+    if (creating) return creating;
+
+    if (!('LanguageModel' in self)) {
+      throw new Error(
+        'On-device AI not available. Use Chrome 138+ on desktop, or enable ' +
+        '"Prompt API for Gemini Nano" in chrome://flags.'
+      );
+    }
+
+    setStatus('Checking model…', 'info');
+    const status = await LanguageModel.availability();
+    if (status === 'unavailable') {
+      throw new Error('Model unavailable on this device.');
+    }
+
+    creating = (async () => {
+      // Only show download UI when the model isn't already there.
+      const willDownload = (status !== 'available');
+      if (willDownload) setStatus('Preparing model (first run downloads ~2GB)…', 'info');
+      else setStatus('Warming up…', 'info');
+
+      const s = await LanguageModel.create({
+        initialPrompts: [{ role: 'system', content: buildSystemPrompt() }],
+        monitor(m) {
+          m.addEventListener('downloadprogress', e => {
+            // Skip the spurious 0% event Chrome fires for cached models.
+            if (!willDownload && e.loaded === 0) return;
+            const pct = (e.loaded * 100).toFixed(1);
+            setStatus('Downloading model: ' + pct + '%', 'info');
+          });
+        }
+      });
+      session = s;
+      setStatus('');
+      return s;
+    })();
+
+    try { return await creating; }
+    finally { creating = null; }
+  }
+
+  async function ask(q) {
+    appendBubble('user', q);
+    history.push({ role: 'user', content: q });
+
+    sendBtn.disabled = true;
+    inputEl.disabled = true;
+    const typing = appendTyping();
+
+    let answerBubble = null;
+    let acc = '';
+    try {
+      const s = await ensureSession();
+      const stream = s.promptStreaming(q);
+      for await (const chunk of stream) {
+        if (!answerBubble) {
+          typing.remove();
+          const wrap = document.createElement('div');
+          wrap.className = 'ai-msg ai-msg-assistant';
+          answerBubble = document.createElement('div');
+          answerBubble.className = 'ai-bubble';
+          wrap.appendChild(answerBubble);
+          msgsEl.appendChild(wrap);
+        }
+        acc += chunk;
+        answerBubble.textContent = acc;
+        msgsEl.scrollTop = msgsEl.scrollHeight;
+      }
+      if (acc) history.push({ role: 'assistant', content: acc });
+      else { typing.remove(); appendBubble('assistant', '(no response)'); }
+    } catch (e) {
+      if (typing && typing.parentNode) typing.remove();
+      const err = document.createElement('div');
+      err.className = 'ai-msg ai-msg-error';
+      err.innerHTML = '<div class="ai-bubble">⚠ ' + (e && e.message ? e.message : String(e)) + '</div>';
+      msgsEl.appendChild(err);
+      msgsEl.scrollTop = msgsEl.scrollHeight;
+    } finally {
+      sendBtn.disabled = !inputEl.value.trim();
+      inputEl.disabled = false;
+      inputEl.focus();
+    }
+  }
+
+  formEl.addEventListener('submit', e => {
+    e.preventDefault();
+    const q = inputEl.value.trim();
+    if (!q) return;
+    inputEl.value = '';
+    autoSize();
+    sendBtn.disabled = true;
+    ask(q);
+  });
+
+  inputEl.addEventListener('input', () => {
+    autoSize();
+    sendBtn.disabled = !inputEl.value.trim();
+  });
+  inputEl.addEventListener('keydown', e => {
+    if (e.key === 'Enter' && !e.shiftKey) {
+      e.preventDefault();
+      formEl.requestSubmit();
+    }
+  });
+
+  clearBtn.addEventListener('click', () => {
+    msgsEl.innerHTML = '';
+    msgsEl.appendChild(emptyEl);
+    emptyEl.style.display = '';
+    history = [];
+    if (session && session.destroy) { try { session.destroy(); } catch (_) {} }
+    session = null;
+    setStatus('');
+  });
+
+  if (!('LanguageModel' in self)) {
+    fab.addEventListener('click', () => {
+      openPanel();
+      setStatus('On-device AI not detected. Use Chrome 138+ desktop, or enable "Prompt API for Gemini Nano" in chrome://flags.', 'bad');
+    }, { once: true });
+  }
+})();
+</script>
+
+<!-- Outline notes / comments — DataScript + IndexedDB -->
+<script src="https://github.com/tonsky/datascript/releases/download/1.7.8/datascript-1.7.8.min.js"></script>
+<script src="../notes.js?v=6"></script>
+
+</body>
+</html>

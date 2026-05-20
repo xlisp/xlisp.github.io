@@ -8,13 +8,18 @@ Static site generator for xlisp.github.io.
 
 Usage:
     pip install markdown pygments
-    python build.py                    # full rebuild (renders every docs/*.md)
-    python build.py path/to/foo.md     # incremental: render only foo.md, then refresh index
-    python build.py a.md b.md ...      # multiple files OK
+    python build.py                          # full rebuild (renders every docs/*.md)
+    python build.py path/to/foo.md           # incremental: render only foo.md, then refresh index
+    python build.py a.md b.md ...            # multiple files OK
+    python build.py --sources DIR [DIR ...]  # copy every *.md from each DIR into docs/
+                                             # (mtime preserved -> post date), then full rebuild
+    python build.py --prune                  # drop index entries whose posts/<slug>.html
+                                             # is gone, and delete the matching docs/*.md
 """
 
 from __future__ import annotations
 
+import argparse
 import datetime as dt
 import html
 import json
@@ -246,6 +251,71 @@ def resolve_targets(args: list[str]) -> list[Path]:
     return out
 
 
+def sync_from_sources(sources: list[str]) -> int:
+    """Copy every *.md from each source directory into docs/.
+
+    `shutil.copy2` preserves the source mtime, so the post date in the
+    generated index.html reflects the original file's modification time.
+    """
+    DOCS.mkdir(parents=True, exist_ok=True)
+    n = 0
+    for s in sources:
+        src = Path(s).expanduser().resolve()
+        if not src.is_dir():
+            sys.stderr.write(f"source not a directory: {s}\n")
+            sys.exit(1)
+        mds = sorted(src.glob("*.md"))
+        if not mds:
+            print(f"  (no *.md in {src})")
+            continue
+        print(f"  from {src}:")
+        for md in mds:
+            dst = DOCS / md.name
+            shutil.copy2(md, dst)
+            mtime = dt.date.fromtimestamp(dst.stat().st_mtime).isoformat()
+            print(f"    {md.name}  [{mtime}]")
+            n += 1
+    return n
+
+
+def prune() -> None:
+    """Sync index.html with what actually lives in posts/.
+
+    For every index entry whose `posts/<slug>.html` no longer exists, the
+    entry is dropped from index.html and the matching `docs/*.md` (any file
+    whose slugified stem equals that slug) is deleted so the next build
+    won't regenerate it. If the source still exists in an upstream project
+    folder, you'll need to delete it there too — otherwise `--sources` will
+    bring it back on the next sync.
+    """
+    POSTS.mkdir(exist_ok=True)
+    DOCS.mkdir(parents=True, exist_ok=True)
+
+    existing_slugs = {p.stem for p in POSTS.glob("*.html")}
+    entries = parse_existing_index()
+
+    kept: list[dict] = []
+    removed: list[str] = []
+    for e in entries:
+        if e["slug"] in existing_slugs:
+            kept.append(e)
+        else:
+            removed.append(e["slug"])
+
+    if not removed:
+        print("Nothing to prune — every index entry still has its post html.")
+        return
+
+    removed_set = set(removed)
+    for md in sorted(DOCS.glob("*.md")):
+        if slugify(md.stem) in removed_set:
+            md.unlink()
+            print(f"  deleted {md.relative_to(ROOT)}")
+
+    render_index(kept, read_template("index.html"))
+    print(f"\nPruned {len(removed)} entry(ies): {', '.join(removed)}")
+
+
 def build(targets: list[Path] | None = None) -> None:
     DOCS.mkdir(parents=True, exist_ok=True)
     POSTS.mkdir(exist_ok=True)
@@ -285,9 +355,42 @@ def build(targets: list[Path] | None = None) -> None:
 
 
 if __name__ == "__main__":
-    args = sys.argv[1:]
-    if args:
-        targets = resolve_targets(args)
+    parser = argparse.ArgumentParser(
+        prog="build.py",
+        description="Static site generator for xlisp.github.io.",
+        formatter_class=argparse.RawDescriptionHelpFormatter,
+    )
+    parser.add_argument(
+        "--sources",
+        nargs="+",
+        metavar="DIR",
+        help="Project docs directories to sync into docs/ before building "
+        "(preserves mtime so post dates come from the source files).",
+    )
+    parser.add_argument(
+        "--prune",
+        action="store_true",
+        help="Drop index entries whose posts/<slug>.html no longer exists "
+        "and delete the matching docs/*.md source.",
+    )
+    parser.add_argument(
+        "files",
+        nargs="*",
+        help="Optional markdown files for an incremental rebuild "
+        "(ignored when --sources or --prune is given).",
+    )
+    args = parser.parse_args()
+
+    if args.prune:
+        prune()
+    elif args.sources:
+        print(f"Syncing markdown from {len(args.sources)} source(s) ...")
+        n = sync_from_sources(args.sources)
+        print(f"Synced {n} markdown file(s).\n")
+        print("Building xlisp.github.io (full) ...")
+        build()
+    elif args.files:
+        targets = resolve_targets(args.files)
         print(f"Building xlisp.github.io (incremental: {len(targets)} file) ...")
         build(targets=targets)
     else:
