@@ -15,6 +15,9 @@ Usage:
                                              # (mtime preserved -> post date), then full rebuild
     python build.py --prune                  # drop index entries whose posts/<slug>.html
                                              # is gone, and delete the matching docs/*.md
+    python build.py --remove posts/foo.html  # delete the html + matching docs/*.md,
+                                             # update index, and remember it in
+                                             # .build-ignore so --sources won't restore it
 """
 
 from __future__ import annotations
@@ -43,6 +46,7 @@ DOCS = ROOT / "docs"
 POSTS = ROOT / "posts"
 TEMPLATES = ROOT / "templates"
 ASSETS = ROOT / "assets"
+IGNORE_FILE = ROOT / ".build-ignore"
 
 SITE_TITLE = "Steve Chan — xlisp"
 AUTHOR = "Steve Chan"
@@ -251,14 +255,43 @@ def resolve_targets(args: list[str]) -> list[Path]:
     return out
 
 
+def load_ignore() -> set[str]:
+    """Markdown basenames to skip during --sources. One name per line."""
+    if not IGNORE_FILE.exists():
+        return set()
+    out: set[str] = set()
+    for line in IGNORE_FILE.read_text(encoding="utf-8").splitlines():
+        line = line.strip()
+        if line and not line.startswith("#"):
+            out.add(line)
+    return out
+
+
+def add_to_ignore(names: set[str]) -> None:
+    """Persist newly-ignored md basenames to .build-ignore."""
+    if not names:
+        return
+    merged = sorted(load_ignore() | names)
+    header = (
+        "# Markdown basenames to skip when syncing from --sources.\n"
+        "# Managed by build.py (--remove / --prune). One filename per line.\n"
+    )
+    IGNORE_FILE.write_text(header + "\n".join(merged) + "\n", encoding="utf-8")
+
+
 def sync_from_sources(sources: list[str]) -> int:
     """Copy every *.md from each source directory into docs/.
 
     `shutil.copy2` preserves the source mtime, so the post date in the
     generated index.html reflects the original file's modification time.
+    Names listed in .build-ignore are skipped.
     """
     DOCS.mkdir(parents=True, exist_ok=True)
+    ignore = load_ignore()
+    if ignore:
+        print(f"  ignore list ({len(ignore)}): {', '.join(sorted(ignore))}")
     n = 0
+    skipped = 0
     for s in sources:
         src = Path(s).expanduser().resolve()
         if not src.is_dir():
@@ -270,12 +303,58 @@ def sync_from_sources(sources: list[str]) -> int:
             continue
         print(f"  from {src}:")
         for md in mds:
+            if md.name in ignore:
+                print(f"    {md.name}  [skipped]")
+                skipped += 1
+                continue
             dst = DOCS / md.name
             shutil.copy2(md, dst)
             mtime = dt.date.fromtimestamp(dst.stat().st_mtime).isoformat()
             print(f"    {md.name}  [{mtime}]")
             n += 1
+    if skipped:
+        print(f"  (skipped {skipped} ignored file(s))")
     return n
+
+
+def _slug_from_arg(arg: str) -> str:
+    """Accept `posts/foo.html`, `foo.html`, or `foo` and return the slug."""
+    s = arg.strip()
+    if s.startswith("posts/"):
+        s = s[len("posts/") :]
+    if s.endswith(".html"):
+        s = s[: -len(".html")]
+    return s
+
+
+def remove(paths: list[str]) -> None:
+    """Delete posts/<slug>.html + matching docs/*.md, drop the index entry,
+    and add the md basename(s) to .build-ignore so --sources won't restore them."""
+    POSTS.mkdir(exist_ok=True)
+    DOCS.mkdir(parents=True, exist_ok=True)
+
+    slugs = [_slug_from_arg(p) for p in paths]
+    ignored_mds: set[str] = set()
+
+    for slug in slugs:
+        html_path = POSTS / f"{slug}.html"
+        if html_path.exists():
+            html_path.unlink()
+            print(f"  deleted {html_path.relative_to(ROOT)}")
+        for md in DOCS.glob("*.md"):
+            if slugify(md.stem) == slug:
+                ignored_mds.add(md.name)
+                md.unlink()
+                print(f"  deleted {md.relative_to(ROOT)}")
+
+    if ignored_mds:
+        add_to_ignore(ignored_mds)
+        print(f"  remembered in .build-ignore: {', '.join(sorted(ignored_mds))}")
+
+    existing_slugs = {p.stem for p in POSTS.glob("*.html")}
+    entries = [e for e in parse_existing_index() if e["slug"] in existing_slugs]
+    render_index(entries, read_template("index.html"))
+    print(f"\nRemoved {len(slugs)} post(s): {', '.join(slugs)}")
 
 
 def prune() -> None:
@@ -307,10 +386,16 @@ def prune() -> None:
         return
 
     removed_set = set(removed)
+    ignored_mds: set[str] = set()
     for md in sorted(DOCS.glob("*.md")):
         if slugify(md.stem) in removed_set:
+            ignored_mds.add(md.name)
             md.unlink()
             print(f"  deleted {md.relative_to(ROOT)}")
+
+    if ignored_mds:
+        add_to_ignore(ignored_mds)
+        print(f"  remembered in .build-ignore: {', '.join(sorted(ignored_mds))}")
 
     render_index(kept, read_template("index.html"))
     print(f"\nPruned {len(removed)} entry(ies): {', '.join(removed)}")
@@ -374,14 +459,24 @@ if __name__ == "__main__":
         "and delete the matching docs/*.md source.",
     )
     parser.add_argument(
+        "--remove",
+        nargs="+",
+        metavar="POST",
+        help="Remove one or more posts (accepts posts/foo.html, foo.html, or foo). "
+        "Deletes the html + matching docs/*.md, updates index.html, and remembers "
+        "the md basename in .build-ignore so --sources won't restore it.",
+    )
+    parser.add_argument(
         "files",
         nargs="*",
         help="Optional markdown files for an incremental rebuild "
-        "(ignored when --sources or --prune is given).",
+        "(ignored when --sources / --prune / --remove is given).",
     )
     args = parser.parse_args()
 
-    if args.prune:
+    if args.remove:
+        remove(args.remove)
+    elif args.prune:
         prune()
     elif args.sources:
         print(f"Syncing markdown from {len(args.sources)} source(s) ...")

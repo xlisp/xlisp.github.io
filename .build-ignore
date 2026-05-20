@@ -1,0 +1,8 @@
+# Markdown basenames to skip when syncing from --sources.
+# Managed by build.py (--remove / --prune). One filename per line.
+README_A800_x1.md
+a800_x8_env.md
+codechat_8b_sft_code.md
+codechat_8b_v7_design.md
+funcall_cli_readme.md
+swebench_eval.md
