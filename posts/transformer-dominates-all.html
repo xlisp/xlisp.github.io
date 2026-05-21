@@ -41,7 +41,7 @@
 3. <strong>它们和 CodeGPT 到底有多像？</strong> 拿 <code>model.py:177-198</code> 的 <code>forward</code> 做基准，你会发现图像、语音、驾驶模型的主干几乎逐行对应。</p>
 </blockquote>
 <hr />
-<h2 id="1-transformer">1. 一张图：Transformer 统治的版图</h2>
+<h2 id="1-一张图transformer-统治的版图">1. 一张图：Transformer 统治的版图</h2>
 <div class="highlight"><pre><span></span><code>┌─────────────────────────────────────────────────────────────────┐
 │                    Transformer 架构（2017）                      │
 └─────────────────────────────────────────────────────────────────┘
@@ -69,8 +69,8 @@
 
 <p>曾经每个领域都有自己的"护城河架构"——CV 是 CNN，ASR 是 LSTM+CTC，推荐是 FM，机器人是 RL+MPC，蛋白质是 CNN+注意力混合。<strong>到 2025 年，这些护城河都被同一条河填平了。</strong> 填平它的不是某家公司的具体模型，而是 Transformer 这个架构模板本身。</p>
 <hr />
-<h2 id="2-transformer">2. 为什么 Transformer 能赢？三个根本原因</h2>
-<h3 id="minimal-inductive-bias">原因一：最小归纳偏置（Minimal Inductive Bias）</h3>
+<h2 id="2-为什么-transformer-能赢三个根本原因">2. 为什么 Transformer 能赢？三个根本原因</h2>
+<h3 id="原因一最小归纳偏置minimal-inductive-bias">原因一：最小归纳偏置（Minimal Inductive Bias）</h3>
 <p>CNN 假设图像"局部相关、平移等变"——这是对图像的硬编码先验。RNN 假设序列"只能从左到右、用固定容量压缩历史"——这是对序列的硬编码先验。</p>
 <p>Transformer 的假设近乎为零：</p>
 <div class="highlight"><pre><span></span><code><span class="c1"># 来自 model.py:51-73 —— CodeGPT 的 CausalSelfAttention.forward</span>
@@ -89,7 +89,7 @@
 <p>这段代码对 <code>x</code> 的假设<strong>只有一条</strong>：<code>x</code> 是一个形状为 <code>(B, T, C)</code> 的张量——"一堆可以互相关注的向量"。至于这些向量来自哪里（像素、音频帧、token、车道线、氨基酸），代码完全不关心。</p>
 <p><strong>硬编码的先验越少，能装下的数据规律越多。</strong> 在小数据时代，CNN 的平移等变先验能让它用 10 万张图击败没有先验的模型；但在 ImageNet-21K → LAION-5B 的量级，先验反而变成束缚——Transformer 用数据自己学会了"局部性"和"平移等变"，还学到了 CNN 学不到的全局关联。</p>
 <p>这就是 <a href="TRANSFORMER_FROM_VISION.md">TRANSFORMER_FROM_VISION.md</a> 的核心论断在跨模态上的推论：<strong>谁的归纳偏置最少，谁就能在数据规模无限大时笑到最后。</strong></p>
-<h3 id="tokenize">原因二：一切皆可 tokenize</h3>
+<h3 id="原因二一切皆可-tokenize">原因二：一切皆可 tokenize</h3>
 <p>Transformer 不在乎你的输入"本来是什么"。它只要求你给它一个形状为 <code>(B, T, C)</code> 的张量。于是每个领域都在做同一件事——<strong>把自己的数据切成 token，然后投影到 <code>C</code> 维向量</strong>。</p>
 <div class="highlight"><pre><span></span><code><span class="c1"># 把任意模态变成 Transformer 能吃的输入 —— 统一配方</span>
 
@@ -121,7 +121,7 @@
 
 <p><strong>配方永远是两步：(1) 切成序列；(2) 线性投影到同一个 <code>C</code> 维。</strong> 之后所有领域共享完全相同的后续管线——堆 L 层 <code>Block</code>，每层都是 <code>Attention + MLP + 残差 + LayerNorm</code>，就是 <code>model.py:93-105</code> 的那十几行。</p>
 <p>这就是为什么一个大学生能在一周内把 ViT 跑通——如果他之前实现过 GPT，主干代码几乎一行不用改。</p>
-<h3 id="_1">原因三：与硬件的"共谋"——可大规模并行</h3>
+<h3 id="原因三与硬件的共谋可大规模并行">原因三：与硬件的"共谋"——可大规模并行</h3>
 <p>RNN 的致命伤是时序依赖：<code>h_t = f(h_{t-1}, x_t)</code>，GPU 被迫按时间步串行计算。Transformer 把这条依赖切断——所有时间步的 attention 可以一次矩阵乘算完：</p>
 <div class="highlight"><pre><span></span><code><span class="c1"># 伪代码对比</span>
 
@@ -144,9 +144,9 @@
 <p>三个原因其实是一体两面的：<strong>零先验 → 需要海量数据 → 必须并行化才喂得动 → 只有 Transformer 能做到这三件事同时成立。</strong> 这就是为什么其他架构即使在小数据上偶尔赢一局，也没法真正威胁它。</p>
 </blockquote>
 <hr />
-<h2 id="3-sota-transformer">3. 各领域 SOTA 地图：谁在用 Transformer，怎么用</h2>
+<h2 id="3-各领域-sota-地图谁在用-transformer怎么用">3. 各领域 SOTA 地图：谁在用 Transformer，怎么用</h2>
 <p>下面按领域盘点，每条目的格式是：<strong>模型名 / 发布年 / 作用 / Transformer 用在哪 / 关键变体</strong>。</p>
-<h3 id="31">3.1 语言与代码（大模型）</h3>
+<h3 id="31-语言与代码大模型">3.1 语言与代码（大模型）</h3>
 <table>
 <thead>
 <tr>
@@ -184,7 +184,7 @@
 </tbody>
 </table>
 <p><strong>代码怎么写</strong> —— 本项目 <code>model.py:177-198</code> 就是这类模型的最小骨架。<code>idx → wte → 位置编码 → L 层 Block → ln_f → lm_head → softmax</code> 这条链路，在 GPT-4 里放大一万倍就是前沿 LLM。</p>
-<h3 id="32">3.2 图像识别</h3>
+<h3 id="32-图像识别">3.2 图像识别</h3>
 <table>
 <thead>
 <tr>
@@ -250,7 +250,7 @@
 </code></pre></div>
 
 <p>和本项目 <code>CodeGPT.forward</code> 的唯一区别：<strong>CodeGPT 用 <code>wte(idx)</code> 把整数索引变 embedding，ViT 用 <code>Conv2d(3, C, 16, 16)</code> 把图像 patch 变 embedding。</strong> 之后一模一样。</p>
-<h3 id="33">3.3 图像 / 视频生成</h3>
+<h3 id="33-图像-视频生成">3.3 图像 / 视频生成</h3>
 <table>
 <thead>
 <tr>
@@ -300,7 +300,7 @@
 </code></pre></div>
 
 <p>视频就是 <strong>把时间维也当一个空间维</strong>——<code>(B, T_frames, H, W, 3) → (B, T*H*W/patch³, C)</code>，送进同一个 Transformer。Sora 之所以能生成 60 秒一致性视频，就是因为 attention 是<strong>真正的全局</strong>——它能让第 1 帧的像素和第 1200 帧的像素直接对话，这在 CNN/RNN 时代是做不到的。</p>
-<h3 id="34">3.4 语音识别与生成</h3>
+<h3 id="34-语音识别与生成">3.4 语音识别与生成</h3>
 <table>
 <thead>
 <tr>
@@ -363,7 +363,7 @@
 </code></pre></div>
 
 <p>"语音是 token 序列" —— 这个视角让 HMM + GMM + 对齐算法几十年的工程积累，被 Transformer 在三年内全面接管。Whisper 论文里一句话总结：<strong>只要数据足够多，Transformer 的 WER 单调下降，不需要任何领域特定的归纳偏置。</strong></p>
-<h3 id="35">3.5 自动驾驶</h3>
+<h3 id="35-自动驾驶">3.5 自动驾驶</h3>
 <p>这是变化最剧烈的领域之一——2020 年前主流是 CNN 多任务网络（HydraNet）+ 规则系统；2024 年 Tesla FSD v12 发布时，Elon Musk 说了一句极具标志性的话："<strong>我们删掉了 30 万行 C++ 代码，换成一个神经网络。</strong>"</p>
 <table>
 <thead>
@@ -426,7 +426,7 @@
 </code></pre></div>
 
 <p>端到端驾驶的终极形态是：<strong>把相机视频 + 导航指令当作 prompt，把方向盘角度 + 油门刹车当作 token 序列</strong>，然后做自回归预测——这就是把 CodeGPT 里的 <code>idx → 下一个 token</code> 换成 <code>车载视频 → 下一个控制动作</code>。模型架构几乎不用变。</p>
-<h3 id="36">3.6 机器人</h3>
+<h3 id="36-机器人">3.6 机器人</h3>
 <table>
 <thead>
 <tr>
@@ -482,7 +482,7 @@
 </code></pre></div>
 
 <p>这就把机器人控制这个"传统上需要 MPC + PID + 规则"的问题，彻底变成了一个"下一个 token 预测"问题。</p>
-<h3 id="37">3.7 科学计算</h3>
+<h3 id="37-科学计算">3.7 科学计算</h3>
 <table>
 <thead>
 <tr>
@@ -541,7 +541,7 @@
 
 <p>注意 <code>attn(..., bias=pair)</code>——<strong>领域知识不是替代 Transformer，而是写进 attention 的 bias 项。</strong> 这是跨领域的通用模式：Transformer 是画布，领域知识是笔触。</p>
 <hr />
-<h2 id="4-sota-codegptforward">4. 统一视图：所有 SOTA 都长成 <code>CodeGPT.forward</code> 的样子</h2>
+<h2 id="4-统一视图所有-sota-都长成-codegptforward-的样子">4. 统一视图：所有 SOTA 都长成 <code>CodeGPT.forward</code> 的样子</h2>
 <p>把上面所有模型的主干精简到本质，你会发现它们都写成同一个模板：</p>
 <div class="highlight"><pre><span></span><code><span class="c1"># 通用 Transformer 主干 —— 对照 model.py:177-198</span>
 <span class="k">def</span><span class="w"> </span><span class="nf">forward</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">raw_input</span><span class="p">,</span> <span class="o">*</span><span class="n">conditioning</span><span class="p">):</span>
@@ -569,15 +569,15 @@
 <p><strong>变的只是"步骤 1"和"步骤 4"。中间 90% 的参数、90% 的 FLOPs、90% 的代码完全一样。</strong></p>
 <p>这就是 <a href="TRANSFORMER_FROM_VISION.md">TRANSFORMER_FROM_VISION.md</a> 末尾"柏拉图表征假说"在工程上的映射：不同模态的模型在表征层面收敛，是因为它们<strong>在架构层面已经是同一个架构</strong>——只是 embedding 入口和 head 出口不同。</p>
 <hr />
-<h2 id="5">5. 为什么会收敛到同一架构？工程、经济、理论三重解释</h2>
-<h3 id="cuda-kernel">工程解释：CUDA kernel 的复用</h3>
+<h2 id="5-为什么会收敛到同一架构工程经济理论三重解释">5. 为什么会收敛到同一架构？工程、经济、理论三重解释</h2>
+<h3 id="工程解释cuda-kernel-的复用">工程解释：CUDA kernel 的复用</h3>
 <p>当 Flash Attention 2 发布时，所有领域的模型一起加速 2-4 倍。当 <code>torch.compile</code> 成熟时，所有领域一起受益。当 H100 / H200 推出时，所有领域一起 scaling。</p>
 <p><strong>这是一个正反馈：</strong>
 - 使用 Transformer 的人越多 → 投入到 kernel / 硬件 / 编译器的优化越多
 - 优化越多 → Transformer 跑得比其他架构快 10×-100×
 - 跑得快 → 大家更愿意用 Transformer → 回到起点</p>
 <p>CNN 也曾是受益者（cuDNN 的卷积优化），但卷积对硬件的压力没有 attention 大，优化收益边际递减。Transformer 正好踩在了 GPU 架构的甜蜜点。</p>
-<h3 id="_2">经济解释：一个团队、一套基础设施</h3>
+<h3 id="经济解释一个团队一套基础设施">经济解释：一个团队、一套基础设施</h3>
 <p>一家公司如果语音团队用 Conformer、视觉团队用 CNN、NLP 团队用 BERT、驾驶团队用 HydraNet，就要维护<strong>四套完全不同</strong>的训练框架、部署管线、性能优化、数据流水线。</p>
 <p>换成 Transformer 之后：</p>
 <ul>
@@ -587,11 +587,11 @@
 <li>一套 checkpoint / 加载 / 恢复逻辑（参考 <code>train.py</code> 里 <code>_orig_mod.</code> 前缀的处理，现在是全行业标准）</li>
 </ul>
 <p><strong>工程成本砍掉 75%。</strong> 这是 Transformer 胜利的非技术原因，但它和技术原因一样重要。</p>
-<h3 id="scaling">理论解释：通用近似 + 可 scaling</h3>
+<h3 id="理论解释通用近似-可-scaling">理论解释：通用近似 + 可 scaling</h3>
 <p>Transformer 已被证明是序列到序列的通用函数近似器（Yun et al., 2020），这一点 RNN 也有。但 Transformer 的特殊在于：<strong>它的近似能力随模型规模的增长是平滑、可预测的</strong>——这就是 Scaling Law（Kaplan et al., 2020；Hoffmann et al., 2022）。</p>
 <p>一个你能提前算出要花多少钱、能达到多少性能的架构，在工业界是无敌的。没人想投 1000 万美元训一个不知道能不能比 baseline 强 2% 的架构。</p>
 <hr />
-<h2 id="6-transformer">6. 诚实声明：Transformer 还没完全吃掉的地方</h2>
+<h2 id="6-诚实声明transformer-还没完全吃掉的地方">6. 诚实声明：Transformer 还没完全吃掉的地方</h2>
 <p>科学 always 允许反例存在，以下是 2026 年仍未被 Transformer 完全统治的领域：</p>
 <table>
 <thead>
@@ -626,7 +626,7 @@
 </table>
 <p>但注意：<strong>这些反例中的大多数，架构里依然有 attention</strong>。Mamba 的作者自己承认"Mamba + attention 混合效果最好"。Jamba 就是这么做的。所以更准确的说法是：<strong>Transformer 不是"唯一的架构"，而是"所有架构里都不能没有的基础构件"。</strong></p>
 <hr />
-<h2 id="7">7. 总结：一个架构，一条路径，一个未来</h2>
+<h2 id="7-总结一个架构一条路径一个未来">7. 总结：一个架构，一条路径，一个未来</h2>
 <p>回到本项目。如果你理解了 <code>model.py</code> 里不到 300 行的 CodeGPT，你就已经理解了：</p>
 <ul>
 <li><strong>GPT-4 如何写代码</strong>——它是 CodeGPT 放大一万倍，加上 RLHF（见 <a href="RLHF_AND_PLATONIC_REPRESENTATION.md">RLHF_AND_PLATONIC_REPRESENTATION.md</a>）</li>
@@ -668,7 +668,7 @@
 <p>然后，涌现会继续发生。</p>
 </blockquote>
 <hr />
-<h2 id="_3">延伸阅读</h2>
+<h2 id="延伸阅读">延伸阅读</h2>
 <ul>
 <li><a href="TRANSFORMER_FROM_VISION.md">从图像视角理解 Transformer</a> —— 为什么 ViT 和 GPT 是同一种东西</li>
 <li><a href="DEEP_DIVE.md">从 RNN 到 CodeGPT：序列建模的进化史</a> —— 为什么 RNN 输给了 Transformer</li>

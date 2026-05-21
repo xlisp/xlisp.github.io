@@ -44,7 +44,7 @@
 </ol>
 </blockquote>
 <hr />
-<h2 id="_2">目录</h2>
+<h2 id="目录">目录</h2>
 <ol>
 <li><a href="#1-先定义垃圾原始代码语料的四种故障">先定义"垃圾"：原始代码语料的四种故障</a></li>
 <li><a href="#2-总图从脏语料到训练批次的六个环节">总图：从脏语料到训练批次的六个环节</a></li>
@@ -61,7 +61,7 @@
 <li><a href="#13-小结一张数据-阶段-成本表">小结：一张数据-阶段-成本表</a></li>
 </ol>
 <hr />
-<h2 id="1">1. 先定义"垃圾"：原始代码语料的四种故障</h2>
+<h2 id="1-先定义垃圾原始代码语料的四种故障">1. 先定义"垃圾"：原始代码语料的四种故障</h2>
 <p>先看 CodeGPT 的数据入口 <code>data/python_code/prepare.py</code> 做了什么——它的 <code>collect_python_files</code> 只做了最朴素的筛选：跳过 <code>__pycache__</code>、限制文件大小、验证 UTF-8。这只是把<strong>完全不能用</strong>的东西挡掉，里面留下来的代码<strong>仍然绝大多数是"垃圾"</strong>。"垃圾"不是一个模糊的情绪词，具体是四种故障：</p>
 <table>
 <thead>
@@ -97,7 +97,7 @@
 <p><strong>关键认知</strong>：这四种故障需要的工具完全不同。F1 用 AST 解析器 5 分钟搞定；F2 需要执行环境或类型检查器；F3 需要风格模型或强模型蒸馏；F4 需要去重 + 聚类。<strong>一刀切没有用</strong>，必须按故障类型走不同管线。</p>
 <p>预训练阶段可以容忍一些 F3 和 F4（规模本身就是正则），但 SFT / RL 阶段必须把四种全部清掉——因为 SFT 的每个样本都会被<strong>完整拟合</strong>，一个垃圾样本就是一颗定时炸弹。</p>
 <hr />
-<h2 id="2">2. 总图：从脏语料到训练批次的六个环节</h2>
+<h2 id="2-总图从脏语料到训练批次的六个环节">2. 总图：从脏语料到训练批次的六个环节</h2>
 <div class="highlight"><pre><span></span><code>原始语料 (GitHub, pip packages, 客服对话, 论坛帖子……)
    │
    │  [环节 1] 过滤：规则 + 专家系统
@@ -123,7 +123,7 @@
 
 <p>这张图的核心洞察是：<strong>"合成"不是一步操作，是一条流水线</strong>。每一步都在做一件非常具体的事，而且有明确的<strong>工具</strong>和<strong>失败模式</strong>。下面逐环节拆。</p>
 <hr />
-<h2 id="3-1">3. 环节 1——过滤：专家系统是免费的标注员</h2>
+<h2 id="3-环节-1过滤专家系统是免费的标注员">3. 环节 1——过滤：专家系统是免费的标注员</h2>
 <p>第一件事不是造新数据，是<strong>扔掉脏数据</strong>。这里的"专家系统"不是 AI 术语意义上的 expert system，而是<strong>几十年编译器/工具链社区积累下来的确定性检查器</strong>。对一个 Python 文件，你可以几乎<strong>免费</strong>拿到以下标签：</p>
 <div class="highlight"><pre><span></span><code><span class="kn">import</span><span class="w"> </span><span class="nn">ast</span>
 <span class="kn">import</span><span class="w"> </span><span class="nn">tokenize</span>
@@ -199,7 +199,7 @@
 <p><strong>过滤阶段的铁律：能用 AST 解决的，就别用 Transformer。</strong></p>
 </blockquote>
 <hr />
-<h2 id="4-2linter-formatter-typer">4. 环节 2——修复：linter / formatter / typer 的"可微分版本"</h2>
+<h2 id="4-环节-2修复linter-formatter-typer-的可微分版本">4. 环节 2——修复：linter / formatter / typer 的"可微分版本"</h2>
 <p>过滤完之后，剩下的代码<strong>仍然不是最优</strong>——变量命名差、格式乱、缺类型标注。这些不严重到扔掉，但会污染 SFT。修复环节的核心思想是：</p>
 <p><strong>如果有一个确定性的工具能把 A 改成更好的 A'，就用工具，不要用模型。</strong></p>
 <div class="highlight"><pre><span></span><code><span class="kn">import</span><span class="w"> </span><span class="nn">subprocess</span>
@@ -223,7 +223,7 @@
 </ul>
 <p>这一层的输出一般是<strong>成对样本</strong>：<code>(脏版本, 干净版本)</code>。这对后面做 RL（脏版本是 rejected，干净版本是 chosen）非常有价值，属于"顺手就能拿到的偏好数据"。</p>
 <hr />
-<h2 id="5-3interpreter-reward">5. 环节 3——执行反馈：interpreter 是最诚实的 reward</h2>
+<h2 id="5-环节-3执行反馈interpreter-是最诚实的-reward">5. 环节 3——执行反馈：interpreter 是最诚实的 reward</h2>
 <p><strong>代码数据相比文本数据最大的红利</strong>：它能跑。一个 Python 解释器给出的 "<code>pass</code> / <code>fail</code> / 输出是什么" 是<strong>比任何人类标注员都精确的信号</strong>——没有标注分歧、没有主观偏差、没有疲劳。</p>
 <p>最基本的用法是：</p>
 <div class="highlight"><pre><span></span><code><span class="kn">import</span><span class="w"> </span><span class="nn">subprocess</span><span class="o">,</span><span class="w"> </span><span class="nn">tempfile</span><span class="o">,</span><span class="w"> </span><span class="nn">json</span>
@@ -256,7 +256,7 @@
 <li><strong>异常种类</strong>：<code>TypeError</code>、<code>IndexError</code> 各占多少比例——这是模型弱点的直方图，指导下一轮数据配比。</li>
 <li><strong>行为等价聚类</strong>：同一个 test case 下 stdout 相同的多个函数可视为"行为等价"，能自动产出语义等价的改写对。</li>
 </ol>
-<h3 id="51">5.1 从执行结果"倒推"训练数据</h3>
+<h3 id="51-从执行结果倒推训练数据">5.1 从执行结果"倒推"训练数据</h3>
 <p>这是代码数据比文本数据本质上更强的地方。给定一个能跑的函数 <code>f(x)</code>，可以<strong>机器生成</strong>一整套变体：</p>
 <div class="highlight"><pre><span></span><code><span class="c1"># 原始函数</span>
 <span class="k">def</span><span class="w"> </span><span class="nf">add</span><span class="p">(</span><span class="n">a</span><span class="p">,</span> <span class="n">b</span><span class="p">):</span>
@@ -280,12 +280,12 @@
 <blockquote>
 <p><strong>执行反馈的铁律：解释器能验证的，就不要花钱标注。</strong></p>
 </blockquote>
-<h3 id="52-codegpt">5.2 与 CodeGPT 的连接</h3>
+<h3 id="52-与-codegpt-的连接">5.2 与 CodeGPT 的连接</h3>
 <p>CodeGPT 现有的 FIM 训练（<code>tokenizer.py:148</code> 的 <code>apply_fim_transform</code>）已经是合成数据的一个实例——它把普通代码切成前缀/中间/后缀三段，人造出一个"给你前后文，补中间"的任务。这是<strong>在数据层合成任务</strong>的经典案例：原始语料里没有"补全"这个标签，但通过切分 + 特殊 token 拼接，就凭空变出了一个新的训练目标，且完全不需要人工标注。</p>
 <hr />
-<h2 id="6-4inputoutput">6. 环节 4——从强模型蒸馏：input/output 到思维链</h2>
+<h2 id="6-环节-4从强模型蒸馏inputoutput-到思维链">6. 环节 4——从强模型蒸馏：input/output 到思维链</h2>
 <p>执行反馈能解决"能跑"的问题，但解决不了"写得好"的问题——一个能跑的函数可能风格很烂、命名很差、没有文档。这时就需要<strong>从一个已经"写得好"的强模型（比如 Claude / GPT-4 级别）蒸馏出训练数据</strong>。蒸馏的几种层次：</p>
-<h3 id="61-output">6.1 Output 蒸馏（最便宜）</h3>
+<h3 id="61-output-蒸馏最便宜">6.1 Output 蒸馏（最便宜）</h3>
 <p>给强模型一堆 prompt，收集它的 response，当作 SFT 数据。Alpaca / Vicuna 就是这么做出来的。代价：一次调用强模型 API 的钱。</p>
 <div class="highlight"><pre><span></span><code><span class="c1"># 伪代码</span>
 <span class="k">for</span> <span class="n">prompt</span> <span class="ow">in</span> <span class="n">prompt_pool</span><span class="p">:</span>
@@ -294,7 +294,7 @@
 </code></pre></div>
 
 <p><strong>陷阱</strong>：强模型也会出错。如果不加验证，会把强模型的系统性 bias 原样继承给小模型。<strong>修复</strong>：叠加环节 3 的执行验证——只保留<strong>能跑通</strong>的 response。</p>
-<h3 id="62-inputoutput">6.2 Input/Output 对齐蒸馏</h3>
+<h3 id="62-inputoutput-对齐蒸馏">6.2 Input/Output 对齐蒸馏</h3>
 <p>已有一段好代码 <code>f(x)</code>（来自优秀开源项目），用强模型为它<strong>反推 prompt</strong>："如果我要让模型写出这段代码，应该问什么？"</p>
 <div class="highlight"><pre><span></span><code><span class="k">def</span><span class="w"> </span><span class="nf">reverse_engineer_prompt</span><span class="p">(</span><span class="n">good_code</span><span class="p">:</span> <span class="nb">str</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="nb">str</span><span class="p">:</span>
     <span class="k">return</span> <span class="n">call_strong_model</span><span class="p">(</span>
@@ -303,11 +303,11 @@
 </code></pre></div>
 
 <p>这等于<strong>把优秀开源项目的 codebase 反向变成了一个 SFT 数据集</strong>。CodeGPT 项目里 <code>data/python_code/prepare.py</code> 已经在收集本地 Python 项目，加上这一层就能从"纯代码预训练"升级到"指令对齐"。</p>
-<h3 id="63">6.3 思维链蒸馏（最贵，最有用）</h3>
+<h3 id="63-思维链蒸馏最贵最有用">6.3 思维链蒸馏（最贵，最有用）</h3>
 <p>不只要求强模型给答案，还要求它<strong>把推理过程写出来</strong>。得到的是形如 <code>&lt;prompt, reasoning, answer&gt;</code> 的三元组，小模型在 SFT 时被迫学会模仿推理链。这是 o1、DeepSeek-R1、Claude Extended Thinking 的数据路径。</p>
 <p>关键点：<strong>推理链也要验证</strong>——不能让强模型的错误推理链被原样蒸馏过来。验证方式：让推理链的最终 answer 过一遍 test case（环节 3），只保留 pass 的样本。这叫 <strong>rejection sampling</strong>，是把强模型 + 解释器串成一个"过滤式生成器"的标准做法。</p>
 <hr />
-<h2 id="7-5self-instruct-evol-instruct-llm-llm">7. 环节 5——Self-Instruct / Evol-Instruct：用 LLM 造 LLM 的指令数据</h2>
+<h2 id="7-环节-5self-instruct-evol-instruct用-llm-造-llm-的指令数据">7. 环节 5——Self-Instruct / Evol-Instruct：用 LLM 造 LLM 的指令数据</h2>
 <p>蒸馏依赖 prompt 池。<strong>如果一开始连 prompt 都没有呢？</strong>比如你要训一个代码助手，但手里只有代码、没有"用户问题"。这时候用 <strong>Self-Instruct</strong>：</p>
 <div class="highlight"><pre><span></span><code>种子：100 条人工写的指令 (人工标注，但只要 100 条)
     │
@@ -328,7 +328,7 @@ SFT 数据集
 </code></pre></div>
 
 <p><strong>Evol-Instruct</strong> 是进一步迭代：对每条已有的指令，让 LLM 把它"进化"成更难、更复杂、更细节的版本。经过几轮进化，数据的难度分布会显著变宽——而训练集的难度分布宽度是模型能力上限的直接决定因素。</p>
-<h3 id="71">7.1 对代码领域的特化</h3>
+<h3 id="71-对代码领域的特化">7.1 对代码领域的特化</h3>
 <p>对 CodeGPT 这类代码模型，Self-Instruct 的循环可以绑定到执行反馈：</p>
 <div class="highlight"><pre><span></span><code><span class="k">for</span> <span class="nb">iter</span> <span class="ow">in</span> <span class="nb">range</span><span class="p">(</span><span class="n">N</span><span class="p">):</span>
     <span class="c1"># 1. 用 LLM 生成一个代码任务描述</span>
@@ -345,9 +345,9 @@ SFT 数据集
 
 <p>这就是 MagicCoder、WizardCoder 的数据管线核心——<strong>LLM 造题、LLM 解题、解释器打分</strong>，三者闭环不需要人工干预。</p>
 <hr />
-<h2 id="8-6self-refine-critique">8. 环节 6——Self-Refine / Critique：模型给自己打分</h2>
+<h2 id="8-环节-6self-refine-critique模型给自己打分">8. 环节 6——Self-Refine / Critique：模型给自己打分</h2>
 <p>有了 (prompt, response) 数据，SFT 能跑了。但 RL 需要的是<strong>偏好对</strong> <code>(prompt, chosen, rejected)</code>。这一对从哪来？三条路：</p>
-<h3 id="81-prompt">8.1 从同一个 prompt 多次采样，用判别器排序</h3>
+<h3 id="81-从同一个-prompt-多次采样用判别器排序">8.1 从同一个 prompt 多次采样，用判别器排序</h3>
 <div class="highlight"><pre><span></span><code><span class="n">responses</span> <span class="o">=</span> <span class="p">[</span><span class="n">model</span><span class="o">.</span><span class="n">generate</span><span class="p">(</span><span class="n">prompt</span><span class="p">)</span> <span class="k">for</span> <span class="n">_</span> <span class="ow">in</span> <span class="nb">range</span><span class="p">(</span><span class="n">K</span><span class="p">)]</span>
 <span class="n">scores</span> <span class="o">=</span> <span class="p">[</span><span class="n">critic</span><span class="p">(</span><span class="n">prompt</span><span class="p">,</span> <span class="n">r</span><span class="p">)</span> <span class="k">for</span> <span class="n">r</span> <span class="ow">in</span> <span class="n">responses</span><span class="p">]</span>  <span class="c1"># critic 可以是:</span>
                                                   <span class="c1"># - 解释器（代码）</span>
@@ -357,7 +357,7 @@ SFT 数据集
 <span class="n">rejected</span> <span class="o">=</span> <span class="n">responses</span><span class="p">[</span><span class="n">argmin</span><span class="p">(</span><span class="n">scores</span><span class="p">)]</span>
 </code></pre></div>
 
-<h3 id="82-self-refine">8.2 Self-Refine：让模型自己批评自己</h3>
+<h3 id="82-self-refine让模型自己批评自己">8.2 Self-Refine：让模型自己批评自己</h3>
 <div class="highlight"><pre><span></span><code><span class="n">response</span>   <span class="o">=</span> <span class="n">model</span><span class="o">.</span><span class="n">generate</span><span class="p">(</span><span class="n">prompt</span><span class="p">)</span>
 <span class="n">critique</span>   <span class="o">=</span> <span class="n">model</span><span class="o">.</span><span class="n">generate</span><span class="p">(</span><span class="sa">f</span><span class="s2">&quot;请指出下面回答的问题：</span><span class="si">{</span><span class="n">response</span><span class="si">}</span><span class="s2">&quot;</span><span class="p">)</span>
 <span class="n">refined</span>    <span class="o">=</span> <span class="n">model</span><span class="o">.</span><span class="n">generate</span><span class="p">(</span><span class="sa">f</span><span class="s2">&quot;根据批评改进：</span><span class="si">{</span><span class="n">critique</span><span class="si">}</span><span class="s2">&quot;</span><span class="p">)</span>
@@ -365,22 +365,22 @@ SFT 数据集
 </code></pre></div>
 
 <p>这个套路最早在 Self-Refine、Constitutional AI 里用，Claude 训练里也是主力——<strong>让模型自我迭代的同时，副产品就是偏好数据</strong>。</p>
-<h3 id="83">8.3 规则注入"劣化"</h3>
+<h3 id="83-规则注入劣化">8.3 规则注入"劣化"</h3>
 <p>一种便宜得奇怪的做法：对一段优质代码<strong>人为劣化</strong>——删掉 docstring、把变量名换成 <code>a, b, c</code>、把 <code>list comprehension</code> 改成显式 loop——然后组成 <code>(劣化版=rejected, 原版=chosen)</code>。因为是规则注入，<strong>标签绝对可靠</strong>，成本几乎为零。</p>
 <hr />
-<h2 id="9-sft">9. SFT 要什么样的合成数据</h2>
+<h2 id="9-sft-要什么样的合成数据">9. SFT 要什么样的合成数据</h2>
 <p>先回顾 SFT 的 loss（<code>model.py:192</code>）：</p>
 <div class="highlight"><pre><span></span><code><span class="n">loss</span> <span class="o">=</span> <span class="n">F</span><span class="o">.</span><span class="n">cross_entropy</span><span class="p">(</span><span class="n">logits</span><span class="o">.</span><span class="n">view</span><span class="p">(</span><span class="o">-</span><span class="mi">1</span><span class="p">,</span> <span class="n">logits</span><span class="o">.</span><span class="n">size</span><span class="p">(</span><span class="o">-</span><span class="mi">1</span><span class="p">)),</span> <span class="n">targets</span><span class="o">.</span><span class="n">view</span><span class="p">(</span><span class="o">-</span><span class="mi">1</span><span class="p">),</span> <span class="n">ignore_index</span><span class="o">=-</span><span class="mi">1</span><span class="p">)</span>
 </code></pre></div>
 
 <p>SFT 的本质是<strong>在 prompt 段把 target 设为 -1，只对 response 段算 loss</strong>。这个性质决定了 SFT 数据的三条核心要求：</p>
-<h3 id="91-format">9.1 Format 必须绝对一致</h3>
+<h3 id="91-format-必须绝对一致">9.1 Format 必须绝对一致</h3>
 <p>SFT 把整个 (prompt, response) 序列完整拟合。如果一半样本用 <code>### Instruction: ... ### Response: ...</code> 格式，另一半用 <code>&lt;|user|&gt; ... &lt;|assistant|&gt; ...</code> 格式，模型就学会<strong>两个都凑合但哪个都不精通</strong>——推理时用哪个格式都性能打折。合成数据时，<strong>一条流水线只吐出一种 format</strong>。</p>
 <p>CodeGPT 里这就是 <code>SPECIAL_TOKENS</code>（<code>tokenizer.py:18</code>）的意义——如果未来做 SFT，要选定一套 chat template 并且训练/推理完全一致。</p>
-<h3 id="92-response">9.2 Response 必须是"想让模型学会的样子"</h3>
+<h3 id="92-response-必须是想让模型学会的样子">9.2 Response 必须是"想让模型学会的样子"</h3>
 <p>这一点非常反直觉：<strong>模型会严格拟合你喂给它的东西</strong>。如果你的 response 里有"作为一个 AI 模型我不能……"，模型就学会说这句话；如果你的 response 里 <code>print</code> 调试残留没清掉，模型就学会留 <code>print</code>。</p>
 <p>合成数据的验收标准是：<strong>把 response 原样 copy-paste 到生产环境，是否可以直接用？</strong> 不能的话就继续过 refine/critique 环节。</p>
-<h3 id="93">9.3 多样性 &gt;&gt; 数量</h3>
+<h3 id="93-多样性-数量">9.3 多样性 &gt;&gt; 数量</h3>
 <p>phi-1、LIMA、Alpaca 这几篇工作共同证明了一件事：<strong>1 万条高质量覆盖广的数据，比 100 万条同质化数据效果好得多</strong>。合成数据的<strong>多样性采样</strong>比追求数量重要：</p>
 <div class="highlight"><pre><span></span><code><span class="c1"># 不好的做法：每次调用强模型都用相似的 prompt</span>
 <span class="k">for</span> <span class="n">i</span> <span class="ow">in</span> <span class="nb">range</span><span class="p">(</span><span class="mi">10000</span><span class="p">):</span>
@@ -399,7 +399,7 @@ SFT 数据集
 
 <p><strong>数据是一个空间，你要覆盖它；不是一条河，你要灌满它。</strong></p>
 <hr />
-<h2 id="10-rl-sft">10. RL 要什么样的合成数据（和 SFT 完全不同）</h2>
+<h2 id="10-rl-要什么样的合成数据和-sft-完全不同">10. RL 要什么样的合成数据（和 SFT 完全不同）</h2>
 <p>RL 阶段（PPO / DPO / GRPO）要的数据是<strong>偏好对</strong>或<strong>带 reward 的轨迹</strong>，和 SFT 的 (prompt, response) 完全不同。关键差异：</p>
 <table>
 <thead>
@@ -442,7 +442,7 @@ SFT 数据集
 </tr>
 </tbody>
 </table>
-<h3 id="101-rl-verifiable-reward">10.1 RL 对"verifiable reward" 的偏爱</h3>
+<h3 id="101-rl-对verifiable-reward-的偏爱">10.1 RL 对"verifiable reward" 的偏爱</h3>
 <p>RL 训练对 reward 的噪声极其敏感——reward model 差 5%，最终策略可能完全崩掉（奖励黑客）。所以 RL 阶段应当<strong>优先使用可验证的 reward</strong>：</p>
 <ul>
 <li><strong>代码</strong>：测试通过率（环节 3）</li>
@@ -451,7 +451,7 @@ SFT 数据集
 <li><strong>工具调用</strong>：工具是否返回了预期类型</li>
 </ul>
 <p>DeepSeek-R1 / Qwen-Math 系列靠的就是"只在可验证任务上做 RL"——reward 是硬的，策略收敛是硬的。<strong>不可验证的 reward（审美、风格、有用性）留给 DPO + 人类偏好</strong>，不在 RL 里硬刚。</p>
-<h3 id="102-on-policy-vs-off-policy">10.2 On-Policy 采样 vs Off-Policy 数据</h3>
+<h3 id="102-on-policy-采样-vs-off-policy-数据">10.2 On-Policy 采样 vs Off-Policy 数据</h3>
 <p>RL 的另一条不同：数据最好是<strong>当前策略自己采出来的</strong>（on-policy）。这意味着 RL 的"合成数据"很大一部分不是<strong>预先合成好的</strong>，而是<strong>训练过程中动态生成的</strong>：</p>
 <div class="highlight"><pre><span></span><code><span class="c1"># 每个 RL step:</span>
 <span class="n">response</span> <span class="o">=</span> <span class="n">current_policy</span><span class="o">.</span><span class="n">generate</span><span class="p">(</span><span class="n">prompt</span><span class="p">)</span>       <span class="c1"># on-policy 采样</span>
@@ -467,13 +467,13 @@ SFT 数据集
 </ol>
 <p>这三者比"存一堆 RL 数据到磁盘"更关键。</p>
 <hr />
-<h2 id="11">11. 什么时候必须上人工标注：四个"最划算点"</h2>
+<h2 id="11-什么时候必须上人工标注四个最划算点">11. 什么时候必须上人工标注：四个"最划算点"</h2>
 <p>这是用户问题里最实用的一部分——<strong>人工标注很贵，但不是不能用，而是要打在刀刃上</strong>。四个最划算的位置：</p>
-<h3 id="111-seed1001000">11.1 种子（Seed）：100–1000 条</h3>
+<h3 id="111-种子seed1001000-条">11.1 种子（Seed）：100–1000 条</h3>
 <p>Self-Instruct 需要种子才能启动。种子的质量直接决定整个合成管线的上限——种子有偏，合成数据继承偏见并<strong>放大</strong>。</p>
 <p><strong>人工做什么</strong>：写 100–1000 条覆盖广、质量顶的"金标"样本。花一两个人一周时间，值。</p>
 <p><strong>人工不做什么</strong>：不要写 10 万条。超过 1000 条后，让 LLM 扩写效率更高。</p>
-<h3 id="112-disagreement">11.2 分歧样本（Disagreement）：主动学习</h3>
+<h3 id="112-分歧样本disagreement主动学习">11.2 分歧样本（Disagreement）：主动学习</h3>
 <p>当两个 reward model、或者 LLM critic 和 解释器对同一个样本<strong>判断不一致</strong>，这些样本才有高信息量。</p>
 <div class="highlight"><pre><span></span><code><span class="n">disputed</span> <span class="o">=</span> <span class="p">[]</span>
 <span class="k">for</span> <span class="n">sample</span> <span class="ow">in</span> <span class="n">synthetic_pool</span><span class="p">:</span>
@@ -485,7 +485,7 @@ SFT 数据集
 </code></pre></div>
 
 <p>这是 active learning 的标准做法：<strong>人工预算只花在模型们拿不准的地方</strong>，单位样本的价值比随机标注高 10–100 倍。</p>
-<h3 id="113-boundary">11.3 边界（Boundary）：安全、合规、价值观</h3>
+<h3 id="113-边界boundary安全合规价值观">11.3 边界（Boundary）：安全、合规、价值观</h3>
 <p>这一类是合成数据<strong>结构上做不到</strong>的：</p>
 <ul>
 <li>什么算"有害代码"——不是语法问题，是价值观问题。</li>
@@ -493,10 +493,10 @@ SFT 数据集
 <li>什么算"合规"——某些 licence 下的代码能不能进训练集。</li>
 </ul>
 <p>这些不可能让 LLM 自己决定，因为 LLM 就是来学这个边界的。Claude 的 Constitutional AI 里这一层靠<strong>人工写 constitution + 少量人工对齐</strong>，合成的部分只是"按 constitution 批评自己的输出"。</p>
-<h3 id="114-eval-set5005000">11.4 最终验收（Eval Set）：500–5000 条</h3>
+<h3 id="114-最终验收eval-set5005000-条">11.4 最终验收（Eval Set）：500–5000 条</h3>
 <p><strong>训练数据可以完全合成，但测试数据必须人工</strong>。原因：如果你的 eval set 也是 LLM 合成的，那 eval 指标衡量的是"模型多像合成器"，不是"模型多好"。人工精心写的 eval set 是<strong>外部锚点</strong>，是唯一能告诉你"合成管线有没有坏掉"的东西。</p>
 <p><strong>人工做什么</strong>：每个能力维度 50–200 条，覆盖主流用法和长尾边界。保密、不进训练集、每个版本迭代都重用。</p>
-<h3 id="115">11.5 总账</h3>
+<h3 id="115-总账">11.5 总账</h3>
 <p>用一张表说明"合成 vs 人工"的分工：</p>
 <table>
 <thead>
@@ -560,23 +560,23 @@ SFT 数据集
 </table>
 <p><strong>总体</strong>人工标注占训练数据总量的比例，应当控制在 <strong>1%–5%</strong> 之间。低于 1% 通常意味着种子和边界都没覆盖好；高于 5% 意味着没有充分利用合成流水线。</p>
 <hr />
-<h2 id="12-codegpt">12. 回到 CodeGPT：一条可落地的合成数据管线</h2>
+<h2 id="12-回到-codegpt一条可落地的合成数据管线">12. 回到 CodeGPT：一条可落地的合成数据管线</h2>
 <p>CodeGPT 当前状态：</p>
 <ul>
 <li><strong>已有</strong>：原始 Python 语料抓取（<code>data/python_code/prepare.py</code>）、FIM 数据合成（<code>tokenizer.py:148</code>）、预训练 loss（<code>model.py:192</code>）。</li>
 <li><strong>没有</strong>：过滤/修复管线、执行反馈管线、SFT 数据、RL 数据。</li>
 </ul>
 <p>如果要从现状走到"能跑 SFT + 有初步 RL"的路径，最小可行步骤：</p>
-<h3 id="a1">步骤 A：加过滤层（1 天工作量）</h3>
+<h3 id="步骤-a加过滤层1-天工作量">步骤 A：加过滤层（1 天工作量）</h3>
 <p>在 <code>prepare.py</code> 的文件收集阶段，额外加 AST 解析和 ruff 检查。不过就扔。预期<strong>数据量减少 30–50%，但质量提升一个档</strong>。</p>
-<h3 id="b1">步骤 B：加修复层（1 天）</h3>
+<h3 id="步骤-b加修复层1-天">步骤 B：加修复层（1 天）</h3>
 <p>对留下的代码跑 <code>black + isort</code>，标准化格式。产出<strong>干净版预训练语料</strong>。</p>
-<h3 id="c1">步骤 C：加执行反馈数据生成（1 周）</h3>
+<h3 id="步骤-c加执行反馈数据生成1-周">步骤 C：加执行反馈数据生成（1 周）</h3>
 <p>选一部分"函数 + 其 docstring 里的 doctest 示例"——Python 生态里这类数据天然存在。跑 doctest 做自动验证。产出带执行标签的 <code>(function, docstring, tests, exec_result)</code> 四元组。</p>
-<h3 id="d-sft-2">步骤 D：合成 SFT 数据（2 周）</h3>
+<h3 id="步骤-d合成-sft-数据2-周">步骤 D：合成 SFT 数据（2 周）</h3>
 <p>用强模型 API 为步骤 C 的每个函数生成 5 种派生任务（描述 → 代码、代码 → 测试、不完整代码 → 补全等）。过解释器验证，只保留 pass 的。用 CodeGPT 已有的 <code>SPECIAL_TOKENS</code>（<code>tokenizer.py:18</code>）包装成 chat 格式，准备好 SFT 数据。</p>
 <p>这时已有的训练脚本几乎<strong>不需要修改</strong>——SFT 的 loss 和预训练一样（<code>F.cross_entropy(..., ignore_index=-1)</code>），只要在 <code>get_batch</code> 里把 prompt 段的 target 设成 -1 即可。这和 <code>apply_fim_transform</code> 里把 <code>&lt;|fim_pad|&gt;</code> 设成 -1 是同一个机制。</p>
-<h3 id="e-rl-2">步骤 E：合成 RL 数据（2 周）</h3>
+<h3 id="步骤-e合成-rl-数据2-周">步骤 E：合成 RL 数据（2 周）</h3>
 <p>对步骤 D 每个 prompt 让<strong>当前 SFT 模型</strong>采样 4–8 条 response，过解释器排序，取最好和最差组成偏好对。这就是 DPO 需要的数据。</p>
 <p><strong>人工介入点</strong>（整条管线的 1–5%）：</p>
 <ul>
@@ -584,7 +584,7 @@ SFT 数据集
 <li>步骤 E 之后：抽 500 条 eval set，作为 release 前的最终验收标尺。</li>
 </ul>
 <hr />
-<h2 id="13-">13. 小结：一张数据-阶段-成本表</h2>
+<h2 id="13-小结一张数据-阶段-成本表">13. 小结：一张数据-阶段-成本表</h2>
 <table>
 <thead>
 <tr>

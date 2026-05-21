@@ -46,7 +46,7 @@
 <p>本文用本仓库 <code>model.py</code> / <code>tokenizer.py</code> 的具体行号、一个可跑的 seq2seq demo，把这条维度提升史钉到代码层。</p>
 </blockquote>
 <hr />
-<h2 id="_1">目录</h2>
+<h2 id="目录">目录</h2>
 <ol>
 <li><a href="#1-五代范式总览表">五代范式总览表</a></li>
 <li><a href="#2-第一代词法搜索grep--ctags--正则">第一代：词法搜索（grep / ctags / 正则）</a></li>
@@ -61,7 +61,7 @@
 <li><a href="#11-小结">小结</a></li>
 </ol>
 <hr />
-<h2 id="1">1. 五代范式总览表</h2>
+<h2 id="1-五代范式总览表">1. 五代范式总览表</h2>
 <table>
 <thead>
 <tr>
@@ -125,7 +125,7 @@
 <p><strong>搜索维度从 1（字符串）→ 多维离散结构（AST/图）→ 连续向量 → 加时间轴 → 加深度和多头</strong>。每加一维，"含义相同的代码"在新空间里都靠得更近一点。"问题"和"答案"在表征空间里的距离也越来越近：
 <strong>字符串距离 → 图编辑距离 → 余弦距离 → 编码-解码距离 → 同一个权重张量内部的距离。</strong></p>
 <hr />
-<h2 id="2-grep-ctags">2. 第一代：词法搜索（grep / ctags / 正则）</h2>
+<h2 id="2-第一代词法搜索grep-ctags-正则">2. 第一代：词法搜索（grep / ctags / 正则）</h2>
 <p>最早的"代码搜索"就是工程师在仓库里跑 <code>grep</code>：</p>
 <div class="highlight"><pre><span></span><code>grep<span class="w"> </span>-rn<span class="w"> </span><span class="s2">&quot;def fibonacci&quot;</span><span class="w"> </span>.
 ctags<span class="w"> </span>-R<span class="w"> </span>.
@@ -154,7 +154,7 @@ ripgrep<span class="w"> </span><span class="s2">&quot;^class \w+\(.*Mixin\)&quot
 <p>字符串匹配这一代的天花板就在这里：<strong>搜索空间只有 1 维（字符），没有"结构"也没有"含义"概念</strong>。</p>
 <p>下一代要加的第一个新维度，是<strong>代码本身的结构</strong>——AST、符号引用、控制流、数据流。</p>
 <hr />
-<h2 id="3-sourcegraph-lsif-codeql-joern">3. 第二代：静态分析 + 图查询（Sourcegraph / LSIF / CodeQL / Joern）</h2>
+<h2 id="3-第二代静态分析-图查询sourcegraph-lsif-codeql-joern">3. 第二代：静态分析 + 图查询（Sourcegraph / LSIF / CodeQL / Joern）</h2>
 <p>2010 年代中期开始，业界意识到代码不是字符串，而是<strong>结构</strong>：函数定义、引用、类型、调用图、控制流图、数据流图。如果把这些结构提前算出来、建索引、再用专门的查询语言去搜——召回率立刻上一个台阶。<strong>这一代仍然是"搜索"，但搜索空间从 1 维字符串扩展到了多维离散结构图</strong>。</p>
 <p>代表工具：</p>
 <table>
@@ -198,7 +198,7 @@ ripgrep<span class="w"> </span><span class="s2">&quot;^class \w+\(.*Mixin\)&quot
 </tr>
 </tbody>
 </table>
-<h3 id="31-sourcegraph">3.1 Sourcegraph 的本质：静态分析 + 高维空间搜索 + 图查询</h3>
+<h3 id="31-sourcegraph-的本质静态分析-高维空间搜索-图查询">3.1 Sourcegraph 的本质：静态分析 + 高维空间搜索 + 图查询</h3>
 <p>Sourcegraph 自己的实现就是这三件事拼起来的：</p>
 <ol>
 <li><strong>静态分析（升维）</strong>：用每种语言的 LSP 服务器在 CI 里把代码"过一遍"，产出 LSIF / SCIP 索引——里面有每个 token 的<strong>定义位置、所有引用、类型、所属符号</strong>。这一步把代码从"字符流"升维成了"带语义边的图"。</li>
@@ -214,7 +214,7 @@ ripgrep<span class="w"> </span><span class="s2">&quot;^class \w+\(.*Mixin\)&quot
 </code></pre></div>
 
 <p>注意这一行 <code>scip_index.edges_to(symbol_id)</code>——它不是 <code>grep</code>，而是<strong>在一张提前算好的图上做邻居查询</strong>。这张图就是新维度。</p>
-<h3 id="32-codeql">3.2 CodeQL：把代码变成关系数据库</h3>
+<h3 id="32-codeql把代码变成关系数据库">3.2 CodeQL：把代码变成关系数据库</h3>
 <p>CodeQL 把这个思路推到极致——代码不是字符串、不是树，而是<strong>一组关系表</strong>。然后你用类 Datalog 的 QL 写查询：</p>
 <div class="highlight"><pre><span></span><code><span class="c1">// 找所有 &quot;未经验证就被传给 sql.Exec 的字符串&quot;——SQL 注入</span>
 <span class="k k-Builtin">import</span><span class="w"> </span><span class="nv">go</span>
@@ -228,14 +228,14 @@ ripgrep<span class="w"> </span><span class="s2">&quot;^class \w+\(.*Mixin\)&quot
 </code></pre></div>
 
 <p>这段 query 在干什么？<strong>在数据流图上做带条件的可达性搜索</strong>——和 §4 的向量内积、§7 的 attention 是<strong>同一类操作</strong>（"从一个点出发，找满足条件的邻居"），只是底层空间不是 $\mathbb{R}^d$ 而是离散的关系图。</p>
-<h3 id="33-joern-code-property-graph-ast-cfg-dfg">3.3 Joern / Code Property Graph：把 AST + CFG + DFG 合成一张图</h3>
+<h3 id="33-joern-code-property-graph把-ast-cfg-dfg-合成一张图">3.3 Joern / Code Property Graph：把 AST + CFG + DFG 合成一张图</h3>
 <p>CPG 的精髓是<strong>一个节点同时承载语法、控制、数据三个角度的边</strong>。比如一行 <code>x = read_input()</code> 在 CPG 里是一个节点，向上连 AST 父节点（赋值表达式），向左右连 CFG（前驱/后继语句），向下连 DFG（<code>x</code> 后续被谁读）。Cypher 风格的查询：</p>
 <div class="highlight"><pre><span></span><code><span class="c1">// Joern: 找所有 &quot;从 read_input 流到 system 调用&quot;</span>
 <span class="n">cpg</span><span class="p">.</span><span class="k">call</span><span class="p">(</span><span class="s">&quot;read_input&quot;</span><span class="p">).</span><span class="n">reachableBy</span><span class="p">(</span><span class="n">cpg</span><span class="p">.</span><span class="k">call</span><span class="p">(</span><span class="s">&quot;system&quot;</span><span class="p">)).</span><span class="n">l</span>
 </code></pre></div>
 
 <p><code>reachableBy</code> 又是一次"高维空间里的可达性搜索"——只不过空间是<strong>代码属性图</strong>。</p>
-<h3 id="34">3.4 这一代的本质：用结构升维代替向量升维</h3>
+<h3 id="34-这一代的本质用结构升维代替向量升维">3.4 这一代的本质：用结构升维代替向量升维</h3>
 <p>第一代的搜索空间是<strong>1 维</strong>（字符）；第二代的搜索空间是<strong>多维离散结构</strong>——节点是符号/AST 节点，边是引用/控制流/数据流。它<strong>没有"连续向量"概念，也没有学习参数</strong>——所有维度都是规则定义的，靠静态分析提前算出来。</p>
 <p>这一代的厉害之处是：<strong>第一次能精确回答"语义相同但字面不同"的查询</strong>。<code>x.foo()</code> 和 <code>(*p).foo()</code> 在 AST 上是不同字符串，但在 SCIP 引用图里指向同一个符号。CodeQL 能找到所有"通过任意路径把用户输入传给 SQL exec"的代码，无论变量名怎么换、控制流多绕。</p>
 <p>但它有两个根本天花板：</p>
@@ -245,13 +245,13 @@ ripgrep<span class="w"> </span><span class="s2">&quot;^class \w+\(.*Mixin\)&quot
 </ol>
 <p>突破第一个天花板要走"连续向量"路线（第三代 Word2Vec）；突破第二个要走"自回归生成"路线（第四代 Seq2Seq）。下一节就是第一次"连续化"——把图节点的离散标签替换成 $\mathbb{R}^d$ 里的稠密向量。</p>
 <hr />
-<h2 id="4-word2vec">4. 第三代：Word2Vec → 代码向量化搜索（第一次连续化）</h2>
+<h2 id="4-第三代word2vec-代码向量化搜索第一次连续化">4. 第三代：Word2Vec → 代码向量化搜索（第一次连续化）</h2>
 <p>2013 年 Mikolov 提出 Word2Vec，把"相似度"从字符串搬到了 $\mathbb{R}^d$。其核心假设是 J.R. Firth 1957 年的一句话：</p>
 <blockquote>
 <p><em>You shall know a word by the company it keeps.</em>
 一个词的含义由它周围的词决定。</p>
 </blockquote>
-<h3 id="41-word2vec">4.1 Word2Vec 的本质：一个超简的"邻居预测"</h3>
+<h3 id="41-word2vec-的本质一个超简的邻居预测">4.1 Word2Vec 的本质：一个超简的"邻居预测"</h3>
 <p>Skip-gram 的目标函数就是"用中心词预测它的上下文"：</p>
 <div class="highlight"><pre><span></span><code><span class="c1"># Word2Vec Skip-gram 的核心 —— 不到 10 行 PyTorch</span>
 <span class="kn">import</span><span class="w"> </span><span class="nn">torch</span><span class="o">,</span><span class="w"> </span><span class="nn">torch.nn</span><span class="w"> </span><span class="k">as</span><span class="w"> </span><span class="nn">nn</span><span class="o">,</span><span class="w"> </span><span class="nn">torch.nn.functional</span><span class="w"> </span><span class="k">as</span><span class="w"> </span><span class="nn">F</span>
@@ -271,7 +271,7 @@ ripgrep<span class="w"> </span><span class="s2">&quot;^class \w+\(.*Mixin\)&quot
 
 <p>训练完之后，<code>in_emb.weight</code> 这张 <code>(vocab_size, d)</code> 的查表就是"语义坐标系"。<code>king - man + woman ≈ queen</code> 那个著名加减法就是它的副产品。</p>
 <p><strong>对应到本仓库</strong>：<code>model.py:183</code> 的 <code>tok_emb = self.transformer.wte(idx)</code> 做的事情<strong>和 Word2Vec 的查表完全同构</strong>——都是 token ID 进、向量出。区别只是 GPT 的 <code>wte</code> 是和 12 层 Transformer 一起端到端训练的，而 Word2Vec 是单独训完就锁住的。</p>
-<h3 id="42-code2vec-codebert">4.2 用到代码上：code2vec / CodeBERT</h3>
+<h3 id="42-用到代码上code2vec-codebert">4.2 用到代码上：code2vec / CodeBERT</h3>
 <p>把同样的思路搬到代码：把 token 序列（甚至 AST path）输入一个小网络（code2vec 用 attention pooling，CodeBERT 用 BERT），输出一个固定维度向量。然后整套向量搜索（Faiss / HNSW）就可以用了：</p>
 <div class="highlight"><pre><span></span><code><span class="c1"># 代码向量化搜索：把整个仓库的函数都 encode 成 (N, d) 的矩阵</span>
 <span class="kn">import</span><span class="w"> </span><span class="nn">faiss</span><span class="o">,</span><span class="w"> </span><span class="nn">numpy</span><span class="w"> </span><span class="k">as</span><span class="w"> </span><span class="nn">np</span>
@@ -289,11 +289,11 @@ ripgrep<span class="w"> </span><span class="s2">&quot;^class \w+\(.*Mixin\)&quot
 </code></pre></div>
 
 <p>突然之间，"读文件并按行处理"这种<strong>意图查询</strong>可以工作了：因为 encoder 学过 <code>with open(...) as f: for line in f</code> 的上下文邻居，它会把这段代码的向量放在意图查询附近。</p>
-<h3 id="43">4.3 但这一代仍然只能"找"，不能"写"</h3>
+<h3 id="43-但这一代仍然只能找不能写">4.3 但这一代仍然只能"找"，不能"写"</h3>
 <p>向量搜索能召回<strong>已存在的</strong>代码片段，无法合成不在库里的组合。如果用户问"用 numpy 实现一个带 dropout 的 self-attention"，而你的库里没有这段，向量搜索只能给出最接近的几个函数让你自己拼。</p>
 <p><strong>第一次质变（离散 → 连续）让"找"变得强大，但还差一次质变才能"写"。</strong></p>
 <hr />
-<h2 id="5-seq2seq">5. 第四代：Seq2Seq —— 用 (注释, 代码) 对子训练，让模型从描述生成代码</h2>
+<h2 id="5-第四代seq2seq-用-注释-代码-对子训练让模型从描述生成代码">5. 第四代：Seq2Seq —— 用 (注释, 代码) 对子训练，让模型从描述生成代码</h2>
 <p>2014 年 Sutskever / Cho 等人提出 Seq2Seq：用一个 RNN（<strong>encoder</strong>）把变长输入压成一个 context vector，再用另一个 RNN（<strong>decoder</strong>）从这个 context 一个 token 一个 token 地"写出"输出。</p>
 <div class="highlight"><pre><span></span><code>&quot;sum a list&quot;  →  [Encoder LSTM]  →  c  →  [Decoder LSTM]  →  &quot;def sum_list(xs): return sum(xs)&quot;
                   压缩信息              定长向量            自回归展开
@@ -339,7 +339,7 @@ ripgrep<span class="w"> </span><span class="s2">&quot;^class \w+\(.*Mixin\)&quot
 </ol>
 <p>第二个痛点是第四代被第五代彻底超越的真正原因，详见 §7。</p>
 <hr />
-<h2 id="6-seq2seq-demo">6. 一段能跑的 Seq2Seq Demo：注释 → 代码</h2>
+<h2 id="6-一段能跑的-seq2seq-demo注释-代码">6. 一段能跑的 Seq2Seq Demo：注释 → 代码</h2>
 <p>下面是一个最小可运行的 LSTM Seq2Seq + Bahdanau attention，用 (注释, 代码) 对子训练。<strong>只依赖本项目已有的 <code>torch</code> / <code>numpy</code> / <code>tiktoken</code></strong>，没有引入新包。把它存成 <code>seq2seq_demo.py</code> 就能跑：</p>
 <div class="highlight"><pre><span></span><code><span class="sd">&quot;&quot;&quot;</span>
 <span class="sd">Minimal seq2seq demo: train on (comment, code) pairs, sample code from a comment.</span>
@@ -472,9 +472,9 @@ ripgrep<span class="w"> </span><span class="s2">&quot;^class \w+\(.*Mixin\)&quot
 </ul>
 <p>但你也立刻能看到它的天花板——只能学会训练对子里出现过的模式。给它一个稍微跨域的 prompt（比如 "implement quicksort"），它就开始胡说。原因正是 §4 末尾说的：<strong>配对数据太贵，信号太稀疏</strong>。</p>
 <hr />
-<h2 id="7-gpt-decoder-only">7. 第五代：GPT —— decoder-only + 自监督，把"配对"变成"序列"</h2>
+<h2 id="7-第五代gpt-decoder-only-自监督把配对变成序列">7. 第五代：GPT —— decoder-only + 自监督，把"配对"变成"序列"</h2>
 <p>GPT 在架构上做了三件事，每一件都是对 Seq2Seq 的根本性改写：</p>
-<h3 id="71-encoderdecoder-only">7.1 砍掉 Encoder：decoder-only</h3>
+<h3 id="71-砍掉-encoderdecoder-only">7.1 砍掉 Encoder：decoder-only</h3>
 <p>Seq2Seq 把"理解输入"和"生成输出"分到两个网络。GPT 直接合并成一个：把 prompt 和 completion<strong>拼成一段</strong>，全部喂给同一个 decoder，靠<strong>因果掩码</strong>保证生成时只能看左边。</p>
 <div class="highlight"><pre><span></span><code><span class="c1"># 这就是 model.py:46-49 + 67 那个 tril mask 的全部意义</span>
 <span class="n">torch</span><span class="o">.</span><span class="n">tril</span><span class="p">(</span><span class="n">torch</span><span class="o">.</span><span class="n">ones</span><span class="p">(</span><span class="n">T</span><span class="p">,</span> <span class="n">T</span><span class="p">))</span>             <span class="c1"># 下三角为 1</span>
@@ -482,7 +482,7 @@ ripgrep<span class="w"> </span><span class="s2">&quot;^class \w+\(.*Mixin\)&quot
 </code></pre></div>
 
 <p>收益：encoder 和 decoder 共享一套权重 <code>W</code>，参数效率翻倍；同时<strong>任何序列</strong>都能直接当训练数据，不需要切分输入/输出。</p>
-<h3 id="72-comment-code">7.2 把 (comment, code) 配对消化成"一段序列"</h3>
+<h3 id="72-把-comment-code-配对消化成一段序列">7.2 把 (comment, code) 配对消化成"一段序列"</h3>
 <p>这是第三次质变的核心。Seq2Seq 时代你必须提前标好：</p>
 <div class="highlight"><pre><span></span><code>src: &quot;compute factorial recursively&quot;
 tgt: &quot;def fact(n): return 1 if n&lt;=1 else n*fact(n-1)&quot;
@@ -495,12 +495,12 @@ tgt: &quot;def fact(n): return 1 if n&lt;=1 else n*fact(n-1)&quot;
 </code></pre></div>
 
 <p>模型只是在做 next-token prediction，但<strong>注释和代码天然在序列上相邻</strong>——预测下一行代码时模型必须利用上面的 docstring 当上下文，于是它<strong>自动学会了"注释 → 代码"的映射</strong>，根本不需要标注。这是为什么 GPT 时代训练数据规模一下子从 6M 对（CodeSearchNet）跃升到上百亿 token：<strong>全网代码都是数据</strong>。</p>
-<h3 id="73-attention-rnn">7.3 Attention 替换 RNN：彻底解决信息瓶颈</h3>
+<h3 id="73-attention-替换-rnn彻底解决信息瓶颈">7.3 Attention 替换 RNN：彻底解决信息瓶颈</h3>
 <p>Seq2Seq 必须用一个固定向量 <code>c</code> 串起 encoder 和 decoder，attention 只是补丁。Transformer 直接把整条序列摊平：每个位置都能直接看到前面所有位置（<code>model.py:53-70</code>）。<strong>信息瓶颈消失了</strong>。配合 KV cache、long context、scaling laws，这条路一直走到了今天的 GPT-4 / Claude。</p>
-<h3 id="74-fim-seq2seq">7.4 FIM：把 seq2seq 的"中间填空"也自监督化</h3>
+<h3 id="74-fim把-seq2seq-的中间填空也自监督化">7.4 FIM：把 seq2seq 的"中间填空"也自监督化</h3>
 <p><code>(prefix, middle, suffix)</code> 任务在 seq2seq 时代必须人工切分配对。本项目用的 FIM trick（<code>tokenizer.py</code> 的 <code>&lt;|fim_prefix|&gt;</code> / <code>&lt;|fim_middle|&gt;</code> / <code>&lt;|fim_suffix|&gt;</code>，<code>model.py:121-124</code> 的 ID 默认值，<code>train.py:get_batch</code> 的 50% 概率变换）让自监督流水线<strong>顺手</strong>学会了中间填空——再次把"需要标注的能力"压回到"自监督序列"里。这是第三次质变在 CodeGPT 上的具体实现。</p>
 <hr />
-<h2 id="8">8. 搜索维度的进化史：把五代放在同一张坐标系</h2>
+<h2 id="8-搜索维度的进化史把五代放在同一张坐标系">8. 搜索维度的进化史：把五代放在同一张坐标系</h2>
 <p>到此为止可以看出一条更深的规律——<strong>这五代根本就是同一个故事</strong>：「搜索」一直在做，每一代只是<strong>给搜索空间加一个新维度</strong>。把它画在同一张坐标系里：</p>
 <div class="highlight"><pre><span></span><code>代际    搜索空间                                      维度类型              单次查询的&quot;操作&quot;
 ─────  ────────────────────────────────────────────  ────────────────────  ──────────────────────────────────
@@ -513,7 +513,7 @@ tgt: &quot;def fact(n): return 1 if n&lt;=1 else n*fact(n-1)&quot;
                                                         即 144 次/token)
 </code></pre></div>
 
-<h3 id="81">8.1 一个统一的伪代码视角</h3>
+<h3 id="81-一个统一的伪代码视角">8.1 一个统一的伪代码视角</h3>
 <p>把五代的"核心操作"用同一个伪代码框架表达，区别全在 <code>space</code> 和 <code>metric</code> 两个参数上：</p>
 <div class="highlight"><pre><span></span><code><span class="c1"># 五代搜索的统一形式</span>
 <span class="k">def</span><span class="w"> </span><span class="nf">search</span><span class="p">(</span><span class="n">query</span><span class="p">,</span> <span class="n">space</span><span class="p">,</span> <span class="n">metric</span><span class="p">,</span> <span class="n">k</span><span class="o">=</span><span class="mi">5</span><span class="p">):</span>
@@ -582,7 +582,7 @@ tgt: &quot;def fact(n): return 1 if n&lt;=1 else n*fact(n-1)&quot;
 </tr>
 </tbody>
 </table>
-<h3 id="82">8.2 维度提升带来的两个直接好处</h3>
+<h3 id="82-维度提升带来的两个直接好处">8.2 维度提升带来的两个直接好处</h3>
 <p>每加一个维度，召回曲线和"能解决的问题"都跳一档：</p>
 <ol>
 <li>
@@ -596,7 +596,7 @@ tgt: &quot;def fact(n): return 1 if n&lt;=1 else n*fact(n-1)&quot;
 <p><strong>能"写"出库里不存在的组合</strong>。一旦搜索空间从离散变成连续，softmax 就能在两个邻居之间<strong>插值</strong>——而插值出来的点对应"训练集里没见过但合乎语法语义的代码"。这就是"生成"的数学本质：<strong>在连续高维空间里取一个介于已知点之间的位置</strong>。第二代再强大也插值不出新代码，因为离散图节点之间没有"中间状态"。</p>
 </li>
 </ol>
-<h3 id="83">8.3 为什么"搜索维度"是统一视角而不是比喻</h3>
+<h3 id="83-为什么搜索维度是统一视角而不是比喻">8.3 为什么"搜索维度"是统一视角而不是比喻</h3>
 <p>如果把所有五代写成一个张量的形状，差异一目了然：</p>
 <div class="highlight"><pre><span></span><code>第一代  shape = (T_query,)                    char level
 第二代  shape = (N_nodes, K_edge_types)       discrete graph
@@ -606,7 +606,7 @@ tgt: &quot;def fact(n): return 1 if n&lt;=1 else n*fact(n-1)&quot;
 </code></pre></div>
 
 <p>每加一维，存储和算力 cost 都涨一截，但<strong>模型能区分的"代码邻居"密度也指数级上升</strong>。这正是 scaling laws 描述的现象——不是参数变多就变聪明，而是<strong>搜索空间的有效维度变高</strong>，"每条 query 的搜索精度"才指数级上升。</p>
-<h3 id="84-rag-prompt">8.4 RAG = 把第二代/第三代检索拼回第五代的 prompt</h3>
+<h3 id="84-rag-把第二代第三代检索拼回第五代的-prompt">8.4 RAG = 把第二代/第三代检索拼回第五代的 prompt</h3>
 <p>理解了这个视角，RAG 就不再是"外挂记忆"那么模糊的概念，而是<strong>精确的"维度回收"</strong>：</p>
 <ul>
 <li>第五代 GPT 的 <code>block_size</code>（CodeGPT 是 1024，GPT-4 是 ~128k）有上限；</li>
@@ -615,7 +615,7 @@ tgt: &quot;def fact(n): return 1 if n&lt;=1 else n*fact(n-1)&quot;
 </ul>
 <p>这就是为什么 Sourcegraph + LLM 是一套漂亮的组合：Sourcegraph 用第二代图搜索给出<strong>精确</strong>的引用/调用，向量搜索给出<strong>模糊语义</strong>召回，GPT 在它们的并集上做生成。三代搜索叠在一起，每一代各自负责自己最擅长的维度。</p>
 <hr />
-<h2 id="9">9. 三次关键性转变的本质（在维度图上看就是三次维度跃迁）</h2>
+<h2 id="9-三次关键性转变的本质在维度图上看就是三次维度跃迁">9. 三次关键性转变的本质（在维度图上看就是三次维度跃迁）</h2>
 <p>把上面五代之间的边界标出来，最重要的三条线分别对应<strong>维度类型的切换</strong>：</p>
 <table>
 <thead>
@@ -663,7 +663,7 @@ tgt: &quot;def fact(n): return 1 if n&lt;=1 else n*fact(n-1)&quot;
 </ul>
 <p>下一次转变（也许已经在发生）是 <strong>从"自监督序列"到"自我对弈/RL 反馈"</strong>——模型自己生成数据、自己评分、自己迭代。这是另一篇文档（<a href="SYNTHETIC_DATA.md"><code>SYNTHETIC_DATA.md</code></a> / <a href="SFT_FORGETTING_AND_MOE.md"><code>SFT_FORGETTING_AND_MOE.md</code></a>）的内容。</p>
 <hr />
-<h2 id="10-codegpt">10. CodeGPT 在这条进化线上的位置</h2>
+<h2 id="10-codegpt-在这条进化线上的位置">10. CodeGPT 在这条进化线上的位置</h2>
 <p>把本仓库的代码逐行对到上面五代里：</p>
 <table>
 <thead>
@@ -715,7 +715,7 @@ tgt: &quot;def fact(n): return 1 if n&lt;=1 else n*fact(n-1)&quot;
 <p>同样的关系也成立于 Seq2Seq：<strong>GPT 没有否定 Seq2Seq，而是把它压扁成了 decoder-only</strong>。Bahdanau attention 那个 <code>softmax(score) · enc_h</code> 的式子，几乎一字不差地出现在 <code>model.py:66-70</code> 的自注意力里。</p>
 <p><strong>对第二代（Sourcegraph / CodeQL / Joern）也是同样的关系</strong>：CodeGPT 没有"否定"图查询，而是把"在图上找邻居"的能力<strong>通过梯度下降隐式学进了权重</strong>——GPT 的多头里有些头会自动学到"指向同一个变量的所有引用"、"同一函数的所有调用点"，这就是第二代静态分析图被压成连续向量后的样子。所以工业界最强的代码工具往往是 <strong>Sourcegraph + GPT</strong> 的组合：精确的图搜索 + 软语义生成，各自占据自己最擅长的维度（参见 §8.4 RAG 部分）。</p>
 <hr />
-<h2 id="11">11. 小结</h2>
+<h2 id="11-小结">11. 小结</h2>
 <p>五代演化、三次质变，本质是<strong>同一件事</strong>：搜索维度的持续提升。</p>
 <blockquote>
 <p><strong>代码生成的进化史 = 搜索空间维度提升的历史 = "程序员要做的事"逐步被模型吸收的历史。</strong></p>
@@ -730,7 +730,7 @@ tgt: &quot;def fact(n): return 1 if n&lt;=1 else n*fact(n-1)&quot;
 <p>每一代加进去的维度都不会丢——GPT 内部保留了前面所有代际的能力：第一代查表（<code>wte</code> embedding 查表）、第二代结构搜索（多头中"指向同一符号的所有引用"那种头）、第三代向量内积（每层 attention 的 <code>q @ k.T</code>）、第四代时序展开（自回归生成）。<strong>第五代是前四代的叠加态</strong>。</p>
 <p>这条线还没有走到尽头。下一站是模型把"评估自己"和"造自己的训练数据"也吸收进去（参见 <a href="SYNTHETIC_DATA.md"><code>SYNTHETIC_DATA.md</code></a>、<a href="SFT_RL_INFERENCE_MECHANICS.md"><code>SFT_RL_INFERENCE_MECHANICS.md</code></a>）。但每一次转变背后的逻辑是一样的：<strong>找到目前还需要人来做的那一步，把它变成可微分、可自监督的张量操作；同时给搜索空间加一个新维度</strong>。</p>
 <hr />
-<h2 id="_2">延伸阅读</h2>
+<h2 id="延伸阅读">延伸阅读</h2>
 <ul>
 <li><a href="GPT_AS_SUPER_SEARCH.md"><code>GPT_AS_SUPER_SEARCH.md</code></a> — 把 GPT 当成"第四代搜索引擎"，从另一个视角讲同一件事</li>
 <li><a href="DEEP_DIVE.md"><code>DEEP_DIVE.md</code></a> — RNN → LSTM → Seq2Seq → Transformer → GPT 的架构演化细节</li>

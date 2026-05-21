@@ -37,7 +37,7 @@
 <p>前文（<a href="DEEP_DIVE.md">DEEP_DIVE.md</a>）讲了从 RNN 到 Transformer 到 GPT 的架构演化，（<a href="COMPRESSION_IS_INTELLIGENCE.md">COMPRESSION_IS_INTELLIGENCE.md</a>）讲了压缩即智能的本质。但 ChatGPT 的成功绝不仅仅是 Transformer 架构的胜利——<strong>强化学习对齐（RLHF）</strong>让模型从"能说"变成了"会说"；<strong>柏拉图表征假说</strong>则解释了为什么这些模型越训越多，最终会趋近同一个"真相"。</p>
 </blockquote>
 <hr />
-<h2 id="_1">目录</h2>
+<h2 id="目录">目录</h2>
 <ol>
 <li><a href="#1-chatgpt-的三级火箭预训练只是第一级">ChatGPT 的三级火箭：预训练只是第一级</a></li>
 <li><a href="#2-第一级预训练学会说话的婴儿">第一级：预训练——学会说话的婴儿</a></li>
@@ -53,7 +53,7 @@
 <li><a href="#12-结语对齐与收敛">结语：对齐与收敛</a></li>
 </ol>
 <hr />
-<h2 id="1-chatgpt">1. ChatGPT 的三级火箭：预训练只是第一级</h2>
+<h2 id="1-chatgpt-的三级火箭预训练只是第一级">1. ChatGPT 的三级火箭：预训练只是第一级</h2>
 <p>很多人以为 ChatGPT = GPT + 聊天界面。这是一个巨大的误解。ChatGPT 的成功来自三个阶段的叠加，每一阶段缺一不可：</p>
 <div class="highlight"><pre><span></span><code>┌─────────────────────────────────────────────────────────────┐
 │                                                             │
@@ -82,7 +82,7 @@
 </code></pre></div>
 
 <hr />
-<h2 id="2">2. 第一级：预训练——学会说话的婴儿</h2>
+<h2 id="2-第一级预训练学会说话的婴儿">2. 第一级：预训练——学会说话的婴儿</h2>
 <p>这是 CodeGPT 目前实现的阶段。本项目 <code>train.py</code> 做的就是这件事：</p>
 <div class="highlight"><pre><span></span><code><span class="c1"># train.py:192 — 预训练的目标：预测下一个 token</span>
 <span class="n">loss</span> <span class="o">=</span> <span class="n">F</span><span class="o">.</span><span class="n">cross_entropy</span><span class="p">(</span><span class="n">logits</span><span class="o">.</span><span class="n">view</span><span class="p">(</span><span class="o">-</span><span class="mi">1</span><span class="p">,</span> <span class="n">logits</span><span class="o">.</span><span class="n">size</span><span class="p">(</span><span class="o">-</span><span class="mi">1</span><span class="p">)),</span> <span class="n">targets</span><span class="o">.</span><span class="n">view</span><span class="p">(</span><span class="o">-</span><span class="mi">1</span><span class="p">),</span> <span class="n">ignore_index</span><span class="o">=-</span><span class="mi">1</span><span class="p">)</span>
@@ -108,7 +108,7 @@
 
 <p>这就像一个读了全世界所有书的婴儿——他知道"妈妈我饿了"后面通常跟什么，但不知道什么时候说这句话<strong>合适</strong>，什么时候<strong>不合适</strong>。</p>
 <hr />
-<h2 id="3-sft">3. 第二级：SFT——上学的孩子</h2>
+<h2 id="3-第二级sft上学的孩子">3. 第二级：SFT——上学的孩子</h2>
 <p>SFT 用人类精心撰写的示范数据进行微调：</p>
 <div class="highlight"><pre><span></span><code><span class="c1"># SFT 概念示意（非项目代码）</span>
 <span class="c1"># 训练数据格式：</span>
@@ -155,7 +155,7 @@ SFT 模型同样可能生成回答 A 和 B，因为它见过两种风格的数�
 </code></pre></div>
 
 <hr />
-<h2 id="4-rlhf">4. 第三级：RLHF——进入社会的成年人</h2>
+<h2 id="4-第三级rlhf进入社会的成年人">4. 第三级：RLHF——进入社会的成年人</h2>
 <p>RLHF 是 ChatGPT 相比之前所有语言模型的<strong>决定性创新</strong>。它的核心思想：</p>
 <blockquote>
 <p><strong>不再告诉模型"正确答案是什么"，而是让模型自由生成，然后告诉它"这个好，那个不好"。</strong></p>
@@ -175,9 +175,9 @@ SFT 模型同样可能生成回答 A 和 B，因为它见过两种风格的数�
 </code></pre></div>
 
 <hr />
-<h2 id="5-rlhf-ppo">5. RLHF 的核心：奖励模型与 PPO</h2>
+<h2 id="5-rlhf-的核心奖励模型与-ppo">5. RLHF 的核心：奖励模型与 PPO</h2>
 <p>RLHF 分三步走：</p>
-<h3 id="51-reward-model">5.1 第一步：训练奖励模型（Reward Model）</h3>
+<h3 id="51-第一步训练奖励模型reward-model">5.1 第一步：训练奖励模型（Reward Model）</h3>
 <div class="highlight"><pre><span></span><code>收集人类偏好数据：
 
   同一个问题，模型生成多个回答，人类标注员排序：
@@ -217,7 +217,7 @@ SFT 模型同样可能生成回答 A 和 B，因为它见过两种风格的数�
 </code></pre></div>
 
 <p>奖励模型学到的不是"什么是正确的"，而是<strong>"人类喜欢什么样的回答"</strong>——这包含了正确性、有用性、简洁性、安全性等多个维度的综合判断。</p>
-<h3 id="52-ppo">5.2 第二步：用 PPO 优化语言模型</h3>
+<h3 id="52-第二步用-ppo-优化语言模型">5.2 第二步：用 PPO 优化语言模型</h3>
 <p>有了奖励模型，就可以用强化学习来优化 GPT 了：</p>
 <div class="highlight"><pre><span></span><code><span class="c1"># PPO 训练循环 —— 概念示意（非项目代码）</span>
 <span class="k">for</span> <span class="n">prompt</span> <span class="ow">in</span> <span class="n">prompts</span><span class="p">:</span>
@@ -250,7 +250,7 @@ SFT 模型同样可能生成回答 A 和 B，因为它见过两种风格的数�
 └─────────────────────────────────────────────────────────────┘
 </code></pre></div>
 
-<h3 id="53-kl">5.3 KL 散度惩罚：不要忘记你学过的</h3>
+<h3 id="53-kl-散度惩罚不要忘记你学过的">5.3 KL 散度惩罚：不要忘记你学过的</h3>
 <p>PPO 中有一个关键的约束——<strong>KL 散度惩罚</strong>：</p>
 <div class="highlight"><pre><span></span><code>ppo_loss = -reward + β · KL(π_new ‖ π_original)
 
@@ -270,7 +270,7 @@ KL 惩罚的作用：
 </code></pre></div>
 
 <p>这和人类成长的道理一样——社会化让你学会圆滑，但不应该让你丧失独立思考的能力。</p>
-<h3 id="54-rlhf">5.4 RLHF 对代码模型意味着什么</h3>
+<h3 id="54-rlhf-对代码模型意味着什么">5.4 RLHF 对代码模型意味着什么</h3>
 <p>对于代码生成模型（如 GitHub Copilot），RLHF 能做到：</p>
 <div class="highlight"><pre><span></span><code>没有 RLHF 的代码模型:
   用户: &quot;写一个 HTTP 服务器&quot;
@@ -289,7 +289,7 @@ KL 惩罚的作用：
 </code></pre></div>
 
 <hr />
-<h2 id="6-rlhf-dpo">6. 从 RLHF 到 DPO：简化对齐</h2>
+<h2 id="6-从-rlhf-到-dpo简化对齐">6. 从 RLHF 到 DPO：简化对齐</h2>
 <p>RLHF 效果好但工程复杂度高——需要同时维护四个模型：</p>
 <div class="highlight"><pre><span></span><code>RLHF 的工程复杂度:
   1. 基础语言模型（被优化的目标）
@@ -334,7 +334,7 @@ DPO 说:  &quot;何必绕弯？直接告诉模型 A 比 B 好，让它自己调�
 </code></pre></div>
 
 <hr />
-<h2 id="7-codegpt">7. CodeGPT 处在哪一级？</h2>
+<h2 id="7-codegpt-处在哪一级">7. CodeGPT 处在哪一级？</h2>
 <p>本项目 CodeGPT 目前实现的是<strong>第一级（预训练）</strong>，并且为进一步对齐预留了扩展空间：</p>
 <div class="highlight"><pre><span></span><code>CodeGPT 目前:
   ✅ 第一级 预训练      → train.py（交叉熵，预测下一个 token）
@@ -380,8 +380,8 @@ DPO 说:  &quot;何必绕弯？直接告诉模型 A 比 B 好，让它自己调�
 </code></pre></div>
 
 <hr />
-<h2 id="8">8. 柏拉图表征假说：盲人摸象的终局</h2>
-<h3 id="81">8.1 盲人摸象的故事</h3>
+<h2 id="8-柏拉图表征假说盲人摸象的终局">8. 柏拉图表征假说：盲人摸象的终局</h2>
+<h3 id="81-盲人摸象的故事">8.1 盲人摸象的故事</h3>
 <div class="highlight"><pre><span></span><code>盲人甲（摸到象腿）: &quot;大象是一根柱子&quot;
 盲人乙（摸到象鼻）: &quot;大象是一条蛇&quot;
 盲人丙（摸到象耳）: &quot;大象是一把扇子&quot;
@@ -398,7 +398,7 @@ DPO 说:  &quot;何必绕弯？直接告诉模型 A 比 B 好，让它自己调�
   维度越多，表征越接近真实。
 </code></pre></div>
 
-<h3 id="82-2024">8.2 柏拉图表征假说（2024）</h3>
+<h3 id="82-柏拉图表征假说2024">8.2 柏拉图表征假说（2024）</h3>
 <p>MIT 的 Huh 等人在 2024 年提出了 <strong>Platonic Representation Hypothesis</strong>：</p>
 <blockquote>
 <p><strong>不同的神经网络模型，用不同的数据、不同的模态（文本/图像/代码/音频）、不同的目标训练，它们学到的内部表征正在收敛到同一个统计结构。</strong></p>
@@ -425,7 +425,7 @@ DPO 说:  &quot;何必绕弯？直接告诉模型 A 比 B 好，让它自己调�
 - 每个模型看到的训练数据是现实的"一个投影"（一个维度）
 - 但<strong>现实的统计结构是唯一的</strong>
 - 足够多的投影（数据+模态+规模） → 收敛到同一个结构</p>
-<h3 id="83">8.3 为什么会收敛？一个直觉解释</h3>
+<h3 id="83-为什么会收敛一个直觉解释">8.3 为什么会收敛？一个直觉解释</h3>
 <div class="highlight"><pre><span></span><code>宇宙中有一个真实的概率分布 P(reality)
 
 文本是 P(reality) 的一个投影:
@@ -455,7 +455,7 @@ DPO 说:  &quot;何必绕弯？直接告诉模型 A 比 B 好，让它自己调�
 </code></pre></div>
 
 <hr />
-<h2 id="9">9. 多头注意力：同一个模型里的多个"盲人"</h2>
+<h2 id="9-多头注意力同一个模型里的多个盲人">9. 多头注意力：同一个模型里的多个"盲人"</h2>
 <p>柏拉图表征假说描述的是<strong>不同模型之间</strong>的收敛。但 CodeGPT 内部也有一个微缩版的"盲人摸象"——<strong>多头注意力</strong>。</p>
 <div class="highlight"><pre><span></span><code><span class="c1"># model.py:40-41 — 12 个注意力头</span>
 <span class="bp">self</span><span class="o">.</span><span class="n">n_head</span> <span class="o">=</span> <span class="n">config</span><span class="o">.</span><span class="n">n_head</span>    <span class="c1"># 12</span>
@@ -498,9 +498,9 @@ Head 5-12: 其他模式...
 
 <p><strong>这就是一个模型内部的柏拉图表征收敛过程。</strong> 12 个局部视角，融合为一个全局理解。每个头都是一个不完整的"投影"，但它们共同趋近于代码的真实结构。</p>
 <hr />
-<h2 id="10">10. 多语言训练：从不同编程语言看同一个"算法实体"</h2>
+<h2 id="10-多语言训练从不同编程语言看同一个算法实体">10. 多语言训练：从不同编程语言看同一个"算法实体"</h2>
 <p>CodeGPT 的多语言支持是柏拉图表征假说最直接的实例。</p>
-<h3 id="101">10.1 同一个算法，不同的表面形式</h3>
+<h3 id="101-同一个算法不同的表面形式">10.1 同一个算法，不同的表面形式</h3>
 <div class="highlight"><pre><span></span><code><span class="c1"># Python</span>
 <span class="k">def</span><span class="w"> </span><span class="nf">gcd</span><span class="p">(</span><span class="n">a</span><span class="p">,</span> <span class="n">b</span><span class="p">):</span>
     <span class="k">while</span> <span class="n">b</span><span class="p">:</span>
@@ -529,7 +529,7 @@ Head 5-12: 其他模式...
 </code></pre></div>
 
 <p>三种语言，语法完全不同，但表达的是<strong>同一个算法实体</strong>——辗转相除法。</p>
-<h3 id="102-codegpt">10.2 CodeGPT 如何处理多语言</h3>
+<h3 id="102-codegpt-如何处理多语言">10.2 CodeGPT 如何处理多语言</h3>
 <div class="highlight"><pre><span></span><code><span class="c1"># tokenizer.py:27-42 — 16 种语言标识 token</span>
 <span class="s2">&quot;&lt;|lang:python|&gt;&quot;</span><span class="p">:</span>     <span class="mi">50263</span><span class="p">,</span>
 <span class="s2">&quot;&lt;|lang:javascript|&gt;&quot;</span><span class="p">:</span> <span class="mi">50264</span><span class="p">,</span>
@@ -568,7 +568,7 @@ Head 5-12: 其他模式...
 </code></pre></div>
 
 <p>这不是推测。已有大量研究（如 Microsoft 的 CodeBERT、Meta 的 Code Llama 论文）证实：<strong>在多语言代码上训练的模型，确实学到了跨语言的统一算法表征。</strong> 用 Python 数据训练的知识可以迁移到 JavaScript——因为底层的算法结构是一样的。</p>
-<h3 id="103">10.3 为什么柏拉图表征对代码特别成立</h3>
+<h3 id="103-为什么柏拉图表征对代码特别成立">10.3 为什么柏拉图表征对代码特别成立</h3>
 <p>代码是柏拉图表征假说的最佳验证场景，因为代码有一个自然语言没有的特性——<strong>可执行性</strong>：</p>
 <div class="highlight"><pre><span></span><code>自然语言:
   &quot;这个算法是高效的&quot;
@@ -587,8 +587,8 @@ Head 5-12: 其他模式...
 </code></pre></div>
 
 <hr />
-<h2 id="11">11. 层级表征：从像素到柏拉图</h2>
-<h3 id="111">11.1 每一层都是一个"更高维度的盲人"</h3>
+<h2 id="11-层级表征从像素到柏拉图">11. 层级表征：从像素到柏拉图</h2>
+<h3 id="111-每一层都是一个更高维度的盲人">11.1 每一层都是一个"更高维度的盲人"</h3>
 <p>CodeGPT 的 12 层 Transformer Block 形成了一个层级递进的表征系统。每一层都从一个更抽象的"维度"去感知数据：</p>
 <div class="highlight"><pre><span></span><code><span class="c1"># model.py:148 — 12 层 Block</span>
 <span class="n">h</span><span class="o">=</span><span class="n">nn</span><span class="o">.</span><span class="n">ModuleList</span><span class="p">([</span><span class="n">Block</span><span class="p">(</span><span class="n">config</span><span class="p">)</span> <span class="k">for</span> <span class="n">_</span> <span class="ow">in</span> <span class="nb">range</span><span class="p">(</span><span class="n">config</span><span class="o">.</span><span class="n">n_layer</span><span class="p">)]),</span>
@@ -622,7 +622,7 @@ Head 5-12: 其他模式...
   → 趋近&quot;柏拉图理想型&quot;
 </code></pre></div>
 
-<h3 id="112">11.2 残差连接：让所有维度同时生效</h3>
+<h3 id="112-残差连接让所有维度同时生效">11.2 残差连接：让所有维度同时生效</h3>
 <div class="highlight"><pre><span></span><code><span class="c1"># model.py:102-104</span>
 <span class="k">def</span><span class="w"> </span><span class="nf">forward</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">x</span><span class="p">):</span>
     <span class="n">x</span> <span class="o">=</span> <span class="n">x</span> <span class="o">+</span> <span class="bp">self</span><span class="o">.</span><span class="n">attn</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">ln_1</span><span class="p">(</span><span class="n">x</span><span class="p">))</span>    <span class="c1"># 注意 &quot;x +&quot;</span>
@@ -643,7 +643,7 @@ Head 5-12: 其他模式...
 
 <p>这就是为什么说残差连接不只是一个"训练技巧"——它在结构上确保了<strong>所有抽象层次的信息都能流到最终表征中</strong>。低层的字符模式、中层的语法结构、高层的语义理解，全部叠加在一起。</p>
 <p>每一个"盲人"（层、头、维度）的观察都被保留并贡献给最终的"大象"。</p>
-<h3 id="113">11.3 从个人认知到集体认知</h3>
+<h3 id="113-从个人认知到集体认知">11.3 从个人认知到集体认知</h3>
 <p>柏拉图表征假说最深刻的含义是关于<strong>认知的终点</strong>：</p>
 <div class="highlight"><pre><span></span><code>个人层面（一个人学习）:
   维度 1: 读教科书 → 理解算法的理论描述
@@ -668,8 +668,8 @@ Head 5-12: 其他模式...
 </code></pre></div>
 
 <hr />
-<h2 id="12">12. 结语：对齐与收敛</h2>
-<h3 id="121">12.1 两条线索的交汇</h3>
+<h2 id="12-结语对齐与收敛">12. 结语：对齐与收敛</h2>
+<h3 id="121-两条线索的交汇">12.1 两条线索的交汇</h3>
 <p>本文讨论了两个看似不相关的话题——RLHF 和柏拉图表征。但它们在一个更深的层面上交汇：</p>
 <div class="highlight"><pre><span></span><code>RLHF 解决的问题:  模型学到了世界的知识，但需要和人类的价值观对齐
 柏拉图表征的启示: 所有足够强大的模型最终收敛到同一个&quot;真相&quot;
@@ -685,7 +685,7 @@ RLHF:   模型学到了 P(good_code | code) —— 在所有代码中，什么�
            RLHF 帮助模型更快地找到这个子集
 </code></pre></div>
 
-<h3 id="122">12.2 完整的图景</h3>
+<h3 id="122-完整的图景">12.2 完整的图景</h3>
 <div class="highlight"><pre><span></span><code>┌──────────────────────────────────────────────────────────────┐
 │                                                              │
 │  压缩即智能           → 模型通过压缩学习世界的结构           │
@@ -714,7 +714,7 @@ RLHF:   模型学到了 P(good_code | code) —— 在所有代码中，什么�
 └──────────────────────────────────────────────────────────────┘
 </code></pre></div>
 
-<h3 id="123">12.3 参考文献</h3>
+<h3 id="123-参考文献">12.3 参考文献</h3>
 <table>
 <thead>
 <tr>

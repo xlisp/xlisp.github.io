@@ -36,7 +36,7 @@
 <p>本文档回答两个问题：
 1. CodeChat 当前为什么用 GRPO？
 2. 在「Python 代码问答 + 可执行奖励」这个具体场景下，是否有比 GRPO 更合适的 RL 算法？</p>
-<h2 id="1">1. 场景特点先说清楚</h2>
+<h2 id="1-场景特点先说清楚">1. 场景特点先说清楚</h2>
 <p>CodeChat 的 RL 场景有几个非常特殊的属性，这些属性直接决定了算法选型：</p>
 <table>
 <thead>
@@ -79,7 +79,7 @@
 </tr>
 </tbody>
 </table>
-<h2 id="2-grpo">2. 为什么先选 GRPO</h2>
+<h2 id="2-为什么先选-grpo">2. 为什么先选 GRPO</h2>
 <p><strong>GRPO (Group Relative Policy Optimization)</strong> 是 DeepSeek 在 DeepSeekMath / DeepSeek-R1 里用的算法，核心思想是：</p>
 <blockquote>
 <p>对同一个 prompt 采 G 条回答，把组内奖励归一化 <code>(r - mean)/std</code> 当作 advantage，直接丢进 PPO-clip 目标，<strong>完全不要 critic</strong>。</p>
@@ -93,8 +93,8 @@
 <li><strong>与 SFT 同源</strong> → KL 到 ref 模型用 k1 近似 (<code>logπ - logπ_ref</code>)，防止策略跑偏忘掉 SFT 学到的代码格式。</li>
 </ol>
 <p>一句话：<strong>GRPO = 「PPO 去掉 critic，换成组内归一化」</strong>，这对代码这种「可验证 + 稀疏 + 单卡」场景是当前的甜点。</p>
-<h2 id="3">3. 候选算法横评</h2>
-<h3 id="31-ppo-rlhf">3.1 PPO（经典 RLHF）</h3>
+<h2 id="3-候选算法横评">3. 候选算法横评</h2>
+<h3 id="31-ppo经典-rlhf">3.1 PPO（经典 RLHF）</h3>
 <p><strong>做法</strong>：actor + critic 双模型，critic 学 value，advantage 由 GAE 算出来，actor 用 clip surrogate。</p>
 <p><strong>对 CodeChat 的问题</strong>：
 - Critic 是一个和 policy 同规模的头，2B policy + 2B critic + 2B ref ≈ 12GB×3 权重 + 3×AdamW 状态，单卡 A800 装不下
@@ -112,7 +112,7 @@
   - 没有 clip → 需要更小的 lr，或者额外的 KL 约束防止更新过激
   - 对离 policy 严重的样本没有保护（GRPO 的 clip 在这里有用）</p>
 <p><strong>结论</strong>：<strong>RLOO 在代码场景可能比 GRPO 更稳</strong>，尤其是组内奖励方差不大时。值得作为第二个实现选项。</p>
-<h3 id="33-dpo-kto">3.3 DPO / KTO（离线偏好优化）</h3>
+<h3 id="33-dpo-kto离线偏好优化">3.3 DPO / KTO（离线偏好优化）</h3>
 <p><strong>做法</strong>：不采样，用静态的 <code>(chosen, rejected)</code> 对直接做对比损失。</p>
 <p><strong>对比 GRPO</strong>：
 - <strong>优点</strong>：无采样、无执行器、训练速度快 10×
@@ -141,7 +141,7 @@
 <h3 id="36-rest-rest-emgoogle-deepmind">3.6 ReST / ReST-EM（Google DeepMind）</h3>
 <p><strong>做法</strong>：交替做「采样扩库 (Grow)」和「在扩充后的库上 SFT (Improve)」，多轮迭代。本质是 RFT 的加强版，加入了温度退火和过滤阈值。</p>
 <p><strong>结论</strong>：和 RFT 类似，适合和 GRPO 互补而不是取代。</p>
-<h2 id="4-codechat">4. 针对 CodeChat 的推荐路线</h2>
+<h2 id="4-针对-codechat-的推荐路线">4. 针对 CodeChat 的推荐路线</h2>
 <p>综合上面的分析，在<strong>单卡 A800 80GB + 2B 模型 + 可执行奖励</strong>的硬约束下：</p>
 <table>
 <thead>
@@ -175,7 +175,7 @@
 </tbody>
 </table>
 <p>换句话说：<strong>GRPO 是当前的最佳默认，RLOO 是最值得尝试的替代，RFT 是最值得前置的热身，其它都是弯路。</strong></p>
-<h2 id="5-codechat-rloo">5. 如果要在 CodeChat 里换成 RLOO，需要改什么</h2>
+<h2 id="5-如果要在-codechat-里换成-rloo需要改什么">5. 如果要在 CodeChat 里换成 RLOO，需要改什么</h2>
 <p><code>scripts/chat_rl.py</code> 只有两处要改：</p>
 <ol>
 <li>Advantage 计算：
@@ -189,7 +189,7 @@
 <li>损失：去掉 ratio clip（我们当前实现里本来就没写 clip，只是纯 PG），把 <code>kl_coef</code> 稍调大（例如 0.04）来补偿缺少 clip 的稳定性。</li>
 </ol>
 <p>其它所有东西（执行器、采样、ref model、KL）都不变。这也是为什么说 GRPO ↔ RLOO 的切换成本几乎为零——<strong>真正贵的是执行器和采样，不是 loss 形式</strong>。</p>
-<h2 id="6">6. 参考</h2>
+<h2 id="6-参考">6. 参考</h2>
 <ul>
 <li>DeepSeek (2024). <em>DeepSeekMath: Pushing the Limits of Mathematical Reasoning in Open Language Models</em> —— 提出 GRPO</li>
 <li>DeepSeek-AI (2025). <em>DeepSeek-R1</em> —— 纯 GRPO + 结果奖励训练推理模型</li>

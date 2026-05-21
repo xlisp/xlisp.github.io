@@ -43,7 +43,7 @@
 <p>把这两个直觉钉牢，再看 <code>model.py:177-198</code> 的 <code>forward()</code> 就只剩一句话：<strong>先一连串映射把 token id 变成一个向量，再把那个向量映射成 logits，最后 softmax 把 logits 摆成一块面积，从面积里抽样下一个 token</strong>。</p>
 </blockquote>
 <hr />
-<h2 id="_2">目录</h2>
+<h2 id="目录">目录</h2>
 <ol>
 <li><a href="#1-一句话拼图forward-就是-映射--面积">一句话拼图：forward 就是 "映射 → 面积"</a></li>
 <li><a href="#2-概率就是面积从直方图说起">概率就是面积：从直方图说起</a></li>
@@ -61,7 +61,7 @@
 <li><a href="#14-通俗收束水池模型--折纸模型">通俗收束：水池模型 + 折纸模型</a></li>
 </ol>
 <hr />
-<h2 id="1-forward">1. 一句话拼图：forward 就是 "映射 → 面积"</h2>
+<h2 id="1-一句话拼图forward-就是-映射-面积">1. 一句话拼图：forward 就是 "映射 → 面积"</h2>
 <p>先把全文要论证的结论摆出来。<code>model.py:177-198</code>：</p>
 <div class="highlight"><pre><span></span><code><span class="c1"># model.py:177</span>
 <span class="k">def</span><span class="w"> </span><span class="nf">forward</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">idx</span><span class="p">,</span> <span class="n">targets</span><span class="o">=</span><span class="kc">None</span><span class="p">):</span>
@@ -82,8 +82,8 @@
 - <strong>最后一步 <code>cross_entropy</code> / <code>softmax</code> 是面积</strong>——把 50304 个数捏成一块概率面积，看你在正确答案那一格上铺了多少。</p>
 <p>后面所有节都是把这十几行展开讲。</p>
 <hr />
-<h2 id="2">2. 概率就是面积：从直方图说起</h2>
-<h3 id="21-n">2.1 离散概率：把面积切成 N 个柱子</h3>
+<h2 id="2-概率就是面积从直方图说起">2. 概率就是面积：从直方图说起</h2>
+<h3 id="21-离散概率把面积切成-n-个柱子">2.1 离散概率：把面积切成 N 个柱子</h3>
 <p>掷一枚骰子，6 个面每个 1/6。把它画成直方图：</p>
 <div class="highlight"><pre><span></span><code>P
 │
@@ -93,7 +93,7 @@
 
 <p>每根柱子的高度就是概率。<strong>所有柱子加起来的总面积 = 1</strong>——这是概率论里那条最朴素的公理：$\sum_i P(x_i) = 1$。</p>
 <p>如果柱子宽度都设为 1（默认），那么"高度"和"面积"是一回事。但一旦你切到连续分布，就必须用面积这个词：</p>
-<h3 id="22-1-1">2.2 连续概率：高度可以 &gt; 1，但面积必须 = 1</h3>
+<h3 id="22-连续概率高度可以-1但面积必须-1">2.2 连续概率：高度可以 &gt; 1，但面积必须 = 1</h3>
 <p>正态分布 $\mathcal{N}(0, 0.01^2)$ 在 0 处的概率密度可能高达 39.9，但它只是"密度"——只有把一段区间下的面积积分出来，才是概率。</p>
 <div class="highlight"><pre><span></span><code><span class="kn">import</span><span class="w"> </span><span class="nn">numpy</span><span class="w"> </span><span class="k">as</span><span class="w"> </span><span class="nn">np</span>
 <span class="c1"># 一个尖窄的正态分布,中心高度可达 ~40</span>
@@ -104,7 +104,7 @@
 </code></pre></div>
 
 <p>记住这条铁律：<strong>概率 = 面积，永远 = 1</strong>。所有的"分布在变化"，本质上都是这块面积<strong>在 x 轴上被推来推去、压扁或堆尖</strong>——但总量守恒。</p>
-<h3 id="23-50304">2.3 在大模型里，"分布"是 50304 根柱子</h3>
+<h3 id="23-在大模型里分布是-50304-根柱子">2.3 在大模型里，"分布"是 50304 根柱子</h3>
 <p><code>CodeGPTConfig.vocab_size = 50304</code>（<code>model.py:112</code>）。每次预测下一个 token，模型输出的是一个长度为 50304 的概率向量，对应 50304 根柱子，<strong>它们的高度加起来 = 1</strong>。</p>
 <div class="highlight"><pre><span></span><code><span class="c1"># model.py:301</span>
 <span class="n">probs</span> <span class="o">=</span> <span class="n">F</span><span class="o">.</span><span class="n">softmax</span><span class="p">(</span><span class="n">logits</span><span class="p">,</span> <span class="n">dim</span><span class="o">=-</span><span class="mi">1</span><span class="p">)</span>   <span class="c1"># shape: (B, 50304),每一行是一个直方图</span>
@@ -113,13 +113,13 @@
 
 <p>下一节用 MNIST 这个最朴素的"10 类分类"例子，把这块直方图画给你看。看完之后再回来理解 50304 根柱子，就只是数字变大了一些而已。</p>
 <hr />
-<h2 id="3-mnist-token">3. MNIST：把"概率分布"和"下一个 token"画给你看</h2>
+<h2 id="3-mnist把概率分布和下一个-token画给你看">3. MNIST：把"概率分布"和"下一个 token"画给你看</h2>
 <p>回到一个最朴素的问题：</p>
 <blockquote>
 <p><strong>"给定 token 词典，输出下一个 token 的概率分布"——是不是指模型输出 "数字 3 占 80%、数字 2 占 10% ..." 这样一组百分比？下一个 token 就是其中概率最大的那个 3？</strong></p>
 </blockquote>
 <p><strong>正是这个意思</strong>。这一节用 MNIST 手写数字识别——deep learning 入门第一课——把这块"分布"长什么样、"下一个 token"是怎么从分布里挑出来的，画清楚。MNIST 是 next-token 预测的最小可视化版本：词典只有 10 个"token"（数字 0~9），每张图片只预测 1 次。</p>
-<h3 id="31-mnist10">3.1 MNIST：10 类分类的最小模型</h3>
+<h3 id="31-mnist10-类分类的最小模型">3.1 MNIST：10 类分类的最小模型</h3>
 <p>MNIST 任务：输入一张 28×28 的手写数字图片，输出"这是 0 到 9 中的哪一个"。</p>
 <p>最小的能跑的模型只有两层 <code>Linear</code>：</p>
 <div class="highlight"><pre><span></span><code><span class="kn">import</span><span class="w"> </span><span class="nn">torch.nn</span><span class="w"> </span><span class="k">as</span><span class="w"> </span><span class="nn">nn</span>
@@ -138,7 +138,7 @@
 </code></pre></div>
 
 <p>输入是图片（被拉平成 784 维向量），中间过一个 128 维的隐藏层，最后用一个 <code>Linear</code> 把 128 维向量映射到 <strong>10 个 logit</strong>。这 10 个数字就是原始打分——可以是任意实数（有正有负），还没有归一化。</p>
-<h3 id="32-logits-softmax">3.2 logits → 概率分布：还是 softmax</h3>
+<h3 id="32-logits-概率分布还是-softmax">3.2 logits → 概率分布：还是 softmax</h3>
 <p>把 logits 喂给 <code>softmax</code>，就得到一个长度为 10 的概率分布：</p>
 <div class="highlight"><pre><span></span><code><span class="n">logits</span> <span class="o">=</span> <span class="n">model</span><span class="p">(</span><span class="n">image</span><span class="p">)</span>
 <span class="c1"># 比如对一张写得很标准的 &quot;3&quot;:</span>
@@ -161,7 +161,7 @@
 </code></pre></div>
 
 <p><strong>这就是用户原问题里说的"数字 3 占 80%、数字 2 占 10%、数字 8 占 5% ..."那个分布</strong>。10 根柱子的高度加起来 = 1，这正是 §2 里反复说的"概率就是面积"——MNIST 的输出是 10 根柱子的面积分布，是 §2 那张直方图最朴素的实例。</p>
-<h3 id="33-token-3-argmax-vs">3.3 "下一个 token 就是这个 3 吗？"——argmax vs 抽样</h3>
+<h3 id="33-下一个-token-就是这个-3-吗argmax-vs-抽样">3.3 "下一个 token 就是这个 3 吗？"——argmax vs 抽样</h3>
 <p>用户的第二个问题：<strong>"下一个 token 就是这个概率最大的 3 吗？"</strong> 答案分两半：</p>
 <p><strong>MNIST 这种分类任务——是。</strong> 永远取概率最大的那一类（argmax）：</p>
 <div class="highlight"><pre><span></span><code><span class="n">prediction</span> <span class="o">=</span> <span class="n">probs</span><span class="o">.</span><span class="n">argmax</span><span class="p">()</span>      <span class="c1"># tensor(3)</span>
@@ -179,7 +179,7 @@
 <blockquote>
 <p><strong>总结：分类任务取 argmax，生成任务做抽样</strong>。但底下那块"N 根柱子的概率分布"是同一个东西——50304 根 vs 10 根的差别而已。</p>
 </blockquote>
-<h3 id="34-mnist-codegpt">3.4 一张表把 MNIST 和 CodeGPT 摆在一起</h3>
+<h3 id="34-一张表把-mnist-和-codegpt-摆在一起">3.4 一张表把 MNIST 和 CodeGPT 摆在一起</h3>
 <p>把 MNIST 模型和 CodeGPT 摆在一起对照，<strong>结构完全一致</strong>：</p>
 <table>
 <thead>
@@ -238,7 +238,7 @@
 <p><strong>就是 MNIST 那种 N 类分类，N 从 10 变成了 50304；并且每生成一个 token 就重做一次（自回归）。</strong></p>
 </blockquote>
 <p>§4 的 softmax、§5 的 cross-entropy、§6 的 temperature/top-p——所有这些机制 MNIST 同样适用（虽然分类任务不需要花式采样），它们不是"大模型才有的高级技巧"，而是<strong>任何用 softmax + cross-entropy 训练的分类模型都共享</strong>的同一套机器。GPT 把这套机器复用了几万亿次而已。</p>
-<h3 id="35-gpt">3.5 一个细节：GPT 每个位置都在做"分类"</h3>
+<h3 id="35-一个细节gpt-每个位置都在做分类">3.5 一个细节：GPT 每个位置都在做"分类"</h3>
 <p>MNIST 一张图片 → 一次 10 类分类。
 GPT 一段 N 个 token → <strong>N 次</strong> 50304 类分类（并行）。</p>
 <p>看 <code>model.py:191</code>：</p>
@@ -249,8 +249,8 @@ GPT 一段 N 个 token → <strong>N 次</strong> 50304 类分类（并行）。
 
 <p>序列里<strong>每一个位置</strong>都各自输出一组 50304 个 logits。训练时 cross-entropy 在每个位置上都监督一次："位置 t 的下一个 token 应该是什么？"——所以一段长度 1024 的序列，等于在一次前向里同时做了 1024 个 MNIST 风格的 50304 类分类。这就是为什么 GPT 训练这么吃 GPU——并行做的分类问题数量大得多。</p>
 <hr />
-<h2 id="4-softmax-logits-1">4. softmax：把任意 logits 折成"总面积 = 1"</h2>
-<h3 id="41">4.1 核心一行</h3>
+<h2 id="4-softmax把任意-logits-折成总面积-1">4. softmax：把任意 logits 折成"总面积 = 1"</h2>
+<h3 id="41-核心一行">4.1 核心一行</h3>
 <p><code>F.softmax</code> 干的事情用 Python 写出来就是：</p>
 <div class="highlight"><pre><span></span><code><span class="k">def</span><span class="w"> </span><span class="nf">softmax</span><span class="p">(</span><span class="n">z</span><span class="p">):</span>
     <span class="n">e</span> <span class="o">=</span> <span class="p">(</span><span class="n">z</span> <span class="o">-</span> <span class="n">z</span><span class="o">.</span><span class="n">max</span><span class="p">())</span><span class="o">.</span><span class="n">exp</span><span class="p">()</span>          <span class="c1"># 1. 取指数,把负数变正数</span>
@@ -263,7 +263,7 @@ GPT 一段 N 个 token → <strong>N 次</strong> 50304 类分类（并行）。
 <li><strong>第一步用 <code>exp</code> 把它们都拉到正数</strong>（指数永远 &gt; 0）。指数还有个绝佳性质：差距被放大——$z_i$ 比 $z_j$ 大 1，$e^{z_i}$ 就比 $e^{z_j}$ 大 e 倍。</li>
 <li><strong>第二步除以总和</strong>，确保面积 = 1。</li>
 </ul>
-<h3 id="42">4.2 几何直觉：把一根折线压成一块面积</h3>
+<h3 id="42-几何直觉把一根折线压成一块面积">4.2 几何直觉：把一根折线压成一块面积</h3>
 <p>想象 logits 是一根任意起伏的折线：</p>
 <div class="highlight"><pre><span></span><code>logits:    -2  ▁
             5     ████████
@@ -281,7 +281,7 @@ GPT 一段 N 个 token → <strong>N 次</strong> 50304 类分类（并行）。
 </code></pre></div>
 
 <p><strong>logits 的"形状"决定了面积怎么分配</strong>——大的 logit 把面积吸过来，小的 logit 几乎被压成 0。这就是为什么我们叫这个分布是"由 logits 参数化"的。</p>
-<h3 id="43">4.3 模型在做什么</h3>
+<h3 id="43-模型在做什么">4.3 模型在做什么</h3>
 <p>每一次前向，CodeGPT 输出 50304 个 logits。<code>softmax</code> 把它们捏成 50304 根柱子，总面积 = 1。<strong>生成时就从这块面积里抽样</strong>：</p>
 <div class="highlight"><pre><span></span><code><span class="c1"># model.py:301-302</span>
 <span class="n">probs</span> <span class="o">=</span> <span class="n">F</span><span class="o">.</span><span class="n">softmax</span><span class="p">(</span><span class="n">logits</span><span class="p">,</span> <span class="n">dim</span><span class="o">=-</span><span class="mi">1</span><span class="p">)</span>
@@ -290,8 +290,8 @@ GPT 一段 N 个 token → <strong>N 次</strong> 50304 类分类（并行）。
 
 <p><code>torch.multinomial</code> 字面意思就是"按照每根柱子的面积比例<strong>扔骰子</strong>"——面积越大的 token 越容易被抽到。模型根本不知道"语法"或"语义"，它只知道<strong>当前上下文下 50304 根柱子的面积分布是什么</strong>。</p>
 <hr />
-<h2 id="5-cross-entropy">5. cross-entropy：你在正确答案上摆了多少面积</h2>
-<h3 id="51">5.1 一句话总结</h3>
+<h2 id="5-cross-entropy你在正确答案上摆了多少面积">5. cross-entropy：你在正确答案上摆了多少面积</h2>
+<h3 id="51-一句话总结">5.1 一句话总结</h3>
 <p>训练时的 loss 函数是 <code>F.cross_entropy</code>（<code>model.py:192</code>）。它干的事就一个：</p>
 <blockquote>
 <p><strong>看模型在"正确答案那一格"上铺了多少面积，铺得越少，loss 越大。</strong></p>
@@ -304,7 +304,7 @@ GPT 一段 N 个 token → <strong>N 次</strong> 50304 类分类（并行）。
 </code></pre></div>
 
 <p>回到 §3 的 MNIST 例子就更直观了：图片是数字 "3"，模型在第 3 格摆了 0.997 的面积——loss = -log(0.997) ≈ 0.003，几乎无可挑剔；但如果模型在第 3 格只摆了 0.10——loss = 2.30，挨揍。GPT 训练就是把这种监督<strong>在 50304 个类、每个序列位置同时做</strong>。</p>
-<h3 id="52">5.2 几何直觉</h3>
+<h3 id="52-几何直觉">5.2 几何直觉</h3>
 <p>正确答案是 50304 根柱子里的某<strong>一根</strong>。理想情况是模型把所有面积都堆到那一根上（高度 = 1，其余 = 0）。但模型不知道答案，它只能根据上下文做出最合理的分布。</p>
 <ul>
 <li>如果模型在那一格摆了 0.9 的面积：loss ≈ $-\log 0.9$ ≈ 0.10，几乎没事。</li>
@@ -312,13 +312,13 @@ GPT 一段 N 个 token → <strong>N 次</strong> 50304 类分类（并行）。
 <li>如果摆了 0.0001：loss ≈ 9.21，挨大揍。</li>
 </ul>
 <p>训练就是不断让模型<strong>把面积往正确答案那根柱子上推</strong>。所有"模型在学习"的过程，从面积视角看，就是这块直方图的形状一步步被磨成"该尖的地方尖、该平的地方平"的过程。</p>
-<h3 id="53-ignore_index-1-fim">5.3 为什么 ignore_index = -1 出现在 FIM 里</h3>
+<h3 id="53-为什么-ignore_index-1-出现在-fim-里">5.3 为什么 ignore_index = -1 出现在 FIM 里</h3>
 <p><code>F.cross_entropy(..., ignore_index=-1)</code>（<code>model.py:192</code>）的意思是：<strong>target 等于 -1 的位置，不计算 loss、不要求模型在那块面积上做任何事</strong>。</p>
 <p><code>tokenizer.py</code> 里 <code>apply_fim_transform</code> 把 <code>&lt;|fim_pad|&gt;</code> 位置的 target 设成 -1，就是告诉模型："这些位置是为了凑齐 block_size 的 padding，<strong>那块面积长什么样我都不管</strong>。" 否则模型会被迫去把面积堆到 padding token 上，把整块概率分布带偏。</p>
 <hr />
-<h2 id="6-temperature-top-k-top-p">6. temperature / top-k / top-p：三种切蛋糕的方法</h2>
+<h2 id="6-temperature-top-k-top-p三种切蛋糕的方法">6. temperature / top-k / top-p：三种切蛋糕的方法</h2>
 <p>推理时所有"调风格"的旋钮，本质上都是在<strong>对那块面积做手脚</strong>。看 <code>model.py:279-302</code> 这一段：</p>
-<h3 id="61-temperature">6.1 temperature：把面积压扁还是堆尖</h3>
+<h3 id="61-temperature把面积压扁还是堆尖">6.1 temperature：把面积压扁还是堆尖</h3>
 <div class="highlight"><pre><span></span><code><span class="c1"># model.py:279</span>
 <span class="n">logits</span> <span class="o">=</span> <span class="n">logits</span><span class="p">[:,</span> <span class="o">-</span><span class="mi">1</span><span class="p">,</span> <span class="p">:]</span> <span class="o">/</span> <span class="n">temperature</span>
 </code></pre></div>
@@ -330,14 +330,14 @@ GPT 一段 N 个 token → <strong>N 次</strong> 50304 类分类（并行）。
 <li>$T \to 0$：面积全部堆到最高那根柱子上（贪心解码）——此时 <code>multinomial</code> 退化为 <code>argmax</code>，GPT 的行为和 MNIST 一样。</li>
 </ul>
 <p>物理上这个 $T$ 字面就是温度——<code>softmax</code> 等价于 Boltzmann 分布，温度高分子乱跑，温度低粒子都坐到能量最低处（参见 <a href="PHYSICS_AND_DEEP_LEARNING.md">PHYSICS_AND_DEEP_LEARNING.md</a>）。</p>
-<h3 id="62-top-k-k">6.2 top-k：只留最高的 k 根柱子</h3>
+<h3 id="62-top-k只留最高的-k-根柱子">6.2 top-k：只留最高的 k 根柱子</h3>
 <div class="highlight"><pre><span></span><code><span class="c1"># model.py:287-289</span>
 <span class="n">v</span><span class="p">,</span> <span class="n">_</span> <span class="o">=</span> <span class="n">torch</span><span class="o">.</span><span class="n">topk</span><span class="p">(</span><span class="n">logits</span><span class="p">,</span> <span class="nb">min</span><span class="p">(</span><span class="n">top_k</span><span class="p">,</span> <span class="n">logits</span><span class="o">.</span><span class="n">size</span><span class="p">(</span><span class="o">-</span><span class="mi">1</span><span class="p">)))</span>
 <span class="n">logits</span><span class="p">[</span><span class="n">logits</span> <span class="o">&lt;</span> <span class="n">v</span><span class="p">[:,</span> <span class="p">[</span><span class="o">-</span><span class="mi">1</span><span class="p">]]]</span> <span class="o">=</span> <span class="o">-</span><span class="nb">float</span><span class="p">(</span><span class="s1">&#39;Inf&#39;</span><span class="p">)</span>
 </code></pre></div>
 
 <p>把除了 top-k 之外的所有柱子的 logit 设成 $-\infty$，softmax 后它们的面积变成 0。剩下 k 根柱子重新归一化，总面积 = 1。<strong>直接砍掉长尾</strong>。</p>
-<h3 id="63-top-pnucleus-sampling">6.3 top-p（nucleus sampling）：按面积切蛋糕</h3>
+<h3 id="63-top-pnucleus-sampling按面积切蛋糕">6.3 top-p（nucleus sampling）：按面积切蛋糕</h3>
 <div class="highlight"><pre><span></span><code><span class="c1"># model.py:292-299</span>
 <span class="n">sorted_logits</span><span class="p">,</span> <span class="n">sorted_indices</span> <span class="o">=</span> <span class="n">torch</span><span class="o">.</span><span class="n">sort</span><span class="p">(</span><span class="n">logits</span><span class="p">,</span> <span class="n">descending</span><span class="o">=</span><span class="kc">True</span><span class="p">)</span>
 <span class="n">cumulative_probs</span> <span class="o">=</span> <span class="n">torch</span><span class="o">.</span><span class="n">cumsum</span><span class="p">(</span><span class="n">F</span><span class="o">.</span><span class="n">softmax</span><span class="p">(</span><span class="n">sorted_logits</span><span class="p">,</span> <span class="n">dim</span><span class="o">=-</span><span class="mi">1</span><span class="p">),</span> <span class="n">dim</span><span class="o">=-</span><span class="mi">1</span><span class="p">)</span>
@@ -352,16 +352,16 @@ GPT 一段 N 个 token → <strong>N 次</strong> 50304 类分类（并行）。
 </ul>
 <p><strong>top-k 是固定切刀数，top-p 是固定切面积</strong>。前者僵硬，后者自适应。</p>
 <hr />
-<h2 id="7-y-wx">7. 矩阵就是映射：从 y = Wx 开始</h2>
+<h2 id="7-矩阵就是映射从-y-wx-开始">7. 矩阵就是映射：从 y = Wx 开始</h2>
 <p>讲完面积，换另一半拼图——矩阵。</p>
-<h3 id="71">7.1 一行代码就是全部</h3>
+<h3 id="71-一行代码就是全部">7.1 一行代码就是全部</h3>
 <div class="highlight"><pre><span></span><code><span class="kn">import</span><span class="w"> </span><span class="nn">torch.nn</span><span class="w"> </span><span class="k">as</span><span class="w"> </span><span class="nn">nn</span>
 <span class="n">fc</span> <span class="o">=</span> <span class="n">nn</span><span class="o">.</span><span class="n">Linear</span><span class="p">(</span><span class="n">in_features</span><span class="o">=</span><span class="mi">4</span><span class="p">,</span> <span class="n">out_features</span><span class="o">=</span><span class="mi">3</span><span class="p">,</span> <span class="n">bias</span><span class="o">=</span><span class="kc">False</span><span class="p">)</span>
 <span class="n">y</span> <span class="o">=</span> <span class="n">fc</span><span class="p">(</span><span class="n">x</span><span class="p">)</span>    <span class="c1"># x: (4,) -&gt; y: (3,), 等价于 y = W @ x, 其中 W 是 (3, 4) 的矩阵</span>
 </code></pre></div>
 
 <p><code>nn.Linear</code> 不是"线性层"这种神秘的东西，它就是 <strong>矩阵乘</strong>。一个 $(3, 4)$ 的矩阵 $W$ 接受一个 4 维向量，吐出一个 3 维向量。</p>
-<h3 id="72">7.2 几何直觉：矩阵把空间搬来搬去</h3>
+<h3 id="72-几何直觉矩阵把空间搬来搬去">7.2 几何直觉：矩阵把空间搬来搬去</h3>
 <p>二维平面上看最直观：</p>
 <ul>
 <li>旋转矩阵：$\begin{bmatrix}\cos\theta &amp; -\sin\theta \ \sin\theta &amp; \cos\theta\end{bmatrix}$ 把平面所有点绕原点旋转 $\theta$ 度。</li>
@@ -376,7 +376,7 @@ GPT 一段 N 个 token → <strong>N 次</strong> 50304 类分类（并行）。
 </code></pre></div>
 
 <p><strong>任何矩阵都可以理解成"把输入空间的每一个向量映射到输出空间的某个向量"</strong>——它是一个函数，输入是向量，输出是向量。"映射"就是函数的几何说法。</p>
-<h3 id="73">7.3 高维空间的映射也是同一件事</h3>
+<h3 id="73-高维空间的映射也是同一件事">7.3 高维空间的映射也是同一件事</h3>
 <p>到了 768 维的隐藏空间、50304 维的词表空间，几何画不出来，但直觉一样：</p>
 <ul>
 <li>$W \in \mathbb{R}^{m \times n}$ 是一个<strong>从 n 维空间到 m 维空间的映射</strong>。</li>
@@ -385,12 +385,12 @@ GPT 一段 N 个 token → <strong>N 次</strong> 50304 类分类（并行）。
 <li>$y_i$ 就是 $x$ 沿着第 $i$ 个探测器方向的"投影长度"。</li>
 </ul>
 <p>这个直觉到了 attention 那里会反复用到。</p>
-<h3 id="74-mnistlm_head-50304">7.4 回到 MNIST：lm_head 等价物就是 50304 个探测器</h3>
+<h3 id="74-回到-mnistlm_head-等价物就是-50304-个探测器">7.4 回到 MNIST：lm_head 等价物就是 50304 个探测器</h3>
 <p>MNIST 最后一层 <code>nn.Linear(128, 10)</code> 的 10 行就是 10 个"数字探测器"——分别在 128 维隐藏空间里对应"是 0 吗"、"是 1 吗"……"是 9 吗"。<code>y_i</code> 越大，模型越觉得这张图是数字 i。</p>
 <p>CodeGPT 的 <code>lm_head: nn.Linear(768, 50304)</code> 是同一件事：<strong>50304 个 token 探测器</strong>，每个探测器在 768 维语义空间里有一个偏好方向，专门负责回答"下一个 token 是不是我？"——<code>logits[i]</code> 越大，token i 就越有可能被选中。</p>
 <hr />
-<h2 id="8-embedding">8. Embedding 是查表，底层是矩阵乘</h2>
-<h3 id="81-wte">8.1 wte 是一张大表</h3>
+<h2 id="8-embedding-是查表底层是矩阵乘">8. Embedding 是查表，底层是矩阵乘</h2>
+<h3 id="81-wte-是一张大表">8.1 wte 是一张大表</h3>
 <div class="highlight"><pre><span></span><code><span class="c1"># model.py:145</span>
 <span class="bp">self</span><span class="o">.</span><span class="n">transformer</span><span class="o">.</span><span class="n">wte</span> <span class="o">=</span> <span class="n">nn</span><span class="o">.</span><span class="n">Embedding</span><span class="p">(</span><span class="n">config</span><span class="o">.</span><span class="n">vocab_size</span><span class="p">,</span> <span class="n">config</span><span class="o">.</span><span class="n">n_embd</span><span class="p">)</span>
 <span class="c1"># shape: (50304, 768)</span>
@@ -408,7 +408,7 @@ GPT 一段 N 个 token → <strong>N 次</strong> 50304 类分类（并行）。
 </code></pre></div>
 
 <p>第二种写法浪费——但它揭示了<strong>embedding 就是矩阵乘的特例</strong>：one-hot 当输入时，矩阵乘退化成查表。</p>
-<h3 id="82">8.2 这张表是被训练出来的</h3>
+<h3 id="82-这张表是被训练出来的">8.2 这张表是被训练出来的</h3>
 <p><code>wte</code> 一开始是随机的（<code>model.py:171-175</code> 的 <code>_init_weights</code>）。每次反向传播都在调整这张表的某些行——具体哪些行被调整？只有这次 batch 里<strong>真正出现过</strong>的那些 token id 对应的行。</p>
 <p>训练完之后：
 - 含义相近的 token 被推得<strong>几何距离接近</strong>（cos 相似度高）。
@@ -416,8 +416,8 @@ GPT 一段 N 个 token → <strong>N 次</strong> 50304 类分类（并行）。
 - 所谓的"语义空间"就是这张表在训练后的形状。</p>
 <p>这是大模型最神奇的事情之一：<strong>离散的 token id 通过一次矩阵乘被映射成连续的语义向量</strong>，从此可以做加减法、做 attention、做线性插值。</p>
 <hr />
-<h2 id="9-qkv">9. Q、K、V：同一个向量被三种映射"分成三份"</h2>
-<h3 id="91">9.1 一行代码做三件事</h3>
+<h2 id="9-qkv同一个向量被三种映射分成三份">9. Q、K、V：同一个向量被三种映射"分成三份"</h2>
+<h3 id="91-一行代码做三件事">9.1 一行代码做三件事</h3>
 <div class="highlight"><pre><span></span><code><span class="c1"># model.py:36</span>
 <span class="bp">self</span><span class="o">.</span><span class="n">c_attn</span> <span class="o">=</span> <span class="n">nn</span><span class="o">.</span><span class="n">Linear</span><span class="p">(</span><span class="n">config</span><span class="o">.</span><span class="n">n_embd</span><span class="p">,</span> <span class="mi">3</span> <span class="o">*</span> <span class="n">config</span><span class="o">.</span><span class="n">n_embd</span><span class="p">,</span> <span class="n">bias</span><span class="o">=</span><span class="n">config</span><span class="o">.</span><span class="n">bias</span><span class="p">)</span>
 <span class="c1"># 768 -&gt; 2304, 然后 split 成三份各 768</span>
@@ -437,7 +437,7 @@ $$</p>
 <li><strong>$K$（Key，钥匙）</strong>：每个 token 自己"是关于什么的"？</li>
 <li><strong>$V$（Value，内容）</strong>：每个 token 想要被"传递"的实际内容是什么？</li>
 </ul>
-<h3 id="92-q-k-v">9.2 注意力 = Q 在 K 群里搜匹配，按面积加权抽 V</h3>
+<h3 id="92-注意力-q-在-k-群里搜匹配按面积加权抽-v">9.2 注意力 = Q 在 K 群里搜匹配，按面积加权抽 V</h3>
 <div class="highlight"><pre><span></span><code><span class="c1"># model.py:66-70</span>
 <span class="n">att</span> <span class="o">=</span> <span class="p">(</span><span class="n">q</span> <span class="o">@</span> <span class="n">k</span><span class="o">.</span><span class="n">transpose</span><span class="p">(</span><span class="o">-</span><span class="mi">2</span><span class="p">,</span> <span class="o">-</span><span class="mi">1</span><span class="p">))</span> <span class="o">*</span> <span class="p">(</span><span class="mf">1.0</span> <span class="o">/</span> <span class="n">math</span><span class="o">.</span><span class="n">sqrt</span><span class="p">(</span><span class="n">k</span><span class="o">.</span><span class="n">size</span><span class="p">(</span><span class="o">-</span><span class="mi">1</span><span class="p">)))</span>   <span class="c1"># Q·Kᵀ:相似度矩阵</span>
 <span class="n">att</span> <span class="o">=</span> <span class="n">att</span><span class="o">.</span><span class="n">masked_fill</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">bias</span><span class="p">[:,</span> <span class="p">:,</span> <span class="p">:</span><span class="n">T</span><span class="p">,</span> <span class="p">:</span><span class="n">T</span><span class="p">]</span> <span class="o">==</span> <span class="mi">0</span><span class="p">,</span> <span class="nb">float</span><span class="p">(</span><span class="s1">&#39;-inf&#39;</span><span class="p">))</span>
@@ -456,7 +456,7 @@ $$</p>
 <p><strong>三次矩阵映射把 $x$ 拆成三个角色，相似度被 softmax 折成一块面积，从这块面积里求 V 的加权平均。</strong></p>
 </blockquote>
 <hr />
-<h2 id="10-lm_head">10. lm_head：从语义空间映回词表空间</h2>
+<h2 id="10-lm_head从语义空间映回词表空间">10. lm_head：从语义空间映回词表空间</h2>
 <div class="highlight"><pre><span></span><code><span class="c1"># model.py:151</span>
 <span class="bp">self</span><span class="o">.</span><span class="n">lm_head</span> <span class="o">=</span> <span class="n">nn</span><span class="o">.</span><span class="n">Linear</span><span class="p">(</span><span class="n">config</span><span class="o">.</span><span class="n">n_embd</span><span class="p">,</span> <span class="n">config</span><span class="o">.</span><span class="n">vocab_size</span><span class="p">,</span> <span class="n">bias</span><span class="o">=</span><span class="kc">False</span><span class="p">)</span>
 <span class="c1"># 768 -&gt; 50304</span>
@@ -474,7 +474,7 @@ $$</p>
 </ul>
 <p>把它当一对反向操作来理解：embedding 是"打开"——把符号变成几何向量；lm_head 是"关闭"——把几何向量变回符号空间的得分（logit）。最后 softmax 把这些得分捏成面积，抽样得到下一个 token——这一步就是 §3 MNIST 那张直方图的高维放大版。</p>
 <hr />
-<h2 id="11">11. 多层堆叠 = 映射的复合</h2>
+<h2 id="11-多层堆叠-映射的复合">11. 多层堆叠 = 映射的复合</h2>
 <div class="highlight"><pre><span></span><code><span class="c1"># model.py:186-187</span>
 <span class="k">for</span> <span class="n">block</span> <span class="ow">in</span> <span class="bp">self</span><span class="o">.</span><span class="n">transformer</span><span class="o">.</span><span class="n">h</span><span class="p">:</span>
     <span class="n">x</span> <span class="o">=</span> <span class="n">block</span><span class="p">(</span><span class="n">x</span><span class="p">)</span>
@@ -492,7 +492,7 @@ $$</p>
 
 <p>每一层不是"重写"输入向量，而是<strong>给它加上一个微小的位移</strong>。整条 12 层网络可以理解成"把一个原始向量沿着学到的方向，分 24 步（12 attn + 12 mlp）一点点搬到目的地"。从这个视角看，深网络是<strong>离散化的常微分方程</strong>——参见 <a href="PHYSICS_AND_DEEP_LEARNING.md">PHYSICS_AND_DEEP_LEARNING.md</a> 里把残差解释成 Euler 法的那一段。</p>
 <hr />
-<h2 id="12">12. 训练时发生了什么：面积形状被往正确答案上拉</h2>
+<h2 id="12-训练时发生了什么面积形状被往正确答案上拉">12. 训练时发生了什么：面积形状被往正确答案上拉</h2>
 <p>把"映射"和"面积"两块拼图结合起来，才能看清训练在做什么。看 <code>train.py</code> 主循环里那一行：</p>
 <div class="highlight"><pre><span></span><code><span class="n">logits</span><span class="p">,</span> <span class="n">loss</span> <span class="o">=</span> <span class="n">model</span><span class="p">(</span><span class="n">X</span><span class="p">,</span> <span class="n">Y</span><span class="p">)</span>        <span class="c1"># 前向:映射链 + 算面积上的 loss</span>
 <span class="n">loss</span><span class="o">.</span><span class="n">backward</span><span class="p">()</span>                    <span class="c1"># 反向:把 loss 的梯度沿映射链一路推回去</span>
@@ -508,13 +508,13 @@ $$</p>
 <p><strong>学习的实质</strong>：所有矩阵（<code>wte</code>、<code>W_Q</code>、<code>W_K</code>、<code>W_V</code>、<code>c_proj</code>、<code>c_fc</code>、<code>lm_head</code>）的元素都在被反复微调，目的是<strong>让最终那块概率面积，在正确答案的柱子上越铺越高</strong>。</p>
 <p>12 万个参数也好、124 万也好、1240 亿也好，干的都是同一件事：调整一连串矩阵映射，让最终那块面积在数据告诉它应该高的地方变高。<strong>MNIST 训练和 GPT 训练用的是同一个 loss、同一种梯度下降——只是 GPT 这边并行在做几千亿次"分类"而已。</strong></p>
 <hr />
-<h2 id="13">13. 大模型用了几种概率分布？为什么处处是高斯</h2>
+<h2 id="13-大模型用了几种概率分布为什么处处是高斯">13. 大模型用了几种概率分布？为什么处处是高斯</h2>
 <p>本节回答两个常被一起问出来的疑惑：</p>
 <blockquote>
 <p><strong>大模型里只用到正态分布吗？为什么那么多概率分布不用，就盯着一条钟形曲线？是中心极限定理吗？</strong></p>
 </blockquote>
 <p>短答案：<strong>不是只用高斯，但高斯包揽了"内部装修"的绝大部分。</strong>输出端反而压根不是高斯——而是 §3-§6 反复讲的那个 50304 根柱子的离散类别分布。两端各司其职，原因有三：<strong>中心极限定理（CLT）、最大熵原理、矩阵乘的闭式可计算性</strong>。</p>
-<h3 id="131">13.1 大模型里其实有四种分布</h3>
+<h3 id="131-大模型里其实有四种分布">13.1 大模型里其实有四种分布</h3>
 <p>只翻一遍 <code>model.py</code> 这 400 行代码，至少能数出四种概率分布在工作：</p>
 <table>
 <thead>
@@ -552,8 +552,8 @@ $$</p>
 <p><strong>输出端不可能是高斯</strong>——高斯是连续分布，token 是离散符号，钟形曲线没法铺到 50304 个整数格点上。</p>
 </blockquote>
 <p>那么"高斯无处不在"指的是哪里？是模型<strong>内部</strong>——参数、激活、初始化、归一化——的隐性规范。下一节把 <code>model.py</code> 里所有用到正态分布的地方钉出来。</p>
-<h3 id="132">13.2 高斯藏在哪：参数与激活的"内部装修"</h3>
-<h4 id="a">(a) 权重初始化——所有矩阵开局都是高斯样本</h4>
+<h3 id="132-高斯藏在哪参数与激活的内部装修">13.2 高斯藏在哪：参数与激活的"内部装修"</h3>
+<h4 id="a-权重初始化所有矩阵开局都是高斯样本">(a) 权重初始化——所有矩阵开局都是高斯样本</h4>
 <div class="highlight"><pre><span></span><code><span class="c1"># model.py:169-175</span>
 <span class="k">def</span><span class="w"> </span><span class="nf">_init_weights</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">module</span><span class="p">):</span>
     <span class="k">if</span> <span class="nb">isinstance</span><span class="p">(</span><span class="n">module</span><span class="p">,</span> <span class="n">nn</span><span class="o">.</span><span class="n">Linear</span><span class="p">):</span>
@@ -568,7 +568,7 @@ $$</p>
 </code></pre></div>
 
 <p><strong>所有 <code>nn.Linear</code> 和 <code>nn.Embedding</code> 的权重一开始都是从 $\mathcal{N}(0, 0.02^2)$ 里抽出来的样本</strong>——不是均匀分布、不是 0、不是 Xavier 那种 $\mathcal{U}$，是高斯。1.24 亿参数全是钟形曲线下抽出来的随机数。为什么是 0.02 这个具体数字？下一节用 CLT 算给你看。</p>
-<h4 id="b-layernorm">(b) LayerNorm 把激活反复"重新捏回标准正态"</h4>
+<h4 id="b-layernorm-把激活反复重新捏回标准正态">(b) LayerNorm 把激活反复"重新捏回标准正态"</h4>
 <div class="highlight"><pre><span></span><code><span class="c1"># model.py:28</span>
 <span class="k">return</span> <span class="n">F</span><span class="o">.</span><span class="n">layer_norm</span><span class="p">(</span><span class="nb">input</span><span class="p">,</span> <span class="bp">self</span><span class="o">.</span><span class="n">weight</span><span class="o">.</span><span class="n">shape</span><span class="p">,</span> <span class="bp">self</span><span class="o">.</span><span class="n">weight</span><span class="p">,</span> <span class="bp">self</span><span class="o">.</span><span class="n">bias</span><span class="p">,</span> <span class="mf">1e-5</span><span class="p">)</span>
 </code></pre></div>
@@ -581,7 +581,7 @@ $$</p>
 </code></pre></div>
 
 <p><code>(x - mean) / std</code> 就是<strong>把任意分布"标准化"成均值 0、方差 1</strong>——也就是规整成"长得像 $\mathcal{N}(0,1)$"。即便输入不是严格高斯，经过这一步后也被强行整形成"形状像高斯"，再喂给下一层。CodeGPT 每过一个 Block 就 LayerNorm 两次（attn 前 + mlp 前），整条 12 层网络反复在把激活"重新拍回高斯轨道"。</p>
-<h4 id="c-gelu-cdf">(c) GELU 激活函数：高斯 CDF 当门控</h4>
+<h4 id="c-gelu-激活函数高斯-cdf-当门控">(c) GELU 激活函数：高斯 CDF 当门控</h4>
 <div class="highlight"><pre><span></span><code><span class="c1"># model.py:81</span>
 <span class="bp">self</span><span class="o">.</span><span class="n">gelu</span> <span class="o">=</span> <span class="n">nn</span><span class="o">.</span><span class="n">GELU</span><span class="p">()</span>
 </code></pre></div>
@@ -594,14 +594,14 @@ $$</p>
 </code></pre></div>
 
 <p>输入 $x$ 越大，$\Phi(x)$ 越接近 1，门完全打开；$x$ 越负，$\Phi(x)$ 越接近 0，门关上。<strong>激活函数本身就由一条钟形曲线积分出来</strong>——把"高斯"嵌进非线性单元的极致写法。</p>
-<h4 id="d-modelpy370-377">(d) 扩展词表时新加的行（<code>model.py:370, 377</code>）</h4>
+<h4 id="d-扩展词表时新加的行modelpy370-377">(d) 扩展词表时新加的行（<code>model.py:370, 377</code>）</h4>
 <div class="highlight"><pre><span></span><code><span class="n">nn</span><span class="o">.</span><span class="n">init</span><span class="o">.</span><span class="n">normal_</span><span class="p">(</span><span class="n">new_wte</span><span class="o">.</span><span class="n">weight</span><span class="o">.</span><span class="n">data</span><span class="p">[</span><span class="n">old_vocab_size</span><span class="p">:],</span> <span class="n">mean</span><span class="o">=</span><span class="mf">0.0</span><span class="p">,</span> <span class="n">std</span><span class="o">=</span><span class="mf">0.02</span><span class="p">)</span>
 <span class="n">nn</span><span class="o">.</span><span class="n">init</span><span class="o">.</span><span class="n">normal_</span><span class="p">(</span><span class="n">new_lm_head</span><span class="o">.</span><span class="n">weight</span><span class="o">.</span><span class="n">data</span><span class="p">[</span><span class="n">old_vocab_size</span><span class="p">:],</span> <span class="n">mean</span><span class="o">=</span><span class="mf">0.0</span><span class="p">,</span> <span class="n">std</span><span class="o">=</span><span class="mf">0.02</span><span class="p">)</span>
 </code></pre></div>
 
 <p>GPT-2 词表 50257 扩到 CodeGPT 的 50304，多出来的几十行（FIM token、code_start/end、16 个语言 token……）也是从高斯里抽出来的。</p>
 <p><strong>这四处加在一起就是"高斯统治内部装修"的全部具体含义</strong>：初始化是高斯样本、LayerNorm 把激活拍成高斯、GELU 用高斯 CDF 做门——网络内部所有"形状"都被钟形曲线规范着。</p>
-<h3 id="133">13.3 中心极限定理：为什么"加起来就高斯"</h3>
+<h3 id="133-中心极限定理为什么加起来就高斯">13.3 中心极限定理：为什么"加起来就高斯"</h3>
 <p><code>nn.Linear</code> 干的事就一行：</p>
 <div class="highlight"><pre><span></span><code><span class="n">y_i</span> <span class="o">=</span> <span class="nb">sum</span><span class="p">(</span><span class="n">W</span><span class="p">[</span><span class="n">i</span><span class="p">,</span> <span class="n">j</span><span class="p">]</span> <span class="o">*</span> <span class="n">x</span><span class="p">[</span><span class="n">j</span><span class="p">]</span> <span class="k">for</span> <span class="n">j</span> <span class="ow">in</span> <span class="nb">range</span><span class="p">(</span><span class="n">n</span><span class="p">))</span>   <span class="c1"># n 项加权求和</span>
 </code></pre></div>
@@ -626,16 +626,16 @@ $$</p>
 <li><strong>多头注意力 = 多个头的输出拼接再线性投影</strong>：又是一次"很多项相加"。</li>
 </ul>
 <p><strong>只要你看到神经网络里到处都是 $\sum$，你就看到了 CLT 的工作场所</strong>。所以"内部装修是高斯"不是奇技淫巧——是数学不可避免的结果。</p>
-<h4 id="std002-clt">进一步：std=0.02 就是 CLT 的算账</h4>
+<h4 id="进一步std002-就是-clt-的算账">进一步：std=0.02 就是 CLT 的算账</h4>
 <p>为什么初始化的标准差恰好是 0.02？因为我们希望 $y = Wx$ 之后 $y$ 的方差还跟 $x$ 差不多：</p>
 <p>$$\text{Var}(y_i) = \text{Var}\Big(\sum_j W_{ij} x_j\Big) = n \cdot \text{Var}(W) \cdot \text{Var}(x)$$</p>
 <p>要让 $\text{Var}(y) \approx \text{Var}(x)$，必须 $\text{Var}(W) \approx 1/n$。GPT-2 / CodeGPT 取 std=0.02，所以 $\text{Var}(W)=0.0004$；当 n=768 时 $n \cdot \text{Var}(W) \approx 0.31$，再配合 LayerNorm 拉回 1，<strong>整条 12 层堆叠下来方差不会爆炸也不会消失</strong>。残差投影那行 <code>std=0.02 / math.sqrt(2 * config.n_layer)</code>（<code>model.py:159</code>）则更精细：12 层网络会被加 24 次（每层 attn + mlp 各一次），所以单次贡献再除以 $\sqrt{2N}$ 让总方差仍然有界。</p>
 <p><strong>整段代码里所有的 0.02 都是 CLT 的算账结果——这也是 Xavier / Kaiming 初始化的全部哲学</strong>：用 CLT 算清"加和后方差守恒"。</p>
-<h3 id="134">13.4 高斯的另外两个"必然"理由</h3>
+<h3 id="134-高斯的另外两个必然理由">13.4 高斯的另外两个"必然"理由</h3>
 <p>CLT 只是高斯统治内部装修的第一个理由。还有两个，一句话各能说清：</p>
-<h4 id="_3">最大熵原理：方差给定时高斯最"诚实"</h4>
+<h4 id="最大熵原理方差给定时高斯最诚实">最大熵原理：方差给定时高斯最"诚实"</h4>
 <p>数学上能证明：<strong>只知道一个量的均值和方差时，熵最大的连续分布就是高斯</strong>。任何其他分布都偷偷加入了你没说过的额外信息（"它一定是正的"、"它一定是 0/1"、"它一定有上下界"……）。所以模型初始化只规定 mean=0、std=0.02，<strong>剩下交给"最大熵"的高斯</strong>——它是信息论意义上的"最诚实的不知道"。</p>
-<h4 id="_4">计算性质：高斯是矩阵乘的"不动点"</h4>
+<h4 id="计算性质高斯是矩阵乘的不动点">计算性质：高斯是矩阵乘的"不动点"</h4>
 <ul>
 <li>高斯 + 高斯 = 高斯（独立同分布相加，方差直接相加）。</li>
 <li>矩阵乘高斯 = 高斯（线性变换保持高斯性，只改变协方差矩阵）。</li>
@@ -649,7 +649,7 @@ $$</p>
 闭式解 → "矩阵乘对高斯保持封闭" → 整套数学链条算得动。</p>
 </blockquote>
 <p><strong>没有别的连续分布同时满足这三条</strong>。这就是为什么大模型内部"非高斯不可"。</p>
-<h3 id="135">13.5 那些刻意不用高斯的地方</h3>
+<h3 id="135-那些刻意不用高斯的地方">13.5 那些刻意不用高斯的地方</h3>
 <p>但大模型不是高斯的奴隶——下面这些位置<strong>必然不是高斯</strong>，每一处的选择都有具体理由：</p>
 <table>
 <thead>
@@ -701,7 +701,7 @@ $$</p>
 <blockquote>
 <p><strong>离散决策（token、开关、index 选择）从来不是高斯，连续状态（参数、激活、噪声）才是高斯</strong>。两者互不替代，各司其职。</p>
 </blockquote>
-<h3 id="136">13.6 一段话收束</h3>
+<h3 id="136-一段话收束">13.6 一段话收束</h3>
 <p><strong>为什么处处是高斯</strong>：神经网络内部处处在做"很多项加和"——CLT 让加和自动趋向高斯；只规定均值方差时，最大熵原理选高斯；矩阵乘对高斯保持闭式可计算——三条理由叠在一起，数学上<strong>没有别的连续分布能同时替代它去当"内部装修"</strong>。</p>
 <p><strong>为什么不是只用高斯</strong>：输出 token 离散、dropout 是二元开关、随机切点要无偏、token 频率天然是幂律——每个位置都按它本身的需求选分布。<strong>高斯只是被叫得最多、负责最重的那一个</strong>，而不是唯一。</p>
 <p>回到 §1 那张拼图：</p>
@@ -709,9 +709,9 @@ $$</p>
 <p><strong>输出端是 §3 的 50304 根柱子（类别分布）；内部装修是高斯（CLT + 最大熵 + 闭式解）；开关与切点是伯努利或均匀</strong>。大模型不是只用高斯，而是把每种分布放在它最擅长的位置上。</p>
 </blockquote>
 <hr />
-<h2 id="14">14. 通俗收束：水池模型 + 折纸模型</h2>
+<h2 id="14-通俗收束水池模型-折纸模型">14. 通俗收束：水池模型 + 折纸模型</h2>
 <p>最后留两个完全脱离公式的画面，回去随时套：</p>
-<h3 id="141">14.1 概率 = 一池水</h3>
+<h3 id="141-概率-一池水">14.1 概率 = 一池水</h3>
 <p>想象有一池总量恒定为 1 的水，可以分到无数个杯子里。<strong>杯子越多越窄就是连续分布；杯子有限就是离散分布</strong>。</p>
 <ul>
 <li>MNIST：10 个杯子，分别贴标签 0~9。一张图片来了，水按"模型觉得是哪个数字"的把握倒进对应杯子。哪个杯子最满，就是预测的数字。</li>
@@ -722,7 +722,7 @@ $$</p>
 <li><code>top-p</code>：从最满的杯子开始倒水盛起来，倒到刚好 90% 总量为止——剩下的一律不喝。</li>
 </ul>
 <p>整个训练过程就是<strong>让模型学会怎么把水倒得越来越准</strong>。</p>
-<h3 id="142">14.2 矩阵 = 折纸</h3>
+<h3 id="142-矩阵-折纸">14.2 矩阵 = 折纸</h3>
 <p>想象有一张无限大的纸（向量空间）。<strong>矩阵是一种折纸/拉伸/旋转的动作</strong>：你拿起这张纸，按一个矩阵的规则把每一个点搬到新位置。</p>
 <ul>
 <li><code>wte</code>：先把 50304 个离散 token 钉到 768 维纸上的固定坐标——这就是"语义空间"的初始布局。</li>
@@ -734,7 +734,7 @@ $$</p>
 <p><strong>训练就是反复调整每一次折纸的角度，让最后那块面积总能在正确答案的位置上隆起一个尖。</strong></p>
 </blockquote>
 <hr />
-<h2 id="_5">总结</h2>
+<h2 id="总结">总结</h2>
 <p>回到开头那张拼图：</p>
 <table>
 <thead>

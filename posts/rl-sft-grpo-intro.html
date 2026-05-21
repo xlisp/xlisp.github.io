@@ -35,15 +35,15 @@
     <div class="content">
 <p>本文档介绍 MathGPT 项目中使用的核心训练技术，以及它们在强化学习历史脉络中的位置。</p>
 <hr />
-<h2 id="sft">一、监督微调（SFT）是什么？</h2>
-<h3 id="11">1.1 基本概念</h3>
+<h2 id="一监督微调sft是什么">一、监督微调（SFT）是什么？</h2>
+<h3 id="11-基本概念">1.1 基本概念</h3>
 <p><strong>监督微调（Supervised Fine-Tuning，SFT）</strong> 是在预训练语言模型基础上，用带标签的对话数据继续训练，让模型学会"好的回答方式"。</p>
 <p>预训练阶段的模型（Base Model）只学会了"像人类写作"，可以预测下一个 token，但不知道什么是"有用的回答"。SFT 通过展示高质量的人类对话示例，教会模型：
 - 按照提问者的意图作答
 - 遵循特定格式（如 <code>&lt;|user_start|&gt;...&lt;|assistant_start|&gt;...</code>）
 - 在适当场合使用工具（如计算器 <code>&lt;|python_start|&gt;...&lt;|python_end|&gt;</code>）
 - 对数学问题展示推理步骤</p>
-<h3 id="12-sft">1.2 SFT 的训练过程</h3>
+<h3 id="12-sft-的训练过程">1.2 SFT 的训练过程</h3>
 <div class="highlight"><pre><span></span><code>输入序列:
 [BOS] &lt;|user_start|&gt; 苹果的颜色是什么？ &lt;|user_end|&gt; &lt;|assistant_start|&gt;
 
@@ -55,7 +55,7 @@
 - <strong>掩码（loss mask）</strong>：只计算助手回答部分的损失，用户问题不计入损失
 - <strong>损失函数</strong>：交叉熵（Cross-Entropy），衡量模型预测分布与真实 token 的差距
 - <strong>优化器</strong>：MuonAdamW（矩阵参数用 Muon，其余用 AdamW）</p>
-<h3 id="13-sft">1.3 SFT 训练数据混合</h3>
+<h3 id="13-sft-训练数据混合">1.3 SFT 训练数据混合</h3>
 <p>本项目 SFT 使用多种数据混合训练：</p>
 <table>
 <thead>
@@ -93,7 +93,7 @@
 </tr>
 </tbody>
 </table>
-<h3 id="14-sft-rl">1.4 为什么 SFT 之后还需要 RL？</h3>
+<h3 id="14-为什么-sft-之后还需要-rl">1.4 为什么 SFT 之后还需要 RL？</h3>
 <p>SFT 有几个内在局限：</p>
 <ol>
 <li><strong>模仿而非创新</strong>：SFT 模型只会模仿训练数据的模式，对于新问题缺乏泛化能力</li>
@@ -103,8 +103,8 @@
 </ol>
 <p>这就是 RL 微调（RLFT）的动机所在。</p>
 <hr />
-<h2 id="mathgpt">二、MathGPT 的设计思路</h2>
-<h3 id="21">2.1 为什么选择这个架构？</h3>
+<h2 id="二mathgpt-的设计思路">二、MathGPT 的设计思路</h2>
+<h3 id="21-为什么选择这个架构">2.1 为什么选择这个架构？</h3>
 <p>本项目基于 <a href="https://github.com/karpathy/nanochat">nanochat</a> 框架，进行了 GTX 1080 适配。设计原则：</p>
 <p><strong>极简主义</strong>：
 - 不使用外部推理框架（无 LangChain、无 vLLM）
@@ -123,7 +123,7 @@ VRAM 8 GB → depth=6, embd=384（73.5M 参数）
 无 torch.compile → 运行时检测，替换为恒等装饰器
 </code></pre></div>
 
-<h3 id="22-calculator-tool">2.2 工具调用设计（Calculator Tool）</h3>
+<h3 id="22-工具调用设计calculator-tool">2.2 工具调用设计（Calculator Tool）</h3>
 <p>模型通过特殊 token 调用计算器：</p>
 <div class="highlight"><pre><span></span><code>模型输出：...所以 Janet 每周储蓄 &lt;|python_start|&gt;16*7&lt;|python_end|&gt;
 引擎计算：eval(&quot;16*7&quot;) = 112
@@ -132,7 +132,7 @@ VRAM 8 GB → depth=6, embd=384（73.5M 参数）
 </code></pre></div>
 
 <p>这个设计让小模型（73.5M）也能精确计算数值，不依赖模型本身的"记忆"来做算术。</p>
-<h3 id="23-kv-cache">2.3 KV Cache 推理引擎</h3>
+<h3 id="23-kv-cache-推理引擎">2.3 KV Cache 推理引擎</h3>
 <p>推理引擎（<code>engine.py</code>）采用批量生成 + KV 缓存复用：</p>
 <ol>
 <li><strong>一次 prefill</strong>：对提示词做一次前向传播，缓存所有层的 KV</li>
@@ -140,8 +140,8 @@ VRAM 8 GB → depth=6, embd=384（73.5M 参数）
 <li><strong>增量 decode</strong>：每步只推理一个新 token，KV 缓存在 FA3 中原地更新</li>
 </ol>
 <hr />
-<h2 id="dqn-grpo">三、强化学习发展历史：从 DQN 到 GRPO</h2>
-<h3 id="31-q-dqn2013-2015">3.1 深度 Q 网络（DQN，2013-2015）</h3>
+<h2 id="三强化学习发展历史从-dqn-到-grpo">三、强化学习发展历史：从 DQN 到 GRPO</h2>
+<h3 id="31-深度-q-网络dqn2013-2015">3.1 深度 Q 网络（DQN，2013-2015）</h3>
 <p><strong>核心思想：</strong> 用深度神经网络近似 Q 函数（状态-动作值函数）</p>
 <div class="highlight"><pre><span></span><code>Q(s, a) = 即时奖励 r + γ × max_{a&#39;} Q(s&#39;, a&#39;)
 </code></pre></div>
@@ -151,7 +151,7 @@ VRAM 8 GB → depth=6, embd=384（73.5M 参数）
 - <strong>经验回放（Experience Replay）</strong>：存储 (s, a, r, s') 元组，打破时序相关性
 - <strong>目标网络（Target Network）</strong>：用滞后版本的网络计算目标值，稳定训练</p>
 <p><strong>局限性：</strong> DQN 只能处理离散动作空间（按哪个键），无法直接应用于生成文本（词表大小 32768 = 32768 种"动作"）。</p>
-<h3 id="32-policy-gradient2016">3.2 策略梯度方法（Policy Gradient，2016）</h3>
+<h3 id="32-策略梯度方法policy-gradient2016">3.2 策略梯度方法（Policy Gradient，2016）</h3>
 <p><strong>核心思想：</strong> 直接优化策略 π(a|s)，不需要估计 Q 函数</p>
 <div class="highlight"><pre><span></span><code>∇J(θ) = E_{τ~π_θ}[∑_t ∇log π_θ(a_t|s_t) × G_t]
 </code></pre></div>
@@ -162,7 +162,7 @@ VRAM 8 GB → depth=6, embd=384（73.5M 参数）
 2. 计算每个动作的累积奖励
 3. 梯度上升：增大好动作的概率，减小坏动作的概率</p>
 <p>这直接可以应用于语言模型——每个生成的 token 就是一个"动作"！</p>
-<h3 id="33-ppo2017">3.3 PPO（近端策略优化，2017）</h3>
+<h3 id="33-ppo近端策略优化2017">3.3 PPO（近端策略优化，2017）</h3>
 <p><strong>问题：</strong> 朴素策略梯度不稳定——步长太大会让策略崩溃</p>
 <p><strong>PPO 解决方案：</strong> 限制每次更新中新旧策略的差异</p>
 <div class="highlight"><pre><span></span><code>L_PPO = E[min(r_t(θ) × A_t, clip(r_t(θ), 1-ε, 1+ε) × A_t)]
@@ -171,7 +171,7 @@ VRAM 8 GB → depth=6, embd=384（73.5M 参数）
 </code></pre></div>
 
 <p>PPO 是后来 RLHF 的基础算法。</p>
-<h3 id="34-ai-rlhf2022">3.4 从游戏 AI 到语言模型：RLHF（2022）</h3>
+<h3 id="34-从游戏-ai-到语言模型rlhf2022">3.4 从游戏 AI 到语言模型：RLHF（2022）</h3>
 <p><strong>InstructGPT / ChatGPT（OpenAI, 2022）</strong> 将 RL 引入 LLM 训练，开创了 RLHF（Reinforcement Learning from Human Feedback）范式。</p>
 <p><strong>RLHF 三步流程：</strong></p>
 <div class="highlight"><pre><span></span><code>Step 1: SFT（监督微调）
@@ -193,7 +193,7 @@ Step 3: PPO 强化学习
 - 需要大量人工标注对比数据（成本高）
 - 奖励模型可能被"游玩"（reward hacking）
 - PPO 实现复杂，需要 4 个模型同时在 GPU 上（policy, ref, reward, value）</p>
-<h3 id="35-grpo2024">3.5 GRPO（群体相对策略优化，2024）</h3>
+<h3 id="35-grpo群体相对策略优化2024">3.5 GRPO（群体相对策略优化，2024）</h3>
 <p><strong>DeepSeek-Math（2024）</strong> 提出 GRPO，专门为数学推理设计，大幅简化 RLHF。</p>
 <p><strong>核心思想：</strong> 用"同组内的相对表现"代替独立的价值函数估计</p>
 <div class="highlight"><pre><span></span><code>对同一个问题，采样 G 条轨迹：
@@ -247,7 +247,7 @@ A_i = (r_i - mean(r)) / std(r)
 </tbody>
 </table>
 <p><strong>为什么 GRPO 适合数学：</strong> 数学题有明确的对错标准（最终答案是否正确），不需要人工打分，奖励函数是确定性的（正确=1，错误=0）。</p>
-<h3 id="36-mathgpt-rl">3.6 MathGPT 使用的 RL 算法</h3>
+<h3 id="36-mathgpt-使用的-rl-算法">3.6 MathGPT 使用的 RL 算法</h3>
 <p>本项目使用的是 <strong>简化版 REINFORCE（接近 GRPO）</strong>：</p>
 <div class="highlight"><pre><span></span><code><span class="c1"># 对同一个问题采样 num_samples 条轨迹</span>
 <span class="n">rewards</span> <span class="o">=</span> <span class="p">[</span><span class="mf">1.0</span> <span class="k">if</span> <span class="n">correct</span> <span class="k">else</span> <span class="mf">0.0</span> <span class="k">for</span> <span class="n">each</span> <span class="n">sample</span><span class="p">]</span>
@@ -266,7 +266,7 @@ A_i = (r_i - mean(r)) / std(r)
 - 没有 PPO-style clip（直接用 REINFORCE）
 - 奖励：基于规则（答案数字是否匹配）</p>
 <hr />
-<h2 id="rlhf-grpo">四、RLHF 和 GRPO 的关系图谱</h2>
+<h2 id="四rlhf-和-grpo-的关系图谱">四、RLHF 和 GRPO 的关系图谱</h2>
 <div class="highlight"><pre><span></span><code>强化学习基础
 ├── DQN（2013）：Q-learning + 深度网络，值函数近似
 │   └── 解决离散动作空间问题（Atari 游戏）
@@ -298,7 +298,7 @@ A_i = (r_i - mean(r)) / std(r)
 </code></pre></div>
 
 <hr />
-<h2 id="grpo">五、为什么 GRPO 让小模型也能学数学？</h2>
+<h2 id="五为什么-grpo-让小模型也能学数学">五、为什么 GRPO 让小模型也能学数学？</h2>
 <p>一个有趣的现象是：GRPO 在推动数学能力方面比 SFT 更有效，即使模型参数量很小。</p>
 <p>原因分析：</p>
 <ol>
@@ -316,7 +316,7 @@ A_i = (r_i - mean(r)) / std(r)
 </li>
 </ol>
 <hr />
-<h2 id="_1">参考文献</h2>
+<h2 id="参考文献">参考文献</h2>
 <ul>
 <li>Mnih et al. (2013). <em>Playing Atari with Deep Reinforcement Learning</em>. DQN.</li>
 <li>Williams (1992). <em>Simple Statistical Gradient-Following Algorithms for Connectionist Reinforcement Learning</em>. REINFORCE.</li>

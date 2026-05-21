@@ -37,7 +37,7 @@
 <p>本文以 CodeChat 项目为例，解释为什么 8B 模型必须多卡训练，以及 FSDP 是怎么把一个放不下的模型"切"到 8 张卡上的。</p>
 </blockquote>
 <hr />
-<h2 id="1">1. 单卡训练：一切从这里开始</h2>
+<h2 id="1-单卡训练一切从这里开始">1. 单卡训练：一切从这里开始</h2>
 <p>单卡训练最简单。一张 GPU 上放着三样东西：</p>
 <div class="highlight"><pre><span></span><code>┌─────────────────── GPU (80GB) ───────────────────┐
 │  模型参数 (params)                                 │
@@ -47,7 +47,7 @@
 └──────────────────────────────────────────────────┘
 </code></pre></div>
 
-<h3 id="_1">显存都花在哪了？</h3>
+<h3 id="显存都花在哪了">显存都花在哪了？</h3>
 <p>以 8B 参数模型为例（8.3B params）：</p>
 <table>
 <thead>
@@ -87,7 +87,7 @@
 </table>
 <p>一张 A800 只有 80GB，光是模型参数 + 优化器状态就需要 96GB，还没算激活值。</p>
 <p><strong>这就是为什么 CodeChat 2B 能单卡训练，而 8B 不行。</strong></p>
-<h3 id="codechat-2b">CodeChat 2B 单卡的显存预算</h3>
+<h3 id="codechat-2b-单卡的显存预算">CodeChat 2B 单卡的显存预算</h3>
 <div class="highlight"><pre><span></span><code><span class="c1"># scripts/base_train.py（单卡模式）</span>
 <span class="c1"># 2B 模型：</span>
 <span class="c1">#   参数 bf16:    ~5 GB</span>
@@ -98,8 +98,8 @@
 </code></pre></div>
 
 <hr />
-<h2 id="2">2. 为什么不能简单地"多卡并行"？</h2>
-<h3 id="21-data-parallelism-ddp">2.1 数据并行 (Data Parallelism / DDP)</h3>
+<h2 id="2-为什么不能简单地多卡并行">2. 为什么不能简单地"多卡并行"？</h2>
+<h3 id="21-数据并行-data-parallelism-ddp">2.1 数据并行 (Data Parallelism / DDP)</h3>
 <p>最朴素的多卡方案：每张卡上放一份<strong>完整的模型</strong>，各自处理不同的数据，然后同步梯度。</p>
 <div class="highlight"><pre><span></span><code>DDP: 每张卡都有完整的一份
 
@@ -122,7 +122,7 @@ AllReduce 后 (每张卡都拿到平均梯度):
   ...
 </code></pre></div>
 
-<h3 id="22-naive-model-parallelism">2.2 朴素模型并行 (Naive Model Parallelism)</h3>
+<h3 id="22-朴素模型并行-naive-model-parallelism">2.2 朴素模型并行 (Naive Model Parallelism)</h3>
 <p>把模型按层切开，不同层放在不同卡上：</p>
 <div class="highlight"><pre><span></span><code>GPU 0: Layer 0-9    →  前向传播  →  传给 GPU 1
 GPU 1: Layer 10-19  →  前向传播  →  传给 GPU 2
@@ -131,14 +131,14 @@ GPU 3: Layer 30-39  →  前向传播  →  输出
 </code></pre></div>
 
 <p><strong>问题：流水线气泡 (pipeline bubble)</strong>。当 GPU 3 在算前向时，GPU 0/1/2 全在等着，利用率极低。</p>
-<h3 id="23">2.3 真正的需求</h3>
+<h3 id="23-真正的需求">2.3 真正的需求</h3>
 <p>我们需要一种方案，<strong>既切分显存（解决放不下的问题），又让所有卡都在干活（保持高利用率）</strong>。</p>
 <p>这就是 FSDP 要解决的问题。</p>
 <hr />
-<h2 id="3-fsdp">3. FSDP：把参数、梯度、优化器全部切碎</h2>
+<h2 id="3-fsdp把参数梯度优化器全部切碎">3. FSDP：把参数、梯度、优化器全部切碎</h2>
 <p><strong>FSDP = Fully Sharded Data Parallel</strong>，是 PyTorch 原生的零冗余并行方案，等价于 DeepSpeed ZeRO-3。</p>
 <p>核心思想：<strong>不再让每张卡持有完整模型，而是把参数/梯度/优化器状态均匀切片(shard)到所有卡上。需要用的时候临时聚合(all-gather)，用完立刻丢弃。</strong></p>
-<h3 id="31">3.1 三个层级的切分</h3>
+<h3 id="31-三个层级的切分">3.1 三个层级的切分</h3>
 <p>微软 DeepSpeed 论文把零冗余优化分成三个阶段：</p>
 <table>
 <thead>
@@ -175,7 +175,7 @@ GPU 3: Layer 30-39  →  前向传播  →  输出
 <span class="n">ShardingStrategy</span><span class="o">.</span><span class="n">FULL_SHARD</span>   <span class="c1"># params + grads + optim 全部按 rank 切片</span>
 </code></pre></div>
 
-<h3 id="32-fsdp">3.2 FSDP 的运行流程</h3>
+<h3 id="32-fsdp-的运行流程">3.2 FSDP 的运行流程</h3>
 <p>以一个 forward → backward → optimizer step 为例：</p>
 <div class="highlight"><pre><span></span><code>═══════════════════════════════════════════════════════
   FORWARD PASS (前向传播)
@@ -233,7 +233,7 @@ GPU 3: Layer 30-39  →  前向传播  →  输出
   无需通信！每张卡独立更新自己的碎片。
 </code></pre></div>
 
-<h3 id="33">3.3 显存对比</h3>
+<h3 id="33-显存对比">3.3 显存对比</h3>
 <p>8B 模型，8×A800：</p>
 <div class="highlight"><pre><span></span><code>DDP (每卡完整副本):
   参数:    16 GB
@@ -253,8 +253,8 @@ FSDP FULL_SHARD (每卡 1/8):
 </code></pre></div>
 
 <hr />
-<h2 id="4-fsdp">4. FSDP 的通信机制</h2>
-<h3 id="41">4.1 两种核心通信原语</h3>
+<h2 id="4-fsdp-的通信机制">4. FSDP 的通信机制</h2>
+<h3 id="41-两种核心通信原语">4.1 两种核心通信原语</h3>
 <div class="highlight"><pre><span></span><code>All-Gather: 每张卡贡献自己的碎片，所有卡拿到完整结果
 ┌───┐ ┌───┐ ┌───┐ ┌───┐
 │ A │ │ B │ │ C │ │ D │   (每卡一片)
@@ -276,10 +276,10 @@ GPU 2: [a2+b2+c2+d2]         (第 2 片的总和)
 GPU 3: [a3+b3+c3+d3]         (第 3 片的总和)
 </code></pre></div>
 
-<h3 id="42-nvlink">4.2 NVLink 的作用</h3>
+<h3 id="42-nvlink-的作用">4.2 NVLink 的作用</h3>
 <p>A800 之间通过 NVLink 互联，带宽 ~400 GB/s（双向），远高于 PCIe 的 ~32 GB/s。</p>
 <p>FSDP 中 All-Gather 一层 8B 模型的参数量大约 400MB，在 NVLink 上只需 ~1ms。这使得"用时聚合、用完丢弃"的策略在实际中几乎不增加额外开销。</p>
-<h3 id="43">4.3 通信与计算重叠</h3>
+<h3 id="43-通信与计算重叠">4.3 通信与计算重叠</h3>
 <p>FSDP 的一个关键优化是 <strong>backward prefetch</strong>：在计算第 N 层反向传播的同时，提前 All-Gather 第 N-1 层的参数。</p>
 <div class="highlight"><pre><span></span><code><span class="c1"># CodeChat 中的配置</span>
 <span class="n">backward_prefetch</span><span class="o">=</span><span class="n">BackwardPrefetch</span><span class="o">.</span><span class="n">BACKWARD_PRE</span>  <span class="c1"># 提前预取</span>
@@ -295,7 +295,7 @@ GPU 3: [a3+b3+c3+d3]         (第 3 片的总和)
 </code></pre></div>
 
 <hr />
-<h2 id="5-fsdp-auto-wrap-policy">5. FSDP 的切分粒度：Auto Wrap Policy</h2>
+<h2 id="5-fsdp-的切分粒度auto-wrap-policy">5. FSDP 的切分粒度：Auto Wrap Policy</h2>
 <p>FSDP 不是把整个模型当作一块来切，而是按 <strong>transformer block (层)</strong> 为单位包装。每个 Block 是一个独立的 FSDP 单元。</p>
 <div class="highlight"><pre><span></span><code><span class="c1"># CodeChat 的包装策略</span>
 <span class="n">auto_wrap</span> <span class="o">=</span> <span class="n">functools</span><span class="o">.</span><span class="n">partial</span><span class="p">(</span>
@@ -329,7 +329,7 @@ GPU 3: [a3+b3+c3+d3]         (第 3 片的总和)
 </code></pre></div>
 
 <hr />
-<h2 id="6-mixed-precision">6. 混合精度训练 (Mixed Precision)</h2>
+<h2 id="6-混合精度训练-mixed-precision">6. 混合精度训练 (Mixed Precision)</h2>
 <p>FSDP 支持三种粒度的精度控制：</p>
 <div class="highlight"><pre><span></span><code><span class="n">mp_policy</span> <span class="o">=</span> <span class="n">MixedPrecision</span><span class="p">(</span>
     <span class="n">param_dtype</span><span class="o">=</span><span class="n">COMPUTE_DTYPE</span><span class="p">,</span>    <span class="c1"># bf16: 参数在 GPU 上以 bf16 存储和计算</span>
@@ -376,8 +376,8 @@ fp32 Adam v:    8.3B × 4 bytes = 32 GB
 </code></pre></div>
 
 <hr />
-<h2 id="7-codechat">7. CodeChat 从单卡到多卡的实际改动</h2>
-<h3 id="71">7.1 启动方式</h3>
+<h2 id="7-codechat-从单卡到多卡的实际改动">7. CodeChat 从单卡到多卡的实际改动</h2>
+<h3 id="71-启动方式">7.1 启动方式</h3>
 <div class="highlight"><pre><span></span><code><span class="c1"># 单卡 (2B)</span>
 python<span class="w"> </span>-m<span class="w"> </span>scripts.base_train<span class="w"> </span>--preset<span class="w"> </span>2b<span class="w"> </span>...
 
@@ -386,7 +386,7 @@ torchrun<span class="w"> </span>--nproc_per_node<span class="o">=</span><span cl
 </code></pre></div>
 
 <p><code>torchrun</code> 会启动 8 个进程，每个进程设置 <code>LOCAL_RANK=0..7</code> 环境变量。</p>
-<h3 id="72">7.2 分布式初始化</h3>
+<h3 id="72-分布式初始化">7.2 分布式初始化</h3>
 <div class="highlight"><pre><span></span><code><span class="k">def</span><span class="w"> </span><span class="nf">setup_distributed</span><span class="p">():</span>
     <span class="k">if</span> <span class="s2">&quot;LOCAL_RANK&quot;</span> <span class="ow">not</span> <span class="ow">in</span> <span class="n">os</span><span class="o">.</span><span class="n">environ</span><span class="p">:</span>
         <span class="k">return</span> <span class="kc">False</span><span class="p">,</span> <span class="mi">0</span><span class="p">,</span> <span class="mi">0</span><span class="p">,</span> <span class="mi">1</span>            <span class="c1"># 单卡模式，什么都不做</span>
@@ -396,7 +396,7 @@ torchrun<span class="w"> </span>--nproc_per_node<span class="o">=</span><span cl
     <span class="k">return</span> <span class="kc">True</span><span class="p">,</span> <span class="n">local_rank</span><span class="p">,</span> <span class="n">dist</span><span class="o">.</span><span class="n">get_rank</span><span class="p">(),</span> <span class="n">dist</span><span class="o">.</span><span class="n">get_world_size</span><span class="p">()</span>
 </code></pre></div>
 
-<h3 id="73-checkpoint">7.3 Checkpoint 加载</h3>
+<h3 id="73-checkpoint-加载">7.3 Checkpoint 加载</h3>
 <div class="highlight"><pre><span></span><code><span class="c1"># 错误做法 (所有进程同时加载到 GPU 0):</span>
 <span class="n">state</span> <span class="o">=</span> <span class="n">load_ckpt</span><span class="p">(</span><span class="n">path</span><span class="p">)</span>  <span class="c1"># 默认 map_location=&quot;cuda&quot; → 全部挤到 GPU 0</span>
 
@@ -407,7 +407,7 @@ torchrun<span class="w"> </span>--nproc_per_node<span class="o">=</span><span cl
 <span class="n">model</span> <span class="o">=</span> <span class="n">model</span><span class="o">.</span><span class="n">to</span><span class="p">(</span><span class="n">device</span><span class="p">)</span>  <span class="c1"># 移到各自的 GPU</span>
 </code></pre></div>
 
-<h3 id="74-fsdp">7.4 FSDP 包装</h3>
+<h3 id="74-fsdp-包装">7.4 FSDP 包装</h3>
 <div class="highlight"><pre><span></span><code><span class="n">model</span> <span class="o">=</span> <span class="n">model</span><span class="o">.</span><span class="n">to</span><span class="p">(</span><span class="n">device</span><span class="p">)</span><span class="o">.</span><span class="n">to</span><span class="p">(</span><span class="n">COMPUTE_DTYPE</span><span class="p">)</span>
 <span class="k">if</span> <span class="n">is_dist</span><span class="p">:</span>
     <span class="n">model</span> <span class="o">=</span> <span class="n">wrap_fsdp</span><span class="p">(</span><span class="n">model</span><span class="p">)</span>  <span class="c1"># 参数被切片到各卡</span>
@@ -416,7 +416,7 @@ torchrun<span class="w"> </span>--nproc_per_node<span class="o">=</span><span cl
 <span class="c1">#   logits, loss = model(x, y)   ← 内部自动 All-Gather + Reduce-Scatter</span>
 </code></pre></div>
 
-<h3 id="75-no_sync">7.5 梯度同步优化：no_sync</h3>
+<h3 id="75-梯度同步优化no_sync">7.5 梯度同步优化：no_sync</h3>
 <p>当使用梯度累积时，只有最后一个 micro-batch 需要同步梯度：</p>
 <div class="highlight"><pre><span></span><code><span class="k">for</span> <span class="n">micro</span> <span class="ow">in</span> <span class="nb">range</span><span class="p">(</span><span class="n">grad_accum</span><span class="p">):</span>
     <span class="n">x</span><span class="p">,</span> <span class="n">y</span> <span class="o">=</span> <span class="n">loader</span><span class="o">.</span><span class="n">next_batch</span><span class="p">()</span>
@@ -430,7 +430,7 @@ torchrun<span class="w"> </span>--nproc_per_node<span class="o">=</span><span cl
 </code></pre></div>
 
 <p>没有 <code>no_sync</code> 的话，每个 micro-batch 都会触发 Reduce-Scatter，白白浪费 7 次通信。</p>
-<h3 id="76">7.6 梯度裁剪</h3>
+<h3 id="76-梯度裁剪">7.6 梯度裁剪</h3>
 <div class="highlight"><pre><span></span><code><span class="c1"># 单卡:</span>
 <span class="n">grad_norm</span> <span class="o">=</span> <span class="n">torch</span><span class="o">.</span><span class="n">nn</span><span class="o">.</span><span class="n">utils</span><span class="o">.</span><span class="n">clip_grad_norm_</span><span class="p">(</span><span class="n">model</span><span class="o">.</span><span class="n">parameters</span><span class="p">(),</span> <span class="mf">1.0</span><span class="p">)</span>
 
@@ -439,7 +439,7 @@ torchrun<span class="w"> </span>--nproc_per_node<span class="o">=</span><span cl
 </code></pre></div>
 
 <p>FSDP 的 <code>clip_grad_norm_</code> 内部会先 All-Gather 梯度范数，计算全局范数后再裁剪。</p>
-<h3 id="77-checkpoint">7.7 Checkpoint 保存</h3>
+<h3 id="77-checkpoint-保存">7.7 Checkpoint 保存</h3>
 <div class="highlight"><pre><span></span><code><span class="c1"># codechat/checkpoint.py</span>
 <span class="k">if</span> <span class="n">_is_fsdp</span><span class="p">(</span><span class="n">model</span><span class="p">):</span>
     <span class="c1"># FSDP 模型的参数分散在各卡，需要先聚合</span>
@@ -448,7 +448,7 @@ torchrun<span class="w"> </span>--nproc_per_node<span class="o">=</span><span cl
     <span class="c1"># 只有 rank 0 写文件</span>
 </code></pre></div>
 
-<h3 id="78-rank-0-io">7.8 只在 rank 0 做 I/O</h3>
+<h3 id="78-只在-rank-0-做-io">7.8 只在 rank 0 做 I/O</h3>
 <div class="highlight"><pre><span></span><code><span class="n">writer</span> <span class="o">=</span> <span class="n">SummaryWriter</span><span class="p">(</span><span class="n">log_dir</span><span class="o">=</span><span class="n">tb_path</span><span class="p">)</span> <span class="k">if</span> <span class="n">is_master</span> <span class="k">else</span> <span class="kc">None</span>
 
 <span class="k">if</span> <span class="n">is_master</span><span class="p">:</span>
@@ -458,16 +458,16 @@ torchrun<span class="w"> </span>--nproc_per_node<span class="o">=</span><span cl
 
 <p>如果 8 个进程都写 TensorBoard，日志会重复 8 份且可能互相覆盖。</p>
 <hr />
-<h2 id="8-rl">8. RL 阶段的特殊处理</h2>
+<h2 id="8-rl-阶段的特殊处理">8. RL 阶段的特殊处理</h2>
 <p>RL (GRPO) 比 SFT 更复杂，因为它需要<strong>采样</strong>——自回归生成 token。在 FSDP 下有两个额外的同步点：</p>
-<h3 id="81">8.1 问题索引同步</h3>
+<h3 id="81-问题索引同步">8.1 问题索引同步</h3>
 <p>每个 step 随机选一个 MBPP 问题。8 个进程必须选同一个：</p>
 <div class="highlight"><pre><span></span><code><span class="n">idx</span> <span class="o">=</span> <span class="n">torch</span><span class="o">.</span><span class="n">randint</span><span class="p">(</span><span class="mi">0</span><span class="p">,</span> <span class="nb">len</span><span class="p">(</span><span class="n">mbpp</span><span class="p">),</span> <span class="p">(</span><span class="mi">1</span><span class="p">,),</span> <span class="n">device</span><span class="o">=</span><span class="n">device</span><span class="p">)</span>
 <span class="k">if</span> <span class="n">is_dist</span><span class="p">:</span>
     <span class="n">dist</span><span class="o">.</span><span class="n">broadcast</span><span class="p">(</span><span class="n">idx</span><span class="p">,</span> <span class="n">src</span><span class="o">=</span><span class="mi">0</span><span class="p">)</span>  <span class="c1"># rank 0 的选择广播给所有 rank</span>
 </code></pre></div>
 
-<h3 id="82-token">8.2 采样 token 同步</h3>
+<h3 id="82-采样-token-同步">8.2 采样 token 同步</h3>
 <p>自回归采样时，<code>torch.multinomial</code> 在不同 GPU 上可能产生不同结果（CUDA RNG 差异）。所有 rank 必须生成相同的 token 序列，否则后续的 forward 输入不一致会导致 FSDP 死锁。</p>
 <div class="highlight"><pre><span></span><code><span class="n">nxt</span> <span class="o">=</span> <span class="n">torch</span><span class="o">.</span><span class="n">multinomial</span><span class="p">(</span><span class="n">probs</span><span class="p">,</span> <span class="mi">1</span><span class="p">)</span>     <span class="c1"># 各 rank 可能不同</span>
 <span class="k">if</span> <span class="n">is_dist</span><span class="p">:</span>
@@ -475,7 +475,7 @@ torchrun<span class="w"> </span>--nproc_per_node<span class="o">=</span><span cl
 </code></pre></div>
 
 <hr />
-<h2 id="9">9. 各种并行策略对比</h2>
+<h2 id="9-各种并行策略对比">9. 各种并行策略对比</h2>
 <table>
 <thead>
 <tr>
@@ -526,7 +526,7 @@ torchrun<span class="w"> </span>--nproc_per_node<span class="o">=</span><span cl
 </table>
 <p>实际中大模型训练常常<strong>组合使用</strong>多种策略（如 Llama 3 用了 FSDP + Tensor Parallel + Pipeline Parallel）。CodeChat 8B 只需 FSDP 就够了。</p>
 <hr />
-<h2 id="10">10. 总结</h2>
+<h2 id="10-总结">10. 总结</h2>
 <div class="highlight"><pre><span></span><code>单卡 2B:   什么都不用想，model.to(&quot;cuda&quot;) 就行
             显存 ~40GB，一张 A800 足够
 

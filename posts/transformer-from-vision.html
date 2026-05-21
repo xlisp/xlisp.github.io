@@ -33,7 +33,7 @@
     </header>
 
     <div class="content">
-<h2 id="_1">注意力机制的图像起源</h2>
+<h2 id="注意力机制的图像起源">注意力机制的图像起源</h2>
 <p>注意力机制并非 Transformer 的原创发明。早在计算机视觉领域，研究者就发现人眼观察图像时并非均匀扫描，而是<strong>选择性聚焦</strong>于显著区域。这种生物视觉的选择性注意力被形式化为：</p>
 <div class="highlight"><pre><span></span><code>Attention(Q, K, V) = softmax(QK^T / √d_k) V
 </code></pre></div>
@@ -43,7 +43,7 @@
 - <strong>Key</strong>: "图像中每个位置能提供什么信息？"
 - <strong>Value</strong>: "该位置的实际内容是什么？"</p>
 <p>Self-Attention 的本质是：让图像（或序列）中的每个位置都能"看到"其他所有位置，并根据相关性加权聚合信息。这与人眼扫视图像时根据任务动态调整注意力焦点完全一致。</p>
-<h2 id="transformer_1">Transformer 即图神经网络</h2>
+<h2 id="transformer-即图神经网络">Transformer 即图神经网络</h2>
 <p>Transformer 可以被理解为一种<strong>全连接的图神经网络 (GNN)</strong>：</p>
 <div class="highlight"><pre><span></span><code>图像像素/Token  →  图的节点
 注意力权重      →  图的边权重
@@ -77,7 +77,7 @@
 </tbody>
 </table>
 <p>每一层 Self-Attention 本质上就是一轮<strong>图上的消息传递</strong>：每个节点收集来自所有其他节点的信息，通过注意力权重决定聆听谁的"消息"。Multi-Head Attention 则相当于在同一张图上同时运行多种不同的消息传递模式。</p>
-<h2 id="_2">层级特征：从边缘到美丑</h2>
+<h2 id="层级特征从边缘到美丑">层级特征：从边缘到美丑</h2>
 <p>深度网络逐层构建越来越抽象的表征，这在视觉领域最为直观：</p>
 <div class="highlight"><pre><span></span><code>Layer 1 (低级特征)
 ├── 边缘检测：水平线、垂直线、对角线
@@ -104,7 +104,7 @@ Layer 6+ (抽象概念)
 <p>这种层级抽象不仅存在于 CNN 中，Transformer (如 ViT) 也展现了类似规律：
 - 浅层注意力头关注<strong>局部邻域</strong>（类似卷积）
 - 深层注意力头关注<strong>全局语义关系</strong>（类似高级概念）</p>
-<h2 id="platonic-representation-hypothesis">柏拉图表征假说 (Platonic Representation Hypothesis)</h2>
+<h2 id="柏拉图表征假说-platonic-representation-hypothesis">柏拉图表征假说 (Platonic Representation Hypothesis)</h2>
 <p>2024年MIT的研究提出：不同模态（视觉、语言、音频）的深度学习模型正在<strong>收敛到相同的表征空间</strong>。这呼应了柏拉图的理型论——存在一个独立于感知模态的"理想形式"世界。</p>
 <div class="highlight"><pre><span></span><code>     现实世界（柏拉图的洞穴外）
             │
@@ -123,12 +123,12 @@ Layer 6+ (抽象概念)
 2. <strong>跨模态迁移</strong>：一个模态训练的特征可以直接用于另一个模态
 3. <strong>缩放定律</strong>：模型越大、数据越多，不同模型的表征越趋同
 4. <strong>Vision Transformer 与 Language Transformer</strong> 共享几乎相同的架构却处理不同模态</p>
-<h2 id="_3">深度学习的本质：深度分布式表征学习</h2>
+<h2 id="深度学习的本质深度分布式表征学习">深度学习的本质：深度分布式表征学习</h2>
 <p>将以上所有视角统一，深度学习的本质可以概括为：</p>
 <blockquote>
 <p><strong>通过多层非线性变换，学习数据的分布式表征，使得高层表征捕获数据生成过程中的抽象因果因子。</strong></p>
 </blockquote>
-<h3 id="distributed-representation">分布式表征 (Distributed Representation)</h3>
+<h3 id="分布式表征-distributed-representation">分布式表征 (Distributed Representation)</h3>
 <div class="highlight"><pre><span></span><code>局部表征（one-hot）：每个概念 = 一个独立神经元
   猫 → [1,0,0,0,0...]
   狗 → [0,1,0,0,0...]
@@ -142,7 +142,7 @@ Layer 6+ (抽象概念)
 - <strong>指数级表达能力</strong>：N个神经元可以表示 2^N 种概念（组合爆炸）
 - <strong>自然支持泛化</strong>：相似概念自动获得相似表征
 - <strong>支持类比推理</strong>：king - man + woman ≈ queen</p>
-<h3 id="_4">深度的意义</h3>
+<h3 id="深度的意义">深度的意义</h3>
 <div class="highlight"><pre><span></span><code>深度 = 抽象层级 = 因果链长度
 
 原始像素 → 边缘 → 纹理 → 部件 → 物体 → 场景 → 语义
@@ -151,7 +151,7 @@ Layer 6+ (抽象概念)
 </code></pre></div>
 
 <p>每多一层，模型就能捕获更长的因果链、更抽象的概念。这就是"深度"学习之所以"深度"——不是网络层数深，而是<strong>表征的抽象深度</strong>。</p>
-<h2 id="cnn-transformer">从 CNN 到 Transformer：统一的表征学习框架</h2>
+<h2 id="从-cnn-到-transformer统一的表征学习框架">从 CNN 到 Transformer：统一的表征学习框架</h2>
 <div class="highlight"><pre><span></span><code>CNN 的归纳偏置：
   - 局部性（卷积核）→ 强制关注局部
   - 平移等变性 → 位置无关的特征
@@ -169,8 +169,8 @@ Transformer 的归纳偏置：
      都会收敛到同一个最优表征。
 </code></pre></div>
 
-<h2 id="debug-transformer">Debug Transformer：从图像可视化到文本可解释性</h2>
-<h3 id="_5">图像模型的调试为何如此直观</h3>
+<h2 id="debug-transformer从图像可视化到文本可解释性">Debug Transformer：从图像可视化到文本可解释性</h2>
+<h3 id="图像模型的调试为何如此直观">图像模型的调试为何如此直观</h3>
 <p>CNN 的每一层都可以<strong>直接可视化</strong>，这让调试变得像"看图说话"：</p>
 <div class="highlight"><pre><span></span><code>调试 CNN 的经典方法：
 
@@ -193,7 +193,7 @@ Transformer 的归纳偏置：
 </code></pre></div>
 
 <p>这些方法之所以强大，是因为<strong>人类视觉系统可以直接理解图像空间的含义</strong>。你看到热力图高亮在猫耳朵上，就知道模型在用耳朵特征——无需额外解释。</p>
-<h3 id="transformer_2">文本 Transformer 的调试困境</h3>
+<h3 id="文本-transformer-的调试困境">文本 Transformer 的调试困境</h3>
 <p>文本没有"空间直觉"，调试难度陡增：</p>
 <div class="highlight"><pre><span></span><code>图像模型：Layer 3 激活图 → 高亮鼻子区域 → 人眼秒懂 ✓
 文本模型：Layer 3 激活向量 → [0.23, -0.87, 0.45, ...] → ??? ✗
@@ -210,9 +210,9 @@ Transformer 的归纳偏置：
 2. <strong>维度诅咒</strong>：768/1024维的隐藏状态无法直接可视化
 3. <strong>组合爆炸</strong>：同一句话的语义依赖可能跨越任意距离
 4. <strong>多义性</strong>：同一个词在不同上下文中表征完全不同</p>
-<h3 id="transformer_3">借鉴图像思路的文本 Transformer 调试方法</h3>
+<h3 id="借鉴图像思路的文本-transformer-调试方法">借鉴图像思路的文本 Transformer 调试方法</h3>
 <p>尽管文本不如图像直观，但我们可以<strong>系统地借鉴图像调试的每一种范式</strong>：</p>
-<h4 id="1-feature-map-visualization">方法 1：注意力图可视化（对应 Feature Map Visualization）</h4>
+<h4 id="方法-1注意力图可视化对应-feature-map-visualization">方法 1：注意力图可视化（对应 Feature Map Visualization）</h4>
 <div class="highlight"><pre><span></span><code><span class="c1"># 注意力权重就是文本版的&quot;热力图&quot;</span>
 <span class="kn">import</span><span class="w"> </span><span class="nn">torch</span>
 <span class="kn">from</span><span class="w"> </span><span class="nn">transformers</span><span class="w"> </span><span class="kn">import</span> <span class="n">AutoModel</span><span class="p">,</span> <span class="n">AutoTokenizer</span>
@@ -249,7 +249,7 @@ Layer 11-12 (抽象)：
 </code></pre></div>
 
 <p>工具推荐：<strong>BertViz</strong> (https://github.com/jessevig/bertviz) 可以交互式可视化注意力。</p>
-<h4 id="2probing-classifiers-filter-visualization">方法 2：Probing Classifiers（对应 Filter Visualization）</h4>
+<h4 id="方法-2probing-classifiers对应-filter-visualization">方法 2：Probing Classifiers（对应 Filter Visualization）</h4>
 <p>图像中我们优化输入来"看"神经元学到了什么。文本中，我们用<strong>探针分类器</strong>来"问"每一层学到了什么：</p>
 <div class="highlight"><pre><span></span><code><span class="c1"># 在每一层的隐藏状态上训练简单分类器</span>
 <span class="c1"># 如果某层能准确预测某种语言属性 → 该层编码了该信息</span>
@@ -288,7 +288,7 @@ Layer 11-12 (抽象)：
 情感极性          Layer 11-12 审美判断
 </code></pre></div>
 
-<h4 id="3-grad-cam-saliency-map">方法 3：梯度归因（对应 Grad-CAM / Saliency Map）</h4>
+<h4 id="方法-3梯度归因对应-grad-cam-saliency-map">方法 3：梯度归因（对应 Grad-CAM / Saliency Map）</h4>
 <div class="highlight"><pre><span></span><code><span class="c1"># 文本版 Grad-CAM：哪些 token 对输出贡献最大</span>
 
 <span class="kn">import</span><span class="w"> </span><span class="nn">torch</span>
@@ -325,7 +325,7 @@ Layer 11-12 (抽象)：
 - <strong>Integrated Gradients</strong>：沿嵌入路径积分，比原始梯度更稳定
 - <strong>SHAP (SHapley Additive exPlanations)</strong>：博弈论方法，计算每个token的边际贡献
 - <strong>LIME</strong>：扰动输入token观察输出变化，类似图像的遮挡实验</p>
-<h4 id="4activation-patching-causal-tracing">方法 4：激活打补丁（Activation Patching / Causal Tracing）</h4>
+<h4 id="方法-4激活打补丁activation-patching-causal-tracing">方法 4：激活打补丁（Activation Patching / Causal Tracing）</h4>
 <p>这是 Mechanistic Interpretability 的核心方法，<strong>最接近图像调试的直觉</strong>：</p>
 <div class="highlight"><pre><span></span><code><span class="c1"># 思路：类似遮挡图像某区域看输出变化</span>
 <span class="c1"># 文本版：替换某一层某个位置的激活，观察输出变化</span>
@@ -361,7 +361,7 @@ Layer 11-12 (抽象)：
 <span class="c1"># 这张热力图就是文本版的 Grad-CAM！</span>
 </code></pre></div>
 
-<h4 id="5logit-lens-tuned-lens">方法 5：Logit Lens / Tuned Lens（逐层"偷看"预测）</h4>
+<h4 id="方法-5logit-lens-tuned-lens逐层偷看预测">方法 5：Logit Lens / Tuned Lens（逐层"偷看"预测）</h4>
 <div class="highlight"><pre><span></span><code><span class="c1"># 核心思想：在每一层都把隐藏状态投影到词表空间</span>
 <span class="c1"># → 看到模型在每一层&quot;当前觉得下一个词是什么&quot;</span>
 <span class="c1"># → 类似于看 CNN 每一层的特征图如何逐步聚焦</span>
@@ -387,7 +387,7 @@ Layer 11-12 (抽象)：
 </code></pre></div>
 
 <p>这个方法极其强大——你可以<strong>逐层看到一个概念如何在网络中形成</strong>，完全对应于 CNN 中从边缘到物体的渐进过程。</p>
-<h4 id="6-sparse-autoencoder-sae">方法 6：稀疏自编码器 (Sparse Autoencoder, SAE) 分解特征</h4>
+<h4 id="方法-6稀疏自编码器-sparse-autoencoder-sae-分解特征">方法 6：稀疏自编码器 (Sparse Autoencoder, SAE) 分解特征</h4>
 <div class="highlight"><pre><span></span><code><span class="c1"># 最新方法（Anthropic 2024）：</span>
 <span class="c1"># 将每一层的激活分解为可解释的&quot;单语义特征&quot;</span>
 <span class="c1"># → 类似于把 CNN 的特征图分解为独立的滤波器</span>
@@ -419,7 +419,7 @@ Layer 11-12 (抽象)：
 <span class="c1"># Filter #142: 检测天空纹理</span>
 </code></pre></div>
 
-<h3 id="_6">调试方法对照总结</h3>
+<h3 id="调试方法对照总结">调试方法对照总结</h3>
 <div class="highlight"><pre><span></span><code>┌──────────────────────┬──────────────────────┬──────────────────────┐
 │    图像模型调试       │    文本模型调试        │    核心思想          │
 ├──────────────────────┼──────────────────────┼──────────────────────┤
@@ -443,7 +443,7 @@ Layer 11-12 (抽象)：
 └──────────────────────┴──────────────────────┴──────────────────────┘
 </code></pre></div>
 
-<h3 id="transformer_4">实践建议：文本 Transformer 调试工作流</h3>
+<h3 id="实践建议文本-transformer-调试工作流">实践建议：文本 Transformer 调试工作流</h3>
 <div class="highlight"><pre><span></span><code>Step 1: 宏观诊断
   ├── 注意力图可视化 → 模型是否在关注合理的 token？
   ├── Logit Lens → 预测在哪一层开始成形？
@@ -466,7 +466,7 @@ Step 4: 调优策略
   └── 注意力模式异常 → 考虑调整注意力头数或加入归纳偏置
 </code></pre></div>
 
-<h2 id="_7">总结：一切都是表征</h2>
+<h2 id="总结一切都是表征">总结：一切都是表征</h2>
 <table>
 <thead>
 <tr>

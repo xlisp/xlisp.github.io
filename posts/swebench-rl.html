@@ -33,10 +33,10 @@
     </header>
 
     <div class="content">
-<h2 id="_1">一句话总结</h2>
+<h2 id="一句话总结">一句话总结</h2>
 <p>在原有 MBPP RL（"给题 → 写函数 → 跑 assert"）之后，追加一个以 <strong>SWE-bench train</strong> 为环境的 RL 阶段：模型读 GitHub issue → 生成 unified diff 补丁 → 在 Docker 容器里 <code>git apply</code> + 跑测试 → 通过率作为 reward。这迫使模型学会一种全新的能力：<strong>在真实仓库上下文中定位并修复 bug</strong>。</p>
-<h2 id="_2">为什么这能提升模型能力</h2>
-<h3 id="1">1. 从"写函数"到"改仓库"——任务形式迁移</h3>
+<h2 id="为什么这能提升模型能力">为什么这能提升模型能力</h2>
+<h3 id="1-从写函数到改仓库任务形式迁移">1. 从"写函数"到"改仓库"——任务形式迁移</h3>
 <table>
 <thead>
 <tr>
@@ -73,7 +73,7 @@
 - <strong>定位能力</strong>：从 issue 描述中判断该改哪个文件的哪些行
 - <strong>最小修改原则</strong>：只改必要的地方，不破坏其他测试</p>
 <p>这些都不是 MBPP 能训练出来的。SWE-bench RL 直接用"补丁能不能跑通测试"作为 reward，端到端地教模型学这些。</p>
-<h3 id="2">2. 分层奖励——从格式到语义的课程学习</h3>
+<h3 id="2-分层奖励从格式到语义的课程学习">2. 分层奖励——从格式到语义的课程学习</h3>
 <p>我们设计了三级 reward mode 作为课程学习 (curriculum)：</p>
 <div class="highlight"><pre><span></span><code>syntax (0.3)  →  apply-only (0.3)  →  docker (0.3 + 0.7 * test_pass_rate)
 </code></pre></div>
@@ -109,13 +109,13 @@
 </tbody>
 </table>
 <p>为什么要分阶段？因为一个 2B 模型一开始连 diff 格式都生成不好。如果直接进入 Phase 3，绝大多数 rollout 的 reward 都是 0（连 apply 都过不了），advantage 方差极大，训练信号几乎为零。分阶段让模型先掌握格式，再学语义。</p>
-<h3 id="3-docker-in-the-loop">3. Docker-in-the-Loop 提供"真实世界"信号</h3>
+<h3 id="3-docker-in-the-loop-提供真实世界信号">3. Docker-in-the-Loop 提供"真实世界"信号</h3>
 <p>为什么不能用简单的启发式（比如检查 diff 是否改了正确的文件）替代 Docker？因为：
 - <strong>启发式太粗</strong>：改了正确的文件不等于改对了。一个 off-by-one 的 diff 能 apply 但跑不过测试
 - <strong>Docker 是 ground truth</strong>：SWE-bench 的 Docker 镜像精确复现了每个 issue 当时的仓库状态、Python 版本、依赖版本。测试通过 = 真的修好了
 - <strong>FAIL_TO_PASS 测试是二元反馈</strong>：这是最清晰的 RL 信号——"这行代码改对了吗？测试说：是/否"</p>
 <p>代价是速度极慢（每个 Docker eval ~30-300s），但这正是 docs/swebench_eval.md 里说的"非常重"。</p>
-<h3 id="4-2b">4. 对 2B 模型的现实预期</h3>
+<h3 id="4-对-2b-模型的现实预期">4. 对 2B 模型的现实预期</h3>
 <p>即使加了 SWE-bench RL，2B 模型在 SWE-bench Lite 上的 resolved 率仍然很低（预计 0-3%）。但关键的早期指标是：</p>
 <table>
 <thead>
@@ -144,7 +144,7 @@
 </tbody>
 </table>
 <p><code>applied</code> 比 <code>resolved</code> 更早看到进步。即使 resolved 仍然是 0，"能生成 apply 的补丁"本身已经是巨大的能力提升。</p>
-<h2 id="_3">架构概览</h2>
+<h2 id="架构概览">架构概览</h2>
 <div class="highlight"><pre><span></span><code>┌─────────────────────────────────────────────────────┐
 │                  rl_swebench.py                     │
 │                                                     │
@@ -179,7 +179,7 @@
 └─────────────────────────────────────────────────────┘
 </code></pre></div>
 
-<h2 id="_4">文件清单</h2>
+<h2 id="文件清单">文件清单</h2>
 <table>
 <thead>
 <tr>
@@ -202,8 +202,8 @@
 </tr>
 </tbody>
 </table>
-<h2 id="_5">快速开始</h2>
-<h3 id="_6">前置条件</h3>
+<h2 id="快速开始">快速开始</h2>
+<h3 id="前置条件">前置条件</h3>
 <div class="highlight"><pre><span></span><code><span class="c1"># 1. Docker (必须)</span>
 docker<span class="w"> </span>info<span class="w">  </span><span class="c1"># 确认能无 sudo 运行</span>
 
@@ -214,12 +214,12 @@ pip<span class="w"> </span>install<span class="w"> </span>swebench
 <span class="c1"># 4. 已完成 v1 训练，有 SFT/RL checkpoint</span>
 </code></pre></div>
 
-<h3 id="_7">一键运行（推荐）</h3>
+<h3 id="一键运行推荐">一键运行（推荐）</h3>
 <div class="highlight"><pre><span></span><code><span class="c1"># 完整 v2 训练流水线（含 SWE-bench RL 阶段）</span>
 bash<span class="w"> </span>runs/train_a800_v2.sh
 </code></pre></div>
 
-<h3 id="_8">分步运行</h3>
+<h3 id="分步运行">分步运行</h3>
 <div class="highlight"><pre><span></span><code><span class="c1"># Step 0: 预构建 Docker 镜像（仅需一次，可能需要几小时）</span>
 python<span class="w"> </span>-m<span class="w"> </span>scripts.rl_swebench<span class="w"> </span><span class="se">\</span>
 <span class="w">    </span>--sft-ckpt<span class="w"> </span>checkpoints/codechat_2b_rl/latest.pt<span class="w"> </span><span class="se">\</span>
@@ -252,7 +252,7 @@ python<span class="w"> </span>-m<span class="w"> </span>scripts.eval_swebench<sp
 <span class="w">    </span>--split<span class="w"> </span>lite<span class="w"> </span>--out<span class="w"> </span>predictions/codechat_2b_rl_sweb.jsonl
 </code></pre></div>
 
-<h2 id="_9">关键超参数</h2>
+<h2 id="关键超参数">关键超参数</h2>
 <table>
 <thead>
 <tr>
@@ -304,8 +304,8 @@ python<span class="w"> </span>-m<span class="w"> </span>scripts.eval_swebench<sp
 </tr>
 </tbody>
 </table>
-<h2 id="reward">Reward 设计细节</h2>
-<h3 id="_10">奖励分解</h3>
+<h2 id="reward-设计细节">Reward 设计细节</h2>
+<h3 id="奖励分解">奖励分解</h3>
 <div class="highlight"><pre><span></span><code>reward = apply_bonus * I(patch_applies) + test_weight * (tests_passed / tests_total)
 </code></pre></div>
 
@@ -336,15 +336,15 @@ python<span class="w"> </span>-m<span class="w"> </span>scripts.eval_swebench<sp
 </tr>
 </tbody>
 </table>
-<h3 id="apply">为什么给 apply 单独加分？</h3>
+<h3 id="为什么给-apply-单独加分">为什么给 apply 单独加分？</h3>
 <p>因为对 2B 模型来说，"生成一个能 apply 的补丁"已经很难了。如果只有 0/1 reward（全通过才有分），模型几乎收不到正向信号。<code>apply_bonus</code> 让模型在学会写正确 diff 格式之后就开始收到 reward，形成渐进的学习曲线。</p>
-<h3 id="docker">Docker 安全</h3>
+<h3 id="docker-安全">Docker 安全</h3>
 <ul>
 <li>所有 Docker 容器使用 <code>--network none</code> 隔离网络</li>
 <li>容器以 <code>--rm</code> 运行，用完即销</li>
 <li>临时文件在 finally 块中清理</li>
 </ul>
-<h2 id="tensorboard">TensorBoard 监控</h2>
+<h2 id="tensorboard-监控">TensorBoard 监控</h2>
 <div class="highlight"><pre><span></span><code>tensorboard<span class="w"> </span>--logdir<span class="w"> </span>runs/tb
 </code></pre></div>
 
@@ -395,7 +395,7 @@ python<span class="w"> </span>-m<span class="w"> </span>scripts.eval_swebench<sp
 </tr>
 </tbody>
 </table>
-<h2 id="_11">时间和资源估算</h2>
+<h2 id="时间和资源估算">时间和资源估算</h2>
 <p>以 A800 80GB + 16 核 CPU + SSD 为例：</p>
 <table>
 <thead>
@@ -443,7 +443,7 @@ python<span class="w"> </span>-m<span class="w"> </span>scripts.eval_swebench<sp
 - 减少 <code>--group-size</code> 到 2（牺牲 advantage 估计质量）
 - 减少 <code>--max-steps</code>（早停）
 - 用 <code>--train-limit N</code> 只用部分训练实例（减少镜像构建时间）</p>
-<h2 id="v1">与 v1 训练流水线的关系</h2>
+<h2 id="与-v1-训练流水线的关系">与 v1 训练流水线的关系</h2>
 <div class="highlight"><pre><span></span><code>v1 (train_a800.sh):
   pretrain → SFT → MBPP RL → eval
 
@@ -456,14 +456,14 @@ v2 (train_a800_v2.sh):
 - <strong>MBPP RL</strong> 教模型写正确的独立函数（基础代码能力）
 - <strong>SWE-bench RL</strong> 教模型在仓库上下文中生成修复补丁（软件工程能力）</p>
 <p>KL penalty 确保 SWE-bench RL 不会让模型"忘记" MBPP RL 阶段学到的基础编码能力。</p>
-<h2 id="_12">局限性与未来方向</h2>
+<h2 id="局限性与未来方向">局限性与未来方向</h2>
 <ol>
 <li><strong>极慢</strong>：Docker-in-the-loop 是这个方法最大的成本。未来可以用 learned reward model 替代部分 Docker eval（蒸馏 Docker 的判断）</li>
 <li><strong>2B 太小</strong>：SWE-bench 需要读很多上下文代码，2B 模型的世界知识和长上下文能力不够。扩大到 7B+ 效果会更好</li>
 <li><strong>单次生成，非 agent</strong>：当前是一次性生成整个 patch。加上 agent scaffolding（grep, read_file, run_tests 工具循环）会大幅提升效果</li>
 <li><strong>没有 PASS_TO_PASS 惩罚</strong>：当前只看 FAIL_TO_PASS 是否修复，没有检查是否引入了新的 regression。未来可以加上 PASS_TO_PASS 的负 reward</li>
 </ol>
-<h2 id="_13">参考文献</h2>
+<h2 id="参考文献">参考文献</h2>
 <ul>
 <li>Shao et al. (2024). <em>DeepSeekMath: Pushing the Limits of Mathematical Reasoning in Open Language Models</em> — GRPO 算法原始论文</li>
 <li>Jimenez et al. (2024). <em>SWE-bench: Can Language Models Resolve Real-World GitHub Issues?</em></li>

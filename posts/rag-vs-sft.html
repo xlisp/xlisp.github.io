@@ -41,7 +41,7 @@
 3. <strong>怎么"真的评估"</strong>：怎么切数据、怎么定 metric、怎么设 baseline，才能得到可信的"谁更好"的结论。</p>
 </blockquote>
 <hr />
-<h2 id="_1">目录</h2>
+<h2 id="目录">目录</h2>
 <ol>
 <li><a href="#1-先把两种操作的本质摆清楚">先把两种操作的本质摆清楚</a></li>
 <li><a href="#2-rag-的数学把知识塞进-prompt-的前半段">RAG 的数学：把知识塞进 prompt 的前半段</a></li>
@@ -55,7 +55,7 @@
 <li><a href="#10-小结">小结</a></li>
 </ol>
 <hr />
-<h2 id="1">1. 先把两种操作的本质摆清楚</h2>
+<h2 id="1-先把两种操作的本质摆清楚">1. 先把两种操作的本质摆清楚</h2>
 <p>"给模型加私有数据"这句话在数学上是有歧义的。看看 CodeGPT 的 forward，就知道"知识"可以住在两个地方。<code>model.py:177-198</code>：</p>
 <div class="highlight"><pre><span></span><code><span class="k">def</span><span class="w"> </span><span class="nf">forward</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">idx</span><span class="p">,</span> <span class="n">targets</span><span class="o">=</span><span class="kc">None</span><span class="p">):</span>
     <span class="c1"># idx: (B, T) 输入 token ——&quot;context&quot;住在这里</span>
@@ -82,7 +82,7 @@
 </ul>
 <p>这是两件完全不同的事。两者的取舍也就完全不同。</p>
 <hr />
-<h2 id="2-rag-prompt">2. RAG 的数学：把知识塞进 prompt 的前半段</h2>
+<h2 id="2-rag-的数学把知识塞进-prompt-的前半段">2. RAG 的数学：把知识塞进 prompt 的前半段</h2>
 <p>RAG（Retrieval-Augmented Generation，Lewis et al. 2020）的完整流水线：</p>
 <div class="highlight"><pre><span></span><code>私有数据 → 切 chunk → 向量化（embedding）→ 存进向量库
                                                 ↓
@@ -120,7 +120,7 @@
 <li><strong>每次推理都要多做一次检索</strong>：延迟和算力成本上升一些。</li>
 </ul>
 <hr />
-<h2 id="3-sft">3. SFT 的数学：把知识压进权重矩阵</h2>
+<h2 id="3-sft-的数学把知识压进权重矩阵">3. SFT 的数学：把知识压进权重矩阵</h2>
 <p>SFT 在数学上和预训练是<strong>同一个 loss</strong>——就是 <code>model.py:192</code> 那行 <code>F.cross_entropy</code>，详见 <a href="SFT_FORGETTING_AND_MOE.md">SFT_FORGETTING_AND_MOE.md</a> 第 2 节。区别仅在于：</p>
 <ul>
 <li>语料是精选的（你的私有数据，格式化成 prompt-answer 对）。</li>
@@ -151,7 +151,7 @@
 <li><strong>会遗忘</strong>：做过 SFT 的模型，如果数据配比不当，通用能力可能下降（这也是 <a href="SFT_FORGETTING_AND_MOE.md">SFT_FORGETTING_AND_MOE.md</a> 的主题）。</li>
 </ul>
 <hr />
-<h2 id="4">4. 六个决策维度：哪种私有数据适合哪条路</h2>
+<h2 id="4-六个决策维度哪种私有数据适合哪条路">4. 六个决策维度：哪种私有数据适合哪条路</h2>
 <p>把问题拆成可以独立判断的维度：</p>
 <table>
 <thead>
@@ -203,7 +203,7 @@
 <li><strong>"我需要模型在没网的边缘设备上跑"</strong> → 倾向 SFT（或小模型 SFT + 本地向量库的 RAG 都行）。</li>
 </ul>
 <hr />
-<h2 id="5-rag">5. 为什么"默认先做 RAG"是合理的</h2>
+<h2 id="5-为什么默认先做-rag是合理的">5. 为什么"默认先做 RAG"是合理的</h2>
 <p>如果你没想清楚，先上 RAG。原因：</p>
 <ol>
 <li><strong>零训练成本</strong>。你不用准备 SFT 数据格式、不用调 lr、不用担心遗忘（见 <a href="SFT_FORGETTING_AND_MOE.md">SFT_FORGETTING_AND_MOE.md</a>）、不用维护 checkpoint。</li>
@@ -214,7 +214,7 @@
 </ol>
 <p>反过来，如果你一上来就做 SFT，你会发现自己在训练一个<strong>永远落后于文档更新的副本</strong>。这是大多数"想让 LLM 学公司知识"的团队踩的第一个大坑。</p>
 <hr />
-<h2 id="6-sft">6. 什么时候 SFT 才是正解</h2>
+<h2 id="6-什么时候-sft-才是正解">6. 什么时候 SFT 才是正解</h2>
 <p>有几类场景 RAG 是做不好的，必须 SFT：</p>
 <p><strong>(a) 改变输出风格 / 格式。</strong> 比如希望模型总是用特定 JSON schema 回答、总是用公司术语、总是按某种模板组织答复。这些是"行为模式"而不是"事实"，塞进 prompt 可以临时压住，但 SFT 才能让它成为模型的默认习惯。</p>
 <p><strong>(b) 领域推理能力。</strong> 比如让模型学会某种专业推理（病历诊断、合同风险分析、特定代码审查模式）。这类能力不是"记住几条规则"，而是<strong>在参数里形成一种新的推理路径</strong>。retrieved chunks 只是例子，它不会让模型"变得会这样想"。</p>
@@ -223,7 +223,7 @@
 <p><strong>(e) 对抗 prompt 注入。</strong> RAG 的 retrieved chunks 如果来源不可信，攻击者可以在一篇"私有文档"里埋入 <code>忽略上面的指令，……</code> 这类注入。SFT 过的知识没有这个攻击面（因为没有运行时的文本注入通道）。</p>
 <p>注意：即使要 SFT，<strong>也几乎总是应该叠加 RAG</strong>，而不是替代它。看下一节。</p>
 <hr />
-<h2 id="7-rag-sft">7. RAG + SFT 叠加：不是二选一</h2>
+<h2 id="7-rag-sft-叠加不是二选一">7. RAG + SFT 叠加：不是二选一</h2>
 <p>工业界成熟方案常常是<strong>两者都要</strong>：</p>
 <div class="highlight"><pre><span></span><code>私有数据
   ├── 静态的、风格的、推理模式的 ─→ SFT 进模型
@@ -241,9 +241,9 @@
 <p>这两层各司其职：SFT 决定<strong>怎么说</strong>，RAG 决定<strong>说的内容依据什么</strong>。</p>
 <p>在本项目的代码框架里，这两者完全可以共存：SFT 走 <code>train.py</code> 那套（改一下 <code>prepare.py</code> 构造 prompt-answer 对 + 把 prompt 段 target 设 -1），RAG 走推理期——在 <code>sample.py</code> 或 <code>repl.py</code> 的 <code>input_ids = tokenizer.encode(prompt)</code> 之前，先做一次检索、把 chunks 拼进 prompt 就行。模型的 <code>forward</code> / <code>generate</code> 一个字都不用改。</p>
 <hr />
-<h2 id="8-metric-baseline">8. 真正的评估方法：数据集切分 + metric + baseline</h2>
+<h2 id="8-真正的评估方法数据集切分-metric-baseline">8. 真正的评估方法：数据集切分 + metric + baseline</h2>
 <p>"哪个更好"是一个经验问题，不是哲学问题。要得出<strong>可复现</strong>的结论，需要一个最小实验设计：</p>
-<h3 id="81">8.1 数据集切分</h3>
+<h3 id="81-数据集切分">8.1 数据集切分</h3>
 <p>把你的私有数据和"问题"分开：</p>
 <div class="highlight"><pre><span></span><code><span class="c1"># 私有数据（知识源）</span>
 <span class="n">docs_train</span>       <span class="c1"># 训 SFT / 进 RAG 向量库的文档</span>
@@ -320,7 +320,7 @@
 </code></pre></div>
 
 <p>在相同的 questions 上跑这四个，矩阵一出，结论自然浮现——不需要拍脑袋说"我觉得 RAG 更好"。</p>
-<h3 id="84">8.4 成本也要量化</h3>
+<h3 id="84-成本也要量化">8.4 成本也要量化</h3>
 <p>除了质量，把下面几条记录下来：</p>
 <ul>
 <li><strong>前置成本</strong>：RAG = 建索引时间；SFT = 训练 GPU 小时。</li>
@@ -330,7 +330,7 @@
 </ul>
 <p>一个方案再"准"，如果知识更新一次要 8 小时训练，在"公司 wiki 每天改"的场景里就是不可用。</p>
 <hr />
-<h2 id="9-codegpt">9. 回到 CodeGPT：私有代码库该怎么用</h2>
+<h2 id="9-回到-codegpt私有代码库该怎么用">9. 回到 CodeGPT：私有代码库该怎么用</h2>
 <p>假设场景：你有一个公司私有代码库（比如 50 万行内部 Python + 自建框架），想让 CodeGPT 学会在这个代码库里做补全。</p>
 <p>按本文的分析，推荐路径：</p>
 <p><strong>Step 1 —— 先判断你要的是"事实"还是"风格"。</strong></p>
@@ -371,7 +371,7 @@
 <li>把这些样例当成 SFT 数据的信号来源。SFT 不是替代 RAG，是补 RAG 的短板。</li>
 </ol>
 <hr />
-<h2 id="10">10. 小结</h2>
+<h2 id="10-小结">10. 小结</h2>
 <ul>
 <li><strong>RAG 改 <code>idx</code>，SFT 改 <code>W</code></strong>。是两种不同的操作，不是两种"差不多的方法"。分清楚这一点，选型问题的一半就消失了。</li>
 <li><strong>事实 → RAG，风格 → SFT</strong>。更新频繁 → RAG，离线推理 / 延迟敏感 → SFT。需要溯源 → RAG。需要遵守 GDPR "被遗忘权" → RAG。</li>

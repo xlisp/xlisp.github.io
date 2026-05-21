@@ -35,8 +35,8 @@
     <div class="content">
 <p>v6 用 <code>sft_code + sft_funcall</code> 混合数据联合训练一个模型，同时获得写代码和调工具两种能力。这和 <strong>MoE (Mixture of Experts)</strong> 是一回事吗？</p>
 <p><strong>一句话答案</strong>：<strong>不是</strong>。动机有重叠（让一个模型拥有多种能力），但实现层完全不同 —— 一个是<strong>数据工程</strong>，一个是<strong>架构工程</strong>。</p>
-<h2 id="1">1. 两者到底在做什么</h2>
-<h3 id="sftv6">混合 SFT（v6 的做法）</h3>
+<h2 id="1-两者到底在做什么">1. 两者到底在做什么</h2>
+<h3 id="混合-sftv6-的做法">混合 SFT（v6 的做法）</h3>
 <div class="highlight"><pre><span></span><code>  ┌────────────────────────────────────┐
   │       单一 8B 模型，稠密           │
   │                                    │
@@ -74,7 +74,7 @@
 <li>任务路由：<strong>router 学出来</strong>的，按 token 粒度动态路由</li>
 <li>训练：loss 里常加 router 均衡正则（load balancing loss），否则 router 退化成只用一两个 expert</li>
 </ul>
-<h2 id="2">2. 关键差异对照</h2>
+<h2 id="2-关键差异对照">2. 关键差异对照</h2>
 <table>
 <thead>
 <tr>
@@ -131,7 +131,7 @@
 </tr>
 </tbody>
 </table>
-<h2 id="3">3. 共同动机</h2>
+<h2 id="3-共同动机">3. 共同动机</h2>
 <p>两者都在回答同一个问题：<strong>一个模型能否同时掌握多种能力？</strong></p>
 <p>更深一层，都在对抗<strong>容量稀释</strong>：</p>
 <blockquote>
@@ -141,7 +141,7 @@
 <li><strong>混合 SFT 的赌注</strong>：8B 的容量足够装下几种相关能力，靠数据分布教会模型"看 prompt 切换 mode"。</li>
 <li><strong>MoE 的赌注</strong>：不够就直接堆容量，但只在需要时激活对应的 expert，FLOPs 不涨。</li>
 </ul>
-<h2 id="4">4. 类比：公司组织结构</h2>
+<h2 id="4-类比公司组织结构">4. 类比：公司组织结构</h2>
 <table>
 <thead>
 <tr>
@@ -165,7 +165,7 @@
 </tbody>
 </table>
 <p>全栈工程师可能没有纯专家精，但沟通成本低、招聘成本低。MoE 的专家更精，但需要一个好 PM（router），否则 PM 老是派活给同一个人（load imbalance）。</p>
-<h2 id="5">5. 什么时候用哪个</h2>
+<h2 id="5-什么时候用哪个">5. 什么时候用哪个</h2>
 <p><strong>用混合 SFT：</strong>
 - 任务之间有<strong>语义重叠</strong>或<strong>共享底层能力</strong>（写代码和调工具都需要结构化输出能力）
 - 推理预算固定，不想改架构
@@ -176,7 +176,7 @@
 - 想在固定推理 FLOPs 下<strong>扩大模型知识容量</strong>
 - 有预算做架构改造和更长的训练
 - 任务数量很多（10+ 种 domain）</p>
-<h2 id="6-v6-sft-moe">6. v6 为什么选混合 SFT 而不是 MoE</h2>
+<h2 id="6-v6-为什么选混合-sft-而不是-moe">6. v6 为什么选混合 SFT 而不是 MoE</h2>
 <ol>
 <li><strong>能力差异小</strong>：写代码 vs 调工具，两者都是<strong>结构化文本输出</strong>，底层能力（token prediction、格式保真）是共享的。不需要强制隔离。</li>
 <li><strong>prompt 边界清晰</strong>：有 <code>&lt;|system|&gt;</code> 工具块就走 funcall，否则写代码 —— 路由信号太明确，学一个 router 属于杀鸡用牛刀。</li>
@@ -184,7 +184,7 @@
 <li><strong>容量够用</strong>：8B 稠密容量装下两种相关能力大概率够（glaive 113k + code 30k ≈ 143k 样本，参数冗余很大）。</li>
 <li><strong>v5 证明了路径可行</strong>：v5 纯 funcall SFT 能跑到 86% 全匹配，说明这套 tokenizer + 数据管线对 funcall 格式学得很扎实。v6 只是在此基础上<strong>再塞点代码数据</strong>，风险可控。</li>
 </ol>
-<h2 id="7">7. 能不能两个一起用？</h2>
+<h2 id="7-能不能两个一起用">7. 能不能两个一起用？</h2>
 <p>能。现实里的做法是：</p>
 <div class="highlight"><pre><span></span><code>MoE 架构 + 混合数据 SFT
 </code></pre></div>
@@ -194,7 +194,7 @@
 - 混合数据提供多任务监督
 - Router 学到"这类 token 交给 expert 3，那类 token 交给 expert 5"</p>
 <p>对 CodeChat 来说这是未来的方向，但现在 8B 稠密模型还有很多没榨干的优化空间（数据配比、RL 奖励设计、在线评测），先把混合 SFT 的路走清楚再说。</p>
-<h2 id="8">8. 容易搞混的地方</h2>
+<h2 id="8-容易搞混的地方">8. 容易搞混的地方</h2>
 <p>误解：<strong>"混合 SFT 是 MoE 的简化版，router 变成人肉 prompt 就是 MoE。"</strong></p>
 <p>不对。MoE 的本质是 <strong>sparse activation</strong> —— 推理时只激活一部分参数以省 FLOPs。混合 SFT 没有任何稀疏性，<strong>所有参数每个 token 都在跑</strong>。两者解决的问题不同：</p>
 <ul>
@@ -202,7 +202,7 @@
 <li><strong>混合 SFT 解决</strong>：想让一个定容量模型覆盖多个任务分布</li>
 </ul>
 <p>不同层的事情，不是同一思路的两个实现。</p>
-<h2 id="9">9. 参考</h2>
+<h2 id="9-参考">9. 参考</h2>
 <ul>
 <li>MoE 经典：Shazeer et al. 2017《Outrageously Large Neural Networks: The Sparsely-Gated Mixture-of-Experts Layer》</li>
 <li>Mixtral-8x7B：Jiang et al. 2024《Mixtral of Experts》</li>

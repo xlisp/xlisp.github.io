@@ -33,6 +33,7 @@ from pathlib import Path
 
 try:
     import markdown
+    from markdown.extensions.toc import slugify_unicode
 except ImportError:
     sys.stderr.write(
         "Missing dependency: markdown\n"
@@ -93,6 +94,7 @@ def render_markdown(body: str) -> tuple[str, str | None]:
         ],
         extension_configs={
             "codehilite": {"guess_lang": False, "css_class": "highlight"},
+            "toc": {"slugify": slugify_unicode},
         },
     )
     out = md.convert(body)

@@ -40,7 +40,7 @@
 <p>核心观点：<strong>黑盒白盒化不是玄学，它就是在前向过程的关键位置插几个 hook，把隐藏激活取出来看，再把它替换掉看后果。</strong> 其它所有术语（circuit / direction of interest / write vector）都是这个动作的语法糖。</p>
 </blockquote>
 <hr />
-<h2 id="_1">目录</h2>
+<h2 id="目录">目录</h2>
 <ol>
 <li><a href="#1-为什么调试大模型和调试普通程序不一样">为什么"调试大模型"和调试普通程序不一样</a></li>
 <li><a href="#2-tdb-是什么一个三层栈">TDB 是什么：一个三层栈</a></li>
@@ -53,7 +53,7 @@
 <li><a href="#9-黑盒--白盒这条路通向哪里">黑盒 → 白盒：这条路通向哪里</a></li>
 </ol>
 <hr />
-<h2 id="1">1. 为什么"调试大模型"和调试普通程序不一样</h2>
+<h2 id="1-为什么调试大模型和调试普通程序不一样">1. 为什么"调试大模型"和调试普通程序不一样</h2>
 <p>调试一段普通 Python 程序，你会做三件事：</p>
 <ol>
 <li>下断点、打印中间变量；</li>
@@ -91,7 +91,7 @@
 </table>
 <p>TDB 就是这个映射表的工程化实现。</p>
 <hr />
-<h2 id="2-tdb">2. TDB 是什么：一个三层栈</h2>
+<h2 id="2-tdb-是什么一个三层栈">2. TDB 是什么：一个三层栈</h2>
 <p>拉开仓库目录 (<code>/Users/xlisp/PyPro/transformer-debugger</code>)：</p>
 <div class="highlight"><pre><span></span><code>transformer-debugger/
 ├── neuron_explainer/
@@ -111,11 +111,11 @@
 </ol>
 <p>本文只讲底层，因为<strong>一旦理解了 <code>hooks.py</code>，上面两层就只是 glue code</strong>。</p>
 <hr />
-<h2 id="3-hooks">3. hooks：在前向过程中打断点</h2>
-<h3 id="31-hook">3.1 hook 是什么</h3>
+<h2 id="3-hooks在前向过程中打断点">3. hooks：在前向过程中打断点</h2>
+<h3 id="31-hook-是什么">3.1 hook 是什么</h3>
 <p>在 PyTorch 里，"hook"就是<strong>注册到前向/反向过程的回调函数</strong>，能在某个张量流经某层时读它、改它、或把它存下来。</p>
 <p>TDB 的 hooks 没有用 <code>register_forward_hook</code>，而是自己实现了一套更细粒度的 <code>HookCollection</code>（<code>neuron_explainer/models/hooks.py</code>）。动机很简单：原生 PyTorch hook 只能挂在 <code>nn.Module</code> 的输入/输出上，而 Transformer 里我们关心的很多点（比如 "attention 的 QK logits softmax 之前"、"MLP 激活之后"）<strong>不是模块边界</strong>，只是 <code>forward</code> 函数里的一个中间变量。自己实现才能覆盖这些点。</p>
-<h3 id="32-hook-transformer">3.2 hook 层级：把 Transformer 切成一颗树</h3>
+<h3 id="32-hook-层级把-transformer-切成一颗树">3.2 hook 层级：把 Transformer 切成一颗树</h3>
 <p>看 <code>hooks.py</code> 里的 <code>TransformerHooks</code> (<code>hooks.py:228</code>)：</p>
 <div class="highlight"><pre><span></span><code><span class="k">class</span><span class="w"> </span><span class="nc">TransformerHooks</span><span class="p">(</span><span class="n">HookCollection</span><span class="p">):</span>
     <span class="k">def</span><span class="w"> </span><span class="fm">__init__</span><span class="p">(</span><span class="bp">self</span><span class="p">):</span>
@@ -174,7 +174,7 @@
 </tbody>
 </table>
 <p>也就是说——TDB 不是一个神秘的第三方工具，它只是把你自己每次 debug 都要手写的 <code>x.detach().clone()</code> 语句<strong>提前写好、命名、组织成一棵树</strong>。</p>
-<h3 id="33-mlp">3.3 最小示例：读一个 MLP 激活</h3>
+<h3 id="33-最小示例读一个-mlp-激活">3.3 最小示例：读一个 MLP 激活</h3>
 <p>（来自 <code>neuron_explainer/models/README.md</code>）</p>
 <div class="highlight"><pre><span></span><code><span class="kn">from</span><span class="w"> </span><span class="nn">neuron_explainer.models.hooks</span><span class="w"> </span><span class="kn">import</span> <span class="n">TransformerHooks</span>
 <span class="kn">from</span><span class="w"> </span><span class="nn">neuron_explainer.models.transformer</span><span class="w"> </span><span class="kn">import</span> <span class="n">Transformer</span>
@@ -195,7 +195,7 @@
 
 <p>两行关键：<code>hooks.mlp.post_act.append_fwd(fn)</code> 注册，<code>xf(tokens, hooks=hooks)</code> 触发。</p>
 <p>一旦你手里有了每层每个 token 的激活，后续一切（可视化、ablation、找 top-activating 样本、喂给自编码器）都是普通 NumPy/PyTorch 操作。<strong>这就是"白盒化"这个动作的全部物理内容。</strong></p>
-<h3 id="34-atlayers">3.4 <code>AtLayers</code>：只在某几层触发</h3>
+<h3 id="34-atlayers只在某几层触发">3.4 <code>AtLayers</code>：只在某几层触发</h3>
 <p>真实 debug 时你通常只关心某几层：</p>
 <div class="highlight"><pre><span></span><code><span class="kn">from</span><span class="w"> </span><span class="nn">neuron_explainer.models.hooks</span><span class="w"> </span><span class="kn">import</span> <span class="n">AtLayers</span>
 
@@ -207,7 +207,7 @@
 
 <p><code>AtLayers</code> 是 <code>ConditionalHooks</code> 的子类——<code>hook(x, layer=...)</code> 被调用时读 <code>layer</code> kwarg 再决定要不要跑回调。</p>
 <hr />
-<h2 id="4-ablation">4. ablation：因果式调试——把一个神经元置零</h2>
+<h2 id="4-ablation因果式调试把一个神经元置零">4. ablation：因果式调试——把一个神经元置零</h2>
 <p>读激活只能看"是什么"，<strong>消融（ablation）才能回答"是不是因果"</strong>。</p>
 <p>TDB 里 ablation 就是一个改值的 forward hook：</p>
 <div class="highlight"><pre><span></span><code><span class="k">def</span><span class="w"> </span><span class="nf">make_ablation_hook</span><span class="p">(</span><span class="n">at_layer</span><span class="p">,</span> <span class="n">neuron</span><span class="p">):</span>
@@ -226,14 +226,14 @@
 
 <p>对比两次输出的差异，就是"第 3 层第 300 号神经元对本次生成的因果效应"。</p>
 <p>这在计量经济学里叫"反事实"：<strong>如果这个神经元没激活，模型会说什么？</strong> 在 TDB 的 terminology 里叫 <strong>ablate</strong>——目前实现的是 zero ablation，也就是"把这个 node 对残差流的 write vector 置零"。</p>
-<h3 id="ablation">什么时候用 ablation？</h3>
+<h3 id="什么时候用-ablation">什么时候用 ablation？</h3>
 <ul>
 <li><strong>定位功能</strong>：怀疑某个 head 负责"主语-动词一致"，就只在主语 token 上 ablate 它，看动词概率有没有崩。</li>
 <li><strong>验证假说</strong>：看到某个 neuron 的 top-activating 样本都是 Python 缩进，ablate 它，看 <code>def</code>/<code>if</code> 后面的换行概率降没降。</li>
 <li><strong>画 circuit</strong>：依次 ablate 候选 node，留下那些"ablate 后 direction of interest 明显变化的" node，它们就是一条 circuit 的骨架。</li>
 </ul>
 <hr />
-<h2 id="5-direction-of-interest">5. direction of interest：用梯度定义"重要"</h2>
+<h2 id="5-direction-of-interest用梯度定义重要">5. direction of interest：用梯度定义"重要"</h2>
 <p>Ablation 告诉你一个 node 重不重要；<strong>direction of interest</strong> 告诉你"对什么重要"。</p>
 <p>给定 prompt + 一个 <strong>target token</strong> A 和 <strong>distractor token</strong> B，direction of interest 是：</p>
 <div class="highlight"><pre><span></span><code>d = W_U[A] - W_U[B]   # 两个 unembedding 向量之差，形状 (n_embd,)
@@ -252,7 +252,7 @@
 <p>用 code 表达就是：在 backward 阶段把每个 hook 点的 <code>(act, grad)</code> 存下来，乘起来、排序，就得到"对 A-vs-B 这个问题贡献最大的 node 列表"。</p>
 <p><strong>这是"黑盒白盒化"最锋利的一刀</strong>：你不需要理解 12 层 × 12 head × 3072 neuron 里每一个在干嘛，只需要告诉 TDB "我关心 A 比 B 为什么概率高"，它就能按 <code>act·grad</code> 排序，把你应该先看的几十个 node 列出来。</p>
 <hr />
-<h2 id="6-sparse-autoencoder-latent">6. sparse autoencoder：把多义神经元翻译成单义 latent</h2>
+<h2 id="6-sparse-autoencoder把多义神经元翻译成单义-latent">6. sparse autoencoder：把多义神经元翻译成单义 latent</h2>
 <p>hooks + ablation + act·grad 已经能把 circuit 画出来了。但还有一个问题：<strong>单个 MLP 神经元通常是"多义的"</strong>——同一个神经元在 "code 缩进"、"括号匹配"、"日期"上都会激活，你没法给它一个干净的语义标签。</p>
 <p>这是 Anthropic 在 <a href="https://transformer-circuits.pub/2023/monosemantic-features">Towards Monosemanticity</a> 里展示的核心现象：<strong>真正单义的特征是神经元的线性组合，而不是单个神经元</strong>。</p>
 <p>TDB 的解法：在每层 MLP 激活上训练一个<strong>过完备的稀疏自编码器</strong>：</p>
@@ -277,7 +277,7 @@
 <p>注意这里 ablation 的颗粒度变了：<strong>不是 ablate neuron，是 ablate latent</strong>——而 latent 有语义，所以你可以说"关掉 Python-缩进这个 feature，看它对下一 token 的影响"。</p>
 <p>这一步把 hook 体系和 circuit 分析<strong>从不可读的 3072 维升级到可读的 32768 维稀疏空间</strong>。</p>
 <hr />
-<h2 id="7-tdb-uihooks-ablation">7. TDB 的 UI：hooks + ablation + 自动解释的装配线</h2>
+<h2 id="7-tdb-的-uihooks-ablation-自动解释的装配线">7. TDB 的 UI：hooks + ablation + 自动解释的装配线</h2>
 <p>有了以上机制，TDB 的 UI 就只是把它们组合成流水线：</p>
 <ol>
 <li>用户输入 prompt + target/distractor 两个候选 token。</li>
@@ -291,7 +291,7 @@
 </ol>
 <p>整个过程就是<strong>递归地把 hook 指针往上游挪</strong>，直到你能写下一句自然语言假设："layer 9 head 9 是 name mover 头，它把 subject name 从前文复制到当前位置" （<a href="https://arxiv.org/abs/2211.00593">IOI paper</a> 的发现）。</p>
 <hr />
-<h2 id="8-tdb-codegpt">8. 把 TDB 搬到 CodeGPT 上：一份最小可行改造清单</h2>
+<h2 id="8-把-tdb-搬到-codegpt-上一份最小可行改造清单">8. 把 TDB 搬到 CodeGPT 上：一份最小可行改造清单</h2>
 <p>TDB 的 <code>Transformer</code> 是自己写的——它不能直接吃 CodeGPT 的 checkpoint。如果你想在本仓库上复现这套 debug 能力，需要以下几步：</p>
 <ol>
 <li><strong>给 <code>model.py</code> 加 hook 点。</strong> 最省事的做法是模仿 <code>TransformerHooks</code> 的切面，在 <code>Block.forward</code> 里每个中间变量后面调一次 <code>hooks(...)</code>：</li>
@@ -319,7 +319,7 @@
 </ol>
 <p>实际 debug 工程里，第 1 步的收益最大：<strong>只要把 hooks 加进去</strong>，你就已经能用本文 §3–§5 的所有技巧手工分析 CodeGPT 了。UI 和 SAE 是锦上添花。</p>
 <hr />
-<h2 id="9">9. 黑盒 → 白盒：这条路通向哪里</h2>
+<h2 id="9-黑盒-白盒这条路通向哪里">9. 黑盒 → 白盒：这条路通向哪里</h2>
 <p>把本文倒过来读，就是"黑盒白盒化"的一个层级阶梯：</p>
 <ul>
 <li><strong>Level 0：API 级黑盒。</strong> 你只有 <code>model(tokens) → logits</code>。调试 = 换 prompt 试错。</li>
@@ -335,7 +335,7 @@
 <li><code>docs/COMPRESSION_IS_INTELLIGENCE.md</code> 说"GPT 把世界压进了 n_embd 维空间"。TDB 告诉你：<strong>那个空间不仅可压，还可读、可改、可归因。</strong> 黑盒白盒化不是哲学口号，是一套你今天就能动手做的工程实践。</li>
 </ul>
 <hr />
-<h2 id="_2">参考</h2>
+<h2 id="参考">参考</h2>
 <ul>
 <li>仓库：<code>/Users/xlisp/PyPro/transformer-debugger</code> · <a href="https://github.com/openai/transformer-debugger">openai/transformer-debugger</a></li>
 <li>Terminology：<code>transformer-debugger/terminology.md</code></li>

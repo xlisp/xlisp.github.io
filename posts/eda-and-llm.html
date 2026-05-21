@@ -33,7 +33,7 @@
     </header>
 
     <div class="content">
-<h2 id="eda">一、EDA 背后的算法基石</h2>
+<h2 id="一eda-背后的算法基石">一、EDA 背后的算法基石</h2>
 <p>EDA（电子设计自动化）本质上是<strong>符号化的约束求解</strong>：</p>
 <ul>
 <li><strong>逻辑综合</strong>：布尔代数 + Quine-McCluskey / ESPRESSO 算法做最小化</li>
@@ -43,7 +43,7 @@
 <li><strong>RTL 仿真</strong>：事件驱动 + 符号执行</li>
 </ul>
 <p>这些都是<strong>精确的、可证明的</strong>——不容许概率性错误。一个 CPU 流片错误成本上亿美元，因此 EDA 工具必须建立在严格的数理逻辑之上。</p>
-<h3 id="11">1.1 虚拟电子实验室：把电路变成方程</h3>
+<h3 id="11-虚拟电子实验室把电路变成方程">1.1 虚拟电子实验室：把电路变成方程</h3>
 <p>代表软件：<strong>SPICE / LTspice / PSpice / Multisim / Proteus / TINA-TI / Qucs / EasyEDA / Cadence Virtuoso</strong>。</p>
 <p>它们看起来是"画原理图、按下 Run、出波形"，背后却是一整套数值计算流水线：</p>
 <div class="highlight"><pre><span></span><code>原理图 ──► 网表 (Netlist) ──► 方程组装 ──► 数值求解 ──► 波形
@@ -126,7 +126,7 @@
 <li>MOSFET：<strong>Level 1/2/3 → BSIM3 → BSIM4 → BSIM-CMG (FinFET)</strong></li>
 <li>一个 BSIM4 模型有 <strong>400+ 参数</strong>，每个都对应一种物理效应</li>
 </ul>
-<h3 id="12">1.2 自动计算与设计：以振荡电路为例</h3>
+<h3 id="12-自动计算与设计以振荡电路为例">1.2 自动计算与设计：以振荡电路为例</h3>
 <p>一个具体问题：<strong>给我设计一个 1 kHz 正弦振荡器</strong>。EDA / 仿真软件背后的"自动设计"在做什么？</p>
 <p><strong>步骤 1：拓扑选择（符号知识库）</strong></p>
 <div class="highlight"><pre><span></span><code>频率范围           ─► 拓扑
@@ -217,7 +217,7 @@
 </tbody>
 </table>
 <p>这些指标都是<strong>SPICE 直接算出来的</strong>，不需要人工求解。</p>
-<h3 id="13">1.3 数字电路设计的自动化</h3>
+<h3 id="13-数字电路设计的自动化">1.3 数字电路设计的自动化</h3>
 <p>数字侧的虚拟实验室（Multisim 数字模式 / Proteus / Logisim / Vivado / Quartus）走的是另一条路：</p>
 <p><strong>真值表 → 最小布尔表达式 → 门级网表</strong></p>
 <div class="highlight"><pre><span></span><code>真值表 ──► 卡诺图 / Quine-McCluskey ──► 最简 SOP/POS ──► 工艺映射
@@ -243,7 +243,7 @@
 <li><strong>功耗估算</strong>：开关活动 × 电容 × V² × f</li>
 </ul>
 <p>这些都是<strong>精确算法</strong>，不容许"差不多"。</p>
-<h3 id="14">1.4 自动设计背后的优化引擎</h3>
+<h3 id="14-自动设计背后的优化引擎">1.4 自动设计背后的优化引擎</h3>
 <p>当问题不能解析求解（多目标、离散选择），就动用<strong>优化算法</strong>：</p>
 <table>
 <thead>
@@ -282,7 +282,7 @@
 </tbody>
 </table>
 <p><strong>这些算法是"哑"的——它们不懂电路，只会按指标搜索。</strong> 真正的"懂"被编码在 SPICE 模型 + 设计规则 + 检查器里。这正是符号主义的精髓：<strong>把领域知识写成可执行的规则与方程</strong>。</p>
-<h3 id="15-llm">1.5 LLM 在虚拟电子实验室中的位置</h3>
+<h3 id="15-llm-在虚拟电子实验室中的位置">1.5 LLM 在虚拟电子实验室中的位置</h3>
 <p>老软件的痛点：<strong>门槛高</strong>。要会画原理图、懂 SPICE 语法、懂模型参数、懂指标含义。LLM 把每一步都接上自然语言：</p>
 <div class="highlight"><pre><span></span><code>用户：&quot;给我设计一个 1 kHz 低失真正弦发生器，5V 单电源，BOM ≤ 5 元&quot;
         │
@@ -311,7 +311,7 @@ LLM 解读：&quot;THD = 1.2%，超出预期。建议加 AGC（用 JFET 自动�
 <p><strong>一个仿真器是封装好的物理学；一个 LLM 是封装好的工程经验。两者相加，才是新一代的"虚拟工程师"。</strong></p>
 </blockquote>
 <hr />
-<h2 id="_1">二、符号主义的家谱</h2>
+<h2 id="二符号主义的家谱">二、符号主义的家谱</h2>
 <div class="highlight"><pre><span></span><code>符号主义 (Symbolicism / GOFAI)
 ├── 逻辑推理
 │   ├── Prolog       —— 一阶逻辑 + SLD 归结
@@ -332,8 +332,8 @@ LLM 解读：&quot;THD = 1.2%，超出预期。建议加 AGC（用 JFET 自动�
 
 <p>符号主义的核心信念：<strong>智能 = 符号操作 + 逻辑推理</strong>。它与今天的连接主义（神经网络、LLM）形成对照。</p>
 <hr />
-<h2 id="_2">三、具体例子</h2>
-<h3 id="31-prolog">3.1 Prolog（家族关系 / 可达性推理）</h3>
+<h2 id="三具体例子">三、具体例子</h2>
+<h3 id="31-prolog家族关系-可达性推理">3.1 Prolog（家族关系 / 可达性推理）</h3>
 <div class="highlight"><pre><span></span><code><span class="nf">parent</span><span class="p">(</span><span class="s s-Atom">tom</span><span class="p">,</span> <span class="s s-Atom">bob</span><span class="p">).</span>
 <span class="nf">parent</span><span class="p">(</span><span class="s s-Atom">bob</span><span class="p">,</span> <span class="s s-Atom">ann</span><span class="p">).</span>
 <span class="nf">ancestor</span><span class="p">(</span><span class="nv">X</span><span class="p">,</span> <span class="nv">Y</span><span class="p">)</span> <span class="p">:-</span> <span class="nf">parent</span><span class="p">(</span><span class="nv">X</span><span class="p">,</span> <span class="nv">Y</span><span class="p">).</span>
@@ -343,7 +343,7 @@ LLM 解读：&quot;THD = 1.2%，超出预期。建议加 AGC（用 JFET 自动�
 </code></pre></div>
 
 <p>EDA 中"信号能否从 A 传到 B"、"这条路径有没有组合环"，本质上就是同一类<strong>可达性推理</strong>。</p>
-<h3 id="32-coq">3.2 Coq（数学定理证明）</h3>
+<h3 id="32-coq数学定理证明">3.2 Coq（数学定理证明）</h3>
 <div class="highlight"><pre><span></span><code><span class="kn">Theorem</span> <span class="n">plus_O_n</span> <span class="o">:</span> <span class="k">forall</span> <span class="n">n</span> <span class="o">:</span> <span class="n">nat</span><span class="o">,</span> <span class="mi">0</span> <span class="o">+</span> <span class="n">n</span> <span class="o">=</span> <span class="n">n</span><span class="o">.</span>
 <span class="kn">Proof</span><span class="o">.</span>
   <span class="k">intros</span> <span class="n">n</span><span class="o">.</span> <span class="k">simpl</span><span class="o">.</span> <span class="kp">reflexivity</span><span class="o">.</span>
@@ -357,7 +357,7 @@ LLM 解读：&quot;THD = 1.2%，超出预期。建议加 AGC（用 JFET 自动�
 <li><strong>奇异性定理</strong>（Lean / mathlib 中的 Liquid Tensor Experiment）</li>
 </ul>
 <p>这与 EDA 的"形式验证"是同一思想——不是测试，而是<strong>证明</strong>没有 bug。</p>
-<h3 id="33-mycin">3.3 MYCIN 风格的医疗专家系统</h3>
+<h3 id="33-mycin-风格的医疗专家系统">3.3 MYCIN 风格的医疗专家系统</h3>
 <div class="highlight"><pre><span></span><code>IF  患者发热 &gt; 38.5°C
 AND 血培养阳性
 AND 革兰氏阴性
@@ -365,7 +365,7 @@ THEN 怀疑铜绿假单胞菌 (CF = 0.7)
 </code></pre></div>
 
 <p><strong>确定性因子（Certainty Factor）</strong> 是 MYCIN 的发明，用来在严格逻辑之上叠加不确定性。后来被贝叶斯网络在数学上更优雅地取代。</p>
-<h3 id="34">3.4 贝叶斯网络（概率推断）</h3>
+<h3 id="34-贝叶斯网络概率推断">3.4 贝叶斯网络（概率推断）</h3>
 <div class="highlight"><pre><span></span><code>吸烟 ──► 肺癌 ──► X光异常
          │
          └──► 咳嗽
@@ -379,7 +379,7 @@ THEN 怀疑铜绿假单胞菌 (CF = 0.7)
 </ul>
 <p>EDA 中的<strong>故障诊断</strong>、<strong>良率预测</strong>就是贝叶斯网络的直接应用。</p>
 <hr />
-<h2 id="llm">四、LLM 能为这些"老派"系统带来什么？</h2>
+<h2 id="四llm-能为这些老派系统带来什么">四、LLM 能为这些"老派"系统带来什么？</h2>
 <p>符号系统的痛点是<strong>脆</strong>：规则一多就维护不了，自然语言进不去。LLM 恰好补上：</p>
 <table>
 <thead>
@@ -417,7 +417,7 @@ THEN 怀疑铜绿假单胞菌 (CF = 0.7)
 </tr>
 </tbody>
 </table>
-<h3 id="41-llm">4.1 数学软件 + LLM 的进展</h3>
+<h3 id="41-数学软件-llm-的进展">4.1 数学软件 + LLM 的进展</h3>
 <ul>
 <li><strong>Mathematica + LLM</strong>：Wolfram 已把 LLM 当作"自然语言前端"，把"求 sin(x)/x 在 0 处的极限"翻译成 <code>Limit[Sin[x]/x, x-&gt;0]</code></li>
 <li><strong>Lean 4 + Copilot</strong>：陶哲轩用 Lean + Copilot 形式化自己的论文（2023~2024）</li>
@@ -425,40 +425,40 @@ THEN 怀疑铜绿假单胞菌 (CF = 0.7)
 <li><strong>自动求导</strong>：早期 SymPy / Mathematica 用规则；现在 LLM 可以生成 + 验证 + 解释推导步骤</li>
 </ul>
 <p>关键架构：<strong>LLM 提议（neural） + 符号系统验证（symbolic）</strong>——这就是所谓的 <strong>Neuro-Symbolic AI</strong>。LLM 负责"猜"，符号系统负责"判"。</p>
-<h3 id="42-eda-llm">4.2 EDA + LLM 的实际产品</h3>
+<h3 id="42-eda-llm-的实际产品">4.2 EDA + LLM 的实际产品</h3>
 <ul>
 <li><strong>NVIDIA ChipNeMo</strong>：基于 LLaMA 微调，工程师用自然语言查 bug、写 SystemVerilog 断言</li>
 <li><strong>Synopsys.ai Copilot</strong> / <strong>Cadence JedAI</strong>：辅助生成约束、调参</li>
 <li><strong>RTLCoder / VerilogEval</strong>：开源 RTL 生成基准</li>
 </ul>
 <hr />
-<h2 id="llm_1">五、反过来：符号主义如何影响 LLM 的训练？</h2>
+<h2 id="五反过来符号主义如何影响-llm-的训练">五、反过来：符号主义如何影响 LLM 的训练？</h2>
 <p>这是更深的一层。</p>
-<h3 id="51-chain-of-thought">5.1 Chain-of-Thought（思维链）= 推理过程的符号化</h3>
+<h3 id="51-chain-of-thought思维链-推理过程的符号化">5.1 Chain-of-Thought（思维链）= 推理过程的符号化</h3>
 <p>LLM 的"逐步推理"本质上是把符号系统的<strong>显式中间步骤</strong>搬到 token 序列里。早期符号系统的成功证明：<strong>显式分步比隐式跳跃更可靠</strong>。</p>
-<h3 id="52-rlhf-rlvr">5.2 RLHF / RLVR：用符号验证器当奖励信号</h3>
+<h3 id="52-rlhf-rlvr用符号验证器当奖励信号">5.2 RLHF / RLVR：用符号验证器当奖励信号</h3>
 <ul>
 <li><strong>代码训练</strong>：单元测试通过 = 奖励 → 这就是符号验证器</li>
 <li><strong>数学训练</strong>：Lean / 数值校验 = 奖励</li>
 <li><strong>DeepSeek-R1, o1</strong>：在可验证任务上做 RL，本质是<strong>让 LLM 向符号正确性对齐</strong></li>
 </ul>
-<h3 id="53-tool-use-llm">5.3 工具调用（Tool Use）= 把符号引擎挂在 LLM 旁边</h3>
+<h3 id="53-工具调用tool-use-把符号引擎挂在-llm-旁边">5.3 工具调用（Tool Use）= 把符号引擎挂在 LLM 旁边</h3>
 <p>LLM 不擅长精确算术、SAT 求解、定理证明。解决方案：让它<strong>调用</strong> Python / Z3 / Lean / Wolfram。这是当代 Agent 的核心。</p>
-<h3 id="54">5.4 数据合成：符号系统反哺训练数据</h3>
+<h3 id="54-数据合成符号系统反哺训练数据">5.4 数据合成：符号系统反哺训练数据</h3>
 <ul>
 <li>用 SymPy 自动生成大量"题目—解答"对训练数学能力</li>
 <li>用 Lean 生成"陈述—证明"对训练形式化能力</li>
 <li>用 EDA 工具生成"约束—布局"对训练芯片设计</li>
 </ul>
 <p><strong>没有符号引擎，就没有可验证、可扩展的高质量训练数据。</strong></p>
-<h3 id="55">5.5 架构启示</h3>
+<h3 id="55-架构启示">5.5 架构启示</h3>
 <ul>
 <li>Transformer 的 attention ≈ 软化的符号绑定</li>
 <li>Mixture-of-Experts ≈ 软化的规则路由</li>
 <li>神经网络在尝试"学出"当年人类手写的符号结构</li>
 </ul>
 <hr />
-<h2 id="_3">六、结论：两条路线的合流</h2>
+<h2 id="六结论两条路线的合流">六、结论：两条路线的合流</h2>
 <table>
 <thead>
 <tr>
@@ -503,8 +503,8 @@ THEN 怀疑铜绿假单胞菌 (CF = 0.7)
 
 <p>EDA 几十年积累的"如何把现实约束转成可求解的符号系统"的工程智慧，正是 LLM 时代最珍贵、最难复制的资产之一。</p>
 <hr />
-<h2 id="agent">七、Agent 的新范式：从"全家桶工具"到"原子工具 + 自生长"</h2>
-<h3 id="71">7.1 趋势反转</h3>
+<h2 id="七agent-的新范式从全家桶工具到原子工具-自生长">七、Agent 的新范式：从"全家桶工具"到"原子工具 + 自生长"</h2>
+<h3 id="71-趋势反转">7.1 趋势反转</h3>
 <p>早期 Agent / Function-calling 的设计哲学是<strong>"工具越多越强"</strong>——给模型挂上几十上百个 API：搜索、读文件、写文件、查天气、订机票……每个能力对应一个预定义工具。</p>
 <p>新一代 Agent（如 Anthropic 的 Claude Code、SWE-agent、OpenHands、以及一些研究型 Agent 框架）开始<strong>反过来</strong>：</p>
 <blockquote>
@@ -523,7 +523,7 @@ recall   —— 记忆 / 上下文检索
 </code></pre></div>
 
 <p>任何更高层能力（"部署到 k8s"、"跑一遍回归测试"、"重构这个模块"）都不再是<strong>预定义工具</strong>，而是这些原语的<strong>组合表达式</strong>。</p>
-<h3 id="72-lambda-lisp">7.2 这正是 Lambda 演算 / Lisp 的思想</h3>
+<h3 id="72-这正是-lambda-演算-lisp-的思想">7.2 这正是 Lambda 演算 / Lisp 的思想</h3>
 <p><strong>Lambda 演算</strong>（Church, 1936）证明了：只要有 <code>变量</code>、<code>抽象 (λ)</code>、<code>应用</code> 三个原语，就能表达任何可计算函数。这是<strong>计算的最小核</strong>。</p>
 <p><strong>Lisp（McCarthy, 1958）的 7 个原语</strong>：</p>
 <div class="highlight"><pre><span></span><code>quote   atom    eq    car    cdr    cons    cond
@@ -540,7 +540,7 @@ recall   —— 记忆 / 上下文检索
 <blockquote>
 <p><strong>核心信条</strong>：用极少的、正交的、可组合的原语，递归地构造无限丰富的上层结构。</p>
 </blockquote>
-<h3 id="73-agent-lisp">7.3 Agent ≅ Lisp 解释器</h3>
+<h3 id="73-agent-lisp-解释器">7.3 Agent ≅ Lisp 解释器</h3>
 <p>把对应关系写出来：</p>
 <table>
 <thead>
@@ -581,7 +581,7 @@ recall   —— 记忆 / 上下文检索
 </tbody>
 </table>
 <p><strong>Claude Code 里 Agent 用 <code>bash</code> 写一个一次性脚本来完成某个复合任务</strong>，本质上就是在做<strong>宏展开</strong>——临时定义一个新"函数"，立即应用，然后丢弃。</p>
-<h3 id="74">7.4 这与"专家系统"的连接</h3>
+<h3 id="74-这与专家系统的连接">7.4 这与"专家系统"的连接</h3>
 <p>老派专家系统（MYCIN、XCON）的命门是：<strong>规则要由人手写</strong>，知识获取是瓶颈。</p>
 <p>新范式给出的答案是：</p>
 <div class="highlight"><pre><span></span><code>原子工具（公理） + LLM（推理引擎） + 反馈环（验证）
@@ -596,7 +596,7 @@ recall   —— 记忆 / 上下文检索
 <li><strong>可自然语言驱动</strong> ← LLM</li>
 </ul>
 <p>这正是 MYCIN 当年想做但做不到的事——它差的不是规则引擎，而是一个能<strong>从经验里长出新规则</strong>的归纳器。LLM 补上了这一环。</p>
-<h3 id="75-llm-lisp">7.5 LLM 的自进化也在向 Lisp 哲学靠拢</h3>
+<h3 id="75-llm-的自进化也在向-lisp-哲学靠拢">7.5 LLM 的自进化也在向 Lisp 哲学靠拢</h3>
 <p>观察当代 LLM 训练 / 推理栈：</p>
 <table>
 <thead>
@@ -639,7 +639,7 @@ recall   —— 记忆 / 上下文检索
 </code></pre></div>
 
 <p>这就是 Lisp 的 <code>eval</code> 不动点在大模型时代的回响。</p>
-<h3 id="76-agent">7.6 为什么"少即是多"对 Agent 是对的</h3>
+<h3 id="76-为什么少即是多对-agent-是对的">7.6 为什么"少即是多"对 Agent 是对的</h3>
 <ol>
 <li><strong>组合爆炸性</strong>：n 个正交原语能组合出指数级行为；n 个重叠的高层工具反而互相干扰。</li>
 <li><strong>可解释性</strong>：每一步都是原子动作，trace 即解释。</li>
@@ -647,7 +647,7 @@ recall   —— 记忆 / 上下文检索
 <li><strong>训练友好</strong>：原子动作的数据更易合成、验证、RL。</li>
 <li><strong>避免"工具偏置"</strong>：预定义高层工具会让模型过拟合到特定 API，丧失泛化。</li>
 </ol>
-<h3 id="77-eda">7.7 与 EDA 的呼应</h3>
+<h3 id="77-与-eda-的呼应">7.7 与 EDA 的呼应</h3>
 <p>回到本文主题：EDA 工具链同样是这种哲学——</p>
 <ul>
 <li><strong>门级原语</strong>（NAND / NOR）是硬件版的"7 原语"</li>
@@ -662,7 +662,7 @@ recall   —— 记忆 / 上下文检索
 一段 Lisp 程序，归根结底是 7 个原语的"宏展开"。</p>
 </blockquote>
 <p><strong>这是同一种思想在不同物质衬底上的化身。</strong></p>
-<h3 id="78-agent-lisp">7.8 展望：Agent = 可执行的 Lisp 方言</h3>
+<h3 id="78-展望agent-可执行的-lisp-方言">7.8 展望：Agent = 可执行的 Lisp 方言</h3>
 <p>我们或许正在见证一种新型编程语言诞生：</p>
 <ul>
 <li><strong>语法</strong>：自然语言 + 工具调用</li>
@@ -674,16 +674,16 @@ recall   —— 记忆 / 上下文检索
 <p>如果这个类比成立，那么<strong>软件工程下一阶段的核心技能，可能不是写代码，而是设计原子集</strong>——选哪 9 个工具、定义什么样的最小原语，决定了上层能长出多丰饶的能力。</p>
 <p>这恰好是 McCarthy 1958 年做的事，也是 Church 1936 年做的事。<strong>历史在更高的螺旋上重演。</strong></p>
 <hr />
-<h2 id="llm_2">八、设计一个 LLM 原生的虚拟电子实验室</h2>
+<h2 id="八设计一个-llm-原生的虚拟电子实验室">八、设计一个 LLM 原生的虚拟电子实验室</h2>
 <p>把前面所有线索（符号求解器、原子工具、自进化、专家系统）落到一个具体产品上：<strong>ElectroLab-LM</strong>。</p>
-<h3 id="81">8.1 设计原则</h3>
+<h3 id="81-设计原则">8.1 设计原则</h3>
 <ol>
 <li><strong>LLM 不替代 SPICE，LLM 包裹 SPICE</strong>——精确数值仍由数值求解器负责，LLM 负责理解、规划、解释、迭代。</li>
 <li><strong>原子工具优先</strong>——给 Agent ≈ 9 个原子工具，复杂功能由其组合派生。</li>
 <li><strong>一切可验证</strong>——LLM 的每一个输出都要能被 SPICE / DRC / 单元测试反证。</li>
 <li><strong>闭环自进化</strong>——产品在运行中持续产生训练数据。</li>
 </ol>
-<h3 id="82">8.2 总体架构</h3>
+<h3 id="82-总体架构">8.2 总体架构</h3>
 <div class="highlight"><pre><span></span><code>┌────────────────────────────────────────────────────────────────┐
 │                        用户 (自然语言)                            │
 └────────────────────────────────────────────────────────────────┘
@@ -714,7 +714,7 @@ recall   —— 记忆 / 上下文检索
 └────────────────────────────────────────────────────────────────┘
 </code></pre></div>
 
-<h3 id="83-9">8.3 原子工具集（9 个）</h3>
+<h3 id="83-原子工具集9-个">8.3 原子工具集（9 个）</h3>
 <div class="highlight"><pre><span></span><code><span class="k">def</span><span class="w"> </span><span class="nf">netlist</span><span class="p">(</span><span class="n">spec</span><span class="p">:</span> <span class="nb">str</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="n">Netlist</span>            <span class="c1"># spec → SPICE 网表</span>
 <span class="k">def</span><span class="w"> </span><span class="nf">simulate</span><span class="p">(</span><span class="n">net</span><span class="p">:</span> <span class="n">Netlist</span><span class="p">,</span> <span class="n">mode</span><span class="p">:</span> <span class="nb">str</span><span class="p">)</span>        <span class="c1"># .OP/.AC/.TRAN/.NOISE/.MC</span>
 <span class="k">def</span><span class="w"> </span><span class="nf">measure</span><span class="p">(</span><span class="n">wave</span><span class="p">:</span> <span class="n">Wave</span><span class="p">,</span> <span class="n">metric</span><span class="p">:</span> <span class="nb">str</span><span class="p">)</span>         <span class="c1"># 提取 f / THD / margin / 裕度</span>
@@ -727,7 +727,7 @@ recall   —— 记忆 / 上下文检索
 </code></pre></div>
 
 <p>任何更高级功能（"设计 PLL"、"修这个振荡器"）都是这 9 个原子的<strong>宏组合</strong>——和 Lisp 一样。</p>
-<h3 id="84">8.4 数据合成：从符号引擎反向"挤"训练数据</h3>
+<h3 id="84-数据合成从符号引擎反向挤训练数据">8.4 数据合成：从符号引擎反向"挤"训练数据</h3>
 <p>LLM 训练最贵的是数据。<strong>电子领域的优势：拥有完美的符号验证器（SPICE）</strong>——可以无限合成可验证的高质量数据。</p>
 <p><strong>合成管线</strong>：</p>
 <div class="highlight"><pre><span></span><code>教科书电路模板 (≈ 1000 个) ──┐
@@ -792,7 +792,7 @@ recall   —— 记忆 / 上下文检索
 </code></pre></div>
 
 <p>这就是 <strong>DeepSeek-R1 / o1 风格的"用验证器筛数据"</strong>——把 SPICE 当成数学领域的 Lean。</p>
-<h3 id="85-sft">8.5 SFT（监督微调）设计</h3>
+<h3 id="85-sft监督微调设计">8.5 SFT（监督微调）设计</h3>
 <p><strong>阶段 0：基座模型</strong>——选 Qwen3-Coder / DeepSeek / Llama-4 之类有强代码 + 数学能力的开源底座。</p>
 <p><strong>阶段 1：领域语料继续预训练（CPT）</strong></p>
 <div class="highlight"><pre><span></span><code>─ 教科书：Sedra/Smith、Razavi、Gray-Meyer (≈ 50M tokens)
@@ -828,7 +828,7 @@ SFT-4  对话式设计（5 万，多轮）
 </code></pre></div>
 
 <p>每一阶段用上一阶段的模型 <strong>+ 更难的数据 + 更严的过滤</strong>——课程学习（curriculum）。</p>
-<h3 id="86-distillation">8.6 蒸馏（Distillation）设计</h3>
+<h3 id="86-蒸馏distillation设计">8.6 蒸馏（Distillation）设计</h3>
 <p>目标：把 Opus 级 Planner 的能力压到能跑在工程师本地的 Sonnet/Haiku 级模型。</p>
 <p><strong>两条路线</strong>：</p>
 <p><strong>A. 黑盒蒸馏（response-level）</strong></p>
@@ -852,7 +852,7 @@ Student (Haiku) ── SFT on filtered traces
 <p>小模型先猜 → 大模型验证。在网表生成这种<strong>结构强、模板多</strong>的任务上，speedup 能到 3-5 ×。</p>
 <p><strong>蒸馏的特殊技巧：保留"工具调用轨迹"而非只保留答案</strong></p>
 <p>电路设计的价值在过程（哪一步选了什么、为什么否决某拓扑），而不是最终网表。蒸馏时要让 student 学<strong>整条 trace</strong>。</p>
-<h3 id="87-rl-spice">8.7 RL 设计：用 SPICE 当奖励模型</h3>
+<h3 id="87-rl-设计用-spice-当奖励模型">8.7 RL 设计：用 SPICE 当奖励模型</h3>
 <p>这是整个系统的灵魂。SPICE 是天然的、零幻觉的奖励函数。</p>
 <p><strong>奖励函数设计</strong>：</p>
 <div class="highlight"><pre><span></span><code><span class="k">def</span><span class="w"> </span><span class="nf">reward</span><span class="p">(</span><span class="n">trace</span><span class="p">):</span>
@@ -920,7 +920,7 @@ Level 6  完整子系统（电源 + MCU + 模拟前端）
 <li>BOM 必须从真实供应商库里选（KiCad / LCSC API）</li>
 <li>加 <strong>物理合理性 critic</strong>：温度、功耗、击穿电压</li>
 </ul>
-<h3 id="88">8.8 自进化闭环</h3>
+<h3 id="88-自进化闭环">8.8 自进化闭环</h3>
 <div class="highlight"><pre><span></span><code>        ┌─────────────────────────────────────────┐
         │                                          │
         ▼                                          │
@@ -936,7 +936,7 @@ Level 6  完整子系统（电源 + MCU + 模拟前端）
 </code></pre></div>
 
 <p>每周/每月一次迭代。<strong>这就是 Lisp 自举（self-hosting）在 LLM 时代的版本</strong>——产品在运行中改进自己。</p>
-<h3 id="89-bench">8.9 评估基准（Bench）</h3>
+<h3 id="89-评估基准bench">8.9 评估基准（Bench）</h3>
 <p>没有可比的指标，训练就是开盲盒。需要建立：</p>
 <table>
 <thead>
@@ -985,7 +985,7 @@ Level 6  完整子系统（电源 + MCU + 模拟前端）
 </tbody>
 </table>
 <p>可以参考 <strong>VerilogEval / RTLLM / AnalogBench / CircuitNet</strong>，并自建模拟版基准。</p>
-<h3 id="810">8.10 落地路线图（最小可行路径）</h3>
+<h3 id="810-落地路线图最小可行路径">8.10 落地路线图（最小可行路径）</h3>
 <div class="highlight"><pre><span></span><code>Month 1-2   ─ 搭工具层：netlist/simulate/measure 三件套打通
 Month 3-4   ─ 合成 100 万训练样本（拓扑 100 种 × 参数采样）
 Month 4-6   ─ SFT v0：能写出收敛的振荡器 / 滤波器 / 放大器
@@ -995,7 +995,7 @@ Year 2      ─ 自进化数据闭环 + 蒸馏小模型本地跑
 Year 3      ─ 扩展到混合信号 / RF / 电源系统
 </code></pre></div>
 
-<h3 id="811">8.11 失败模式与对策</h3>
+<h3 id="811-失败模式与对策">8.11 失败模式与对策</h3>
 <table>
 <thead>
 <tr>
@@ -1032,14 +1032,14 @@ Year 3      ─ 扩展到混合信号 / RF / 电源系统
 </tr>
 </tbody>
 </table>
-<h3 id="812">8.12 一句话总结</h3>
+<h3 id="812-一句话总结">8.12 一句话总结</h3>
 <blockquote>
 <p><strong>把 SPICE 当 Lean，把电路当定理，把工程师当用户</strong>——剩下的就是 LLM 在符号验证回路里的 RL + 自进化。<br />
 9 个原子工具决定了能力上限；SPICE 决定了真实性下限；课程数据决定了学习速度；自进化闭环决定了能跑多远。</p>
 </blockquote>
 <hr />
-<h2 id="ba-lisp">九、更深的类比：训练即逆向工程，流片即训练，BA 软件的 Lisp 血统</h2>
-<h3 id="91-llm">9.1 训练 LLM = 对人类知识做逆向工程</h3>
+<h2 id="九更深的类比训练即逆向工程流片即训练ba-软件的-lisp-血统">九、更深的类比：训练即逆向工程，流片即训练，BA 软件的 Lisp 血统</h2>
+<h3 id="91-训练-llm-对人类知识做逆向工程">9.1 训练 LLM = 对人类知识做逆向工程</h3>
 <p>逆向工程的标准定义：<strong>只能观察输出，要恢复出生成它的系统</strong>。芯片逆向、软件 reverse-engineering、生物基因测序——本质相同。</p>
 <p>LLM 预训练完美贴合这个定义：</p>
 <div class="highlight"><pre><span></span><code>真实世界                            训练目标
@@ -1090,7 +1090,7 @@ Year 3      ─ 扩展到混合信号 / RF / 电源系统
 <li><strong>RL = 用真实输出验证逆向版本</strong>。RLVR 像把恢复出的网表放回 SPICE 跑——不一致就修。</li>
 <li><strong>蒸馏 = 二阶逆向</strong>。从已逆向的大模型再逆向出小模型，损失叠加。</li>
 </ul>
-<h3 id="92-cpu-llm-run">9.2 CPU 流片 ≈ 一次 LLM 训练 run</h3>
+<h3 id="92-cpu-流片-一次-llm-训练-run">9.2 CPU 流片 ≈ 一次 LLM 训练 run</h3>
 <p>两者在工程经济学上几乎同构：</p>
 <table>
 <thead>
@@ -1161,7 +1161,7 @@ Year 3      ─ 扩展到混合信号 / RF / 电源系统
 <li>IP 库 ≈ LoRA 适配器市场</li>
 <li>DRC / LVS ≈ 安全评测 / 红队</li>
 </ul>
-<h3 id="93-ba-lisp">9.3 BA / 数据分析软件的 Lisp 血统</h3>
+<h3 id="93-ba-数据分析软件的-lisp-血统">9.3 BA / 数据分析软件的 Lisp 血统</h3>
 <p>用户提到 Tableau 早期版本与 Lisp 的渊源——更广义地看，<strong>几乎所有"符号化的、形式语言驱动的"分析类软件都有 Lisp 基因</strong>。这不是巧合。</p>
 <p><strong>已确证的 Lisp 系谱</strong>：</p>
 <table>
@@ -1240,7 +1240,7 @@ Year 3      ─ 扩展到混合信号 / RF / 电源系统
 <li><strong>代码即数据</strong>：仪表板配置 = JSON/YAML = 数据驱动的程序</li>
 </ol>
 <p><strong>ggplot2</strong> 的作者 Hadley Wickham 直接说他的灵感是 Wilkinson 的《Grammar of Graphics》，而那本书是 <strong>代数学</strong> 视角的可视化——Lisp 思想的另一身影。</p>
-<h3 id="94">9.4 形式化逻辑证明：贯穿三者的脊柱</h3>
+<h3 id="94-形式化逻辑证明贯穿三者的脊柱">9.4 形式化逻辑证明：贯穿三者的脊柱</h3>
 <p>逆向工程要"恢复正确的系统"——靠什么判断"正确"？<br />
 流片要"提交可工作的电路"——靠什么签核？<br />
 BA 要"可信的分析结果"——靠什么保证？</p>
@@ -1268,7 +1268,7 @@ BA 要"可信的分析结果"——靠什么保证？</p>
 <li><strong>TLA+</strong> (Lamport)：在 AWS、MongoDB 用来证明分布式算法</li>
 </ul>
 <p><strong>这些工具的共同祖先就是 Coq/Isabelle/Lean，再往上是 Curry-Howard 同构（程序 ≡ 证明），再往上是 Church-Turing。</strong></p>
-<h3 id="95">9.5 把所有线索串起来</h3>
+<h3 id="95-把所有线索串起来">9.5 把所有线索串起来</h3>
 <div class="highlight"><pre><span></span><code>       Church (1936) λ-calculus
               │
               ▼
@@ -1303,16 +1303,16 @@ BA 要"可信的分析结果"——靠什么保证？</p>
 <li><strong>二者结合 = 工程经验的无限复制 + 数学正确性的无限保证</strong>。</li>
 </ul>
 <p>这就是为什么 EDA、BI、CAS（计算机代数系统）、定理证明器在 LLM 时代不会消亡——它们会变成 <strong>LLM 的右脑</strong>：左脑负责语言与直觉，右脑负责符号与证明。</p>
-<h3 id="96">9.6 一句话收束</h3>
+<h3 id="96-一句话收束">9.6 一句话收束</h3>
 <blockquote>
 <p><strong>过去 70 年，我们用符号系统逼近世界；接下来 70 年，我们用神经网络逼近符号系统。</strong><br />
 流片是芯片的"训练"，训练是知识的"流片"，BA 是数据的"代数"，Lisp 是这一切的元语言。<br />
 LLM 不是符号主义的终结，而是它在更高维度上的复活。</p>
 </blockquote>
 <hr />
-<h2 id="spice-matlab-mathematica-llm">十、美国科技大发展的根基础：从 SPICE / MATLAB / Mathematica 到 LLM 的世系</h2>
+<h2 id="十美国科技大发展的根基础从-spice-matlab-mathematica-到-llm-的世系">十、美国科技大发展的根基础：从 SPICE / MATLAB / Mathematica 到 LLM 的世系</h2>
 <p>LLM 不是天上掉下来的，它建立在七十年的科学计算软件、数值算法、编程语言、芯片工艺、操作系统、互联网基础设施之上。<strong>没有 SPICE 就没有 NVIDIA GPU；没有 MATLAB 就没有 NumPy；没有 LINPACK 就没有 cuBLAS；没有 Lisp 就没有今天的 Agent。</strong> 这是一条几代人的接力。</p>
-<h3 id="101">10.1 时间总轴</h3>
+<h3 id="101-时间总轴">10.1 时间总轴</h3>
 <div class="highlight"><pre><span></span><code>1950s ──── Lisp / Fortran                          (McCarthy / Backus)
 1960s ──── Macsyma / SHRDLU / DENDRAL              (MIT / 斯坦福)
 1970s ──── SPICE / Unix / C / Smalltalk            (Berkeley / Bell Labs / PARC)
@@ -1334,7 +1334,7 @@ LLM 不是符号主义的终结，而是它在更高维度上的复活。</p>
 </code></pre></div>
 
 <p><strong>关键认知</strong>：每一层都不是独立发明，而是<strong>站在上一层的肩上</strong>。下面分阶段拆。</p>
-<h3 id="102-195060-ai">10.2 1950–60 年代：编程语言与符号 AI 的播种</h3>
+<h3 id="102-195060-年代编程语言与符号-ai-的播种">10.2 1950–60 年代：编程语言与符号 AI 的播种</h3>
 <p><strong>Lisp（McCarthy, MIT, 1958）</strong> 和 <strong>Fortran（Backus, IBM, 1957）</strong> 划分了世界：</p>
 <ul>
 <li><strong>Fortran 派</strong>：科学计算、数值方法、矩阵运算 → 后来 LINPACK / BLAS / MATLAB / NumPy / GPU kernel</li>
@@ -1342,7 +1342,7 @@ LLM 不是符号主义的终结，而是它在更高维度上的复活。</p>
 </ul>
 <p>两派至今仍在博弈，而 LLM 是<strong>第一次让二者同一个系统里融合</strong>——transformer 的张量运算（Fortran 派）+ 思维链与工具调用（Lisp 派）。</p>
 <p><strong>ARPA / DARPA 的隐形之手</strong>：MIT、CMU、斯坦福、SRI 在 1960s 就拿到了大量国防经费做"AI"。这奠定了<strong>美国学界 + 政府长期投入基础研究</strong>的传统，是今天 OpenAI / Anthropic 能融到天文数字的远因。</p>
-<h3 id="103-1970-berkeley">10.3 1970 年代：Berkeley 系与"开放工具"文化</h3>
+<h3 id="103-1970-年代berkeley-系与开放工具文化">10.3 1970 年代：Berkeley 系与"开放工具"文化</h3>
 <p>这是被严重低估的十年。三件大事在加州湾区同步发生：</p>
 <ol>
 <li><strong>SPICE（Berkeley, 1973，Donald Pederson 团队）</strong>——免费、开源、人人能用。学生 Larry Nagel 写出来后，Pederson 拒绝商业封闭，<strong>白送给整个工业界</strong>。今天所有的商业 EDA（Synopsys、Cadence、Mentor）都是 SPICE 的衍生或竞品。</li>
@@ -1356,7 +1356,7 @@ LLM 不是符号主义的终结，而是它在更高维度上的复活。</p>
 <blockquote>
 <p>没有 1979 年的 BLAS 接口规范，就没有 2024 年的 H100 上 FlashAttention。<strong>API 是跨越时代的契约</strong>。</p>
 </blockquote>
-<h3 id="104-1980-matlab">10.4 1980 年代：MATLAB 与个人计算的合流</h3>
+<h3 id="104-1980-年代matlab-与个人计算的合流">10.4 1980 年代：MATLAB 与个人计算的合流</h3>
 <p><strong>MATLAB 的诞生</strong>是一段动人故事：</p>
 <ul>
 <li><strong>Cleve Moler</strong>，新墨西哥大学数学教授，写 LINPACK 时发现学生不会用 Fortran</li>
@@ -1380,7 +1380,7 @@ LLM 不是符号主义的终结，而是它在更高维度上的复活。</p>
 <blockquote>
 <p>一代研究者的肌肉记忆是 <code>A * B</code>、<code>sigmoid(W*x+b)</code>——这种向量化心智模型，是 MATLAB 给的。</p>
 </blockquote>
-<h3 id="105-1990">10.5 1990 年代：寒冬中的暗流</h3>
+<h3 id="105-1990-年代寒冬中的暗流">10.5 1990 年代：寒冬中的暗流</h3>
 <p>主流认为这是 AI 寒冬，但底层基础设施在悄悄堆高：</p>
 <ul>
 <li><strong>MATLAB Neural Network Toolbox（1992）</strong> 发布——大学课程标配</li>
@@ -1397,7 +1397,7 @@ LLM 不是符号主义的终结，而是它在更高维度上的复活。</p>
 </code></pre></div>
 
 <p>每一层都在前一层提供的"矩阵 API"上加新东西。NumPy 的 <code>np.dot</code> 调的就是 BLAS，BLAS 的接口 1979 年就定下了。<strong>45 年没变</strong>——这就是基础设施的力量。</p>
-<h3 id="106-2000-gpu">10.6 2000 年代：GPU 革命的预兆</h3>
+<h3 id="106-2000-年代gpu-革命的预兆">10.6 2000 年代：GPU 革命的预兆</h3>
 <p><strong>两件几乎不被同时讨论但深度耦合的事</strong>：</p>
 <ol>
 <li><strong>NVIDIA CUDA（2006-2007）</strong>——把 GPU 从图形专用变成通用并行计算。<strong>而 NVIDIA 的 GPU 本身是用 Synopsys / Cadence 的 EDA 工具设计出来的——SPICE 的孙子辈在养育深度学习。</strong></li>
@@ -1413,7 +1413,7 @@ LLM 不是符号主义的终结，而是它在更高维度上的复活。</p>
 <p><strong>关键的因果链</strong>：EDA 让芯片越来越复杂 → NVIDIA 设计出 GPU → CUDA 把 GPU 开放给科学家 → Theano 把自动微分做出来 → AlexNet（2012）一战封神。<br />
 没有 SPICE，就没有现代 GPU；没有现代 GPU，就没有现代深度学习。<strong>EDA 是 LLM 的祖父辈技术。</strong></p>
 </blockquote>
-<h3 id="107-2010">10.7 2010 年代：框架战国与拐点</h3>
+<h3 id="107-2010-年代框架战国与拐点">10.7 2010 年代：框架战国与拐点</h3>
 <p><strong>2012 年 AlexNet</strong> 是分界线——Alex Krizhevsky 在两块 GTX 580 上跑出 ImageNet 破纪录的成绩。这是<strong>第一次有研究者证明：CUDA + 深度网络 + 大数据 = 质变</strong>。</p>
 <p>之后框架井喷：</p>
 <table>
@@ -1464,7 +1464,7 @@ LLM 不是符号主义的终结，而是它在更高维度上的复活。</p>
 <li><strong>Transformer（2017, Vaswani et al., Google）</strong>——把 RNN/CNN 砸碎，全部用 attention</li>
 <li><strong>TPU（Google, 2016）</strong>——第一颗为深度学习专门设计的 ASIC，用 Synopsys 全套 EDA 工具流片</li>
 </ul>
-<h3 id="108-2020-llm">10.8 2020 年代：LLM 时代到来</h3>
+<h3 id="108-2020-年代llm-时代到来">10.8 2020 年代：LLM 时代到来</h3>
 <ul>
 <li><strong>GPT-3（2020）</strong>：1750 亿参数，证明 scaling law</li>
 <li><strong>ChatGPT（2022 年 11 月）</strong>：对齐 + 产品化的关键一击</li>
@@ -1484,7 +1484,7 @@ LLM 不是符号主义的终结，而是它在更高维度上的复活。</p>
 </code></pre></div>
 
 <p><strong>每一层都需要前面所有层</strong>。一个 H100 的成功，是 SPICE（1973）+ BLAS（1979）+ MATLAB（1984）+ CUDA（2006）+ PyTorch（2016）的总和。</p>
-<h3 id="109">10.9 几代人的接力：基因谱系</h3>
+<h3 id="109-几代人的接力基因谱系">10.9 几代人的接力：基因谱系</h3>
 <p>把人也画出来：</p>
 <div class="highlight"><pre><span></span><code>McCarthy ─► Minsky ─► Patrick Winston ─► (MIT AI Lab 一系)
                                           ├─► Rod Brooks (机器人)
@@ -1518,7 +1518,7 @@ Schmidhuber (瑞士) ─► LSTM ───────────────�
 <blockquote>
 <p>美国的科技优势不在"谁最聪明"，而在<strong>它把全世界最聪明的脑子都放到了它的工具栈上</strong>。</p>
 </blockquote>
-<h3 id="1010">10.10 美国基础设施的五个关键禀赋</h3>
+<h3 id="1010-美国基础设施的五个关键禀赋">10.10 美国基础设施的五个关键禀赋</h3>
 <p>为什么 LLM 几乎必然首先在美国出现？</p>
 <ol>
 <li><strong>联邦研究投入七十年不断</strong>：NSF、DARPA、NIH、DOE</li>
@@ -1535,7 +1535,7 @@ Schmidhuber (瑞士) ─► LSTM ───────────────�
 <li>没有大学传统 → 论文不会公开</li>
 <li>没有 DARPA → 1960s AI 研究就停了</li>
 </ul>
-<h3 id="1011">10.11 互相影响的循环图</h3>
+<h3 id="1011-互相影响的循环图">10.11 互相影响的循环图</h3>
 <p>不是单向的"基础 → 上层"，而是<strong>循环互哺</strong>：</p>
 <div class="highlight"><pre><span></span><code>        ┌─► EDA 软件 ─┐
         │             │
@@ -1558,7 +1558,7 @@ LLM ◄───┤        GPU/TPU 芯片 ◄────┐
 </code></pre></div>
 
 <p><strong>这就是技术飞轮</strong>。当 LLM 开始能写 Verilog、写 SPICE 网表、写 PyTorch 代码、改 CUDA kernel 时，<strong>循环就闭合了</strong>。它会加速以前几代人才能完成的工作。</p>
-<h3 id="1012">10.12 对照与启示</h3>
+<h3 id="1012-对照与启示">10.12 对照与启示</h3>
 <table>
 <thead>
 <tr>
@@ -1597,7 +1597,7 @@ LLM ◄───┤        GPU/TPU 芯片 ◄────┐
 </tr>
 </tbody>
 </table>
-<h3 id="1013">10.13 收束</h3>
+<h3 id="1013-收束">10.13 收束</h3>
 <blockquote>
 <p><strong>从 1958 年 McCarthy 写出第一行 Lisp，到 2022 年 ChatGPT 上线，中间隔着 64 年、四代人、数百万工程师、上万亿美元、无数论文与开源仓库。</strong>  </p>
 <p>每一行 <code>torch.nn.Linear</code>，背后是 BLAS 的 1979；<br />
