@@ -3,18 +3,18 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width,initial-scale=1">
-<title>Harness 即一切：模型不是不够聪明，而是手脚不够多 · Steve Chan — xlisp</title>
+<title>Harness 即一切：模型不是不够聪明，而是是否有足够有用的tools · Steve Chan — xlisp</title>
 <meta name="description" content="本文借一段微信群里关于 Claude Code / Codex / 第三方 agent 的讨论，结合本项目 code-hacker 的实际代码，谈谈我对 harness（脚手架） 这件事的理解：为什么 agent 之间真正的差距，越来越不在模型本身，而在你给模型装上的那双手。">
 <meta name="author" content="Steve Chan">
 <link rel="icon" type="image/jpeg" href="../icon.jpeg">
 <link rel="apple-touch-icon" href="../icon.jpeg">
 <meta property="og:type" content="article">
-<meta property="og:title" content="Harness 即一切：模型不是不够聪明，而是手脚不够多">
+<meta property="og:title" content="Harness 即一切：模型不是不够聪明，而是是否有足够有用的tools">
 <meta property="og:description" content="本文借一段微信群里关于 Claude Code / Codex / 第三方 agent 的讨论，结合本项目 code-hacker 的实际代码，谈谈我对 harness（脚手架） 这件事的理解：为什么 agent 之间真正的差距，越来越不在模型本身，而在你给模型装上的那双手。">
 <meta property="og:image" content="../icon.jpeg">
 <meta property="og:site_name" content="Steve Chan — xlisp">
 <meta name="twitter:card" content="summary_large_image">
-<meta name="twitter:title" content="Harness 即一切：模型不是不够聪明，而是手脚不够多">
+<meta name="twitter:title" content="Harness 即一切：模型不是不够聪明，而是是否有足够有用的tools">
 <meta name="twitter:description" content="本文借一段微信群里关于 Claude Code / Codex / 第三方 agent 的讨论，结合本项目 code-hacker 的实际代码，谈谈我对 harness（脚手架） 这件事的理解：为什么 agent 之间真正的差距，越来越不在模型本身，而在你给模型装上的那双手。">
 <meta name="twitter:image" content="../icon.jpeg">
 <link rel="stylesheet" href="../style.css?v=notes4">
@@ -28,14 +28,16 @@
 
   <article>
     <header class="post-header">
-      <h1>Harness 即一切：模型不是不够聪明，而是手脚不够多</h1>
-      <p class="meta">2026-05-20 · Steve Chan</p>
+      <h1>Harness 即一切：模型不是不够聪明，而是是否有足够有用的tools</h1>
+      <p class="meta">2026-05-21 · Steve Chan</p>
     </header>
 
     <div class="content">
 <blockquote>
 <p>"从第一性来说，模型不是不够聪明，而是是否有足够有用的tools。"
 —— Steve.桥布施, AI 生产力训练营群聊, 2026-05-20</p>
+<p>"精准 tools 即精准上下文。"
+—— Steve.桥布施</p>
 <p>"模型越来越强，harness 就可以越来越松。"
 —— GeniusVczh</p>
 </blockquote>
@@ -286,7 +288,7 @@ find_pipeline / find_devops_lib / find_ai_knowledge
 </ul>
 <p>这个 tool 的形状本身就是一种 harness。<strong>它鼓励"小步、精准、可验证"的修改节奏</strong>，把"AI 一改改一大坨"那种典型失败模式从源头掐掉。</p>
 <hr />
-<h2 id="harness_1">五、harness 设计的几条第一性原理</h2>
+<h2 id="harness">五、harness 设计的几条第一性原理</h2>
 <p>把上面这些放在一起，可以提炼出几条我认为做 agent harness 的人都应该认账的原理：</p>
 <h3 id="1-tool-token">1. Tool = 把外部世界压成 token 的函数</h3>
 <p>模型本身只能读 token、生成 token。一个 tool 的价值，是把"读 5 个文件 + 跑 1 个命令 + 解析 JSON"这一连串外部操作，<strong>压缩成一次 tool call 的输入/输出</strong>。压缩比越高，模型的 loop 越短，错误率越低，账单越便宜。</p>
@@ -492,7 +494,7 @@ ML 训练里"做实验"是 <code>run_train_5min()</code> / <code>eval_bpb()</cod
 
 <script>
 (function () {
-  const POST_TITLE = "Harness \u5373\u4e00\u5207\uff1a\u6a21\u578b\u4e0d\u662f\u4e0d\u591f\u806a\u660e\uff0c\u800c\u662f\u624b\u811a\u4e0d\u591f\u591a";
+  const POST_TITLE = "Harness \u5373\u4e00\u5207\uff1a\u6a21\u578b\u4e0d\u662f\u4e0d\u591f\u806a\u660e\uff0c\u800c\u662f\u662f\u5426\u6709\u8db3\u591f\u6709\u7528\u7684tools";
   const contentEl = document.querySelector('article .content');
 
   const fab = document.getElementById('ai-fab');
