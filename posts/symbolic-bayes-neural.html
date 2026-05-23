@@ -29,7 +29,7 @@
   <article>
     <header class="post-header">
       <h1>符号主义、贝叶斯网络、深度学习：三种 AI 范式的对比学习</h1>
-      <p class="meta">2026-04-26 · Steve Chan</p>
+      <p class="meta">2026-05-23 · Steve Chan</p>
     </header>
 
     <div class="content">
@@ -50,8 +50,9 @@
 <li><a href="#7-训练数据--一堆可执行的符号代码这个类比对在哪错在哪">"训练数据 = 一堆可执行的符号代码"——这个类比对在哪、错在哪</a></li>
 <li><a href="#8-三种范式的对照表">三种范式的对照表</a></li>
 <li><a href="#9-在-codegpt-里看见三个范式的影子">在 CodeGPT 里看见三个范式的影子</a></li>
-<li><a href="#10-神经-符号混合现代系统都不是纯种">神经-符号混合：现代系统都不是纯种</a></li>
-<li><a href="#11-给用户原问题的最终回答">给用户原问题的最终回答</a></li>
+<li><a href="#10-函数式编程视角神经网络是-fgh-的世界">函数式编程视角：神经网络是 f∘g∘h∘... 的世界</a></li>
+<li><a href="#11-神经-符号混合现代系统都不是纯种">神经-符号混合：现代系统都不是纯种</a></li>
+<li><a href="#12-给用户原问题的最终回答">给用户原问题的最终回答</a></li>
 </ol>
 <hr />
 <h2 id="1-三个范式的一句话总结">1. 三个范式的一句话总结</h2>
@@ -509,14 +510,14 @@ n features in n dims     n features in d&lt;&lt;n dims
 <hr />
 <h2 id="7-训练数据-一堆可执行的符号代码这个类比对在哪错在哪">7. "训练数据 = 一堆可执行的符号代码"——这个类比对在哪、错在哪</h2>
 <p>现在回到你的原问题。让我们逐条拆。</p>
-<h3 id="61-对的部分70">6.1 对的部分（70%）</h3>
+<h3 id="71-对的部分70">7.1 对的部分（70%）</h3>
 <p><strong>类比的核心直觉是正确的：训练数据确实定义了系统的行为，正如代码定义了程序的行为。</strong></p>
 <ul>
 <li>改训练数据 → 改模型行为，等价于"改代码 → 改程序行为"。</li>
 <li>LLM 的 in-context learning 让人觉得它在"执行"prompt 里的指令——这确实有几分像把 prompt 当代码。</li>
 <li>"Compression is intelligence" 的视角下，权重 $W$ 是训练数据的<strong>有损压缩</strong>——你也可以反向理解为"训练数据 = 解压后展开的所有规则"。</li>
 </ul>
-<h3 id="62-错的部分30但很关键">6.2 错的部分（30%，但很关键）</h3>
+<h3 id="72-错的部分30但很关键">7.2 错的部分（30%，但很关键）</h3>
 <h4 id="错位-①硬规则-vs-软统计">错位 ①：硬规则 vs 软统计</h4>
 <p>符号代码：</p>
 <div class="highlight"><pre><span></span><code><span class="k">if</span> <span class="n">x</span> <span class="o">&gt;</span> <span class="mi">0</span><span class="p">:</span>
@@ -566,7 +567,7 @@ n features in n dims     n features in d&lt;&lt;n dims
 <p>100 万条 Prolog 规则你<strong>理论上能逐条读完</strong>。124M 个浮点数你不能逐个理解——它们之间存在大量的非线性叠加。你无法把权重"反编译"成一组 <code>if-else</code>（这个研究方向叫<strong>机制可解释性 / mechanistic interpretability</strong>，目前能解释的只是个别 head 的功能，远未做到整体反编译）。</p>
 <h4 id="错位-④训练数据本身不是规则集">错位 ④：训练数据本身不是规则集</h4>
 <p>训练数据是<strong>例子</strong>，不是规则。规则在哪里？<strong>规则是梯度下降从例子里"归纳"出来的，存在权重里</strong>。这是从亚里士多德到 Hume 都在讨论的"归纳问题"——例子和规则不是同一种东西。</p>
-<h3 id="63-一个更精确的类比">6.3 一个更精确的类比</h3>
+<h3 id="73-一个更精确的类比">7.3 一个更精确的类比</h3>
 <p>如果一定要用编程类比，<strong>更准确的版本</strong>是：</p>
 <blockquote>
 <p><strong>训练数据是规约 (specification)，权重是编译产物 (compiled binary)，前向传播是执行。SGD 就是编译器。</strong></p>
@@ -574,7 +575,7 @@ n features in n dims     n features in d&lt;&lt;n dims
 <p>这就和 <a href="DIFFERENTIABLE_PROGRAMMING.md">docs/DIFFERENTIABLE_PROGRAMMING.md</a> 里 LeCun 的"可微分编程"视角接上了：训练 = 编译，推理 = 执行。</p>
 <p>但即使这个类比也有局限：传统编译器是<strong>确定性</strong>的，同样的源码编译出同样的二进制；SGD 是<strong>随机</strong>的，不同的初始化、不同的 batch 顺序会编译出不同的权重——但所有这些权重在训练分布上的行为大致等价。这是符号编程里没有的现象。</p>
 <hr />
-<h2 id="7-三种范式的对照表">7. 三种范式的对照表</h2>
+<h2 id="8-三种范式的对照表">8. 三种范式的对照表</h2>
 <table>
 <thead>
 <tr>
@@ -667,9 +668,9 @@ n features in n dims     n features in d&lt;&lt;n dims
 </table>
 <p>注意一件事：<strong>没有任何一行说"X 是赢家"</strong>。三个范式各自在自己擅长的边界内是无可替代的。</p>
 <hr />
-<h2 id="8-在-codegpt-里看见三个范式的影子">8. 在 CodeGPT 里看见三个范式的影子</h2>
+<h2 id="9-在-codegpt-里看见三个范式的影子">9. 在 CodeGPT 里看见三个范式的影子</h2>
 <p>虽然 CodeGPT 是一个<strong>纯神经</strong>模型，但它的代码里仍然能找到三种范式的痕迹：</p>
-<h3 id="81-符号成分">8.1 符号成分</h3>
+<h3 id="91-符号成分">9.1 符号成分</h3>
 <p><code>tokenizer.py</code> 里硬编码的特殊 token——这是<strong>纯符号</strong>：</p>
 <div class="highlight"><pre><span></span><code><span class="c1"># tokenizer.py:148-198 的 apply_fim_transform</span>
 <span class="n">prefix_id</span> <span class="o">=</span> <span class="n">SPECIAL_TOKENS</span><span class="p">[</span><span class="s2">&quot;&lt;|fim_prefix|&gt;&quot;</span><span class="p">]</span>   <span class="c1"># 50257</span>
@@ -681,14 +682,14 @@ n features in n dims     n features in d&lt;&lt;n dims
 </code></pre></div>
 
 <p>这是<strong>人写的、确定性的、离散的格式协议</strong>——和 Prolog 里的 <code>parent(X, Y) :- ...</code> 在性质上是一样的。模型学不出"PSM 模板"——这个模板是由人<strong>作为不可学习的协议</strong>强加给模型的。<code>stop_tokens</code>、<code>lang:python</code> 等也都是同类——它们是<strong>架构里的符号骨架</strong>。</p>
-<h3 id="82-概率成分">8.2 概率成分</h3>
+<h3 id="92-概率成分">9.2 概率成分</h3>
 <div class="highlight"><pre><span></span><code><span class="c1"># model.py:301-302</span>
 <span class="n">probs</span> <span class="o">=</span> <span class="n">F</span><span class="o">.</span><span class="n">softmax</span><span class="p">(</span><span class="n">logits</span><span class="p">,</span> <span class="n">dim</span><span class="o">=-</span><span class="mi">1</span><span class="p">)</span>
 <span class="n">idx_next</span> <span class="o">=</span> <span class="n">torch</span><span class="o">.</span><span class="n">multinomial</span><span class="p">(</span><span class="n">probs</span><span class="p">,</span> <span class="n">num_samples</span><span class="o">=</span><span class="mi">1</span><span class="p">)</span>
 </code></pre></div>
 
 <p>这是一个<strong>条件概率分布的采样</strong>——和贝叶斯网络的边缘 / 条件推断在数学上是同一类操作。CodeGPT 没有显式的图结构，但它每个 token 上的 next-token 分布就是一个超大规模的隐式贝叶斯模型——只是这个 CPT 是 50304 个值、由神经网络给出，不再是查表。</p>
-<h3 id="83-神经成分">8.3 神经成分</h3>
+<h3 id="93-神经成分">9.3 神经成分</h3>
 <p>12 层 Block × (注意力 + MLP) × 12 个 head = 124M 参数：</p>
 <div class="highlight"><pre><span></span><code><span class="c1"># model.py:102-105</span>
 <span class="k">def</span><span class="w"> </span><span class="nf">forward</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">x</span><span class="p">):</span>
@@ -698,7 +699,7 @@ n features in n dims     n features in d&lt;&lt;n dims
 </code></pre></div>
 
 <p>这里的所有"知识"都在 <code>self.attn</code>、<code>self.mlp</code> 的权重矩阵里，由 <code>train.py</code> 的 <code>F.cross_entropy</code> 通过梯度下降一格一格填进去。<strong>这部分完全不可枚举、不可解释、连续可微</strong>——这是纯深度学习的部分。</p>
-<h3 id="84-三层夹心结构">8.4 三层夹心结构</h3>
+<h3 id="94-三层夹心结构">9.4 三层夹心结构</h3>
 <div class="highlight"><pre><span></span><code>┌──────────────────────────────────────┐
 │  符号层  特殊 token / chat template    │ ← 人写的协议骨架
 │         stop_tokens / FIM 模板         │
@@ -711,7 +712,424 @@ n features in n dims     n features in d&lt;&lt;n dims
 
 <p><strong>任何能跑的大模型系统都是这种"三明治"——纯神经的核心，外面包一层概率解释，最外面是符号协议。</strong> 这不是历史遗留，是必然——纯神经模型没法决定"什么时候停止生成"（这是符号问题）、没法决定"采样还是 argmax"（这是概率问题）。</p>
 <hr />
-<h2 id="9-神经-符号混合现代系统都不是纯种">9. 神经-符号混合：现代系统都不是纯种</h2>
+<h2 id="10-函数式编程视角神经网络是-fgh-的世界">10. 函数式编程视角：神经网络是 f∘g∘h∘... 的世界</h2>
+<blockquote>
+<p>在符号 AI、贝叶斯网络、深度学习这三派之外,有一条<strong>横切</strong>了三派的第四股力量被本文档刻意推迟到这里才登场——<strong>函数式编程 (functional programming, FP)</strong>。它不是历史上 1956 年 Dartmouth 大会上独立的一派,而是一种<strong>元思想</strong>:Lambda calculus (Church 1936) 比图灵机晚一年但更纯,Lisp 的 <code>(f x)</code> 写法从 1958 年就在了,而 PyTorch / JAX / Keras 今天写的每一段 <code>forward</code>,本质上都是 <strong>lambda calculus 的可微分版本</strong>。</p>
+<p>这一节用函数式编程的眼光重新拆一遍神经网络的前向、反向、组合方式。你会看到一个反直觉但极其干净的结论:<strong>深度学习其实是符号主义的一个连续化特例</strong>——把符号从离散原子换成可微张量,把规则从 <code>if-else</code> 换成线性映射 + 非线性,但<strong>"组合"这件事本身,是同一种动作</strong>。</p>
+</blockquote>
+<h3 id="101-前向传播-函数组合-function-composition">10.1 前向传播 = 函数组合 (Function Composition)</h3>
+<p>打开 <code>model.py:177-198</code> 的 <code>forward</code>:</p>
+<div class="highlight"><pre><span></span><code><span class="k">def</span><span class="w"> </span><span class="nf">forward</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">idx</span><span class="p">,</span> <span class="n">targets</span><span class="o">=</span><span class="kc">None</span><span class="p">):</span>
+    <span class="o">...</span>
+    <span class="n">x</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">transformer</span><span class="o">.</span><span class="n">drop</span><span class="p">(</span><span class="n">tok_emb</span> <span class="o">+</span> <span class="n">pos_emb</span><span class="p">)</span>   <span class="c1"># f₀</span>
+    <span class="k">for</span> <span class="n">block</span> <span class="ow">in</span> <span class="bp">self</span><span class="o">.</span><span class="n">transformer</span><span class="o">.</span><span class="n">h</span><span class="p">:</span>                <span class="c1"># f₁, f₂, ..., f₁₂</span>
+        <span class="n">x</span> <span class="o">=</span> <span class="n">block</span><span class="p">(</span><span class="n">x</span><span class="p">)</span>
+    <span class="n">x</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">transformer</span><span class="o">.</span><span class="n">ln_f</span><span class="p">(</span><span class="n">x</span><span class="p">)</span>                    <span class="c1"># f₁₃</span>
+    <span class="n">logits</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">lm_head</span><span class="p">(</span><span class="n">x</span><span class="p">)</span>                        <span class="c1"># f₁₄</span>
+</code></pre></div>
+
+<p>数学上这就是函数组合的链式表达:</p>
+<p>$$
+\text{logits} \;=\; f_{14} \circ f_{13} \circ f_{12} \circ \cdots \circ f_1 \circ f_0\,(x)
+$$</p>
+<p>在 Lisp 里完全等价的写法:</p>
+<div class="highlight"><pre><span></span><code><span class="p">(</span><span class="nv">lm-head</span><span class="w"> </span><span class="p">(</span><span class="nv">ln-f</span><span class="w"> </span><span class="p">(</span><span class="nv">block-12</span><span class="w"> </span><span class="p">(</span><span class="nv">block-11</span><span class="w"> </span><span class="o">...</span><span class="w"> </span><span class="p">(</span><span class="nv">block-1</span><span class="w"> </span><span class="p">(</span><span class="nv">drop</span><span class="w"> </span><span class="p">(</span><span class="nb">+</span><span class="w"> </span><span class="nv">tok-emb</span><span class="w"> </span><span class="nv">pos-emb</span><span class="p">)))))))</span>
+</code></pre></div>
+
+<p>在 Clojure 里用线程宏 <code>-&gt;&gt;</code> 让顺序和 Python <code>for</code> 循环对齐,可读性更高:</p>
+<div class="highlight"><pre><span></span><code><span class="p">(</span><span class="nf">-&gt;&gt;</span><span class="w"> </span><span class="p">(</span><span class="nb">+ </span><span class="nv">tok-emb</span><span class="w"> </span><span class="nv">pos-emb</span><span class="p">)</span><span class="w"> </span><span class="nv">drop</span>
+<span class="w">     </span><span class="nv">block-1</span><span class="w"> </span><span class="nv">block-2</span><span class="w"> </span><span class="nv">...</span><span class="w"> </span><span class="nv">block-12</span>
+<span class="w">     </span><span class="nv">ln-f</span><span class="w"> </span><span class="nv">lm-head</span><span class="p">)</span>
+</code></pre></div>
+
+<p><strong><code>for block in self.transformer.h: x = block(x)</code> 本质就是 fold / reduce</strong>:</p>
+<div class="highlight"><pre><span></span><code><span class="kn">from</span><span class="w"> </span><span class="nn">functools</span><span class="w"> </span><span class="kn">import</span> <span class="n">reduce</span>
+<span class="n">x</span> <span class="o">=</span> <span class="n">reduce</span><span class="p">(</span><span class="k">lambda</span> <span class="n">acc</span><span class="p">,</span> <span class="n">block</span><span class="p">:</span> <span class="n">block</span><span class="p">(</span><span class="n">acc</span><span class="p">),</span> <span class="bp">self</span><span class="o">.</span><span class="n">transformer</span><span class="o">.</span><span class="n">h</span><span class="p">,</span> <span class="n">x_initial</span><span class="p">)</span>
+</code></pre></div>
+
+<p><code>nn.Sequential</code> 把这个 fold 写得更白:</p>
+<div class="highlight"><pre><span></span><code><span class="n">model</span> <span class="o">=</span> <span class="n">nn</span><span class="o">.</span><span class="n">Sequential</span><span class="p">(</span><span class="n">emb</span><span class="p">,</span> <span class="n">drop</span><span class="p">,</span> <span class="n">block_1</span><span class="p">,</span> <span class="o">...</span><span class="p">,</span> <span class="n">block_12</span><span class="p">,</span> <span class="n">ln_f</span><span class="p">,</span> <span class="n">lm_head</span><span class="p">)</span>
+<span class="n">out</span> <span class="o">=</span> <span class="n">model</span><span class="p">(</span><span class="n">x</span><span class="p">)</span>   <span class="c1"># 内部就是 reduce</span>
+</code></pre></div>
+
+<p>每个 <code>Block</code> 里 (<code>model.py:102-105</code>) 又是同样的组合套娃:</p>
+<div class="highlight"><pre><span></span><code><span class="k">def</span><span class="w"> </span><span class="nf">forward</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">x</span><span class="p">):</span>
+    <span class="n">x</span> <span class="o">=</span> <span class="n">x</span> <span class="o">+</span> <span class="bp">self</span><span class="o">.</span><span class="n">attn</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">ln_1</span><span class="p">(</span><span class="n">x</span><span class="p">))</span>     <span class="c1"># x + (attn ∘ ln_1)(x)</span>
+    <span class="n">x</span> <span class="o">=</span> <span class="n">x</span> <span class="o">+</span> <span class="bp">self</span><span class="o">.</span><span class="n">mlp</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">ln_2</span><span class="p">(</span><span class="n">x</span><span class="p">))</span>      <span class="c1"># x + (mlp ∘ ln_2)(x)</span>
+    <span class="k">return</span> <span class="n">x</span>
+</code></pre></div>
+
+<p><strong>残差连接 <code>x + f(x)</code></strong> 在 FP 视角下就是 $\text{block} = \mathrm{id} + f$——用<strong>函数加法</strong>让 $f$ 起步时接近恒等映射。这是何凯明 2015 <em>Deep Residual Learning</em> 的关键观察,而它的 FP 描述异常干净:<strong>ResNet = 把恒等函数和待学习的扰动函数相加</strong>。</p>
+<h3 id="102-keras-functional-api把函数组合写在脸上">10.2 Keras Functional API:把函数组合写在脸上</h3>
+<p>PyTorch 的 <code>for block in ...</code> 是命令式风格,函数组合藏在循环里。<strong>Keras Functional API 直接把"层即函数"写成 API</strong>:</p>
+<div class="highlight"><pre><span></span><code><span class="c1"># Keras Functional API —— 这就是带形状信息的 lambda calculus</span>
+<span class="n">inputs</span> <span class="o">=</span> <span class="n">Input</span><span class="p">(</span><span class="n">shape</span><span class="o">=</span><span class="p">(</span><span class="n">seq_len</span><span class="p">,))</span>
+<span class="n">x</span> <span class="o">=</span> <span class="n">Embedding</span><span class="p">(</span><span class="n">vocab_size</span><span class="p">,</span> <span class="n">n_embd</span><span class="p">)(</span><span class="n">inputs</span><span class="p">)</span>
+<span class="n">x</span> <span class="o">=</span> <span class="n">Dropout</span><span class="p">(</span><span class="mf">0.1</span><span class="p">)(</span><span class="n">x</span><span class="p">)</span>
+<span class="k">for</span> <span class="n">_</span> <span class="ow">in</span> <span class="nb">range</span><span class="p">(</span><span class="n">n_layer</span><span class="p">):</span>
+    <span class="n">x</span> <span class="o">=</span> <span class="n">TransformerBlock</span><span class="p">(</span><span class="n">n_head</span><span class="p">,</span> <span class="n">n_embd</span><span class="p">)(</span><span class="n">x</span><span class="p">)</span>
+<span class="n">x</span> <span class="o">=</span> <span class="n">LayerNorm</span><span class="p">()(</span><span class="n">x</span><span class="p">)</span>
+<span class="n">outputs</span> <span class="o">=</span> <span class="n">Dense</span><span class="p">(</span><span class="n">vocab_size</span><span class="p">)(</span><span class="n">x</span><span class="p">)</span>
+<span class="n">model</span> <span class="o">=</span> <span class="n">Model</span><span class="p">(</span><span class="n">inputs</span><span class="p">,</span> <span class="n">outputs</span><span class="p">)</span>
+</code></pre></div>
+
+<p>看 <code>Embedding(vocab_size, n_embd)(inputs)</code> 这一行——<code>Embedding(...)</code> 返回一个<strong>可调用对象</strong> (callable),再被 <code>(inputs)</code> 调用。这就是<strong>柯里化 (currying)</strong>:</p>
+<div class="highlight"><pre><span></span><code>Embedding : (vocab_size, n_embd) → (Tensor → Tensor)
+                                        ↑
+                                  这是个待应用输入的函数
+</code></pre></div>
+
+<p><code>x = Dense(64)(x)</code> 等价于 Haskell 里的 <code>x' = dense 64 x</code>,等价于 Lisp 里的 <code>(setq x ((dense 64) x))</code>。<strong>Keras 的设计哲学就是"层即函数"</strong>——François Chollet 在 <em>Deep Learning with Python</em> 第二版里专门论证 "DL is composition of differentiable functions"——他把这条话刻进了 Keras 的核心 API。</p>
+<p>更极致的是 <strong>JAX / Flax</strong>,它把"模型即纯函数"做到底:</p>
+<div class="highlight"><pre><span></span><code><span class="c1"># JAX/Flax 风格 —— 模型完全是纯函数</span>
+<span class="k">def</span><span class="w"> </span><span class="nf">forward</span><span class="p">(</span><span class="n">params</span><span class="p">,</span> <span class="n">x</span><span class="p">):</span>
+    <span class="n">x</span> <span class="o">=</span> <span class="n">embedding</span><span class="p">(</span><span class="n">params</span><span class="p">[</span><span class="s1">&#39;emb&#39;</span><span class="p">],</span> <span class="n">x</span><span class="p">)</span>
+    <span class="k">for</span> <span class="n">i</span> <span class="ow">in</span> <span class="nb">range</span><span class="p">(</span><span class="n">n_layer</span><span class="p">):</span>
+        <span class="n">x</span> <span class="o">=</span> <span class="n">transformer_block</span><span class="p">(</span><span class="n">params</span><span class="p">[</span><span class="s1">&#39;blocks&#39;</span><span class="p">][</span><span class="n">i</span><span class="p">],</span> <span class="n">x</span><span class="p">)</span>
+    <span class="k">return</span> <span class="n">lm_head</span><span class="p">(</span><span class="n">params</span><span class="p">[</span><span class="s1">&#39;lm_head&#39;</span><span class="p">],</span> <span class="n">x</span><span class="p">)</span>
+</code></pre></div>
+
+<p>参数<strong>显式作为函数第一参数</strong>传入,完全没有 <code>self</code>,没有隐藏状态——这是数学意义上严格的纯函数。这就是为什么 <code>jax.grad(forward)</code> 能直接对参数求导:函数有梯度的前提是它<strong>真的是函数</strong>。</p>
+<h3 id="103-transducer-思想变换从数据里解耦">10.3 Transducer 思想:变换从数据里解耦</h3>
+<p><strong>Transducer</strong> 是 Rich Hickey 在 Clojure 1.7 (2015) 引入的关键概念:<strong>把"做什么变换"和"在什么数据上变换"彻底分开</strong>。一个 transducer 描述"如何变",可以在任何 reducible 数据源上应用。</p>
+<div class="highlight"><pre><span></span><code><span class="c1">;; Clojure transducer</span>
+<span class="p">(</span><span class="k">def </span><span class="nv">xf</span><span class="w"> </span><span class="p">(</span><span class="nb">comp </span><span class="p">(</span><span class="nb">map </span><span class="nv">inc</span><span class="p">)</span><span class="w"> </span><span class="p">(</span><span class="nb">filter </span><span class="nv">even?</span><span class="p">)</span><span class="w"> </span><span class="p">(</span><span class="nb">take </span><span class="mi">5</span><span class="p">)))</span>
+<span class="c1">;; xf 只描述变换,跟数据完全无关</span>
+<span class="p">(</span><span class="nf">transduce</span><span class="w"> </span><span class="nv">xf</span><span class="w"> </span><span class="nb">+ </span><span class="mi">0</span><span class="w"> </span><span class="p">(</span><span class="nb">range </span><span class="mi">100</span><span class="p">))</span><span class="w">        </span><span class="c1">;; 应用到无限序列</span>
+<span class="p">(</span><span class="nf">transduce</span><span class="w"> </span><span class="nv">xf</span><span class="w"> </span><span class="nb">conj </span><span class="p">[]</span><span class="w"> </span><span class="nv">my-channel</span><span class="p">)</span><span class="w">     </span><span class="c1">;; 应用到 channel</span>
+</code></pre></div>
+
+<p><strong><code>nn.ModuleList</code> 正是神经网络版的 transducer 集合</strong>:</p>
+<div class="highlight"><pre><span></span><code><span class="c1"># model.py:148 —— 一组与数据无关的变换</span>
+<span class="bp">self</span><span class="o">.</span><span class="n">h</span> <span class="o">=</span> <span class="n">nn</span><span class="o">.</span><span class="n">ModuleList</span><span class="p">([</span><span class="n">Block</span><span class="p">(</span><span class="n">config</span><span class="p">)</span> <span class="k">for</span> <span class="n">_</span> <span class="ow">in</span> <span class="nb">range</span><span class="p">(</span><span class="n">n_layer</span><span class="p">)])</span>
+
+<span class="c1"># 应用时才注入数据流</span>
+<span class="k">for</span> <span class="n">block</span> <span class="ow">in</span> <span class="bp">self</span><span class="o">.</span><span class="n">h</span><span class="p">:</span>
+    <span class="n">x</span> <span class="o">=</span> <span class="n">block</span><span class="p">(</span><span class="n">x</span><span class="p">)</span>
+</code></pre></div>
+
+<p><code>self.h</code> 本身<strong>不含任何数据流转的逻辑</strong>,只是 12 个独立的可调用变换——就像 <code>(comp f₁ f₂ ... f₁₂)</code>。这有三个直接好处:</p>
+<ol>
+<li><strong>可移植</strong> —— <code>self.h</code> 可以应用到任何 batch / seq_len 上,变换本身不变。</li>
+<li><strong>可插拔</strong> —— <code>self.h[3] = NewBlock(...)</code> 立刻替换中间一层,其他层不受影响——这是 Hugging Face PEFT / LoRA 等技术的底层前提。</li>
+<li><strong>可观测</strong> —— 逐层 hook 出 hidden state(也就是 <a href="#6-可解释性深度学习最大的软肋以及它现在进展到哪一步">§6.3 logit lens</a> 的实现基础)——因为每一层都是独立的纯变换,中间值可以被任意截取。</li>
+</ol>
+<p>PyTorch 2.0 引入的 <code>torch.compile</code> 把这思想推到极致——它<strong>先把 forward 跟踪成一个静态计算图 (纯函数!),再做整图融合优化</strong>。前提条件正是:<strong>你的 forward 已经是函数组合,没有隐藏副作用</strong>。</p>
+<h3 id="104-map-reduce-无处不在">10.4 Map / Reduce 无处不在</h3>
+<p>神经网络几乎每一个原语都是 map 或 reduce:</p>
+<table>
+<thead>
+<tr>
+<th>操作</th>
+<th>函数式对应</th>
+<th>在 CodeGPT 哪里</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>Batch 维并行</td>
+<td><code>map</code> over B</td>
+<td><code>forward</code> 第一维 (<code>model.py:179</code>)</td>
+</tr>
+<tr>
+<td>Token 维并行</td>
+<td><code>map</code> over T</td>
+<td><code>tok_emb = wte(idx)</code> 每个位置独立 (<code>model.py:183</code>)</td>
+</tr>
+<tr>
+<td>Linear / GELU</td>
+<td><code>map</code> over hidden dim</td>
+<td><code>MLP.forward</code> (<code>model.py:85-90</code>)</td>
+</tr>
+<tr>
+<td>Softmax</td>
+<td><code>map</code> + <code>reduce</code>(归一化)</td>
+<td><code>model.py:68, 301</code></td>
+</tr>
+<tr>
+<td>Attention 加权求和</td>
+<td><code>reduce</code> over keys</td>
+<td><code>att @ v</code> (<code>model.py:70</code>)</td>
+</tr>
+<tr>
+<td>LayerNorm</td>
+<td><code>reduce</code>(mean/var) + <code>map</code>(scale)</td>
+<td><code>LayerNorm.forward</code> (<code>model.py:27-28</code>)</td>
+</tr>
+<tr>
+<td>Cross-entropy loss</td>
+<td><code>map</code>(per-token NLL) + <code>reduce</code>(mean)</td>
+<td><code>model.py:192</code></td>
+</tr>
+<tr>
+<td><code>sum(p.numel() for p in ...)</code></td>
+<td><code>reduce</code></td>
+<td><code>get_num_params</code> (<code>model.py:164</code>)</td>
+</tr>
+</tbody>
+</table>
+<p><strong>Attention 是教科书级的 map-reduce</strong>:</p>
+<div class="highlight"><pre><span></span><code><span class="c1"># model.py:66-70  (q, k, v: shape [B, H, T, D])</span>
+<span class="n">att</span> <span class="o">=</span> <span class="p">(</span><span class="n">q</span> <span class="o">@</span> <span class="n">k</span><span class="o">.</span><span class="n">transpose</span><span class="p">(</span><span class="o">-</span><span class="mi">2</span><span class="p">,</span> <span class="o">-</span><span class="mi">1</span><span class="p">))</span> <span class="o">*</span> <span class="p">(</span><span class="mf">1.0</span> <span class="o">/</span> <span class="n">math</span><span class="o">.</span><span class="n">sqrt</span><span class="p">(</span><span class="n">D</span><span class="p">))</span>   <span class="c1"># map: 每对 (q_i, k_j) 求点积</span>
+<span class="n">att</span> <span class="o">=</span> <span class="n">att</span><span class="o">.</span><span class="n">masked_fill</span><span class="p">(</span><span class="n">mask</span><span class="p">,</span> <span class="nb">float</span><span class="p">(</span><span class="s1">&#39;-inf&#39;</span><span class="p">))</span>
+<span class="n">att</span> <span class="o">=</span> <span class="n">F</span><span class="o">.</span><span class="n">softmax</span><span class="p">(</span><span class="n">att</span><span class="p">,</span> <span class="n">dim</span><span class="o">=-</span><span class="mi">1</span><span class="p">)</span>                              <span class="c1"># reduce + 归一化</span>
+<span class="n">y</span> <span class="o">=</span> <span class="n">att</span> <span class="o">@</span> <span class="n">v</span>                                               <span class="c1"># reduce: 加权求和</span>
+</code></pre></div>
+
+<p>这正是 Google 2004 <em>MapReduce</em> 论文的内核:<strong>map 阶段独立计算,reduce 阶段聚合</strong>。当年用来在 PB 级日志上算词频,今天用来在 (B, H, T, T) 张量上算注意力——<strong>同样的范式,只换了硬件 (CPU 集群 → GPU SIMD)</strong>。</p>
+<p><code>torch.vmap</code>、<code>jax.vmap</code>、TensorFlow 的 <code>tf.map_fn</code> 都是显式的 <strong>map</strong> 算子——它们让你写"单样本逻辑",由框架自动 lift 到 batch 维。这和 Lisp 的 <code>(mapcar f xs)</code>、Haskell 的 <code>fmap f xs</code>、Clojure 的 <code>(map f xs)</code> 是<strong>同一个函数式原语</strong>,只是参数从列表换成了张量。</p>
+<h3 id="105-高阶函数optimizer-与-module-都是">10.5 高阶函数:Optimizer 与 Module 都是</h3>
+<p><strong>高阶函数</strong> = 接受函数 / 返回函数的函数。神经网络里到处都是:</p>
+<div class="highlight"><pre><span></span><code><span class="c1"># model.py:240 —— optimizer 接受 model 的参数 (本质是接受函数的内部状态)</span>
+<span class="n">optimizer</span> <span class="o">=</span> <span class="n">torch</span><span class="o">.</span><span class="n">optim</span><span class="o">.</span><span class="n">AdamW</span><span class="p">(</span><span class="n">optim_groups</span><span class="p">,</span> <span class="n">lr</span><span class="o">=</span><span class="n">learning_rate</span><span class="p">,</span> <span class="o">...</span><span class="p">)</span>
+
+<span class="c1"># 训练循环: 模型(函数) + 数据 → loss → 梯度 → 更新模型</span>
+<span class="k">for</span> <span class="n">step</span> <span class="ow">in</span> <span class="nb">range</span><span class="p">(</span><span class="n">max_iters</span><span class="p">):</span>
+    <span class="n">loss</span> <span class="o">=</span> <span class="n">model</span><span class="p">(</span><span class="n">x</span><span class="p">,</span> <span class="n">y</span><span class="p">)[</span><span class="mi">1</span><span class="p">]</span>   <span class="c1"># 调用函数</span>
+    <span class="n">loss</span><span class="o">.</span><span class="n">backward</span><span class="p">()</span>         <span class="c1"># 对函数求导</span>
+    <span class="n">optimizer</span><span class="o">.</span><span class="n">step</span><span class="p">()</span>        <span class="c1"># 用梯度更新函数(的参数)</span>
+</code></pre></div>
+
+<p><strong>Optimizer 在范畴论意义上是一个 endofunctor</strong>:它接受 (Model, Gradient) 返回 Model'——也就是 $\text{Optimizer}: \text{Model} \to \text{Model}$,把函数空间映回它自己。</p>
+<p><code>nn.Module</code> 也是高阶——它<strong>接受子 module 作为构造参数,组合成更大的 module</strong>:</p>
+<div class="highlight"><pre><span></span><code><span class="c1"># model.py:93-100 —— Block 是高阶 module</span>
+<span class="k">class</span><span class="w"> </span><span class="nc">Block</span><span class="p">(</span><span class="n">nn</span><span class="o">.</span><span class="n">Module</span><span class="p">):</span>
+    <span class="k">def</span><span class="w"> </span><span class="fm">__init__</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">config</span><span class="p">):</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">ln_1</span> <span class="o">=</span> <span class="n">LayerNorm</span><span class="p">(</span><span class="o">...</span><span class="p">)</span>        <span class="c1"># 子函数</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">attn</span> <span class="o">=</span> <span class="n">CausalSelfAttention</span><span class="p">(</span><span class="n">config</span><span class="p">)</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">ln_2</span> <span class="o">=</span> <span class="n">LayerNorm</span><span class="p">(</span><span class="o">...</span><span class="p">)</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">mlp</span> <span class="o">=</span> <span class="n">MLP</span><span class="p">(</span><span class="n">config</span><span class="p">)</span>
+</code></pre></div>
+
+<p><code>CodeGPT</code> 整体就是一棵<strong>函数树</strong> (function tree):</p>
+<div class="highlight"><pre><span></span><code>CodeGPT
+├── transformer (ModuleDict)
+│   ├── wte (Embedding)
+│   ├── wpe (Embedding)
+│   ├── drop (Dropout)
+│   ├── h (ModuleList × 12)
+│   │   └── Block
+│   │       ├── ln_1 (LayerNorm)
+│   │       ├── attn (CausalSelfAttention)
+│   │       ├── ln_2 (LayerNorm)
+│   │       └── mlp (MLP)
+│   └── ln_f (LayerNorm)
+└── lm_head (Linear)
+</code></pre></div>
+
+<p><code>named_parameters()</code> (<code>model.py:215</code>) 就是这棵树的中序遍历。这种结构在 Haskell / OCaml 的 functor 里有严格对应——<code>nn.Module</code> 本质上是个 <strong>"applicative functor over differentiable maps"</strong>。</p>
+<h3 id="106-不可变性-immutability-与纯函数autograd-的底层假设">10.6 不可变性 (Immutability) 与纯函数:Autograd 的底层假设</h3>
+<p><strong>Autograd 工作的根本前提是 <code>forward</code> 接近纯函数</strong>——每个张量操作不应有隐藏副作用,否则反向传播的计算图就断了。这就是为什么 PyTorch 文档反复警告:</p>
+<div class="highlight"><pre><span></span><code><span class="n">x</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">linear</span><span class="p">(</span><span class="n">x</span><span class="p">)</span>
+<span class="n">x</span><span class="o">.</span><span class="n">relu_</span><span class="p">()</span>        <span class="c1"># ❌ in-place,可能破坏 autograd</span>
+<span class="n">x</span> <span class="o">=</span> <span class="n">x</span><span class="o">.</span><span class="n">relu</span><span class="p">()</span>     <span class="c1"># ✅ 返回新张量,纯函数</span>
+</code></pre></div>
+
+<p>PyTorch 的 autograd engine 在跑 backward 时,<strong>需要 forward 时每一步的中间张量都还存在</strong>——in-place 操作会覆盖这些张量,直接报错 <code>RuntimeError: one of the variables needed for gradient computation has been modified by an inplace operation</code>。</p>
+<p>JAX 走得更极端——<strong>完全禁止 in-place</strong>,所有张量天然不可变。这让:</p>
+<ul>
+<li><code>jax.jit</code> 能做激进的整图融合优化</li>
+<li><code>jax.grad</code> 能自动微分任何 Python 函数</li>
+<li><code>jax.pmap</code> / <code>jax.vmap</code> 能轻松并行/批量化</li>
+<li><code>jax.checkpoint</code> 能用重算换显存(只有纯函数才能"重新跑一遍")</li>
+</ul>
+<p>——<strong>全部依赖于纯函数性</strong>。这一点和 Haskell / Clojure 的不可变数据结构哲学<strong>完全一致</strong>:<strong>只要变换是纯的,组合就是无限自由的</strong>。</p>
+<p><code>model.py</code> 的 <code>forward</code> 仔细看,<strong>没有任何一行有副作用</strong>:<code>tok_emb = self.wte(idx)</code>、<code>x = self.drop(...)</code>、<code>x = block(x)</code> 全部是"读取参数 + 返回新张量"。这就是为什么 PyTorch 的 hook 机制 (<code>register_forward_hook</code>)、<code>torch.compile</code>、反向传播 都能干干净净地工作——CodeGPT 的 forward 已经是 FP 风格了,只是用命令式句法写出来。</p>
+<h3 id="107-反向传播-chain-rule-on-composed-functions">10.7 反向传播 = Chain Rule on Composed Functions</h3>
+<p>最优美的对应在这里。前向是 $y = (f_n \circ \cdots \circ f_1)(x)$,反向就是 chain rule 的层层乘积:</p>
+<p>$$
+\frac{\partial L}{\partial x} \;=\; \frac{\partial L}{\partial y_n} \cdot \frac{\partial y_n}{\partial y_{n-1}} \cdot \frac{\partial y_{n-1}}{\partial y_{n-2}} \,\cdots\, \frac{\partial y_1}{\partial x}
+$$</p>
+<p>这就是函数式编程里 <strong>"组合 (composition) 的求导是导数的组合 (composition)"</strong> 这条最基本的等式。PyTorch 的 autograd 把它做成了机械过程:</p>
+<div class="highlight"><pre><span></span><code><span class="n">loss</span><span class="o">.</span><span class="n">backward</span><span class="p">()</span>   <span class="c1"># 对 (f_n ∘ ... ∘ f_1) 用 chain rule 求 grad</span>
+</code></pre></div>
+
+<p>更深一层:<strong>自动微分 (automatic differentiation)</strong> 本身就是一种 <strong>transformation on functions</strong>——给定 $f$,AD 返回 $f'$。这是个<strong>高阶函数</strong>,在 JAX 里写得最白:</p>
+<div class="highlight"><pre><span></span><code><span class="kn">import</span><span class="w"> </span><span class="nn">jax</span>
+<span class="n">grad_fn</span> <span class="o">=</span> <span class="n">jax</span><span class="o">.</span><span class="n">grad</span><span class="p">(</span><span class="n">loss_fn</span><span class="p">)</span>   <span class="c1"># 高阶函数: 函数 -&gt; 它的梯度函数</span>
+<span class="n">grads</span> <span class="o">=</span> <span class="n">grad_fn</span><span class="p">(</span><span class="n">params</span><span class="p">,</span> <span class="n">x</span><span class="p">,</span> <span class="n">y</span><span class="p">)</span>
+</code></pre></div>
+
+<p><code>jax.grad</code> 是个 <strong>functor</strong>——它把函数空间里的对象 (你的 <code>loss_fn</code>) 映到另一个函数空间里的对象 (它的梯度函数)。这是范畴论的语言,但 1958 年 McCarthy 设计 Lisp 时已经隐隐有这种想法了——<strong>程序可以是数据,函数可以被变换</strong>。</p>
+<p><code>vmap</code>、<code>pmap</code>、<code>grad</code>、<code>jit</code> 全是 JAX 的"函数变换器" (function transformations)。<strong>深度学习框架的现代设计,正在快速向"高阶函数 + 函数变换"这个方向收敛</strong>。</p>
+<h3 id="108-符号主义-函数式-逻辑式三位一体">10.8 符号主义 ↔ 函数式 ↔ 逻辑式:三位一体</h3>
+<p>回到本文档的主线。把这几派放在历史轴上:</p>
+<table>
+<thead>
+<tr>
+<th>年份</th>
+<th>思想</th>
+<th>代表</th>
+<th>与神经网络的连接</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>1936</td>
+<td>Lambda calculus</td>
+<td>Church</td>
+<td><code>forward</code> 是 λ 表达式的可微版本</td>
+</tr>
+<tr>
+<td>1936</td>
+<td>图灵机</td>
+<td>Turing</td>
+<td>等价于 lambda calculus (Church-Turing thesis)</td>
+</tr>
+<tr>
+<td>1958</td>
+<td>Lisp</td>
+<td>McCarthy</td>
+<td>第一个让"程序 = 数据";Transformer 也把 token 当数据流</td>
+</tr>
+<tr>
+<td>1972</td>
+<td>Prolog</td>
+<td>Colmerauer</td>
+<td>逻辑式 = 反向函数式: 给输出找输入</td>
+</tr>
+<tr>
+<td>1980s</td>
+<td>Curry-Howard 对应</td>
+<td>数理逻辑</td>
+<td><strong>类型 = 命题,程序 = 证明</strong>——张量形状是最弱的"类型"</td>
+</tr>
+<tr>
+<td>1986</td>
+<td>Backprop</td>
+<td>Rumelhart/Hinton</td>
+<td>函数组合的 chain rule 自动化</td>
+</tr>
+<tr>
+<td>2015</td>
+<td>Keras Functional API</td>
+<td>Chollet</td>
+<td>把"层即函数"明确写进 API</td>
+</tr>
+<tr>
+<td>2015</td>
+<td>Clojure Transducer</td>
+<td>Hickey</td>
+<td>变换与数据解耦——<code>nn.ModuleList</code> 的精神先祖</td>
+</tr>
+<tr>
+<td>2018</td>
+<td>JAX</td>
+<td>Google</td>
+<td>纯函数式神经网络 + 函数变换</td>
+</tr>
+<tr>
+<td>2022</td>
+<td>torch.compile</td>
+<td>Meta</td>
+<td>命令式 PyTorch 被自动 trace 成函数式 IR 做优化</td>
+</tr>
+</tbody>
+</table>
+<p><strong>逻辑式编程 (Prolog) 是函数式编程的"反向"</strong>:函数式说"给我 x,我返回 f(x)";逻辑式说"给我 y,我找所有满足 f(x)=y 的 x"。神经网络的<strong>训练过程正是逻辑式风格</strong>——给定目标 $y$,反向找出能产出它的参数 $\theta$:</p>
+<p>$$
+\theta^* \;=\; \arg\min_\theta \;\sum_i \;|f_\theta(x_i) - y_i|^2
+$$</p>
+<p>这是 <strong>inverse function composition</strong>。SGD 是这个 inverse 的<strong>近似数值求解器</strong>,而 Prolog 的 unification + backtracking 是 inverse 的<strong>精确符号求解器</strong>(代价是搜索空间爆炸)。<strong>两者是同一个"反向解析"问题的两种实现</strong>——一个用连续优化,一个用离散搜索。</p>
+<p>更深一层是 <strong>Curry-Howard 对应</strong>:<strong>类型即命题,程序即证明</strong>。在依赖类型语言 (Coq, Agda, Lean) 里,你写一个类型为 <code>forall n, n + 0 = n</code> 的程序,这个程序的存在本身就是该命题的证明。神经网络里有什么对应物?——<strong>张量形状就是最弱的类型</strong>,而 <code>assert config.n_embd % config.n_head == 0</code> (<code>model.py:35</code>) 之类是最低级的"形状证明"。MIT 的 Brent Yorgey、CMU 的 David Spivak、Conal Elliott 等人在尝试把更强的依赖类型引入深度学习框架(参见 <em>Categorical Deep Learning</em> 项目),这是一个非常前沿的方向。</p>
+<h3 id="109-在-codegpt-里找全函数式的影子">10.9 在 CodeGPT 里找全函数式的影子</h3>
+<table>
+<thead>
+<tr>
+<th>FP 概念</th>
+<th>CodeGPT 实例</th>
+<th>文件:行</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>函数组合</td>
+<td><code>forward</code> 里 12 层 Block 串联</td>
+<td><code>model.py:186-187</code></td>
+</tr>
+<tr>
+<td>Fold / Reduce</td>
+<td><code>for block in self.transformer.h: x = block(x)</code></td>
+<td><code>model.py:186-187</code></td>
+</tr>
+<tr>
+<td>高阶函数</td>
+<td><code>self.apply(self._init_weights)</code> 把函数作为参数传</td>
+<td><code>model.py:155</code></td>
+</tr>
+<tr>
+<td>柯里化</td>
+<td><code>nn.Linear(768, 768)</code> 返回可调用对象</td>
+<td><code>model.py:36-37</code></td>
+</tr>
+<tr>
+<td>Map (并行变换)</td>
+<td>Batch 维 B、序列维 T 都是隐式 map</td>
+<td><code>model.py:179, 52</code></td>
+</tr>
+<tr>
+<td>Reduce (聚合)</td>
+<td><code>F.cross_entropy</code> 的 mean reduction</td>
+<td><code>model.py:192</code></td>
+</tr>
+<tr>
+<td>不可变性</td>
+<td>autograd 依赖不修改张量,forward 全是纯变换</td>
+<td>整个 forward</td>
+</tr>
+<tr>
+<td>纯函数</td>
+<td><code>LayerNorm.forward</code> 只读 weight/bias,不改 state</td>
+<td><code>model.py:27-28</code></td>
+</tr>
+<tr>
+<td>Functor 容器</td>
+<td><code>nn.ModuleList</code> / <code>nn.ModuleDict</code> 把变换"装入"</td>
+<td><code>model.py:144-150</code></td>
+</tr>
+<tr>
+<td>Transducer 思想</td>
+<td><code>self.transformer.h</code> 是与数据无关的变换序列</td>
+<td><code>model.py:148</code></td>
+</tr>
+<tr>
+<td>函数变换</td>
+<td><code>torch.compile(model)</code> 把 model 重写成更快的 model</td>
+<td><code>train.py</code></td>
+</tr>
+<tr>
+<td>反向 = chain rule</td>
+<td><code>loss.backward()</code> 沿组合链反向求导</td>
+<td>训练循环</td>
+</tr>
+<tr>
+<td>残差 = id + f</td>
+<td><code>x = x + self.attn(self.ln_1(x))</code></td>
+<td><code>model.py:103-104</code></td>
+</tr>
+</tbody>
+</table>
+<p><code>forward</code> (<code>model.py:177-198</code>) 里<strong>没有任何一行有副作用</strong>——所有操作都返回新张量。这就是为什么:</p>
+<ol>
+<li>PyTorch 的 hook 系统能不破坏原代码地插入观测点 (<code>register_forward_hook</code>)——<strong>纯函数允许这种"装饰"</strong>(decorator pattern in FP)。</li>
+<li><code>torch.compile</code> 能整图重写——<strong>纯函数才有可分析的语义</strong>。</li>
+<li>反向传播能自动展开——<strong>chain rule 要求每一步可微分,而可微分性 ≈ 纯函数性</strong>。</li>
+</ol>
+<h3 id="1010-一句话总结">10.10 一句话总结</h3>
+<blockquote>
+<p>神经网络看起来是"统计机器",其实是<strong>统计化的 lambda calculus</strong>。<code>forward</code> 是函数组合,<code>backward</code> 是函数组合的 chain rule,<code>optimizer.step()</code> 是函数空间上的高阶变换。</p>
+<p><strong>符号 AI 用离散原子 + <code>if-else</code> 组合,神经网络用张量 + 线性映射 + 非线性组合——但"组合"这件事本身是同一种动作</strong>。Keras Functional / JAX 把这层连接做到 API 表面;PyTorch 用命令式句法藏起来但本质未变;<code>torch.compile</code> 把命令式偷偷再 trace 回函数式做优化。</p>
+<p>三个范式在编程范式这一层握手:</p>
+<ul>
+<li><strong>符号</strong> = 用代数变换 / unification 组合</li>
+<li><strong>函数式</strong> = 用 λ 抽象 + composition 组合</li>
+<li><strong>神经</strong> = 用可微变换 + chain rule 组合</li>
+<li><strong>逻辑</strong> = 求解组合的逆映射</li>
+</ul>
+<p><strong>"组合 (composition)" 是 AI 系统永恒的骨架</strong>。任何一种 AI 范式,最终都在回答同一个问题:<strong>怎么把简单原语拼成复杂行为?</strong> 这就是为什么 Lisp 1958 的 <code>(f (g (h x)))</code> 和 PyTorch 2026 的 <code>for block in self.transformer.h: x = block(x)</code> 看起来不同,实质完全一致——它们都是<strong>函数组合</strong>这条人类思维基本动作的不同方言。</p>
+</blockquote>
+<hr />
+<h2 id="11-神经-符号混合现代系统都不是纯种">11. 神经-符号混合：现代系统都不是纯种</h2>
 <p>回顾一下产业现状：</p>
 <ul>
 <li><strong>Tool calling / function calling</strong>：模型生成的不是答案，是<strong>符号化的函数调用</strong>，由外部代码（解释器、计算器、搜索引擎）执行——纯神经搞不定算术。</li>
@@ -764,7 +1182,7 @@ n features in n dims     n features in d&lt;&lt;n dims
 </table>
 <p><strong>未来 AI 不是某一派胜出，而是三派各自占据自己的层。</strong> 这也是 <a href="SYNTHETIC_DATA.md">docs/SYNTHETIC_DATA.md</a> 里讨论的"执行反馈是最诚实的 reward"——那个反馈天然是符号的（解释器要么报错要么不报错）。</p>
 <hr />
-<h2 id="10-给用户原问题的最终回答">10. 给用户原问题的最终回答</h2>
+<h2 id="12-给用户原问题的最终回答">12. 给用户原问题的最终回答</h2>
 <p>回到一开始的问题——<strong>"GPT 是不是把训练数据当成一堆可执行的符号代码来执行？"</strong></p>
 <p>答案分三层：</p>
 <p><strong>第一层（直觉是对的）</strong>：</p>
