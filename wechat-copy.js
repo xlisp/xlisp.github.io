@@ -56,6 +56,34 @@
     el.setAttribute("style", css);
   }
 
+  // Make whitespace structural so it survives WeChat's paste sanitizer.
+  // WeChat collapses runs of spaces and drops newlines even when the element
+  // carries `white-space: pre`. So we turn every "\n" into a real <br> and
+  // every space into a non-breaking space ( ). Operates on TEXT NODES
+  // only, so inline style attributes on token <span>s are never touched.
+  function hardenWhitespace(root) {
+    var walker = document.createTreeWalker(root, NodeFilter.SHOW_TEXT, null);
+    var nodes = [];
+    var t;
+    while ((t = walker.nextNode())) nodes.push(t);
+    for (var i = 0; i < nodes.length; i++) {
+      var tn = nodes[i];
+      var text = tn.nodeValue;
+      if (text.indexOf("\n") === -1 && text.indexOf(" ") === -1) continue;
+      var frag = document.createDocumentFragment();
+      var lines = text.split("\n");
+      for (var j = 0; j < lines.length; j++) {
+        if (j > 0) frag.appendChild(document.createElement("br"));
+        if (lines[j].length) {
+          frag.appendChild(
+            document.createTextNode(lines[j].replace(/ /g, " "))
+          );
+        }
+      }
+      tn.parentNode.replaceChild(frag, tn);
+    }
+  }
+
   // Convert one Pygments <div class="highlight"><pre>…<code>…</code></pre></div>
   // into a clean, fully-inlined <pre><code> that survives the WeChat paste.
   function buildCodeBlock(highlightEl) {
@@ -107,6 +135,9 @@
     );
     // Preserve text + the now-inlined token spans.
     while (src.firstChild) code.appendChild(src.firstChild);
+    // Turn newlines/indentation into <br> + non-breaking spaces so WeChat
+    // can't collapse them on paste.
+    hardenWhitespace(code);
     pre.appendChild(code);
     return pre;
   }
