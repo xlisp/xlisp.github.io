@@ -315,7 +315,7 @@
     btn.title = "把整篇文章复制为公众号富文本（米黄色背景 + 完整代码格式）";
     btn.innerHTML =
       '<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="9" y="9" width="13" height="13" rx="2"/><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"/></svg>' +
-      '<span class="wx-label">复制到公众号</span>';
+      '<span class="wx-label">Copy to WeChat</span>';
 
     btn.addEventListener("click", async function () {
       flash(btn, "处理中…");
