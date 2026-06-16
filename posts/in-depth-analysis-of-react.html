@@ -1,0 +1,570 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>从 CoT 到 ReAct，再到&quot;会自己思考&quot;的模型 · Steve Chan — xlisp</title>
+<meta name="description" content="先看本项目跑起来时发生了什么。用户问：">
+<meta name="author" content="Steve Chan">
+<link rel="icon" type="image/jpeg" href="../icon.jpeg">
+<link rel="apple-touch-icon" href="../icon.jpeg">
+<meta property="og:type" content="article">
+<meta property="og:title" content="从 CoT 到 ReAct，再到&quot;会自己思考&quot;的模型">
+<meta property="og:description" content="先看本项目跑起来时发生了什么。用户问：">
+<meta property="og:image" content="../icon.jpeg">
+<meta property="og:site_name" content="Steve Chan — xlisp">
+<meta name="twitter:card" content="summary_large_image">
+<meta name="twitter:title" content="从 CoT 到 ReAct，再到&quot;会自己思考&quot;的模型">
+<meta name="twitter:description" content="先看本项目跑起来时发生了什么。用户问：">
+<meta name="twitter:image" content="../icon.jpeg">
+<link rel="stylesheet" href="../style.css?v=light1">
+<script>(function(){try{if(localStorage.getItem('theme')==='light')document.documentElement.setAttribute('data-theme','light');}catch(e){}})();</script>
+</head>
+<body>
+<main class="wrap post">
+
+  <nav class="topnav">
+    <a href="../index.html">← home</a>
+  </nav>
+
+  <article>
+    <header class="post-header">
+      <h1>从 CoT 到 ReAct，再到&quot;会自己思考&quot;的模型</h1>
+      <p class="meta">2026-06-17 · Steve Chan</p>
+    </header>
+
+    <div class="content">
+<h2 id="以-data-trace-agent-为例深度解析推理范式的演进">—— 以 data-trace-agent 为例，深度解析推理范式的演进</h2>
+<blockquote>
+<p>本文以本仓库 <code>data-trace-agent</code>（一个用 LangGraph <code>create_react_agent</code> + 两个 MCP server 抓 ETL bug 的 POC）为活体样本，串起 Chain-of-Thought、Tree-of-Thoughts、ReAct、Agent Harness 几个核心概念，并把它们放进一条更大的主线里：<strong>推理能力是如何从"用提示词激发"一步步变成"被训练进模型权重本身"的</strong>——这条线从 CoT prompting 走到 OpenAI o1，再走到 DeepSeek-R1。</p>
+</blockquote>
+<hr />
+<h2 id="0-开场一个会查库读文件抓-bug-的-agent">0. 开场：一个会查库、读文件、抓 bug 的 agent</h2>
+<p>先看本项目跑起来时发生了什么。用户问：</p>
+<blockquote>
+<p>今天的 <code>total_revenue</code> 比上个月低很多——具体低了多少，根本原因是什么？也请检查一下上游原始源文件。</p>
+</blockquote>
+<p>agent 没有直接"猜"，而是：先去查 <code>daily_metrics</code> 最近 30 天的序列、算出今天比均值低了约 63%，再读 <code>_field_lineage</code> 找到 <code>total_revenue</code> 的上游是两个客户订单表，接着去查 <code>customer_b_orders_raw</code> 发现今天只有 5 行、再用文件系统工具把 <code>data/sources/customer_b/2026-04-26.csv</code> 读出来——发现源文件里有 80 行（75 EUR + 5 USD），最后给出结论：<code>load_customer_b_orders</code> 这个加载器静默丢掉了所有非 USD 的行。</p>
+<p>这个过程里同时出现了两件事：<strong>思考</strong>（"今天低了多少？上游是谁？哪一步丢了数据？"）和<strong>行动</strong>（执行 SQL、读磁盘文件）。这两件事交织在一起，就是 <strong>ReAct</strong>。而能让这两件事稳定地一圈一圈跑下去、能在工具报错时自动恢复、能管理多轮历史的那套代码，就是 <strong>Harness</strong>。</p>
+<p>本文就从这个具体场景出发，把几个概念逐层拆开。</p>
+<hr />
+<h2 id="1-第一性原理为什么一个-next-token-predictor-需要思考和行动">1. 第一性原理：为什么一个 next-token predictor 需要"思考"和"行动"</h2>
+<p>大语言模型的本质，是一个在给定上文条件下预测下一个 token 的概率分布的函数。它一次前向传播的计算量是固定的——无论问题是"1+1 等于几"还是"证明这道竞赛数学题"，模型在产出第一个答案 token 时所用的算力是一样多的。</p>
+<p>这带来一个根本矛盾：<strong>难题需要更多的"计算步数"，但直接输出答案只给了模型一步。</strong> 于是有了两条互补的破解思路：</p>
+<ol>
+<li><strong>把推理过程显式写出来（CoT）</strong>——让模型在给出最终答案前，先生成一串中间推导 token。每多写一个中间步骤，就等于多给了模型一次前向传播去"算"。这是在<strong>时间维度</strong>上为模型争取算力。</li>
+<li><strong>让模型接触外部世界（Acting）</strong>——模型权重里没有今天的数据库内容、没有那个 CSV 文件里的 80 行数据，光靠"想"永远想不出来。必须给它工具去<strong>读取真实状态</strong>。</li>
+</ol>
+<p><code>data-trace-agent</code> 故意埋的两个 bug，正是这两条思路的绝佳隐喻：</p>
+<div class="highlight"><pre><span></span><code><span class="c1"># setup_warehouse.py —— 两个故意埋下的加载器 bug</span>
+
+<span class="c1"># bug 1: 精度截断。文件里是 119.06，加载时用 int() 砍掉了小数</span>
+<span class="p">(</span><span class="nb">int</span><span class="p">(</span><span class="n">row</span><span class="p">[</span><span class="s2">&quot;order_id&quot;</span><span class="p">]),</span> <span class="nb">int</span><span class="p">(</span><span class="n">row</span><span class="p">[</span><span class="s2">&quot;user_id&quot;</span><span class="p">]),</span> <span class="nb">int</span><span class="p">(</span><span class="nb">float</span><span class="p">(</span><span class="n">row</span><span class="p">[</span><span class="s2">&quot;amount&quot;</span><span class="p">])),</span> <span class="n">row</span><span class="p">[</span><span class="s2">&quot;ts&quot;</span><span class="p">])</span>
+<span class="c1">#                                            ^^^ 应该是 float()</span>
+
+<span class="c1"># bug 2: 币种过滤。静默跳过所有非 USD 行</span>
+<span class="k">if</span> <span class="n">row</span><span class="p">[</span><span class="s2">&quot;currency&quot;</span><span class="p">]</span> <span class="o">!=</span> <span class="s2">&quot;USD&quot;</span><span class="p">:</span>
+    <span class="k">continue</span>
+</code></pre></div>
+
+<p>这两个 bug 的共同点是：<strong>只看数据库（DB）永远发现不了，只靠模型"凭空推理"也发现不了。</strong> 你必须把数据库里的值和源文件里的值并排比，差异才会浮现。这就是为什么本项目要同时挂两个 MCP server——查 DB 回答"现在有什么"，读文件回答"本来应该有什么"，两者之差就是 bug。这是对"光思考不够、必须行动"这一原理最干净的演示。</p>
+<hr />
+<h2 id="2-cotchain-of-thought把推理说出来">2. CoT（Chain of Thought）：把推理"说出来"</h2>
+<h3 id="21-它是什么">2.1 它是什么</h3>
+<p>Chain-of-Thought 由 Wei 等人在 2022 年提出，核心动作极其朴素：在提示里给出几个"带推理过程的范例"（few-shot CoT），或者干脆加一句"Let's think step by step"（zero-shot CoT），模型就会在输出答案前先生成一串推导。</p>
+<p>它为什么有效，回到第 1 节的原理：把一个"一步到位的映射"拆成"一连串可计算的中间步骤"，相当于在推理时（test-time）给模型分配了更多算力预算。模型不是变聪明了，而是被允许"多想几步再答"。</p>
+<h3 id="22-在本项目里的影子">2.2 在本项目里的影子</h3>
+<p>本项目用的是 ReAct（下一节讲），但它的 system prompt 里其实塞满了 CoT 式的"思维脚手架"——把解题套路用自然语言写给模型看：</p>
+<div class="highlight"><pre><span></span><code># trace_agent.py 的 SYSTEM_PROMPT（节选）
+
+- Anomaly playbook: query the recent series, compute today vs prior-30d
+  average, look up lineage in `_field_lineage`, then drill into each upstream
+  raw table for the same day. If a raw table looks short, *also* look up its
+  file in `_source_registry` and read the file ...
+
+- Discrepancy playbook: when comparing DB and source, pick a small set of
+  primary keys, read the source file, parse the matching rows, and contrast
+  the values column-by-column.
+</code></pre></div>
+
+<p>这两个 "playbook" 本质上是<strong>人类把推理链预先写好喂给模型</strong>：先做什么、再做什么、什么条件下该转向。它不是 ReAct 的工具调用，而是 CoT 思想在 prompt 工程里的体现——用语言结构去约束和引导模型的思考路径。</p>
+<h3 id="23-cot-的两个天花板">2.3 CoT 的两个天花板</h3>
+<ul>
+<li><strong>闭门造车</strong>：CoT 完全跑在模型内部表征里，无法接触外部世界。本项目那个 CSV 文件里的 80 行数据，CoT 再怎么想也想不出来。</li>
+<li><strong>误差累积</strong>：链是单向的，前面一步推错，后面会沿着错误一路滑下去，且没有自我纠正的机制。</li>
+</ul>
+<p>这两个天花板，分别由 ToT 和 ReAct 来突破。</p>
+<hr />
+<h2 id="3-tottree-of-thoughts把线性链升级为搜索树">3. ToT（Tree of Thoughts）：把线性链升级为搜索树</h2>
+<h3 id="31-它是什么">3.1 它是什么</h3>
+<p>Tree-of-Thoughts（Yao 等人，2023）针对的是 CoT 的"误差累积 + 无回溯"问题。它把每一个"中间思路"看成搜索树上的一个节点，让模型：</p>
+<ul>
+<li>在每一步<strong>生成多个候选思路</strong>（分叉），</li>
+<li>用一个评估函数给每条思路打分（"这条路有没有希望"），</li>
+<li>按 BFS / DFS 去<strong>探索、剪枝、回溯</strong>。</li>
+</ul>
+<p>如果说 CoT 是在迷宫里只走一条路、撞墙了也只能继续往前，那么 ToT 就是允许你站在岔路口先评估几条路、走不通就退回来换一条。</p>
+<h3 id="32-和本项目的关系">3.2 和本项目的关系</h3>
+<p>本项目没有显式实现 ToT 的搜索树，但 ReAct agent 在实践中会自发表现出类似的"试错—回退"行为。看 demo 里这段真实日志（用户问 customer_a 金额是否一致）：</p>
+<div class="highlight"><pre><span></span><code>[tool-call] execute_query
+  query: SELECT * FROM customer_a_orders_raw WHERE date(order_date) = &#39;2026-04-26&#39; ...
+[tool-result] Error executing query: no such column: order_date   ← 撞墙了
+
+[tool-call] execute_query
+  query: SELECT * FROM customer_a_orders_raw WHERE date(ts) = &#39;2026-04-26&#39; ...   ← 换条路
+</code></pre></div>
+
+<p>第一条 SQL 用了不存在的列 <code>order_date</code>，撞墙；agent 观察到错误，改用 <code>ts</code> 重试成功。这正是"评估当前路径不通 → 回退 → 换一条"的微缩版。区别在于：ToT 是把这种搜索<strong>结构化、外置成一套显式算法</strong>；而现代 agent 越来越多地把这种"换思路"内化成了模型自身的行为（这点第 7 节会展开，它正是 o1/R1 范式的关键）。</p>
+<p>ToT 的代价也很直接：每个节点都要多次采样和评估，token 成本和延迟成倍上升。它适合搜索空间明确、答案可验证的硬问题（数学、规划、24 点游戏），不适合本项目这种"主要瓶颈是接触外部数据"的任务。</p>
+<hr />
+<h2 id="4-reactreasoning-acting把思考与行动交织给模型装上手脚">4. ReAct（Reasoning + Acting）：把思考与行动交织，给模型装上手脚</h2>
+<h3 id="41-它是什么一个-thought-action-observation-的循环">4.1 它是什么：一个 Thought → Action → Observation 的循环</h3>
+<p>ReAct（Yao 等人，2022，普林斯顿 + Google Research）是本项目的核心范式，也被广泛视为"Agentic LLM"的奠基性工作。它的洞察是：此前<strong>推理（CoT）</strong>和<strong>行动（生成动作计划）</strong>一直被当成两个独立课题研究，而真正强大的是把两者交错起来：</p>
+<ul>
+<li><strong>推理轨迹（Thought）</strong> 帮模型归纳、追踪、更新行动计划，并处理异常；</li>
+<li><strong>行动（Action）</strong> 让模型去接触外部世界（知识库、数据库、文件系统、网页），把观察到的真实信息（<strong>Observation</strong>）喂回推理。</li>
+</ul>
+<p>于是一次 ReAct 就是这样一圈一圈转：</p>
+<div class="highlight"><pre><span></span><code>Thought:  我得先看 total_revenue 最近的走势
+Action:   execute_query(&quot;SELECT ... FROM daily_metrics ORDER BY report_date DESC LIMIT 30&quot;)
+Observation: 今天 6808.62，前 30 天均值约 18501
+Thought:  跌了 ~63%，去查 total_revenue 的血缘是谁
+Action:   execute_query(&quot;SELECT * FROM _field_lineage WHERE target_field=&#39;total_revenue&#39;&quot;)
+Observation: 来自 customer_a / customer_b 两个订单表
+Thought:  分别看这两个表今天的量 ...
+... （循环直到能给出根因）
+</code></pre></div>
+
+<p>它一举解决了前面两个范式的短板：相比纯 CoT，它能<strong>接触外部世界</strong>、用真实观察打断幻觉；相比纯 acting（只会按计划执行、不会反思），它能<strong>动态调整计划、处理意外</strong>。</p>
+<h3 id="42-在-data-trace-agent-里react-是怎么落地的">4.2 在 data-trace-agent 里，ReAct 是怎么落地的</h3>
+<p>整个 agent 的装配只有几行——<code>create_react_agent</code> 把"一个 LLM + 一堆工具 + 一段 system prompt"组合成一个会自己跑 ReAct 循环的图：</p>
+<div class="highlight"><pre><span></span><code><span class="c1"># trace_agent.py</span>
+<span class="k">async</span> <span class="k">def</span><span class="w"> </span><span class="nf">build_agent</span><span class="p">():</span>
+    <span class="n">client</span> <span class="o">=</span> <span class="n">MultiServerMCPClient</span><span class="p">({</span>
+        <span class="s2">&quot;sqlite-db&quot;</span><span class="p">:</span>   <span class="p">{</span><span class="s2">&quot;command&quot;</span><span class="p">:</span> <span class="n">sys</span><span class="o">.</span><span class="n">executable</span><span class="p">,</span> <span class="s2">&quot;args&quot;</span><span class="p">:</span> <span class="p">[</span><span class="n">SQLITE_MCP_MAIN</span><span class="p">],</span> <span class="s2">&quot;transport&quot;</span><span class="p">:</span> <span class="s2">&quot;stdio&quot;</span><span class="p">,</span> <span class="s2">&quot;cwd&quot;</span><span class="p">:</span> <span class="n">MCP_DIR</span><span class="p">},</span>
+        <span class="s2">&quot;filesystem&quot;</span><span class="p">:</span>  <span class="p">{</span><span class="s2">&quot;command&quot;</span><span class="p">:</span> <span class="n">sys</span><span class="o">.</span><span class="n">executable</span><span class="p">,</span> <span class="s2">&quot;args&quot;</span><span class="p">:</span> <span class="p">[</span><span class="n">FS_MCP_MAIN</span><span class="p">],</span>     <span class="s2">&quot;transport&quot;</span><span class="p">:</span> <span class="s2">&quot;stdio&quot;</span><span class="p">,</span> <span class="s2">&quot;cwd&quot;</span><span class="p">:</span> <span class="n">MCP_DIR</span><span class="p">},</span>
+    <span class="p">})</span>
+    <span class="n">tools</span> <span class="o">=</span> <span class="k">await</span> <span class="n">client</span><span class="o">.</span><span class="n">get_tools</span><span class="p">()</span>
+    <span class="n">agent</span> <span class="o">=</span> <span class="n">create_react_agent</span><span class="p">(</span><span class="n">_make_llm</span><span class="p">(),</span> <span class="n">tools</span><span class="p">,</span> <span class="n">prompt</span><span class="o">=</span><span class="n">SYSTEM_PROMPT</span><span class="p">)</span>
+    <span class="k">return</span> <span class="n">client</span><span class="p">,</span> <span class="n">agent</span>
+</code></pre></div>
+
+<p>这里有三个关键角色，正好对应 ReAct 的三要素：</p>
+<ol>
+<li><strong>Reasoning 的载体 = LLM + SYSTEM_PROMPT。</strong> prompt 里那两段 playbook（见 2.2 节）告诉模型该怎么想；模型每一轮产出的 <code>Thought</code> 就是它的推理轨迹。</li>
+<li><strong>Action 空间 = 两个 MCP server 暴露的 18 个工具。</strong> SQL 侧有 <code>execute_query / describe_table / trace_field_lineage</code> 等；文件系统侧有 <code>read_file / list_directory / search_files_ag / execute_command</code> 等。模型能"做"的所有事，被这组工具严格界定。</li>
+<li><strong>Observation = 工具返回值。</strong> 比如 <code>read_file</code> 把 CSV 内容读回来、<code>execute_query</code> 把查询结果或报错读回来——这些观察被塞回上下文，驱动下一轮推理。</li>
+</ol>
+<h3 id="43-一条完整的真实-trace这才是-react-的精髓">4.3 一条完整的真实 trace（这才是 ReAct 的精髓）</h3>
+<p>下面是 demo 里 agent 回答"customer_a 金额是否与源文件一致"时打印出的真实工具调用序列，我把它标注成 Thought/Action/Observation：</p>
+<div class="highlight"><pre><span></span><code>(Thought) 先搞清楚表结构和源文件在哪
+(Action)  describe_table(customer_a_orders_raw)
+(Action)  execute_query(&quot;SELECT * FROM _source_registry WHERE source_table=&#39;customer_a_orders_raw&#39;&quot;)
+(Observation) 文件在 .../customer_a/，loader = load_customer_a_orders，schema_note 说金额是 2 位小数
+
+(Action)  execute_query(&quot;... WHERE date(order_date)=&#39;2026-04-26&#39; ...&quot;)
+(Observation) Error: no such column: order_date          ← 工具报错
+
+(Thought) 列名错了，schema 里是 ts 不是 order_date，改一下
+(Action)  execute_query(&quot;... WHERE date(ts)=&#39;2026-04-26&#39; ...&quot;)
+(Observation) 拿到 DB 里的金额：119.0, 100.0, 148.0 ...
+
+(Action)  read_file(&quot;.../customer_a/2026-04-26.csv&quot;)
+(Observation) 源文件金额：119.06, 100.88, 148.09 ...
+
+(Thought) DB 全是整数、文件有小数 → loader 用了 int() 截断
+(Final)   指认 load_customer_a_orders，解释 int() vs float() 的 bug
+</code></pre></div>
+
+<p>请重点看中间那次报错。<code>order_date</code> 列不存在，工具返回了 <code>no such column</code> 错误。在纯 CoT 里这会直接拖垮整条推理链；但在 ReAct 里，这个<strong>错误本身成了一个 Observation</strong>，模型读到它、意识到列名不对、改用 <code>ts</code> 重试。<strong>这种"观察—纠错—重试"的闭环，正是 ReAct 相对纯推理最本质的优势</strong>：它把模型从自己的错误里拽了回来。</p>
+<h3 id="44-为什么这个项目非-react-不可">4.4 为什么这个项目"非 ReAct 不可"</h3>
+<p>回到第 1 节那两个埋下的 bug。<code>int()</code> 截断和币种过滤，<strong>在 SQL 层完全是合法数据</strong>（119.0 是个正常的 REAL，5 行 USD 订单也是正常的行），没有任何约束会报错。唯一能发现它们的办法，就是<strong>跳出数据库、去读那个 loader 当初看到的源文件，再两相对比</strong>。</p>
+<p>这件事 CoT 做不到（它接触不到文件），纯 acting 也做不好（它不会主动推断"我应该去比对源文件"）。只有 ReAct——一边推理"如果 DB 数据看起来对但结果异常，可能是 loader 在落库时改了值，我得去读源文件验证"，一边真的去 <code>read_file</code>——才能闭合这个回路。这个 POC 本质上是一台"为什么需要 ReAct"的演示机。</p>
+<hr />
+<h2 id="5-harness脚手架约束在退潮能力在涨潮">5. Harness（脚手架）：约束在退潮，能力在涨潮</h2>
+<p>ReAct 循环要稳定地一圈圈跑下去——管理多轮历史、把工具返回喂回上下文、出错时让模型恢复、给出安全边界——这套"模型之外的一切"，就是 <strong>Harness（脚手架）</strong>。换句话说，Harness = 把 ReAct loop + 反思 + 规划 + 工具编排 + 持久记忆 + 子任务委派沉淀成一个可复用框架，模型只负责"想"和"决策"，其余交给框架。本项目里，LangGraph 的 <code>create_react_agent</code> + <code>astream_events</code> 事件循环就是这个框架的本体。</p>
+<p>但 Harness 真正的要害不在那层框架代码——<code>create_react_agent</code> 这类框架已经高度收敛、彼此趋同——而在两个此消彼长的趋势：</p>
+<ul>
+<li><strong>约束在退潮</strong>：早期要靠 prompt 把"先读结构、再读文件、动手前确认"这类 SOP 写死，是因为模型容易跑偏。模型越强，这些约束越可以变松，乃至直接删掉——让模型自己找最优路径。本项目 <code>SYSTEM_PROMPT</code> 里那两段 playbook，正属于"会随底座模型变强而越来越可以精简"的部分。</li>
+<li><strong>能力在涨潮</strong>：模型决定一个问题能不能解决，往往不在于它"够不够聪明"，而在于它<strong>有没有足够有用的 tools</strong>去把世界的状态读进来、把行动作用回去。<code>data-trace-agent</code> 就是这一侧的标本：那两个 bug 模型再聪明也想不出来，唯一的钥匙是 <code>read_file</code> 这个 action——<strong>tools 决定了能不能解决，而不是模型智商</strong>。</li>
+</ul>
+<p>由此引出一条贯穿本项目的设计原则：<strong>精准 tools 即精准上下文。</strong> 一个好工具，能把模型本来要绕好几个 loop 才能拼出来的信息一次返回——这等价于给模型一个更短、更准、更便宜的 prompt。本项目刻意把能力拆成 <code>sqlite-db</code> 与 <code>filesystem</code> 两个职责清晰的 MCP server，而 <code>filesystem_mcp_server.py</code> 里的 <code>ALLOWED_EXTENSIONS</code> / <code>BLOCKED_COMMANDS</code> / <code>is_safe_path</code> 则属于 Harness 中<strong>唯一不该退潮的部分</strong>——安全边界。模型越敢做事，这层护栏越重要。</p>
+<blockquote>
+<p>Harness 这件事的完整展开——从 CoT → ToT → ReAct → Reflexion → Harness 的简史、"模型越强 harness 越松"、"精准 tools 即精准上下文"，以及逆向工程、训练模型（autoresearch）等"光读代码推不出、必须靠实验逼近"的反例——本文不再赘述，感兴趣的读者可移步这篇文章：</p>
+<p><strong>https://mp.weixin.qq.com/s/l7p1E0WMnPzkMI2CCVkWpw</strong></p>
+</blockquote>
+<hr />
+<h2 id="6-主线从提示模型思考到把思考训练进模型本身">6. 主线：从"提示模型思考"到"把思考训练进模型本身"</h2>
+<p>前面五节讲的 CoT、ToT、ReAct、Harness，有一个共同前提：<strong>它们几乎都是 in-context、prompt 层面的技巧。</strong> 模型权重不变，我们靠提示词、靠外置的搜索/循环结构，把模型本来就藏在权重里的推理能力"激发"或"组织"出来。本节要讲的，是过去一年多最重要的范式转移——<strong>这些原本要靠外部脚手架强加的"思维结构"，正在被直接训练进模型本身。</strong> 这正是从模型发展角度看 CoT 演进最关键的一段。</p>
+<h3 id="61-阶段一能力在权重里结构在-prompt-上20222024">6.1 阶段一：能力在权重里，结构在 prompt 上（2022–2024）</h3>
+<p>CoT 提示之所以"一句 Let's think step by step 就能涨点"，恰恰说明推理能力<strong>早就存在于预训练好的权重里</strong>，只是默认不会被触发。ReAct 和 ToT 更进一步，用外部结构去<strong>编排</strong>这种能力：ReAct 在外面套一个"思考—行动—观察"循环，ToT 在外面套一棵搜索树。</p>
+<p>换句话说，这个阶段的分工是：<strong>模型负责"能想"，人类工程师负责"怎么想"</strong>——把推理路径、回溯策略、工具调用时机，全部写进 prompt 和 harness 里。<code>data-trace-agent</code> 的两段 playbook 就是这种分工的标本：解题套路是人写死的，模型只是顺着套路填空。</p>
+<h3 id="62-阶段二o1-用大规模-rl-把-cot-训练进权重2024-下半年">6.2 阶段二：o1 —— 用大规模 RL 把 CoT 训练进权重（2024 下半年）</h3>
+<p>OpenAI 的 o1 是这条线上的分水岭。它不再把 CoT 当成一个"提示技巧"，而是用<strong>大规模强化学习</strong>直接训练模型"在回答前先产生一长串内部思维链"。按 OpenAI 的官方说法，o1 是"先思考再回答"的——这串长 CoT 是模型<strong>内生的</strong>，不需要用户在 prompt 里教它"一步步来"或给范例。</p>
+<p>更关键的是 o1 揭示的两条全新 scaling 轴：</p>
+<ul>
+<li><strong>训练时 RL 算力（train-time compute）</strong>：投入越多 RL 训练，推理能力越强；</li>
+<li><strong>推理时思考算力（test-time compute）</strong>：让模型"想得越久"（生成越长的思维链），答案越准。</li>
+</ul>
+<p>这第二条尤其颠覆——它意味着可以<strong>在推理阶段、用花更多算力去想的方式换取更高准确率</strong>，而不必把模型做得更大。通过 RL，o1 学会了打磨自己的思维链：识别并纠正错误、把难步骤拆成简单步骤、此路不通时换一种方法。请注意这几个行为——<strong>"纠错""换思路"</strong>——正是我们在第 3 节 ToT 和第 4 节 ReAct 里靠外部结构去实现的东西，现在它们变成了模型在 RL 训练中自发学会的内生行为。</p>
+<p>o1 还顺带带来一个安全维度的副产品：deliberative alignment——模型可以在那串思维链里<strong>对照安全策略进行推理</strong>，从而更稳地拒绝越狱、给出合规回答。思维链不再只是为了答对题，也成了对齐的载体。</p>
+<h3 id="63-阶段三deepseek-r1-纯-rl-就能自发涌现推理2025-初">6.3 阶段三：DeepSeek-R1 —— 纯 RL 就能"自发涌现"推理（2025 初）</h3>
+<p>如果说 o1 证明了"可以把推理训进模型"，DeepSeek-R1（及其前身 R1-Zero）则把这件事<strong>开源、透明地</strong>摆在了所有人面前，对中文社区尤其重要。</p>
+<p>R1-Zero 最惊人的地方在于：它<strong>直接在 base model 上做 RL，完全不用 SFT 冷启动</strong>，仅靠基于规则的奖励（答案对不对、格式合不合规），模型就<strong>自发涌现</strong>出了一系列复杂推理行为：</p>
+<ul>
+<li>自己学会把思维链越拉越长（难题想得更久）；</li>
+<li>自我验证（self-verification）与反思（reflection）；</li>
+<li>甚至出现所谓的"aha moment"——模型中途停下、意识到前面错了、退回去重来。</li>
+</ul>
+<p>这是第一份公开验证"推理能力可以纯靠 RL 激励出来、无需人工标注的推理轨迹"的研究，2025 年还登上了 Nature。它用的核心算法是 <strong>GRPO</strong>（Group Relative Policy Optimization）——通过组内奖励归一化来稳定训练，省掉了单独的价值网络。</p>
+<p>把这件事和前几节连起来看，会有一种强烈的"收束感"：</p>
+<ul>
+<li>ToT 当年要在外部显式搭建的<strong>搜索与回溯</strong>，在 R1-Zero 里变成了模型自己学会的"想不通就换条路"；</li>
+<li>ReAct 当年要靠 observation 反喂才能实现的<strong>自我纠错</strong>，在 R1-Zero 里变成了思维链内部自发的 self-verification；</li>
+<li>CoT 当年要靠 prompt 激发的<strong>分步推理</strong>，现在直接长在了权重里。</li>
+</ul>
+<p><strong>过去挂在模型外面的思维脚手架，正在被一寸寸吸收进模型本体。</strong></p>
+<blockquote>
+<p>顺带一提：你正在做的 MathGPT（GRPO / REINFORCE / Pass@k / KL 正则那套，目标 GSM8K）走的正是 R1-Zero 这条路线——用规则奖励 + RL 在数学题上逼出长 CoT。数学之所以成为 RL-reasoning 最先被攻克的战场，原因也很朴素：答案可自动验证，奖励信号干净，正好喂得动 RL。</p>
+</blockquote>
+<h3 id="64-那么-react-和-harness-会被训没吗不会而且原因很深刻">6.4 那么 ReAct 和 Harness 会被"训没"吗？——不会，而且原因很深刻</h3>
+<p>读到这里容易产生一个错觉：既然思考能被训进模型，那 ReAct、harness 这些外部脚手架是不是迟早被淘汰？</p>
+<p>答案是否定的，理由恰恰是本项目的设计初衷。<strong>RL 能把"推理（Reasoning）"内化进权重，但无法把"行动（Acting）"内化进去。</strong> 模型再会想，它的权重里也不会有：</p>
+<ul>
+<li>今天那个 <code>warehouse.db</code> 的实时内容；</li>
+<li><code>customer_b/2026-04-26.csv</code> 里那 80 行数据；</li>
+<li>你公司明天才会到的上游文件。</li>
+</ul>
+<p>这些只能靠 <strong>action</strong> 去现场读取。无论模型多强，要发现"文件说 119.06、DB 却是 119"这个 bug，<strong>永远需要 <code>read_file</code> 这个动作、需要一个 harness 去执行它、需要护栏去约束它</strong>。这就是为什么即便进入了 o1/R1 时代，<code>data-trace-agent</code> 这类系统的骨架——ReAct 循环 + 工具 + harness——依然不可替代。</p>
+<p>更准确的图景是一种<strong>分工的再平衡</strong>：</p>
+<ul>
+<li><strong>能想的部分</strong>（推理、反思、规划、纠错）正越来越多地从 prompt/harness <strong>下沉进模型权重</strong>；</li>
+<li><strong>要碰真实世界的部分</strong>（工具、数据、副作用、安全边界）则继续<strong>留在 harness 层</strong>，而且随着模型敢做的事越多，harness 的护栏（参考 5.2 的 <code>BLOCKED_COMMANDS</code>、<code>is_safe_path</code>、<code>recursion_limit</code>）反而<strong>越来越重要</strong>。</li>
+</ul>
+<p>模型越聪明，你越需要一个可靠的"缰绳"（harness 的本义）。</p>
+<hr />
+<h2 id="7-一张全景图能力在内结构在外的此消彼长">7. 一张全景图：能力在内、结构在外的此消彼长</h2>
+<p>把全文压缩成一条演化轴：</p>
+<div class="highlight"><pre><span></span><code>        外部结构（prompt / harness）                内化进模型权重（training）
+        ────────────────────────────────►  ─────────────────────────────►
+
+CoT      &quot;Let&#39;s think step by step&quot;          o1: 长 CoT 由 RL 训练内生
+         （提示激发分步推理）                  R1-Zero: 分步推理自发涌现
+
+ToT      显式搜索树 + 评估 + 回溯              o1/R1: &quot;换条路&quot;成为模型自发行为
+         （人搭的搜索算法）
+
+ReAct    Thought/Action/Observation 循环      推理侧（Thought）内化进权重；
+         （harness 闭合的循环）                行动侧（Action）永远留在 harness
+
+Harness  约束（SOP）+ 能力（tools）           约束退潮：SOP 越来越不用写死
+         （模型之外的一切）                    能力/护栏涨潮：tools 与安全边界无法被训练吸收
+</code></pre></div>
+
+<p>读这张图的正确方式是：<strong>沿时间从左往右，"怎么想"这件事正不断从右侧的工程层向左侧的模型权重迁移；但"碰什么、能碰到什么程度"这件事，始终是 harness 的领地。</strong> <code>data-trace-agent</code> 恰好同时站在这条轴的两端——它用 ReAct/playbook 组织思考（会随底座模型变强而越来越省心），又用两个 MCP server + 安全护栏锚定行动（无论模型多强都省不掉）。</p>
+<hr />
+<h2 id="8-概念速查">8. 概念速查</h2>
+<ul>
+<li><strong>CoT（Chain of Thought）</strong>：让模型在答案前先生成中间推理步骤；本质是在推理时为模型争取更多"计算步数"。</li>
+<li><strong>ToT（Tree of Thoughts）</strong>：把线性推理升级为可分叉、可评估、可回溯的搜索树；以成本换取在硬问题上的可靠性。</li>
+<li><strong>ReAct（Reasoning + Acting）</strong>：思考与行动交织的循环（Thought→Action→Observation），让模型既能推理又能接触真实世界，并借 observation 自我纠错。本项目的核心范式。</li>
+<li><strong>Harness / Scaffold（脚手架）</strong>：把 ReAct loop + 反思 + 规划 + 工具编排 + 记忆等沉淀成的可复用框架，模型只负责"想"。其要害是约束退潮、能力涨潮——决定上限的是 tools 够不够精准（"精准 tools 即精准上下文"），而非模型智商。本项目里是 <code>create_react_agent</code> + <code>astream_events</code> + 两个 MCP server + 安全策略的总和。</li>
+<li><strong>o1 范式</strong>：用大规模 RL 把 CoT 训练进模型权重，开启 train-time 与 test-time 两条算力 scaling 轴。</li>
+<li><strong>DeepSeek-R1 / R1-Zero</strong>：纯 RL（GRPO + 规则奖励，无需 SFT 冷启动）即可让推理能力自发涌现，开源验证了 o1 路线。</li>
+<li><strong>MCP（Model Context Protocol）</strong>：标准化的"模型↔工具"接口；本项目用两个 stdio MCP server 分别提供 SQL 与文件系统能力，构成 agent 的 Action 空间。</li>
+</ul>
+<hr />
+<h2 id="9-结语">9. 结语</h2>
+<p><code>data-trace-agent</code> 表面上是个几百行的 ETL bug 猎手 POC，但它把这一整条范式演进史浓缩在了一个能跑的系统里：playbook 是 CoT 的影子，错误重试是 ReAct 闭环的体现，<code>create_react_agent</code> 与那套安全护栏是 harness 的实体，而两个"只能靠读文件才能抓到"的 bug，则是对"为什么推理永远替代不了行动"最简洁的论证。</p>
+<p>当模型从 GPT 一路走到 o1、R1，越来越多的"思考"被训进了权重，写这类系统会越来越省心——你不再需要把每一步推理都手把手写进 prompt。但只要任务还需要触碰那个具体的数据库、那个具体的 CSV 文件，ReAct 的骨架和 harness 的护栏就不会消失。<strong>模型负责越来越强的"想"，框架负责始终可靠的"做"与"守"——这大概就是 agent 工程在可见未来里最稳的一条分界线。</strong></p>
+<hr />
+<h2 id="参考文献">参考文献</h2>
+<ol>
+<li>Yao, S. et al. (2022). <em>ReAct: Synergizing Reasoning and Acting in Language Models.</em> arXiv:2210.03629.</li>
+<li>Wei, J. et al. (2022). <em>Chain-of-Thought Prompting Elicits Reasoning in Large Language Models.</em> arXiv:2201.11903.</li>
+<li>Yao, S. et al. (2023). <em>Tree of Thoughts: Deliberate Problem Solving with Large Language Models.</em> arXiv:2305.10601.</li>
+<li>OpenAI (2024). <em>OpenAI o1 System Card.</em> arXiv:2412.16720 / openai.com/index/openai-o1-system-card.</li>
+<li>OpenAI (2024). <em>Learning to Reason with LLMs.</em>（o1 技术介绍）</li>
+<li>DeepSeek-AI (2025). <em>DeepSeek-R1: Incentivizing Reasoning Capability in LLMs via Reinforcement Learning.</em> arXiv:2501.12948；Nature (2025) s41586-025-09422-z.</li>
+<li>Shao, Z. et al. (2024). <em>DeepSeekMath / GRPO.</em> arXiv:2402.03300.</li>
+<li>关于 Harness 的完整论述（CoT→ToT→ReAct→Reflexion→Harness 简史、"模型越强 harness 越松"、"精准 tools 即精准上下文"、autoresearch 等反例）：https://mp.weixin.qq.com/s/l7p1E0WMnPzkMI2CCVkWpw</li>
+</ol>
+<blockquote>
+<p>本文中所有代码片段均摘自本仓库（<code>trace_agent.py</code>、<code>setup_warehouse.py</code>、<code>mcp/filesystem_mcp_server.py</code>、<code>demo_use_log.md</code>）。</p>
+</blockquote>
+    </div>
+  </article>
+
+</main>
+
+<!-- Floating Ask-AI chat widget -->
+<button class="ai-fab" id="ai-fab" aria-label="Ask AI about this article" title="Ask AI about this article">
+  <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+    <path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"/>
+  </svg>
+  <span class="ai-fab-label">Ask AI</span>
+</button>
+
+<div class="ai-panel" id="ai-panel" role="dialog" aria-labelledby="ai-panel-title" aria-hidden="true">
+  <header class="ai-panel-head">
+    <div class="ai-panel-title-wrap">
+      <span class="ai-dot"></span>
+      <h3 id="ai-panel-title">Ask AI about this post</h3>
+    </div>
+    <div class="ai-panel-actions">
+      <button class="ai-icon-btn" id="ai-clear" title="Clear conversation" aria-label="Clear">
+        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><polyline points="3 6 5 6 21 6"/><path d="M19 6l-1 14a2 2 0 0 1-2 2H8a2 2 0 0 1-2-2L5 6"/><path d="M10 11v6M14 11v6"/><path d="M9 6V4a1 1 0 0 1 1-1h4a1 1 0 0 1 1 1v2"/></svg>
+      </button>
+      <button class="ai-icon-btn" id="ai-close" title="Minimize" aria-label="Minimize">
+        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><polyline points="6 9 12 15 18 9"/></svg>
+      </button>
+    </div>
+  </header>
+
+  <div class="ai-messages" id="ai-messages">
+    <div class="ai-empty" id="ai-empty">
+      <p class="ai-empty-title">On-device AI · Gemini Nano</p>
+      <p class="ai-empty-sub">Ask anything about this article. Runs in your browser — nothing leaves your device.</p>
+    </div>
+  </div>
+
+  <div class="ai-status" id="ai-status" hidden></div>
+
+  <form class="ai-composer" id="ai-form">
+    <textarea id="ai-input" rows="1" placeholder="Ask about this post…" autocomplete="off"></textarea>
+    <button type="submit" id="ai-send" class="ai-send" aria-label="Send" disabled>
+      <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><line x1="22" y1="2" x2="11" y2="13"/><polygon points="22 2 15 22 11 13 2 9 22 2"/></svg>
+    </button>
+  </form>
+</div>
+
+<script>
+(function () {
+  const POST_TITLE = "\u4ece CoT \u5230 ReAct\uff0c\u518d\u5230\"\u4f1a\u81ea\u5df1\u601d\u8003\"\u7684\u6a21\u578b";
+  const contentEl = document.querySelector('article .content');
+
+  const fab = document.getElementById('ai-fab');
+  const panel = document.getElementById('ai-panel');
+  const closeBtn = document.getElementById('ai-close');
+  const clearBtn = document.getElementById('ai-clear');
+  const msgsEl = document.getElementById('ai-messages');
+  const emptyEl = document.getElementById('ai-empty');
+  const statusEl = document.getElementById('ai-status');
+  const formEl = document.getElementById('ai-form');
+  const inputEl = document.getElementById('ai-input');
+  const sendBtn = document.getElementById('ai-send');
+
+  function articleText() {
+    if (!contentEl) return '';
+    return (contentEl.innerText || contentEl.textContent || '')
+      .replace(/[ \t]+\n/g, '\n')
+      .replace(/\n{3,}/g, '\n\n')
+      .trim();
+  }
+
+  function setStatus(msg, cls) {
+    if (!msg) { statusEl.hidden = true; statusEl.textContent = ''; statusEl.className = 'ai-status'; return; }
+    statusEl.hidden = false;
+    statusEl.textContent = msg;
+    statusEl.className = 'ai-status' + (cls ? ' ' + cls : '');
+  }
+
+  function hideEmpty() { if (emptyEl) emptyEl.style.display = 'none'; }
+
+  function appendBubble(role, text) {
+    hideEmpty();
+    const wrap = document.createElement('div');
+    wrap.className = 'ai-msg ai-msg-' + role;
+    const bubble = document.createElement('div');
+    bubble.className = 'ai-bubble';
+    bubble.textContent = text;
+    wrap.appendChild(bubble);
+    msgsEl.appendChild(wrap);
+    msgsEl.scrollTop = msgsEl.scrollHeight;
+    return bubble;
+  }
+
+  function appendTyping() {
+    hideEmpty();
+    const wrap = document.createElement('div');
+    wrap.className = 'ai-msg ai-msg-assistant ai-typing';
+    wrap.innerHTML = '<div class="ai-bubble"><span class="ai-dots"><i></i><i></i><i></i></span></div>';
+    msgsEl.appendChild(wrap);
+    msgsEl.scrollTop = msgsEl.scrollHeight;
+    return wrap;
+  }
+
+  function autoSize() {
+    inputEl.style.height = 'auto';
+    inputEl.style.height = Math.min(inputEl.scrollHeight, 140) + 'px';
+  }
+
+  function openPanel() {
+    panel.classList.add('open');
+    panel.setAttribute('aria-hidden', 'false');
+    fab.classList.add('hidden');
+    setTimeout(() => inputEl.focus(), 50);
+  }
+  function closePanel() {
+    panel.classList.remove('open');
+    panel.setAttribute('aria-hidden', 'true');
+    fab.classList.remove('hidden');
+  }
+
+  fab.addEventListener('click', openPanel);
+  closeBtn.addEventListener('click', closePanel);
+  document.addEventListener('keydown', e => {
+    if (e.key === 'Escape' && panel.classList.contains('open')) closePanel();
+  });
+
+  // ---- LanguageModel session ----
+  let session = null;
+  let creating = null;
+  let history = [];
+
+  function buildSystemPrompt() {
+    // Keep article context modest — Gemini Nano's input quota is small.
+    const article = articleText().slice(0, 4000);
+    return (
+      'You are a concise, helpful assistant answering questions about a blog post. ' +
+      'Use the article below as your primary source. If the answer is not in it, say so briefly and answer generally. ' +
+      'Reply in the same language as the user\'s question. Keep answers short unless asked for detail.\n\n' +
+      '=== ARTICLE TITLE ===\n' + POST_TITLE + '\n\n' +
+      '=== ARTICLE CONTENT ===\n' + article
+    );
+  }
+
+  async function ensureSession() {
+    if (session) return session;
+    if (creating) return creating;
+
+    if (!('LanguageModel' in self)) {
+      throw new Error(
+        'On-device AI not available. Use Chrome 138+ on desktop, or enable ' +
+        '"Prompt API for Gemini Nano" in chrome://flags.'
+      );
+    }
+
+    setStatus('Checking model…', 'info');
+    const status = await LanguageModel.availability();
+    if (status === 'unavailable') {
+      throw new Error('Model unavailable on this device.');
+    }
+
+    creating = (async () => {
+      // Only show download UI when the model isn't already there.
+      const willDownload = (status !== 'available');
+      if (willDownload) setStatus('Preparing model (first run downloads ~2GB)…', 'info');
+      else setStatus('Warming up…', 'info');
+
+      const s = await LanguageModel.create({
+        initialPrompts: [{ role: 'system', content: buildSystemPrompt() }],
+        monitor(m) {
+          m.addEventListener('downloadprogress', e => {
+            // Skip the spurious 0% event Chrome fires for cached models.
+            if (!willDownload && e.loaded === 0) return;
+            const pct = (e.loaded * 100).toFixed(1);
+            setStatus('Downloading model: ' + pct + '%', 'info');
+          });
+        }
+      });
+      session = s;
+      setStatus('');
+      return s;
+    })();
+
+    try { return await creating; }
+    finally { creating = null; }
+  }
+
+  async function ask(q) {
+    appendBubble('user', q);
+    history.push({ role: 'user', content: q });
+
+    sendBtn.disabled = true;
+    inputEl.disabled = true;
+    const typing = appendTyping();
+
+    let answerBubble = null;
+    let acc = '';
+    try {
+      const s = await ensureSession();
+      const stream = s.promptStreaming(q);
+      for await (const chunk of stream) {
+        if (!answerBubble) {
+          typing.remove();
+          const wrap = document.createElement('div');
+          wrap.className = 'ai-msg ai-msg-assistant';
+          answerBubble = document.createElement('div');
+          answerBubble.className = 'ai-bubble';
+          wrap.appendChild(answerBubble);
+          msgsEl.appendChild(wrap);
+        }
+        acc += chunk;
+        answerBubble.textContent = acc;
+        msgsEl.scrollTop = msgsEl.scrollHeight;
+      }
+      if (acc) history.push({ role: 'assistant', content: acc });
+      else { typing.remove(); appendBubble('assistant', '(no response)'); }
+    } catch (e) {
+      if (typing && typing.parentNode) typing.remove();
+      const err = document.createElement('div');
+      err.className = 'ai-msg ai-msg-error';
+      err.innerHTML = '<div class="ai-bubble">⚠ ' + (e && e.message ? e.message : String(e)) + '</div>';
+      msgsEl.appendChild(err);
+      msgsEl.scrollTop = msgsEl.scrollHeight;
+    } finally {
+      sendBtn.disabled = !inputEl.value.trim();
+      inputEl.disabled = false;
+      inputEl.focus();
+    }
+  }
+
+  formEl.addEventListener('submit', e => {
+    e.preventDefault();
+    const q = inputEl.value.trim();
+    if (!q) return;
+    inputEl.value = '';
+    autoSize();
+    sendBtn.disabled = true;
+    ask(q);
+  });
+
+  inputEl.addEventListener('input', () => {
+    autoSize();
+    sendBtn.disabled = !inputEl.value.trim();
+  });
+  inputEl.addEventListener('keydown', e => {
+    if (e.key === 'Enter' && !e.shiftKey) {
+      e.preventDefault();
+      formEl.requestSubmit();
+    }
+  });
+
+  clearBtn.addEventListener('click', () => {
+    msgsEl.innerHTML = '';
+    msgsEl.appendChild(emptyEl);
+    emptyEl.style.display = '';
+    history = [];
+    if (session && session.destroy) { try { session.destroy(); } catch (_) {} }
+    session = null;
+    setStatus('');
+  });
+
+  if (!('LanguageModel' in self)) {
+    fab.addEventListener('click', () => {
+      openPanel();
+      setStatus('On-device AI not detected. Use Chrome 138+ desktop, or enable "Prompt API for Gemini Nano" in chrome://flags.', 'bad');
+    }, { once: true });
+  }
+})();
+</script>
+
+<!-- Outline notes / comments — DataScript + IndexedDB -->
+<script src="https://github.com/tonsky/datascript/releases/download/1.7.8/datascript-1.7.8.min.js"></script>
+<script src="../notes.js?v=6"></script>
+<script src="../theme.js"></script>
+<script src="../wechat-copy.js?v=2"></script>
+
+</body>
+</html>
