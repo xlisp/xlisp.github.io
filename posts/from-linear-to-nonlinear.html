@@ -1,0 +1,761 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>从线性回归到非线性拟合：用代码讲透背后的数学 · Steve Chan — xlisp</title>
+<meta name="description" content="整个机器学习训练，就是下面这个循环：">
+<meta name="author" content="Steve Chan">
+<link rel="icon" type="image/jpeg" href="../icon.jpeg">
+<link rel="apple-touch-icon" href="../icon.jpeg">
+<meta property="og:type" content="article">
+<meta property="og:title" content="从线性回归到非线性拟合：用代码讲透背后的数学">
+<meta property="og:description" content="整个机器学习训练，就是下面这个循环：">
+<meta property="og:image" content="../icon.jpeg">
+<meta property="og:site_name" content="Steve Chan — xlisp">
+<meta name="twitter:card" content="summary_large_image">
+<meta name="twitter:title" content="从线性回归到非线性拟合：用代码讲透背后的数学">
+<meta name="twitter:description" content="整个机器学习训练，就是下面这个循环：">
+<meta name="twitter:image" content="../icon.jpeg">
+<link rel="stylesheet" href="../style.css?v=light1">
+<script>(function(){try{if(localStorage.getItem('theme')==='light')document.documentElement.setAttribute('data-theme','light');}catch(e){}})();</script>
+</head>
+<body>
+<main class="wrap post">
+
+  <nav class="topnav">
+    <a href="../index.html">← home</a>
+  </nav>
+
+  <article>
+    <header class="post-header">
+      <h1>从线性回归到非线性拟合：用代码讲透背后的数学</h1>
+      <p class="meta">2026-06-17 · Steve Chan</p>
+    </header>
+
+    <div class="content">
+<blockquote>
+<p>本文以仓库里两个真实例子为线索：</p>
+<ul>
+<li><code>heuristic_thinking/calculator_nn2.py</code> —— 一个想学会四则运算的全连接网络</li>
+<li><code>heuristic_thinking/2013_nonlinear_fitting/2013_nonlinear_fitting.py</code> —— 一个拟合 <code>sin(x) + 噪声</code> 的 <code>NonlinearModel</code></li>
+</ul>
+<p>目标：<strong>不写一个数学公式</strong>，全部用可以运行的 Python/PyTorch 代码，把藏在这两段代码背后的
+<strong>线性代数、微积分、概率</strong> 三块知识讲清楚，并解释为什么从 <code>LinearModel</code> 一步步走到 <code>NonlinearModel</code>。</p>
+</blockquote>
+<hr />
+<h2 id="0-一句话主线">0. 一句话主线</h2>
+<p>整个机器学习训练，就是下面这个循环：</p>
+<div class="highlight"><pre><span></span><code><span class="k">for</span> <span class="n">epoch</span> <span class="ow">in</span> <span class="nb">range</span><span class="p">(</span><span class="n">epochs</span><span class="p">):</span>
+    <span class="n">pred</span> <span class="o">=</span> <span class="n">model</span><span class="p">(</span><span class="n">x</span><span class="p">)</span>            <span class="c1"># ① 线性代数：一堆矩阵乘法 + 非线性</span>
+    <span class="n">loss</span> <span class="o">=</span> <span class="n">criterion</span><span class="p">(</span><span class="n">pred</span><span class="p">,</span> <span class="n">y</span><span class="p">)</span>  <span class="c1"># ② 概率：用&quot;误差多大&quot;度量&quot;模型有多不可信&quot;</span>
+    <span class="n">optimizer</span><span class="o">.</span><span class="n">zero_grad</span><span class="p">()</span>
+    <span class="n">loss</span><span class="o">.</span><span class="n">backward</span><span class="p">()</span>            <span class="c1"># ③ 微积分：自动求每个参数对 loss 的导数</span>
+    <span class="n">optimizer</span><span class="o">.</span><span class="n">step</span><span class="p">()</span>           <span class="c1"># ④ 微积分：沿导数反方向走一小步</span>
+</code></pre></div>
+
+<ul>
+<li><code>model(x)</code> 这一步，本质是<strong>线性代数</strong>（矩阵乘法）。</li>
+<li><code>criterion(pred, y)</code> 这一步，本质是<strong>概率</strong>（极大似然 → 最小二乘）。</li>
+<li><code>loss.backward()</code> 和 <code>optimizer.step()</code> 这两步，本质是<strong>微积分</strong>（链式法则 + 梯度下降）。</li>
+</ul>
+<p>下面逐块拆开。</p>
+<hr />
+<h2 id="1-起点线性回归-linearmodel">1. 起点：线性回归 <code>LinearModel</code></h2>
+<p>仓库里的 <code>NonlinearModel</code> 用了 3 个 <code>nn.Linear</code>。要理解它，先把它砍到只剩一层 —— 那就是线性回归。</p>
+<h3 id="11-一个-nnlinear-到底在算什么线性代数">1.1 一个 <code>nn.Linear</code> 到底在算什么（线性代数）</h3>
+<p><code>nn.Linear(in, out)</code> 不是魔法，它就是一次矩阵乘法加偏置。我们手写一遍，和 PyTorch 对照：</p>
+<div class="highlight"><pre><span></span><code><span class="kn">import</span><span class="w"> </span><span class="nn">torch</span>
+<span class="kn">import</span><span class="w"> </span><span class="nn">torch.nn</span><span class="w"> </span><span class="k">as</span><span class="w"> </span><span class="nn">nn</span>
+
+<span class="n">x</span> <span class="o">=</span> <span class="n">torch</span><span class="o">.</span><span class="n">tensor</span><span class="p">([[</span><span class="mf">2.0</span><span class="p">,</span> <span class="mf">3.0</span><span class="p">]])</span>      <span class="c1"># 1 个样本，2 个特征  形状 (1, 2)</span>
+
+<span class="n">layer</span> <span class="o">=</span> <span class="n">nn</span><span class="o">.</span><span class="n">Linear</span><span class="p">(</span><span class="mi">2</span><span class="p">,</span> <span class="mi">1</span><span class="p">)</span>             <span class="c1"># 2 个输入 -&gt; 1 个输出</span>
+<span class="n">W</span> <span class="o">=</span> <span class="n">layer</span><span class="o">.</span><span class="n">weight</span>                    <span class="c1"># 形状 (1, 2) —— 输出 x 输入</span>
+<span class="n">b</span> <span class="o">=</span> <span class="n">layer</span><span class="o">.</span><span class="n">bias</span>                      <span class="c1"># 形状 (1,)</span>
+
+<span class="c1"># PyTorch 内部做的事：y = x @ W^T + b</span>
+<span class="n">manual</span> <span class="o">=</span> <span class="n">x</span> <span class="o">@</span> <span class="n">W</span><span class="o">.</span><span class="n">t</span><span class="p">()</span> <span class="o">+</span> <span class="n">b</span>
+<span class="nb">print</span><span class="p">(</span><span class="n">torch</span><span class="o">.</span><span class="n">allclose</span><span class="p">(</span><span class="n">layer</span><span class="p">(</span><span class="n">x</span><span class="p">),</span> <span class="n">manual</span><span class="p">))</span>   <span class="c1"># True</span>
+</code></pre></div>
+
+<p>所以一个"神经元"就是：<strong>把输入向量和一行权重做点积，再加一个偏置</strong>。
+点积 = 加权求和 = 线性代数里最基础的运算。</p>
+<p><code>calculator_nn2.py</code> 里的 <code>nn.Linear(3, 128)</code>，意思就是：
+3 维输入（两个数 + 运算符编码）通过一个 <code>128 × 3</code> 的矩阵，被"投影"成 128 维。
+矩阵的每一行，都是一个看待输入的不同角度。</p>
+<h3 id="12-把线性回归写成最小可运行的代码">1.2 把"线性回归"写成最小可运行的代码</h3>
+<div class="highlight"><pre><span></span><code><span class="kn">import</span><span class="w"> </span><span class="nn">torch</span>
+
+<span class="c1"># 造一批服从 y = 2x + 1 的数据，再加一点噪声</span>
+<span class="n">x</span> <span class="o">=</span> <span class="n">torch</span><span class="o">.</span><span class="n">linspace</span><span class="p">(</span><span class="o">-</span><span class="mi">1</span><span class="p">,</span> <span class="mi">1</span><span class="p">,</span> <span class="mi">50</span><span class="p">)</span><span class="o">.</span><span class="n">unsqueeze</span><span class="p">(</span><span class="mi">1</span><span class="p">)</span>      <span class="c1"># (50, 1)</span>
+<span class="n">y</span> <span class="o">=</span> <span class="mi">2</span> <span class="o">*</span> <span class="n">x</span> <span class="o">+</span> <span class="mi">1</span> <span class="o">+</span> <span class="n">torch</span><span class="o">.</span><span class="n">randn</span><span class="p">(</span><span class="mi">50</span><span class="p">,</span> <span class="mi">1</span><span class="p">)</span> <span class="o">*</span> <span class="mf">0.1</span>        <span class="c1"># 真值 + 噪声</span>
+
+<span class="n">model</span> <span class="o">=</span> <span class="n">torch</span><span class="o">.</span><span class="n">nn</span><span class="o">.</span><span class="n">Linear</span><span class="p">(</span><span class="mi">1</span><span class="p">,</span> <span class="mi">1</span><span class="p">)</span>                   <span class="c1"># 只有 w 和 b 两个参数</span>
+<span class="n">opt</span> <span class="o">=</span> <span class="n">torch</span><span class="o">.</span><span class="n">optim</span><span class="o">.</span><span class="n">SGD</span><span class="p">(</span><span class="n">model</span><span class="o">.</span><span class="n">parameters</span><span class="p">(),</span> <span class="n">lr</span><span class="o">=</span><span class="mf">0.1</span><span class="p">)</span>
+<span class="n">loss_fn</span> <span class="o">=</span> <span class="n">torch</span><span class="o">.</span><span class="n">nn</span><span class="o">.</span><span class="n">MSELoss</span><span class="p">()</span>
+
+<span class="k">for</span> <span class="n">_</span> <span class="ow">in</span> <span class="nb">range</span><span class="p">(</span><span class="mi">500</span><span class="p">):</span>
+    <span class="n">pred</span> <span class="o">=</span> <span class="n">model</span><span class="p">(</span><span class="n">x</span><span class="p">)</span>
+    <span class="n">loss</span> <span class="o">=</span> <span class="n">loss_fn</span><span class="p">(</span><span class="n">pred</span><span class="p">,</span> <span class="n">y</span><span class="p">)</span>
+    <span class="n">opt</span><span class="o">.</span><span class="n">zero_grad</span><span class="p">();</span> <span class="n">loss</span><span class="o">.</span><span class="n">backward</span><span class="p">();</span> <span class="n">opt</span><span class="o">.</span><span class="n">step</span><span class="p">()</span>
+
+<span class="nb">print</span><span class="p">(</span><span class="n">model</span><span class="o">.</span><span class="n">weight</span><span class="o">.</span><span class="n">item</span><span class="p">(),</span> <span class="n">model</span><span class="o">.</span><span class="n">bias</span><span class="o">.</span><span class="n">item</span><span class="p">())</span>  <span class="c1"># 约等于 2 和 1</span>
+</code></pre></div>
+
+<p>这就是 <code>NonlinearModel</code> 的"婴儿版"。它能拟合<strong>直线</strong>，但拟合不了 <code>sin(x)</code> —— 原因下一节揭晓。</p>
+<hr />
+<h2 id="2-为什么线性不够线性的封闭性陷阱线性代数">2. 为什么线性不够：线性的"封闭性"陷阱（线性代数）</h2>
+<p>直觉上你会想：那我多堆几层 <code>nn.Linear</code> 不就更强了？错。<strong>多个线性层叠起来，还是一个线性层。</strong> 用代码证明：</p>
+<div class="highlight"><pre><span></span><code><span class="kn">import</span><span class="w"> </span><span class="nn">torch</span>
+<span class="kn">import</span><span class="w"> </span><span class="nn">torch.nn</span><span class="w"> </span><span class="k">as</span><span class="w"> </span><span class="nn">nn</span>
+
+<span class="n">torch</span><span class="o">.</span><span class="n">manual_seed</span><span class="p">(</span><span class="mi">0</span><span class="p">)</span>
+<span class="n">x</span> <span class="o">=</span> <span class="n">torch</span><span class="o">.</span><span class="n">randn</span><span class="p">(</span><span class="mi">5</span><span class="p">,</span> <span class="mi">3</span><span class="p">)</span>
+
+<span class="c1"># 两层纯线性，中间不加任何非线性</span>
+<span class="n">a</span> <span class="o">=</span> <span class="n">nn</span><span class="o">.</span><span class="n">Linear</span><span class="p">(</span><span class="mi">3</span><span class="p">,</span> <span class="mi">4</span><span class="p">)</span>
+<span class="n">b</span> <span class="o">=</span> <span class="n">nn</span><span class="o">.</span><span class="n">Linear</span><span class="p">(</span><span class="mi">4</span><span class="p">,</span> <span class="mi">2</span><span class="p">)</span>
+<span class="n">two_layers</span> <span class="o">=</span> <span class="n">b</span><span class="p">(</span><span class="n">a</span><span class="p">(</span><span class="n">x</span><span class="p">))</span>
+
+<span class="c1"># 把它们合并成&quot;一层&quot;：W = Wb @ Wa, bias = Wb @ ba + bb</span>
+<span class="n">W</span> <span class="o">=</span> <span class="n">b</span><span class="o">.</span><span class="n">weight</span> <span class="o">@</span> <span class="n">a</span><span class="o">.</span><span class="n">weight</span>
+<span class="n">bias</span> <span class="o">=</span> <span class="n">b</span><span class="o">.</span><span class="n">weight</span> <span class="o">@</span> <span class="n">a</span><span class="o">.</span><span class="n">bias</span> <span class="o">+</span> <span class="n">b</span><span class="o">.</span><span class="n">bias</span>
+<span class="n">one_layer</span> <span class="o">=</span> <span class="n">x</span> <span class="o">@</span> <span class="n">W</span><span class="o">.</span><span class="n">t</span><span class="p">()</span> <span class="o">+</span> <span class="n">bias</span>
+
+<span class="nb">print</span><span class="p">(</span><span class="n">torch</span><span class="o">.</span><span class="n">allclose</span><span class="p">(</span><span class="n">two_layers</span><span class="p">,</span> <span class="n">one_layer</span><span class="p">,</span> <span class="n">atol</span><span class="o">=</span><span class="mf">1e-6</span><span class="p">))</span>   <span class="c1"># True</span>
+</code></pre></div>
+
+<p>结论：<code>Linear(Linear(x))</code> 恒等于某个 <code>Linear(x)</code>。
+无论叠多少层，只要中间没有非线性，模型能表达的永远只是<strong>一条直线 / 一个超平面</strong>。
+这就是为什么 <code>sin(x)</code> 这种弯弯曲曲的曲线，纯线性网络永远拟合不了。</p>
+<hr />
+<h2 id="3-转折点激活函数让网络拐弯线性代数-非线性">3. 转折点：激活函数让网络"拐弯"（线性代数 → 非线性）</h2>
+<p>看 <code>NonlinearModel.forward</code>：</p>
+<div class="highlight"><pre><span></span><code><span class="k">def</span><span class="w"> </span><span class="nf">forward</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">x</span><span class="p">):</span>
+    <span class="n">x</span> <span class="o">=</span> <span class="n">torch</span><span class="o">.</span><span class="n">relu</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">fc1</span><span class="p">(</span><span class="n">x</span><span class="p">))</span>   <span class="c1"># &lt;-- relu 是关键</span>
+    <span class="n">x</span> <span class="o">=</span> <span class="n">torch</span><span class="o">.</span><span class="n">relu</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">fc2</span><span class="p">(</span><span class="n">x</span><span class="p">))</span>
+    <span class="n">x</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">fc3</span><span class="p">(</span><span class="n">x</span><span class="p">)</span>
+    <span class="k">return</span> <span class="n">x</span>
+</code></pre></div>
+
+<p><code>torch.relu</code> 就一行逻辑：<strong>负数变 0，正数不变</strong>。</p>
+<div class="highlight"><pre><span></span><code><span class="kn">import</span><span class="w"> </span><span class="nn">torch</span>
+<span class="n">z</span> <span class="o">=</span> <span class="n">torch</span><span class="o">.</span><span class="n">tensor</span><span class="p">([</span><span class="o">-</span><span class="mf">2.0</span><span class="p">,</span> <span class="o">-</span><span class="mf">0.5</span><span class="p">,</span> <span class="mf">0.0</span><span class="p">,</span> <span class="mf">1.0</span><span class="p">,</span> <span class="mf">3.0</span><span class="p">])</span>
+<span class="nb">print</span><span class="p">(</span><span class="n">torch</span><span class="o">.</span><span class="n">relu</span><span class="p">(</span><span class="n">z</span><span class="p">))</span>      <span class="c1"># tensor([0., 0., 0., 1., 3.])</span>
+<span class="nb">print</span><span class="p">(</span><span class="n">torch</span><span class="o">.</span><span class="n">maximum</span><span class="p">(</span><span class="n">z</span><span class="p">,</span> <span class="n">torch</span><span class="o">.</span><span class="n">zeros_like</span><span class="p">(</span><span class="n">z</span><span class="p">)))</span>  <span class="c1"># 完全等价</span>
+</code></pre></div>
+
+<p>它本身简单到不像数学，但正是这个"折一下"打破了第 2 节的线性封闭性。
+<strong>每个 ReLU 神经元 = 一个铰链（hinge），在某个位置把直线折弯。</strong> 把很多段折线拼起来，就能逼近任意曲线：</p>
+<div class="highlight"><pre><span></span><code><span class="kn">import</span><span class="w"> </span><span class="nn">torch</span>
+<span class="kn">import</span><span class="w"> </span><span class="nn">torch.nn</span><span class="w"> </span><span class="k">as</span><span class="w"> </span><span class="nn">nn</span>
+<span class="kn">import</span><span class="w"> </span><span class="nn">matplotlib.pyplot</span><span class="w"> </span><span class="k">as</span><span class="w"> </span><span class="nn">plt</span>
+
+<span class="c1"># 只用一层隐藏层 + relu，看它怎么用&quot;折线&quot;逼近 sin</span>
+<span class="n">x</span> <span class="o">=</span> <span class="n">torch</span><span class="o">.</span><span class="n">linspace</span><span class="p">(</span><span class="o">-</span><span class="mi">6</span><span class="p">,</span> <span class="mi">6</span><span class="p">,</span> <span class="mi">200</span><span class="p">)</span><span class="o">.</span><span class="n">unsqueeze</span><span class="p">(</span><span class="mi">1</span><span class="p">)</span>
+<span class="n">target</span> <span class="o">=</span> <span class="n">torch</span><span class="o">.</span><span class="n">sin</span><span class="p">(</span><span class="n">x</span><span class="p">)</span>
+
+<span class="n">net</span> <span class="o">=</span> <span class="n">nn</span><span class="o">.</span><span class="n">Sequential</span><span class="p">(</span><span class="n">nn</span><span class="o">.</span><span class="n">Linear</span><span class="p">(</span><span class="mi">1</span><span class="p">,</span> <span class="mi">30</span><span class="p">),</span> <span class="n">nn</span><span class="o">.</span><span class="n">ReLU</span><span class="p">(),</span> <span class="n">nn</span><span class="o">.</span><span class="n">Linear</span><span class="p">(</span><span class="mi">30</span><span class="p">,</span> <span class="mi">1</span><span class="p">))</span>
+<span class="n">opt</span> <span class="o">=</span> <span class="n">torch</span><span class="o">.</span><span class="n">optim</span><span class="o">.</span><span class="n">Adam</span><span class="p">(</span><span class="n">net</span><span class="o">.</span><span class="n">parameters</span><span class="p">(),</span> <span class="n">lr</span><span class="o">=</span><span class="mf">0.01</span><span class="p">)</span>
+
+<span class="k">for</span> <span class="n">_</span> <span class="ow">in</span> <span class="nb">range</span><span class="p">(</span><span class="mi">2000</span><span class="p">):</span>
+    <span class="n">loss</span> <span class="o">=</span> <span class="p">((</span><span class="n">net</span><span class="p">(</span><span class="n">x</span><span class="p">)</span> <span class="o">-</span> <span class="n">target</span><span class="p">)</span> <span class="o">**</span> <span class="mi">2</span><span class="p">)</span><span class="o">.</span><span class="n">mean</span><span class="p">()</span>
+    <span class="n">opt</span><span class="o">.</span><span class="n">zero_grad</span><span class="p">();</span> <span class="n">loss</span><span class="o">.</span><span class="n">backward</span><span class="p">();</span> <span class="n">opt</span><span class="o">.</span><span class="n">step</span><span class="p">()</span>
+
+<span class="n">plt</span><span class="o">.</span><span class="n">plot</span><span class="p">(</span><span class="n">x</span><span class="p">,</span> <span class="n">target</span><span class="p">,</span> <span class="n">label</span><span class="o">=</span><span class="s2">&quot;sin(x)&quot;</span><span class="p">)</span>
+<span class="n">plt</span><span class="o">.</span><span class="n">plot</span><span class="p">(</span><span class="n">x</span><span class="p">,</span> <span class="n">net</span><span class="p">(</span><span class="n">x</span><span class="p">)</span><span class="o">.</span><span class="n">detach</span><span class="p">(),</span> <span class="n">label</span><span class="o">=</span><span class="s2">&quot;ReLU 折线逼近&quot;</span><span class="p">)</span>
+<span class="n">plt</span><span class="o">.</span><span class="n">legend</span><span class="p">();</span> <span class="n">plt</span><span class="o">.</span><span class="n">show</span><span class="p">()</span>   <span class="c1"># 你会看到一条由许多小直线段拼出来的&quot;假 sin&quot;</span>
+</code></pre></div>
+
+<p>这就是 <strong>通用逼近定理（Universal Approximation）</strong> 的代码直觉：
+<em>线性层负责"在哪折、折多大"，激活函数负责"真的折下去"。</em>
+这正是从 <code>LinearModel</code> 到 <code>NonlinearModel</code> 的本质飞跃 —— 仓库里那张
+<code>2013_nonlinear_fitting_pytorch.png</code> 就是它拟合成功的结果。</p>
+<hr />
+<h2 id="4-损失函数从哪来mse-背后是概率概率论">4. 损失函数从哪来：MSE 背后是概率（概率论）</h2>
+<p>两份代码都用了 <code>nn.MSELoss()</code>（均方误差）。为什么是"平方"，不是"绝对值"或"四次方"？
+答案来自概率：<strong>MSE 是"假设噪声服从高斯分布"时的极大似然估计。</strong></p>
+<h3 id="41-先看噪声怎么造出来的">4.1 先看噪声怎么造出来的</h3>
+<p>回看 <code>2013_nonlinear_fitting.py</code> 的数据：</p>
+<div class="highlight"><pre><span></span><code><span class="n">y</span> <span class="o">=</span> <span class="n">torch</span><span class="o">.</span><span class="n">sin</span><span class="p">(</span><span class="n">x</span><span class="p">)</span> <span class="o">+</span> <span class="n">torch</span><span class="o">.</span><span class="n">rand</span><span class="p">(</span><span class="n">n</span><span class="p">,</span> <span class="mi">1</span><span class="p">)</span> <span class="o">*</span> <span class="mf">0.5</span>
+</code></pre></div>
+
+<p>数据 = <strong>一个确定的规律（sin）</strong> + <strong>一个随机的噪声</strong>。
+真实世界的测量永远带噪声，所以 <code>y</code> 不是一个定值，而是一个<strong>随机变量</strong>。
+模型要学的，是这个随机变量的<strong>期望（均值）</strong>。</p>
+<h3 id="42-用代码说明为什么平方误差-高斯假设">4.2 用代码说明"为什么平方误差 = 高斯假设"</h3>
+<p>假设噪声是高斯的，那么"模型预测得有多准"可以用高斯概率密度来打分。
+我们把"最小化 MSE"和"最大化高斯似然"放在一起跑，看它们是不是同一回事：</p>
+<div class="highlight"><pre><span></span><code><span class="kn">import</span><span class="w"> </span><span class="nn">torch</span>
+
+<span class="n">pred</span> <span class="o">=</span> <span class="n">torch</span><span class="o">.</span><span class="n">tensor</span><span class="p">([</span><span class="mf">1.0</span><span class="p">,</span> <span class="mf">2.0</span><span class="p">,</span> <span class="mf">3.0</span><span class="p">])</span>
+<span class="n">true</span> <span class="o">=</span> <span class="n">torch</span><span class="o">.</span><span class="n">tensor</span><span class="p">([</span><span class="mf">1.2</span><span class="p">,</span> <span class="mf">1.9</span><span class="p">,</span> <span class="mf">3.5</span><span class="p">])</span>
+<span class="n">err</span> <span class="o">=</span> <span class="n">pred</span> <span class="o">-</span> <span class="n">true</span>
+
+<span class="c1"># 方案 A：均方误差</span>
+<span class="n">mse</span> <span class="o">=</span> <span class="p">(</span><span class="n">err</span> <span class="o">**</span> <span class="mi">2</span><span class="p">)</span><span class="o">.</span><span class="n">mean</span><span class="p">()</span>
+
+<span class="c1"># 方案 B：假设误差 ~ 高斯(0, sigma)，写出&quot;负对数似然&quot;</span>
+<span class="n">sigma</span> <span class="o">=</span> <span class="mf">1.0</span>
+<span class="n">nll</span> <span class="o">=</span> <span class="p">(</span><span class="n">err</span> <span class="o">**</span> <span class="mi">2</span> <span class="o">/</span> <span class="p">(</span><span class="mi">2</span> <span class="o">*</span> <span class="n">sigma</span> <span class="o">**</span> <span class="mi">2</span><span class="p">))</span><span class="o">.</span><span class="n">mean</span><span class="p">()</span>   <span class="c1"># 高斯 NLL 去掉常数项后剩下的部分</span>
+
+<span class="nb">print</span><span class="p">(</span><span class="n">mse</span><span class="p">,</span> <span class="n">nll</span> <span class="o">*</span> <span class="mi">2</span><span class="p">)</span>   <span class="c1"># 成正比 —— 最小化 MSE 等价于最大化高斯似然</span>
+</code></pre></div>
+
+<p>一句话：<strong>你选 MSE，就等于悄悄声明"我认为数据噪声是高斯的"。</strong>
+如果噪声有很多离群点（重尾分布），那 MSE 就不再是最优选择，这时会换成 L1（绝对值）损失 —— 那对应的是拉普拉斯分布假设。损失函数的选择，本质是对噪声分布的概率假设。</p>
+<h3 id="43-这也解释了-calculator_nn2py-里的loss-太大现象">4.3 这也解释了 <code>calculator_nn2.py</code> 里的"loss 太大"现象</h3>
+<p>文件注释里记录了三次运行：</p>
+<div class="highlight"><pre><span></span><code>run1: Loss: 2184328  -&gt;  32*3 预测成 296（离谱）
+run2: Loss: 764      -&gt;  389+88 预测成 -964（还是错）
+run3: Loss: 22       -&gt;  32*3 预测成 94.7（接近 96 了）
+</code></pre></div>
+
+<p>为什么 loss 数字这么吓人？因为 MSE 是<strong>平方</strong>：乘法结果能到 100×100=10000，
+误差平方一下就到了百万级。这正是平方的双刃剑 ——
+对大误差极其敏感（高斯假设下大偏差概率极低，所以惩罚极重）。
+这也提示了一个真实工程问题：<strong>没做归一化（normalization）</strong>，
+输入范围 1~100、输出范围却能到 10000，量纲差异让训练极难收敛。</p>
+<hr />
+<h2 id="5-训练的发动机梯度下降微积分">5. 训练的发动机：梯度下降（微积分）</h2>
+<p>现在到了 <code>loss.backward()</code> 和 <code>optimizer.step()</code>。这两行是整篇文章里<strong>微积分</strong>含量最高的地方。</p>
+<h3 id="51-导数-我往哪个方向动loss-会下降">5.1 导数 = "我往哪个方向动，loss 会下降"</h3>
+<p>导数的定义就是"输入动一点点，输出动多少"。我们不用公式，用<strong>数值差分</strong>亲手算一次导数，
+再让 PyTorch 用 <code>backward()</code> 算一次，对比两者：</p>
+<div class="highlight"><pre><span></span><code><span class="kn">import</span><span class="w"> </span><span class="nn">torch</span>
+
+<span class="k">def</span><span class="w"> </span><span class="nf">f</span><span class="p">(</span><span class="n">w</span><span class="p">):</span>
+    <span class="k">return</span> <span class="p">(</span><span class="n">w</span> <span class="o">-</span> <span class="mi">3</span><span class="p">)</span> <span class="o">**</span> <span class="mi">2</span>          <span class="c1"># 一个最小值在 w=3 的碗形函数</span>
+
+<span class="c1"># 方法一：手动数值求导（微积分的原始定义：差商）</span>
+<span class="n">w</span> <span class="o">=</span> <span class="mf">5.0</span>
+<span class="n">eps</span> <span class="o">=</span> <span class="mf">1e-4</span>
+<span class="n">numeric_grad</span> <span class="o">=</span> <span class="p">(</span><span class="n">f</span><span class="p">(</span><span class="n">torch</span><span class="o">.</span><span class="n">tensor</span><span class="p">(</span><span class="n">w</span> <span class="o">+</span> <span class="n">eps</span><span class="p">))</span> <span class="o">-</span> <span class="n">f</span><span class="p">(</span><span class="n">torch</span><span class="o">.</span><span class="n">tensor</span><span class="p">(</span><span class="n">w</span> <span class="o">-</span> <span class="n">eps</span><span class="p">)))</span> <span class="o">/</span> <span class="p">(</span><span class="mi">2</span> <span class="o">*</span> <span class="n">eps</span><span class="p">)</span>
+
+<span class="c1"># 方法二：PyTorch 自动求导</span>
+<span class="n">wt</span> <span class="o">=</span> <span class="n">torch</span><span class="o">.</span><span class="n">tensor</span><span class="p">(</span><span class="n">w</span><span class="p">,</span> <span class="n">requires_grad</span><span class="o">=</span><span class="kc">True</span><span class="p">)</span>
+<span class="n">f</span><span class="p">(</span><span class="n">wt</span><span class="p">)</span><span class="o">.</span><span class="n">backward</span><span class="p">()</span>
+<span class="n">auto_grad</span> <span class="o">=</span> <span class="n">wt</span><span class="o">.</span><span class="n">grad</span>
+
+<span class="nb">print</span><span class="p">(</span><span class="n">numeric_grad</span><span class="p">,</span> <span class="n">auto_grad</span><span class="p">)</span>   <span class="c1"># 两者都约等于 4.0</span>
+</code></pre></div>
+
+<p>两种方法结果一致。<code>backward()</code> 不是黑魔法，它就是在自动、精确地做你手动做的事。</p>
+<h3 id="52-梯度下降顺着导数反方向走">5.2 梯度下降：顺着导数反方向走</h3>
+<p>知道了导数（上坡方向），把参数往<strong>反方向</strong>挪一点，loss 就会降。
+手写一个梯度下降，亲眼看着它滚到谷底：</p>
+<div class="highlight"><pre><span></span><code><span class="kn">import</span><span class="w"> </span><span class="nn">torch</span>
+
+<span class="n">w</span> <span class="o">=</span> <span class="n">torch</span><span class="o">.</span><span class="n">tensor</span><span class="p">(</span><span class="mf">5.0</span><span class="p">,</span> <span class="n">requires_grad</span><span class="o">=</span><span class="kc">True</span><span class="p">)</span>
+<span class="n">lr</span> <span class="o">=</span> <span class="mf">0.1</span>                          <span class="c1"># 学习率：每步走多大</span>
+
+<span class="k">for</span> <span class="n">step</span> <span class="ow">in</span> <span class="nb">range</span><span class="p">(</span><span class="mi">20</span><span class="p">):</span>
+    <span class="n">loss</span> <span class="o">=</span> <span class="p">(</span><span class="n">w</span> <span class="o">-</span> <span class="mi">3</span><span class="p">)</span> <span class="o">**</span> <span class="mi">2</span>
+    <span class="n">loss</span><span class="o">.</span><span class="n">backward</span><span class="p">()</span>               <span class="c1"># 算出 dloss/dw</span>
+    <span class="k">with</span> <span class="n">torch</span><span class="o">.</span><span class="n">no_grad</span><span class="p">():</span>
+        <span class="n">w</span> <span class="o">-=</span> <span class="n">lr</span> <span class="o">*</span> <span class="n">w</span><span class="o">.</span><span class="n">grad</span>          <span class="c1"># 顺着负梯度方向走一步 &lt;-- optimizer.step() 的核心</span>
+    <span class="n">w</span><span class="o">.</span><span class="n">grad</span><span class="o">.</span><span class="n">zero_</span><span class="p">()</span>                <span class="c1"># 清空梯度 &lt;-- optimizer.zero_grad() 的作用</span>
+    <span class="nb">print</span><span class="p">(</span><span class="sa">f</span><span class="s2">&quot;step </span><span class="si">{</span><span class="n">step</span><span class="si">}</span><span class="s2">: w=</span><span class="si">{</span><span class="n">w</span><span class="o">.</span><span class="n">item</span><span class="p">()</span><span class="si">:</span><span class="s2">.4f</span><span class="si">}</span><span class="s2">&quot;</span><span class="p">)</span>
+<span class="c1"># w 会从 5 一路逼近 3</span>
+</code></pre></div>
+
+<p>把这段代码和训练循环对照：</p>
+<table>
+<thead>
+<tr>
+<th>手写代码</th>
+<th>PyTorch 等价写法</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>loss.backward()</code></td>
+<td><code>loss.backward()</code></td>
+</tr>
+<tr>
+<td><code>w -= lr * w.grad</code></td>
+<td><code>optimizer.step()</code></td>
+</tr>
+<tr>
+<td><code>w.grad.zero_()</code></td>
+<td><code>optimizer.zero_grad()</code></td>
+</tr>
+</tbody>
+</table>
+<p><strong><code>optimizer.zero_grad()</code> 为什么不能漏？</strong> 因为 PyTorch 的梯度是<strong>累加</strong>的。
+不清零，这一轮的梯度会叠加上一轮的，方向就乱了。用代码验证：</p>
+<div class="highlight"><pre><span></span><code><span class="kn">import</span><span class="w"> </span><span class="nn">torch</span>
+<span class="n">w</span> <span class="o">=</span> <span class="n">torch</span><span class="o">.</span><span class="n">tensor</span><span class="p">(</span><span class="mf">2.0</span><span class="p">,</span> <span class="n">requires_grad</span><span class="o">=</span><span class="kc">True</span><span class="p">)</span>
+
+<span class="p">(</span><span class="n">w</span> <span class="o">**</span> <span class="mi">2</span><span class="p">)</span><span class="o">.</span><span class="n">backward</span><span class="p">();</span> <span class="nb">print</span><span class="p">(</span><span class="n">w</span><span class="o">.</span><span class="n">grad</span><span class="p">)</span>   <span class="c1"># 4.0</span>
+<span class="p">(</span><span class="n">w</span> <span class="o">**</span> <span class="mi">2</span><span class="p">)</span><span class="o">.</span><span class="n">backward</span><span class="p">();</span> <span class="nb">print</span><span class="p">(</span><span class="n">w</span><span class="o">.</span><span class="n">grad</span><span class="p">)</span>   <span class="c1"># 8.0 —— 没清零，累加了！</span>
+</code></pre></div>
+
+<h3 id="53-链式法则多层网络怎么把梯度传回去">5.3 链式法则：多层网络怎么把梯度传回去</h3>
+<p><code>NonlinearModel</code> 有三层，<code>fc1</code> 的参数离 loss 很"远"。怎么知道改 <code>fc1</code> 一点点，
+loss 会变多少？答案是微积分的<strong>链式法则</strong>：一层层把导数乘回去。
+用一个两层的小例子手动复现 PyTorch 的反向传播：</p>
+<div class="highlight"><pre><span></span><code><span class="kn">import</span><span class="w"> </span><span class="nn">torch</span>
+
+<span class="n">x</span> <span class="o">=</span> <span class="n">torch</span><span class="o">.</span><span class="n">tensor</span><span class="p">(</span><span class="mf">1.5</span><span class="p">)</span>
+<span class="n">w1</span> <span class="o">=</span> <span class="n">torch</span><span class="o">.</span><span class="n">tensor</span><span class="p">(</span><span class="mf">2.0</span><span class="p">,</span> <span class="n">requires_grad</span><span class="o">=</span><span class="kc">True</span><span class="p">)</span>
+<span class="n">w2</span> <span class="o">=</span> <span class="n">torch</span><span class="o">.</span><span class="n">tensor</span><span class="p">(</span><span class="mf">3.0</span><span class="p">,</span> <span class="n">requires_grad</span><span class="o">=</span><span class="kc">True</span><span class="p">)</span>
+
+<span class="c1"># 前向：h = w1 * x ;  out = w2 * h ;  loss = out^2</span>
+<span class="n">h</span> <span class="o">=</span> <span class="n">w1</span> <span class="o">*</span> <span class="n">x</span>
+<span class="n">out</span> <span class="o">=</span> <span class="n">w2</span> <span class="o">*</span> <span class="n">h</span>
+<span class="n">loss</span> <span class="o">=</span> <span class="n">out</span> <span class="o">**</span> <span class="mi">2</span>
+<span class="n">loss</span><span class="o">.</span><span class="n">backward</span><span class="p">()</span>
+
+<span class="c1"># 手动用链式法则验证 dloss/dw1：</span>
+<span class="c1">#   dloss/dout = 2*out</span>
+<span class="c1">#   dout/dh    = w2</span>
+<span class="c1">#   dh/dw1     = x</span>
+<span class="n">manual_grad_w1</span> <span class="o">=</span> <span class="p">(</span><span class="mi">2</span> <span class="o">*</span> <span class="n">out</span><span class="p">)</span> <span class="o">*</span> <span class="n">w2</span> <span class="o">*</span> <span class="n">x</span>
+<span class="nb">print</span><span class="p">(</span><span class="n">w1</span><span class="o">.</span><span class="n">grad</span><span class="p">,</span> <span class="n">manual_grad_w1</span><span class="o">.</span><span class="n">item</span><span class="p">())</span>   <span class="c1"># 两者相等</span>
+</code></pre></div>
+
+<p><code>backward()</code> 做的，就是从 loss 出发，沿着计算图把这些局部导数<strong>自动地连乘</strong>回每个参数。
+这就是为什么深层的 <code>NonlinearModel</code> 也能被训练 —— 链式法则保证梯度能一路传到 <code>fc1</code>。</p>
+<hr />
+<h2 id="6-优化器为什么用-adam-而不是-sgd微积分的工程进化">6. 优化器为什么用 Adam 而不是 SGD（微积分的工程进化）</h2>
+<p>两份代码都用了 <code>torch.optim.Adam</code>，而第 5 节我们手写的是最朴素的 SGD。
+区别在于：Adam 会<strong>自适应地调整每个参数的步长</strong>，并利用历史梯度做"惯性"（动量）。
+用代码感受它们的差异：</p>
+<div class="highlight"><pre><span></span><code><span class="kn">import</span><span class="w"> </span><span class="nn">torch</span>
+
+<span class="k">def</span><span class="w"> </span><span class="nf">run</span><span class="p">(</span><span class="n">opt_name</span><span class="p">):</span>
+    <span class="n">w</span> <span class="o">=</span> <span class="n">torch</span><span class="o">.</span><span class="n">tensor</span><span class="p">([</span><span class="mf">5.0</span><span class="p">,</span> <span class="mf">5.0</span><span class="p">],</span> <span class="n">requires_grad</span><span class="o">=</span><span class="kc">True</span><span class="p">)</span>
+    <span class="n">opt</span> <span class="o">=</span> <span class="p">(</span><span class="n">torch</span><span class="o">.</span><span class="n">optim</span><span class="o">.</span><span class="n">SGD</span><span class="p">([</span><span class="n">w</span><span class="p">],</span> <span class="n">lr</span><span class="o">=</span><span class="mf">0.1</span><span class="p">)</span> <span class="k">if</span> <span class="n">opt_name</span> <span class="o">==</span> <span class="s2">&quot;SGD&quot;</span>
+           <span class="k">else</span> <span class="n">torch</span><span class="o">.</span><span class="n">optim</span><span class="o">.</span><span class="n">Adam</span><span class="p">([</span><span class="n">w</span><span class="p">],</span> <span class="n">lr</span><span class="o">=</span><span class="mf">0.1</span><span class="p">))</span>
+    <span class="k">for</span> <span class="n">_</span> <span class="ow">in</span> <span class="nb">range</span><span class="p">(</span><span class="mi">50</span><span class="p">):</span>
+        <span class="c1"># 一个在两个方向上&quot;陡峭程度&quot;差很多的椭圆碗</span>
+        <span class="n">loss</span> <span class="o">=</span> <span class="p">(</span><span class="n">w</span><span class="p">[</span><span class="mi">0</span><span class="p">]</span> <span class="o">-</span> <span class="mi">3</span><span class="p">)</span> <span class="o">**</span> <span class="mi">2</span> <span class="o">+</span> <span class="mi">20</span> <span class="o">*</span> <span class="p">(</span><span class="n">w</span><span class="p">[</span><span class="mi">1</span><span class="p">]</span> <span class="o">-</span> <span class="mi">1</span><span class="p">)</span> <span class="o">**</span> <span class="mi">2</span>
+        <span class="n">opt</span><span class="o">.</span><span class="n">zero_grad</span><span class="p">();</span> <span class="n">loss</span><span class="o">.</span><span class="n">backward</span><span class="p">();</span> <span class="n">opt</span><span class="o">.</span><span class="n">step</span><span class="p">()</span>
+    <span class="k">return</span> <span class="n">w</span><span class="o">.</span><span class="n">detach</span><span class="p">()</span>
+
+<span class="nb">print</span><span class="p">(</span><span class="s2">&quot;SGD :&quot;</span><span class="p">,</span> <span class="n">run</span><span class="p">(</span><span class="s2">&quot;SGD&quot;</span><span class="p">))</span>
+<span class="nb">print</span><span class="p">(</span><span class="s2">&quot;Adam:&quot;</span><span class="p">,</span> <span class="n">run</span><span class="p">(</span><span class="s2">&quot;Adam&quot;</span><span class="p">))</span>   <span class="c1"># Adam 通常更快更稳地同时收敛两个方向</span>
+</code></pre></div>
+
+<p>朴素 SGD 在"地形陡峭程度不均"时容易震荡或走得慢，Adam 通过记录梯度的一阶/二阶滑动平均，
+自动给每个参数一个合适的步长。这也是 <code>2013_nonlinear_fitting.py</code> 用 <code>lr=0.01</code> 的 Adam
+就能在几千步内把 <code>sin</code> 拟合好的原因。</p>
+<hr />
+<h2 id="7-概率的另一面过拟合probability-泛化">7. 概率的另一面：过拟合（probability / 泛化）</h2>
+<p><code>2013_nonlinear_fitting.py</code> 文件末尾记录了一个重要现象：</p>
+<div class="highlight"><pre><span></span><code>1000 epochs -&gt; Loss 0.2315   拟合刚刚好  (2013_nonlinear_fitting_pytorch.png)
+5000 epochs -&gt; Loss 0.0124   过拟合了    (2013_nonlinear_fitting_overfitting.png)
+</code></pre></div>
+
+<p>loss 更低，效果反而更差，这看起来矛盾，其实是概率/统计的核心议题。
+回忆数据是 <code>y = sin(x) + 噪声</code>：</p>
+<div class="highlight"><pre><span></span><code><span class="n">y</span> <span class="o">=</span> <span class="n">torch</span><span class="o">.</span><span class="n">sin</span><span class="p">(</span><span class="n">x</span><span class="p">)</span> <span class="o">+</span> <span class="n">torch</span><span class="o">.</span><span class="n">rand</span><span class="p">(</span><span class="n">n</span><span class="p">,</span> <span class="mi">1</span><span class="p">)</span> <span class="o">*</span> <span class="mf">0.5</span>   <span class="c1"># 信号 + 噪声</span>
+</code></pre></div>
+
+<ul>
+<li>训练 1000 步：模型学到了 <strong><code>sin(x)</code> 这个真实信号</strong>（泛化好）。</li>
+<li>训练 5000 步：模型把 <strong>随机噪声 <code>torch.rand</code> 也背下来了</strong>（泛化差）。</li>
+</ul>
+<p>模型没法区分"哪部分是规律、哪部分是噪声"，训练太久就会去拟合那些本应被忽略的随机抖动。
+用代码量化这件事 —— 真正该关心的是<strong>没见过的数据</strong>上的误差：</p>
+<div class="highlight"><pre><span></span><code><span class="kn">import</span><span class="w"> </span><span class="nn">torch</span><span class="o">,</span><span class="w"> </span><span class="nn">torch.nn</span><span class="w"> </span><span class="k">as</span><span class="w"> </span><span class="nn">nn</span>
+
+<span class="n">torch</span><span class="o">.</span><span class="n">manual_seed</span><span class="p">(</span><span class="mi">0</span><span class="p">)</span>
+<span class="n">x</span> <span class="o">=</span> <span class="n">torch</span><span class="o">.</span><span class="n">linspace</span><span class="p">(</span><span class="mi">1</span><span class="p">,</span> <span class="mi">10</span><span class="p">,</span> <span class="mi">100</span><span class="p">)</span><span class="o">.</span><span class="n">unsqueeze</span><span class="p">(</span><span class="mi">1</span><span class="p">)</span>
+<span class="n">y</span> <span class="o">=</span> <span class="n">torch</span><span class="o">.</span><span class="n">sin</span><span class="p">(</span><span class="n">x</span><span class="p">)</span> <span class="o">+</span> <span class="n">torch</span><span class="o">.</span><span class="n">rand</span><span class="p">(</span><span class="mi">100</span><span class="p">,</span> <span class="mi">1</span><span class="p">)</span> <span class="o">*</span> <span class="mf">0.5</span>
+
+<span class="c1"># 分成训练集和测试集 —— 测试集模型训练时从没见过</span>
+<span class="n">idx</span> <span class="o">=</span> <span class="n">torch</span><span class="o">.</span><span class="n">randperm</span><span class="p">(</span><span class="mi">100</span><span class="p">)</span>
+<span class="n">tr</span><span class="p">,</span> <span class="n">te</span> <span class="o">=</span> <span class="n">idx</span><span class="p">[:</span><span class="mi">70</span><span class="p">],</span> <span class="n">idx</span><span class="p">[</span><span class="mi">70</span><span class="p">:]</span>
+
+<span class="n">net</span> <span class="o">=</span> <span class="n">nn</span><span class="o">.</span><span class="n">Sequential</span><span class="p">(</span><span class="n">nn</span><span class="o">.</span><span class="n">Linear</span><span class="p">(</span><span class="mi">1</span><span class="p">,</span> <span class="mi">10</span><span class="p">),</span> <span class="n">nn</span><span class="o">.</span><span class="n">ReLU</span><span class="p">(),</span>
+                    <span class="n">nn</span><span class="o">.</span><span class="n">Linear</span><span class="p">(</span><span class="mi">10</span><span class="p">,</span> <span class="mi">10</span><span class="p">),</span> <span class="n">nn</span><span class="o">.</span><span class="n">ReLU</span><span class="p">(),</span> <span class="n">nn</span><span class="o">.</span><span class="n">Linear</span><span class="p">(</span><span class="mi">10</span><span class="p">,</span> <span class="mi">1</span><span class="p">))</span>
+<span class="n">opt</span> <span class="o">=</span> <span class="n">torch</span><span class="o">.</span><span class="n">optim</span><span class="o">.</span><span class="n">Adam</span><span class="p">(</span><span class="n">net</span><span class="o">.</span><span class="n">parameters</span><span class="p">(),</span> <span class="n">lr</span><span class="o">=</span><span class="mf">0.01</span><span class="p">)</span>
+
+<span class="k">for</span> <span class="n">epoch</span> <span class="ow">in</span> <span class="nb">range</span><span class="p">(</span><span class="mi">5000</span><span class="p">):</span>
+    <span class="n">loss</span> <span class="o">=</span> <span class="p">((</span><span class="n">net</span><span class="p">(</span><span class="n">x</span><span class="p">[</span><span class="n">tr</span><span class="p">])</span> <span class="o">-</span> <span class="n">y</span><span class="p">[</span><span class="n">tr</span><span class="p">])</span> <span class="o">**</span> <span class="mi">2</span><span class="p">)</span><span class="o">.</span><span class="n">mean</span><span class="p">()</span>
+    <span class="n">opt</span><span class="o">.</span><span class="n">zero_grad</span><span class="p">();</span> <span class="n">loss</span><span class="o">.</span><span class="n">backward</span><span class="p">();</span> <span class="n">opt</span><span class="o">.</span><span class="n">step</span><span class="p">()</span>
+    <span class="k">if</span> <span class="p">(</span><span class="n">epoch</span> <span class="o">+</span> <span class="mi">1</span><span class="p">)</span> <span class="o">%</span> <span class="mi">1000</span> <span class="o">==</span> <span class="mi">0</span><span class="p">:</span>
+        <span class="k">with</span> <span class="n">torch</span><span class="o">.</span><span class="n">no_grad</span><span class="p">():</span>
+            <span class="n">test_loss</span> <span class="o">=</span> <span class="p">((</span><span class="n">net</span><span class="p">(</span><span class="n">x</span><span class="p">[</span><span class="n">te</span><span class="p">])</span> <span class="o">-</span> <span class="n">y</span><span class="p">[</span><span class="n">te</span><span class="p">])</span> <span class="o">**</span> <span class="mi">2</span><span class="p">)</span><span class="o">.</span><span class="n">mean</span><span class="p">()</span>
+        <span class="nb">print</span><span class="p">(</span><span class="sa">f</span><span class="s2">&quot;epoch </span><span class="si">{</span><span class="n">epoch</span><span class="o">+</span><span class="mi">1</span><span class="si">}</span><span class="s2">: 训练 loss=</span><span class="si">{</span><span class="n">loss</span><span class="o">.</span><span class="n">item</span><span class="p">()</span><span class="si">:</span><span class="s2">.4f</span><span class="si">}</span><span class="s2">  测试 loss=</span><span class="si">{</span><span class="n">test_loss</span><span class="o">.</span><span class="n">item</span><span class="p">()</span><span class="si">:</span><span class="s2">.4f</span><span class="si">}</span><span class="s2">&quot;</span><span class="p">)</span>
+<span class="c1"># 你会看到：训练 loss 一直降，但测试 loss 降到某点后开始回升 —— 那个拐点就是该停手的地方</span>
+</code></pre></div>
+
+<p>这就是 <strong>偏差-方差权衡（bias-variance tradeoff）</strong> 的实战版：
+模型容量太小欠拟合（偏差大），训练太久/容量太大过拟合（方差大）。
+应对手段（early stopping、正则化、加数据）本质都是在用概率假设约束模型，
+让它只学"可复现的规律"而不是"这一批数据的偶然噪声"。</p>
+<hr />
+<h2 id="8-把三块知识缝合回训练循环">8. 把三块知识缝合回训练循环</h2>
+<p>最后回到开头那段循环，现在每一行都有了出处：</p>
+<div class="highlight"><pre><span></span><code><span class="k">for</span> <span class="n">epoch</span> <span class="ow">in</span> <span class="nb">range</span><span class="p">(</span><span class="n">epochs</span><span class="p">):</span>
+    <span class="n">outputs</span> <span class="o">=</span> <span class="n">model</span><span class="p">(</span><span class="n">x</span><span class="p">)</span>              <span class="c1"># 线性代数：matmul 堆叠 + ReLU 折弯（第 1、3 节）</span>
+    <span class="n">loss</span> <span class="o">=</span> <span class="n">criterion</span><span class="p">(</span><span class="n">outputs</span><span class="p">,</span> <span class="n">y</span><span class="p">)</span>    <span class="c1"># 概率论：高斯噪声假设 → MSE（第 4 节）</span>
+    <span class="n">optimizer</span><span class="o">.</span><span class="n">zero_grad</span><span class="p">()</span>           <span class="c1"># 微积分：清空累加的梯度（第 5.2 节）</span>
+    <span class="n">loss</span><span class="o">.</span><span class="n">backward</span><span class="p">()</span>                 <span class="c1"># 微积分：链式法则自动求导（第 5.1、5.3 节）</span>
+    <span class="n">optimizer</span><span class="o">.</span><span class="n">step</span><span class="p">()</span>                <span class="c1"># 微积分：沿负梯度更新（第 5.2、6 节）</span>
+</code></pre></div>
+
+<table>
+<thead>
+<tr>
+<th>知识领域</th>
+<th>在代码里的位置</th>
+<th>核心直觉</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><strong>线性代数</strong></td>
+<td><code>nn.Linear</code> / <code>model(x)</code></td>
+<td>神经元 = 加权点积；多层线性会塌缩成一层</td>
+</tr>
+<tr>
+<td><strong>非线性</strong></td>
+<td><code>torch.relu</code></td>
+<td>折线拼曲线，打破线性封闭性，是 Nonlinear 的灵魂</td>
+</tr>
+<tr>
+<td><strong>概率论</strong></td>
+<td><code>nn.MSELoss</code> / 数据里的噪声</td>
+<td>损失函数 = 对噪声分布的假设；过拟合 = 学了噪声</td>
+</tr>
+<tr>
+<td><strong>微积分</strong></td>
+<td><code>.backward()</code> / <code>optimizer.step()</code></td>
+<td>导数指方向，梯度下降走下坡，链式法则传到深层</td>
+</tr>
+</tbody>
+</table>
+<h3 id="从-linearmodel-到-nonlinearmodel-的一句话总结">从 <code>LinearModel</code> 到 <code>NonlinearModel</code> 的一句话总结</h3>
+<blockquote>
+<p>线性回归给了你一把直尺，只能画直线（第 1、2 节）；
+加上 ReLU 这个"折弯"动作，直尺变成了能拼任意曲线的折叠尺（第 3 节）；
+用高斯假设导出的 MSE 告诉你"拟合得有多好"（第 4 节）；
+用微积分的梯度下降一步步把尺子掰到正确的形状（第 5、6 节）；
+而知道<strong>什么时候停手</strong>，才是概率/泛化教给你的最后一课（第 7 节）。</p>
+</blockquote>
+<hr />
+<h2 id="附两个例子的对照">附：两个例子的对照</h2>
+<table>
+<thead>
+<tr>
+<th></th>
+<th><code>calculator_nn2.py</code></th>
+<th><code>2013_nonlinear_fitting.py</code></th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>网络</td>
+<td><code>Linear(3,128)→Linear(128,64)→Linear(64,1)</code> + ReLU</td>
+<td><code>Linear(1,10)→Linear(10,10)→Linear(10,1)</code> + ReLU</td>
+</tr>
+<tr>
+<td>输入</td>
+<td>两个数 + 运算符编码 (3维)</td>
+<td>一个标量 x (1维)</td>
+</tr>
+<tr>
+<td>目标</td>
+<td>学会 +、-、×、÷</td>
+<td>拟合 <code>sin(x)+噪声</code></td>
+</tr>
+<tr>
+<td>损失</td>
+<td><code>MSELoss</code></td>
+<td><code>MSELoss</code></td>
+</tr>
+<tr>
+<td>优化器</td>
+<td><code>Adam(lr=0.001)</code></td>
+<td><code>Adam(lr=0.01)</code></td>
+</tr>
+<tr>
+<td>暴露的真实问题</td>
+<td>没做归一化 → loss 百万级、难收敛（第 4.3 节）</td>
+<td>训练太久 → 过拟合（第 7 节）</td>
+</tr>
+</tbody>
+</table>
+<p>两个例子用的是<strong>完全相同的数学骨架</strong>，只是输入输出维度和数据规律不同。
+理解了这套骨架，你就理解了几乎所有前馈神经网络。</p>
+    </div>
+  </article>
+
+</main>
+
+<!-- Floating Ask-AI chat widget -->
+<button class="ai-fab" id="ai-fab" aria-label="Ask AI about this article" title="Ask AI about this article">
+  <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+    <path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"/>
+  </svg>
+  <span class="ai-fab-label">Ask AI</span>
+</button>
+
+<div class="ai-panel" id="ai-panel" role="dialog" aria-labelledby="ai-panel-title" aria-hidden="true">
+  <header class="ai-panel-head">
+    <div class="ai-panel-title-wrap">
+      <span class="ai-dot"></span>
+      <h3 id="ai-panel-title">Ask AI about this post</h3>
+    </div>
+    <div class="ai-panel-actions">
+      <button class="ai-icon-btn" id="ai-clear" title="Clear conversation" aria-label="Clear">
+        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><polyline points="3 6 5 6 21 6"/><path d="M19 6l-1 14a2 2 0 0 1-2 2H8a2 2 0 0 1-2-2L5 6"/><path d="M10 11v6M14 11v6"/><path d="M9 6V4a1 1 0 0 1 1-1h4a1 1 0 0 1 1 1v2"/></svg>
+      </button>
+      <button class="ai-icon-btn" id="ai-close" title="Minimize" aria-label="Minimize">
+        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><polyline points="6 9 12 15 18 9"/></svg>
+      </button>
+    </div>
+  </header>
+
+  <div class="ai-messages" id="ai-messages">
+    <div class="ai-empty" id="ai-empty">
+      <p class="ai-empty-title">On-device AI · Gemini Nano</p>
+      <p class="ai-empty-sub">Ask anything about this article. Runs in your browser — nothing leaves your device.</p>
+    </div>
+  </div>
+
+  <div class="ai-status" id="ai-status" hidden></div>
+
+  <form class="ai-composer" id="ai-form">
+    <textarea id="ai-input" rows="1" placeholder="Ask about this post…" autocomplete="off"></textarea>
+    <button type="submit" id="ai-send" class="ai-send" aria-label="Send" disabled>
+      <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><line x1="22" y1="2" x2="11" y2="13"/><polygon points="22 2 15 22 11 13 2 9 22 2"/></svg>
+    </button>
+  </form>
+</div>
+
+<script>
+(function () {
+  const POST_TITLE = "\u4ece\u7ebf\u6027\u56de\u5f52\u5230\u975e\u7ebf\u6027\u62df\u5408\uff1a\u7528\u4ee3\u7801\u8bb2\u900f\u80cc\u540e\u7684\u6570\u5b66";
+  const contentEl = document.querySelector('article .content');
+
+  const fab = document.getElementById('ai-fab');
+  const panel = document.getElementById('ai-panel');
+  const closeBtn = document.getElementById('ai-close');
+  const clearBtn = document.getElementById('ai-clear');
+  const msgsEl = document.getElementById('ai-messages');
+  const emptyEl = document.getElementById('ai-empty');
+  const statusEl = document.getElementById('ai-status');
+  const formEl = document.getElementById('ai-form');
+  const inputEl = document.getElementById('ai-input');
+  const sendBtn = document.getElementById('ai-send');
+
+  function articleText() {
+    if (!contentEl) return '';
+    return (contentEl.innerText || contentEl.textContent || '')
+      .replace(/[ \t]+\n/g, '\n')
+      .replace(/\n{3,}/g, '\n\n')
+      .trim();
+  }
+
+  function setStatus(msg, cls) {
+    if (!msg) { statusEl.hidden = true; statusEl.textContent = ''; statusEl.className = 'ai-status'; return; }
+    statusEl.hidden = false;
+    statusEl.textContent = msg;
+    statusEl.className = 'ai-status' + (cls ? ' ' + cls : '');
+  }
+
+  function hideEmpty() { if (emptyEl) emptyEl.style.display = 'none'; }
+
+  function appendBubble(role, text) {
+    hideEmpty();
+    const wrap = document.createElement('div');
+    wrap.className = 'ai-msg ai-msg-' + role;
+    const bubble = document.createElement('div');
+    bubble.className = 'ai-bubble';
+    bubble.textContent = text;
+    wrap.appendChild(bubble);
+    msgsEl.appendChild(wrap);
+    msgsEl.scrollTop = msgsEl.scrollHeight;
+    return bubble;
+  }
+
+  function appendTyping() {
+    hideEmpty();
+    const wrap = document.createElement('div');
+    wrap.className = 'ai-msg ai-msg-assistant ai-typing';
+    wrap.innerHTML = '<div class="ai-bubble"><span class="ai-dots"><i></i><i></i><i></i></span></div>';
+    msgsEl.appendChild(wrap);
+    msgsEl.scrollTop = msgsEl.scrollHeight;
+    return wrap;
+  }
+
+  function autoSize() {
+    inputEl.style.height = 'auto';
+    inputEl.style.height = Math.min(inputEl.scrollHeight, 140) + 'px';
+  }
+
+  function openPanel() {
+    panel.classList.add('open');
+    panel.setAttribute('aria-hidden', 'false');
+    fab.classList.add('hidden');
+    setTimeout(() => inputEl.focus(), 50);
+  }
+  function closePanel() {
+    panel.classList.remove('open');
+    panel.setAttribute('aria-hidden', 'true');
+    fab.classList.remove('hidden');
+  }
+
+  fab.addEventListener('click', openPanel);
+  closeBtn.addEventListener('click', closePanel);
+  document.addEventListener('keydown', e => {
+    if (e.key === 'Escape' && panel.classList.contains('open')) closePanel();
+  });
+
+  // ---- LanguageModel session ----
+  let session = null;
+  let creating = null;
+  let history = [];
+
+  function buildSystemPrompt() {
+    // Keep article context modest — Gemini Nano's input quota is small.
+    const article = articleText().slice(0, 4000);
+    return (
+      'You are a concise, helpful assistant answering questions about a blog post. ' +
+      'Use the article below as your primary source. If the answer is not in it, say so briefly and answer generally. ' +
+      'Reply in the same language as the user\'s question. Keep answers short unless asked for detail.\n\n' +
+      '=== ARTICLE TITLE ===\n' + POST_TITLE + '\n\n' +
+      '=== ARTICLE CONTENT ===\n' + article
+    );
+  }
+
+  async function ensureSession() {
+    if (session) return session;
+    if (creating) return creating;
+
+    if (!('LanguageModel' in self)) {
+      throw new Error(
+        'On-device AI not available. Use Chrome 138+ on desktop, or enable ' +
+        '"Prompt API for Gemini Nano" in chrome://flags.'
+      );
+    }
+
+    setStatus('Checking model…', 'info');
+    const status = await LanguageModel.availability();
+    if (status === 'unavailable') {
+      throw new Error('Model unavailable on this device.');
+    }
+
+    creating = (async () => {
+      // Only show download UI when the model isn't already there.
+      const willDownload = (status !== 'available');
+      if (willDownload) setStatus('Preparing model (first run downloads ~2GB)…', 'info');
+      else setStatus('Warming up…', 'info');
+
+      const s = await LanguageModel.create({
+        initialPrompts: [{ role: 'system', content: buildSystemPrompt() }],
+        monitor(m) {
+          m.addEventListener('downloadprogress', e => {
+            // Skip the spurious 0% event Chrome fires for cached models.
+            if (!willDownload && e.loaded === 0) return;
+            const pct = (e.loaded * 100).toFixed(1);
+            setStatus('Downloading model: ' + pct + '%', 'info');
+          });
+        }
+      });
+      session = s;
+      setStatus('');
+      return s;
+    })();
+
+    try { return await creating; }
+    finally { creating = null; }
+  }
+
+  async function ask(q) {
+    appendBubble('user', q);
+    history.push({ role: 'user', content: q });
+
+    sendBtn.disabled = true;
+    inputEl.disabled = true;
+    const typing = appendTyping();
+
+    let answerBubble = null;
+    let acc = '';
+    try {
+      const s = await ensureSession();
+      const stream = s.promptStreaming(q);
+      for await (const chunk of stream) {
+        if (!answerBubble) {
+          typing.remove();
+          const wrap = document.createElement('div');
+          wrap.className = 'ai-msg ai-msg-assistant';
+          answerBubble = document.createElement('div');
+          answerBubble.className = 'ai-bubble';
+          wrap.appendChild(answerBubble);
+          msgsEl.appendChild(wrap);
+        }
+        acc += chunk;
+        answerBubble.textContent = acc;
+        msgsEl.scrollTop = msgsEl.scrollHeight;
+      }
+      if (acc) history.push({ role: 'assistant', content: acc });
+      else { typing.remove(); appendBubble('assistant', '(no response)'); }
+    } catch (e) {
+      if (typing && typing.parentNode) typing.remove();
+      const err = document.createElement('div');
+      err.className = 'ai-msg ai-msg-error';
+      err.innerHTML = '<div class="ai-bubble">⚠ ' + (e && e.message ? e.message : String(e)) + '</div>';
+      msgsEl.appendChild(err);
+      msgsEl.scrollTop = msgsEl.scrollHeight;
+    } finally {
+      sendBtn.disabled = !inputEl.value.trim();
+      inputEl.disabled = false;
+      inputEl.focus();
+    }
+  }
+
+  formEl.addEventListener('submit', e => {
+    e.preventDefault();
+    const q = inputEl.value.trim();
+    if (!q) return;
+    inputEl.value = '';
+    autoSize();
+    sendBtn.disabled = true;
+    ask(q);
+  });
+
+  inputEl.addEventListener('input', () => {
+    autoSize();
+    sendBtn.disabled = !inputEl.value.trim();
+  });
+  inputEl.addEventListener('keydown', e => {
+    if (e.key === 'Enter' && !e.shiftKey) {
+      e.preventDefault();
+      formEl.requestSubmit();
+    }
+  });
+
+  clearBtn.addEventListener('click', () => {
+    msgsEl.innerHTML = '';
+    msgsEl.appendChild(emptyEl);
+    emptyEl.style.display = '';
+    history = [];
+    if (session && session.destroy) { try { session.destroy(); } catch (_) {} }
+    session = null;
+    setStatus('');
+  });
+
+  if (!('LanguageModel' in self)) {
+    fab.addEventListener('click', () => {
+      openPanel();
+      setStatus('On-device AI not detected. Use Chrome 138+ desktop, or enable "Prompt API for Gemini Nano" in chrome://flags.', 'bad');
+    }, { once: true });
+  }
+})();
+</script>
+
+<!-- Outline notes / comments — DataScript + IndexedDB -->
+<script src="https://github.com/tonsky/datascript/releases/download/1.7.8/datascript-1.7.8.min.js"></script>
+<script src="../notes.js?v=6"></script>
+<script src="../theme.js"></script>
+<script src="../wechat-copy.js?v=2"></script>
+
+</body>
+</html>
