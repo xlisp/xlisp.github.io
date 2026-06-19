@@ -19,6 +19,23 @@
 <meta name="twitter:image" content="../icon.jpeg">
 <link rel="stylesheet" href="../style.css?v=light1">
 <script>(function(){try{if(localStorage.getItem('theme')==='light')document.documentElement.setAttribute('data-theme','light');}catch(e){}})();</script>
+<!-- Math formula rendering via MathJax -->
+<script>
+window.MathJax = {
+  tex: {
+    // arithmatex emits \(...\) / \[...\] markup, so only these delimiters
+    // are needed; plain `$` is left alone (avoids currency false positives).
+    inlineMath: [['\\(', '\\)']],
+    displayMath: [['\\[', '\\]']],
+    processEscapes: true
+  },
+  options: {
+    skipHtmlTags: ['script', 'noscript', 'style', 'textarea', 'pre', 'code'],
+    ignoreHtmlClass: 'highlight'
+  }
+};
+</script>
+<script src="https://cdn.jsdelivr.net/npm/mathjax@3/es5/tex-chtml.js" async></script>
 </head>
 <body>
 <main class="wrap post">
@@ -135,7 +152,7 @@
 </tr>
 </tbody>
 </table>
-<p>牛顿用微积分写出 $F = ma$，再加上万有引力定律，<strong>第一次让人类能预测行星明天的位置</strong>——这是有史以来最震撼的"用数学预测未来"的范例。在此之前，天文是观测+经验；在此之后，天文是方程+计算。</p>
+<p>牛顿用微积分写出 <span class="arithmatex">\(F = ma\)</span>，再加上万有引力定律，<strong>第一次让人类能预测行星明天的位置</strong>——这是有史以来最震撼的"用数学预测未来"的范例。在此之前，天文是观测+经验；在此之后，天文是方程+计算。</p>
 <p>莱布尼茨更关心<strong>符号的力学</strong>：他的 <code>d</code>、<code>∫</code> 让微积分像普通代数一样可以"按规则推演"。今天 PyTorch 的 autograd 之所以能存在，本质上是莱布尼茨传统的胜利——<strong>只要每个原子操作有符号化的导数规则，任意组合的程序都能被自动求导</strong>。</p>
 <blockquote>
 <p>你每次写 <code>loss.backward()</code>，其实是在调用一台沿莱布尼茨道路造了三百多年的"符号求导机器"。</p>
@@ -158,10 +175,10 @@
 <h3 id="26-大模型也在解一个巨大的微分方程">2.6 大模型也在解一个巨大的微分方程</h3>
 <p>现在做一次类比上的跳跃。</p>
 <p>天气方程问：<strong>给定今天的温度/压力/湿度，明天它们是多少？</strong>
-语言模型问：<strong>给定前面的 token 序列 $x$，下一个 token $y$ 的概率分布 $P(y \mid x)$ 是什么？</strong></p>
+语言模型问：<strong>给定前面的 token 序列 <span class="arithmatex">\(x\)</span>，下一个 token <span class="arithmatex">\(y\)</span> 的概率分布 <span class="arithmatex">\(P(y \mid x)\)</span> 是什么？</strong></p>
 <p>如果把"语言"想象成一个高维空间里的连续过程，<strong>每个 token 就是这个过程的一个采样点</strong>，那么模型要做的就是：</p>
 <ul>
-<li>找到一个"原函数"——把上下文 $x$ 映射到 $y$ 的概率分布；</li>
+<li>找到一个"原函数"——把上下文 <span class="arithmatex">\(x\)</span> 映射到 <span class="arithmatex">\(y\)</span> 的概率分布；</li>
 <li>这个原函数的形状是未知的，但我们有海量观测数据（人类写过的文本和代码）；</li>
 <li><strong>用数据反推这个原函数，就像气象学家用观测数据反推大气方程的参数</strong>。</li>
 </ul>
@@ -214,7 +231,7 @@
 <p>到这里有个关键的疑问要正面回答：<strong>牛顿的微积分活在连续空间——位置、速度、温度都是实数。但 token 是离散的、词表里的原子，没有"半个 token"这种东西。微积分凭什么管得了语言？</strong></p>
 <p>答案藏在一个看似平凡的偷换：<strong>我们不直接预测 token，我们预测 token 的概率分布</strong>。下面把这个偷换拆开来看。</p>
 <h4 id="271-离散观测连续分布">2.7.1 离散观测，连续分布</h4>
-<p>设词表有 $V = 50304$ 个 token（CodeGPT 的设置，见 <code>tokenizer.py</code> 的 <code>VOCAB_SIZE</code>）。给定上下文 $x$，下一个 token $y$ 是 $V$ 个离散选项之一。这个<strong>选择</strong>是离散的，但 <strong>"在 V 个选项上的概率分布"是连续的</strong>——它是一个长度 $V$、各分量 $\in [0,1]$、总和为 $1$ 的向量，活在一个叫<strong>概率单纯形</strong>（probability simplex）的连续流形上。</p>
+<p>设词表有 <span class="arithmatex">\(V = 50304\)</span> 个 token（CodeGPT 的设置，见 <code>tokenizer.py</code> 的 <code>VOCAB_SIZE</code>）。给定上下文 <span class="arithmatex">\(x\)</span>，下一个 token <span class="arithmatex">\(y\)</span> 是 <span class="arithmatex">\(V\)</span> 个离散选项之一。这个<strong>选择</strong>是离散的，但 <strong>"在 V 个选项上的概率分布"是连续的</strong>——它是一个长度 <span class="arithmatex">\(V\)</span>、各分量 <span class="arithmatex">\(\in [0,1]\)</span>、总和为 <span class="arithmatex">\(1\)</span> 的向量，活在一个叫<strong>概率单纯形</strong>（probability simplex）的连续流形上。</p>
 <div class="highlight"><pre><span></span><code><span class="c1"># 关键三步:连续 logits → 连续概率分布 → 离散采样</span>
 <span class="c1"># model.py 推理路径(简化)</span>
 <span class="n">logits</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">lm_head</span><span class="p">(</span><span class="n">x</span><span class="p">[:,</span> <span class="p">[</span><span class="o">-</span><span class="mi">1</span><span class="p">],</span> <span class="p">:])</span>      <span class="c1"># (B,1,V) 连续, 可任取实数</span>
@@ -224,11 +241,11 @@
 
 <p>注意结构：<strong>离散性只出现在最末一步采样</strong>。前面所有运算——embedding、attention、MLP、softmax——都在连续空间里跑，所以梯度能一路反传。这是离散语言能被微积分捕获的工程秘密。</p>
 <h4 id="272-同分布是什么假设">2.7.2 "同分布"是什么假设？</h4>
-<p>ML 教科书反复出现一句话："训练样本独立同分布（i.i.d.）地采自某未知分布 $P^*$"。在大模型语境下它的意思是：</p>
+<p>ML 教科书反复出现一句话："训练样本独立同分布（i.i.d.）地采自某未知分布 <span class="arithmatex">\(P^*\)</span>"。在大模型语境下它的意思是：</p>
 <ul>
-<li>存在一个<strong>真实的、未知的</strong>语言/代码分布 $P^*(y \mid x)$；</li>
-<li>互联网上的代码、文档、训练语料里的每一段，都是从 $P^*$ 里采的样本；</li>
-<li>我们将来要让模型补全的代码，<strong>也来自同一个 $P^*$</strong>——这就是"同分布假设"；</li>
+<li>存在一个<strong>真实的、未知的</strong>语言/代码分布 <span class="arithmatex">\(P^*(y \mid x)\)</span>；</li>
+<li>互联网上的代码、文档、训练语料里的每一段，都是从 <span class="arithmatex">\(P^*\)</span> 里采的样本；</li>
+<li>我们将来要让模型补全的代码，<strong>也来自同一个 <span class="arithmatex">\(P^*\)</span></strong>——这就是"同分布假设"；</li>
 <li>所以学好训练集的统计规律，就能推广到未来。</li>
 </ul>
 <p>如果未来分布和训练集大不相同（训练全是 Python 2，部署全是 Rust），同分布假设就破了，模型必然失效。<strong>同分布假设是机器学习能从过去外推到未来的全部理由</strong>——它在 ML 里扮演的角色，相当于物理里"自然规律不随时间改变"。</p>
@@ -251,12 +268,12 @@
 <td>观测:一堆 token 序列(语料)</td>
 </tr>
 <tr>
-<td>假设:背后存在连续轨迹 $x(t)$</td>
-<td>假设:背后存在真实分布 $P^*(y \mid x)$</td>
+<td>假设:背后存在连续轨迹 <span class="arithmatex">\(x(t)\)</span></td>
+<td>假设:背后存在真实分布 <span class="arithmatex">\(P^*(y \mid x)\)</span></td>
 </tr>
 <tr>
-<td>目标:反推 $x(t)$(原函数)</td>
-<td>目标:反推 $P^*(y \mid x)$(原函数)</td>
+<td>目标:反推 <span class="arithmatex">\(x(t)\)</span>(原函数)</td>
+<td>目标:反推 <span class="arithmatex">\(P^*(y \mid x)\)</span>(原函数)</td>
 </tr>
 <tr>
 <td>工具:把观测代入运动方程,用积分恢复轨迹</td>
@@ -269,7 +286,7 @@
 <p>为什么必须是"概率"和"矩阵"？因为它们是<strong>让离散问题可微分的唯一组合</strong>：</p>
 <ol>
 <li><strong>离散 → 概率</strong>：把 V 个选项的"硬选择"换成 V 维概率向量；</li>
-<li><strong>概率 → 矩阵</strong>：embedding 是矩阵 $V \times d$，把离散 token id 翻译成连续向量；<code>lm_head</code> 是矩阵 $d \times V$，把连续向量翻译回 V 维 logits；</li>
+<li><strong>概率 → 矩阵</strong>：embedding 是矩阵 <span class="arithmatex">\(V \times d\)</span>，把离散 token id 翻译成连续向量；<code>lm_head</code> 是矩阵 <span class="arithmatex">\(d \times V\)</span>，把连续向量翻译回 V 维 logits；</li>
 <li><strong>矩阵 → 可微</strong>：矩阵乘法处处可微，梯度可以经由它流到每一个 embedding 行；</li>
 <li><strong>可微 → 梯度下降</strong>：autograd 沿前向图反推，把误差信号变成参数更新方向。</li>
 </ol>
@@ -285,19 +302,19 @@
 <span class="p">)</span>
 </code></pre></div>
 
-<p><code>wte</code> 是入口、<code>lm_head</code> 是出口，<strong>它俩共享权重</strong>（<code>model.py:153</code> <code>lm_head.weight = wte.weight</code>）——意思是同一个 $V \times d$ 矩阵既负责"id 进来变向量"，也负责"向量出去变 V 维分数"。这种对称性正暗示了：<strong>整个网络是定义在词表上的一个函数族，以这个嵌入矩阵为坐标系</strong>。</p>
+<p><code>wte</code> 是入口、<code>lm_head</code> 是出口，<strong>它俩共享权重</strong>（<code>model.py:153</code> <code>lm_head.weight = wte.weight</code>）——意思是同一个 <span class="arithmatex">\(V \times d\)</span> 矩阵既负责"id 进来变向量"，也负责"向量出去变 V 维分数"。这种对称性正暗示了：<strong>整个网络是定义在词表上的一个函数族，以这个嵌入矩阵为坐标系</strong>。</p>
 <h4 id="275-cross-entropy-把反推原函数变成可下降的目标">2.7.5 cross-entropy 把"反推原函数"变成可下降的目标</h4>
-<p>最后一步，要把"我们想要 $P_\theta \approx P^<em>$"翻译成可优化的标量。这里登场的是 </em><em>cross-entropy / KL 散度</em><em>——它正是在所有"测距"工具里</em><em>和最大似然等价</em>*的那一个：</p>
-<p>$$
+<p>最后一步，要把"我们想要 <span class="arithmatex">\(P_\theta \approx P^*\)</span>"翻译成可优化的标量。这里登场的是 <strong>cross-entropy / KL 散度</strong>——它正是在所有"测距"工具里<strong>和最大似然等价</strong>的那一个：</p>
+<div class="arithmatex">\[
 \mathcal{L}(\theta) \;=\; -\frac{1}{N}\sum_{i=1}^{N} \log P_\theta(y_i \mid x_i)
-$$</p>
-<p>每个训练样本 $(x_i, y_i)$ 是从 $P^<em>$ 采的。最小化这个 loss 等价于最小化 $\mathrm{KL}(P^</em> \,|\, P_\theta)$——也就是<strong>让模型分布尽量贴住真实分布</strong>。代码里就是一行：</p>
+\]</div>
+<p>每个训练样本 <span class="arithmatex">\((x_i, y_i)\)</span> 是从 <span class="arithmatex">\(P^*\)</span> 采的。最小化这个 loss 等价于最小化 <span class="arithmatex">\(\mathrm{KL}(P^* \,\|\, P_\theta)\)</span>——也就是<strong>让模型分布尽量贴住真实分布</strong>。代码里就是一行：</p>
 <div class="highlight"><pre><span></span><code><span class="c1"># model.py:192</span>
 <span class="n">loss</span> <span class="o">=</span> <span class="n">F</span><span class="o">.</span><span class="n">cross_entropy</span><span class="p">(</span><span class="n">logits</span><span class="o">.</span><span class="n">view</span><span class="p">(</span><span class="o">-</span><span class="mi">1</span><span class="p">,</span> <span class="n">logits</span><span class="o">.</span><span class="n">size</span><span class="p">(</span><span class="o">-</span><span class="mi">1</span><span class="p">)),</span>
                        <span class="n">targets</span><span class="o">.</span><span class="n">view</span><span class="p">(</span><span class="o">-</span><span class="mi">1</span><span class="p">),</span> <span class="n">ignore_index</span><span class="o">=-</span><span class="mi">1</span><span class="p">)</span>
 </code></pre></div>
 
-<p>这条 loss 连续、可微，对每一个参数都有梯度。autograd 沿反向图把梯度送回所有 124M 参数，optimizer 推一小步——<strong>$P_\theta$ 就向 $P^*$ 靠近一点</strong>。重复几十万步，模型就"反推出"了一个足够接近真实语言分布的近似原函数。</p>
+<p>这条 loss 连续、可微，对每一个参数都有梯度。autograd 沿反向图把梯度送回所有 124M 参数，optimizer 推一小步——<strong><span class="arithmatex">\(P_\theta\)</span> 就向 <span class="arithmatex">\(P^*\)</span> 靠近一点</strong>。重复几十万步，模型就"反推出"了一个足够接近真实语言分布的近似原函数。</p>
 <blockquote>
 <p><strong>一句话回答你的问题</strong>：是的，<code>P(y|x)</code> 就是被反推出来的"语言原函数"；之所以非概率不可，是因为语言离散、硬预测不可微；之所以非矩阵不可，是因为矩阵是把离散 id 嫁接到连续可微空间的桥；之所以非梯度不可，是因为反推这个原函数没有解析解，只能用梯度下降数值地"积"出来。<strong>离散观测 + 连续分布 + 矩阵参数化 + 梯度下降</strong>——这四件套合起来，才让微积分这门连续数学第一次能解一个离散符号系统的"微分方程"。</p>
 </blockquote>
@@ -386,7 +403,7 @@ $$</p>
 </thead>
 <tbody>
 <tr>
-<td>写出 $y = f(x; \theta)$</td>
+<td>写出 <span class="arithmatex">\(y = f(x; \theta)\)</span></td>
 <td>写一段 Python</td>
 </tr>
 <tr>
@@ -642,7 +659,7 @@ $$</p>
 </ul>
 <p>这些都是"程序"的特征，不是"静态模型"的特征。</p>
 <h3 id="91-为什么这个视角重要">9.1 为什么这个视角重要？</h3>
-<p>如果你把神经网络当作"一个数学函数 $f_\theta(x)$"来想，会<strong>主动限制自己</strong>——总觉得要写出整洁的闭式表达。</p>
+<p>如果你把神经网络当作"一个数学函数 <span class="arithmatex">\(f_\theta(x)\)</span>"来想，会<strong>主动限制自己</strong>——总觉得要写出整洁的闭式表达。</p>
 <p>但如果你把它当作"一段程序"，你会很自然地想到：</p>
 <ul>
 <li>为什么不能在 forward 里做 <code>torch.where(cond, branch_a, branch_b)</code>？能，这就是<strong>门控</strong>；</li>

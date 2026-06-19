@@ -91,10 +91,14 @@ def render_markdown(body: str) -> tuple[str, str | None]:
             "tables",
             "toc",
             "sane_lists",
+            "pymdownx.arithmatex",
         ],
         extension_configs={
             "codehilite": {"guess_lang": False, "css_class": "highlight"},
             "toc": {"slugify": slugify_unicode},
+            # Protect LaTeX from markdown mangling (e.g. `\\` row breaks,
+            # `_`/`*` in subscripts); emit \(...\) / \[...\] for MathJax.
+            "pymdownx.arithmatex": {"generic": True},
         },
     )
     out = md.convert(body)

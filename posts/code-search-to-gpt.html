@@ -19,6 +19,23 @@
 <meta name="twitter:image" content="../icon.jpeg">
 <link rel="stylesheet" href="../style.css?v=light1">
 <script>(function(){try{if(localStorage.getItem('theme')==='light')document.documentElement.setAttribute('data-theme','light');}catch(e){}})();</script>
+<!-- Math formula rendering via MathJax -->
+<script>
+window.MathJax = {
+  tex: {
+    // arithmatex emits \(...\) / \[...\] markup, so only these delimiters
+    // are needed; plain `$` is left alone (avoids currency false positives).
+    inlineMath: [['\\(', '\\)']],
+    displayMath: [['\\[', '\\]']],
+    processEscapes: true
+  },
+  options: {
+    skipHtmlTags: ['script', 'noscript', 'style', 'textarea', 'pre', 'code'],
+    ignoreHtmlClass: 'highlight'
+  }
+};
+</script>
+<script src="https://cdn.jsdelivr.net/npm/mathjax@3/es5/tex-chtml.js" async></script>
 </head>
 <body>
 <main class="wrap post">
@@ -39,7 +56,7 @@
 <ul>
 <li><strong>1990s — 词法维度</strong>：<code>grep</code> / <code>ctags</code> / <code>ack</code> —— 在<strong>字符串</strong>这一个维度上找。</li>
 <li><strong>2010s — 结构 + 图维度</strong>：Sourcegraph / OpenGrok / LSIF / SCIP / CodeQL / Semgrep / Joern —— 把代码升维成 <strong>AST + 符号引用 + 控制流 + 数据流</strong>的图，用类 SQL / Datalog / Cypher 的查询语言搜。</li>
-<li><strong>2013 — 连续向量维度</strong>：Word2Vec / code2vec / CodeBERT —— 第一次把"相似度"从离散字符串/图节点搬到 $\mathbb{R}^{768}$，用内积代替 <code>==</code>。</li>
+<li><strong>2013 — 连续向量维度</strong>：Word2Vec / code2vec / CodeBERT —— 第一次把"相似度"从离散字符串/图节点搬到 <span class="arithmatex">\(\mathbb{R}^{768}\)</span>，用内积代替 <code>==</code>。</li>
 <li><strong>2015 — 时间维度</strong>：Seq2Seq + Bahdanau attention —— 从"找一段已有代码"到"自回归一个 token 一个 token 写出来"，搜索沿时间轴展开。</li>
 <li><strong>2020 起 — 多层多头维度</strong>：GPT / Codex / CodeGPT —— 12 层 × 12 头，每生成 1 token = 144 次高维 attention 检索。<strong>不再需要标注配对数据，任何源代码都是训练样本</strong>。</li>
 </ul>
@@ -96,7 +113,7 @@
 </tr>
 <tr>
 <td>3. 向量化代码搜索</td>
-<td><strong>连续 $\mathbb{R}^d$</strong>（首次连续化，典型 d=128/384/768）</td>
+<td><strong>连续 <span class="arithmatex">\(\mathbb{R}^d\)</span></strong>（首次连续化，典型 d=128/384/768）</td>
 <td>自然语言 / 代码 → 已有代码片段</td>
 <td>Embedding 矩阵 + ANN（HNSW/IVF/PQ）</td>
 <td><code>q @ V.T</code> 内积</td>
@@ -105,7 +122,7 @@
 </tr>
 <tr>
 <td>4. Seq2Seq 生成</td>
-<td><strong>$\mathbb{R}^d$ + 时间轴 T</strong>（连续 + 时序展开）</td>
+<td><strong><span class="arithmatex">\(\mathbb{R}^d\)</span> + 时间轴 T</strong>（连续 + 时序展开）</td>
 <td>自然语言 → <strong>新生成的代码</strong></td>
 <td>Encoder-Decoder（RNN/LSTM）+ attention</td>
 <td>encode → context vector → decode 自回归</td>
@@ -114,7 +131,7 @@
 </tr>
 <tr>
 <td>5. GPT 生成</td>
-<td><strong>$\mathbb{R}^d$ × T × L 层 × H 头</strong>（深度 + 多头并行高维检索）</td>
+<td><strong><span class="arithmatex">\(\mathbb{R}^d\)</span> × T × L 层 × H 头</strong>（深度 + 多头并行高维检索）</td>
 <td>自然语言（或半段代码）→ 新代码</td>
 <td>Decoder-only Transformer，权重 <code>W</code></td>
 <td>一次 forward = <code>L × H</code> 次 attention 检索 + 自回归采样</td>
@@ -228,7 +245,7 @@ ripgrep<span class="w"> </span><span class="s2">&quot;^class \w+\(.*Mixin\)&quot
 <span class="k k-Builtin">select</span><span class="w"> </span><span class="nv">sink</span><span class="p">,</span><span class="w"> </span><span class="s">&quot;tainted SQL query from $@&quot;</span><span class="p">,</span><span class="w"> </span><span class="nv">source</span><span class="p">,</span><span class="w"> </span><span class="s">&quot;untrusted input&quot;</span>
 </code></pre></div>
 
-<p>这段 query 在干什么？<strong>在数据流图上做带条件的可达性搜索</strong>——和 §4 的向量内积、§7 的 attention 是<strong>同一类操作</strong>（"从一个点出发，找满足条件的邻居"），只是底层空间不是 $\mathbb{R}^d$ 而是离散的关系图。</p>
+<p>这段 query 在干什么？<strong>在数据流图上做带条件的可达性搜索</strong>——和 §4 的向量内积、§7 的 attention 是<strong>同一类操作</strong>（"从一个点出发，找满足条件的邻居"），只是底层空间不是 <span class="arithmatex">\(\mathbb{R}^d\)</span> 而是离散的关系图。</p>
 <h3 id="33-joern-code-property-graph把-ast-cfg-dfg-合成一张图">3.3 Joern / Code Property Graph：把 AST + CFG + DFG 合成一张图</h3>
 <p>CPG 的精髓是<strong>一个节点同时承载语法、控制、数据三个角度的边</strong>。比如一行 <code>x = read_input()</code> 在 CPG 里是一个节点，向上连 AST 父节点（赋值表达式），向左右连 CFG（前驱/后继语句），向下连 DFG（<code>x</code> 后续被谁读）。Cypher 风格的查询：</p>
 <div class="highlight"><pre><span></span><code><span class="c1">// Joern: 找所有 &quot;从 read_input 流到 system 调用&quot;</span>
@@ -244,10 +261,10 @@ ripgrep<span class="w"> </span><span class="s2">&quot;^class \w+\(.*Mixin\)&quot
 <li><strong>必须能形式化定义"想找什么"</strong>——查询是显式规则，不会泛化。"找一段大概在做认证的代码"这种<strong>意图查询</strong>还是无能为力。</li>
 <li><strong>不会写代码</strong>——它只能在已有图上找已有节点；写一段不在库里的新代码，需要的是<strong>生成式</strong>模型。</li>
 </ol>
-<p>突破第一个天花板要走"连续向量"路线（第三代 Word2Vec）；突破第二个要走"自回归生成"路线（第四代 Seq2Seq）。下一节就是第一次"连续化"——把图节点的离散标签替换成 $\mathbb{R}^d$ 里的稠密向量。</p>
+<p>突破第一个天花板要走"连续向量"路线（第三代 Word2Vec）；突破第二个要走"自回归生成"路线（第四代 Seq2Seq）。下一节就是第一次"连续化"——把图节点的离散标签替换成 <span class="arithmatex">\(\mathbb{R}^d\)</span> 里的稠密向量。</p>
 <hr />
 <h2 id="4-第三代word2vec-代码向量化搜索第一次连续化">4. 第三代：Word2Vec → 代码向量化搜索（第一次连续化）</h2>
-<p>2013 年 Mikolov 提出 Word2Vec，把"相似度"从字符串搬到了 $\mathbb{R}^d$。其核心假设是 J.R. Firth 1957 年的一句话：</p>
+<p>2013 年 Mikolov 提出 Word2Vec，把"相似度"从字符串搬到了 <span class="arithmatex">\(\mathbb{R}^d\)</span>。其核心假设是 J.R. Firth 1957 年的一句话：</p>
 <blockquote>
 <p><em>You shall know a word by the company it keeps.</em>
 一个词的含义由它周围的词决定。</p>
@@ -568,17 +585,17 @@ tgt: &quot;def fact(n): return 1 if n&lt;=1 else n*fact(n-1)&quot;
 </tr>
 <tr>
 <td><code>doc_vecs @ q_vec</code></td>
-<td>$\mathbb{R}^{768}$</td>
+<td><span class="arithmatex">\(\mathbb{R}^{768}\)</span></td>
 <td>内积/余弦（连续）</td>
 </tr>
 <tr>
 <td><code>softmax(score) @ enc_h</code></td>
-<td>$\mathbb{R}^d \times T_{src}$</td>
+<td><span class="arithmatex">\(\mathbb{R}^d \times T_{src}\)</span></td>
 <td>Bahdanau 加权（连续 + 时序）</td>
 </tr>
 <tr>
 <td><code>model.py:66-70</code> 的 attention</td>
-<td>$\mathbb{R}^d \times T \times L \times H$</td>
+<td><span class="arithmatex">\(\mathbb{R}^d \times T \times L \times H\)</span></td>
 <td>Q-K 内积 + softmax + 加权 V</td>
 </tr>
 </tbody>
@@ -632,7 +649,7 @@ tgt: &quot;def fact(n): return 1 if n&lt;=1 else n*fact(n-1)&quot;
 <tr>
 <td><strong>#1 离散结构 → 连续向量</strong></td>
 <td>第二代 → 第三代</td>
-<td>离散图节点 → $\mathbb{R}^d$</td>
+<td>离散图节点 → <span class="arithmatex">\(\mathbb{R}^d\)</span></td>
 <td>相似度从 <code>图同构 / Datalog 可满足</code> 变成 <code>q @ V.T</code> —— 第一次有了"软语义近邻"和<strong>插值</strong></td>
 <td>不变（仍是无标注）</td>
 </tr>
@@ -723,7 +740,7 @@ tgt: &quot;def fact(n): return 1 if n&lt;=1 else n*fact(n-1)&quot;
 <ul>
 <li>grep 时代：搜索空间 = 字符串；人想关键词、人写代码。</li>
 <li>Sourcegraph / CodeQL 时代：+ AST + 引用图 + 控制流 + 数据流；人写图查询语言，<strong>仍然只能找现成代码</strong>。</li>
-<li>Word2Vec 时代：+ 连续向量 $\mathbb{R}^d$；模型替你想同义词，人还是要写代码——但<strong>第一次有了"插值"能力</strong>。</li>
+<li>Word2Vec 时代：+ 连续向量 <span class="arithmatex">\(\mathbb{R}^d\)</span>；模型替你想同义词，人还是要写代码——但<strong>第一次有了"插值"能力</strong>。</li>
 <li>Seq2Seq 时代：+ 时间维 T；模型替你写代码，但人还要标注 (注释, 代码) 对子。</li>
 <li>GPT 时代：+ 深度 L + 多头 H；连配对都不用标了——模型从 GitHub 上"读"出来。<strong>每生成 1 个 token = 144 次高维空间检索</strong>。</li>
 </ul>

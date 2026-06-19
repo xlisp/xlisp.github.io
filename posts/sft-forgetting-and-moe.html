@@ -19,6 +19,23 @@
 <meta name="twitter:image" content="../icon.jpeg">
 <link rel="stylesheet" href="../style.css?v=light1">
 <script>(function(){try{if(localStorage.getItem('theme')==='light')document.documentElement.setAttribute('data-theme','light');}catch(e){}})();</script>
+<!-- Math formula rendering via MathJax -->
+<script>
+window.MathJax = {
+  tex: {
+    // arithmatex emits \(...\) / \[...\] markup, so only these delimiters
+    // are needed; plain `$` is left alone (avoids currency false positives).
+    inlineMath: [['\\(', '\\)']],
+    displayMath: [['\\[', '\\]']],
+    processEscapes: true
+  },
+  options: {
+    skipHtmlTags: ['script', 'noscript', 'style', 'textarea', 'pre', 'code'],
+    ignoreHtmlClass: 'highlight'
+  }
+};
+</script>
+<script src="https://cdn.jsdelivr.net/npm/mathjax@3/es5/tex-chtml.js" async></script>
 </head>
 <body>
 <main class="wrap post">
@@ -108,12 +125,12 @@
 </code></pre></div>
 
 <p><code>∇loss</code> 是<strong>当前 batch</strong> 的梯度，完全不含任何"之前学过的代码能力"的信息。换句话说：</p>
-<p>$$
+<div class="arithmatex">\[
 \theta_{\text{SFT2}} = \theta_{\text{SFT1}} - \eta \sum_{t=1}^{T} \nabla \mathcal{L}_{\text{fc}}(\theta_t)
-$$</p>
+\]</div>
 <p>这个迭代过程<strong>只看 function calling 数据</strong>，它会把参数推到"function calling loss 最低"的方向。如果这条方向恰好和"代码 loss 最低"的方向不一致（几乎总是不一致），代码能力就会被顺带破坏。</p>
 <p>一个直观类比：把模型参数想成一个沙盘，代码 SFT 把沙子堆成山 A，function calling SFT 的梯度是一双推土机，它只看山 B 的目标形状，并不知道山 A 的存在，于是把山 A 推平了。</p>
-<p>学术上有个更精细的量化指标——<strong>Fisher 信息矩阵</strong> $F_{ii} = \mathbb{E}[(\partial \log p / \partial \theta_i)^2]$ 衡量第 $i$ 个参数对老任务有多重要。遗忘严重程度正比于 $\sum_i F_{ii} (\Delta \theta_i)^2$。后面 EWC 就是直接拿这个量当正则项。</p>
+<p>学术上有个更精细的量化指标——<strong>Fisher 信息矩阵</strong> <span class="arithmatex">\(F_{ii} = \mathbb{E}[(\partial \log p / \partial \theta_i)^2]\)</span> 衡量第 <span class="arithmatex">\(i\)</span> 个参数对老任务有多重要。遗忘严重程度正比于 <span class="arithmatex">\(\sum_i F_{ii} (\Delta \theta_i)^2\)</span>。后面 EWC 就是直接拿这个量当正则项。</p>
 <p>现在我们知道敌人长什么样了，看解法。</p>
 <hr />
 <h2 id="4-解法一数据混合rehearsal-replay">4. 解法一：数据混合（Rehearsal / Replay）</h2>
@@ -136,7 +153,7 @@ $$</p>
 <p>本质上，它把"顺序学习"退化回"联合学习"，从根上绕过了遗忘。</p>
 <hr />
 <h2 id="5-解法二lora-多适配器-物理上隔离增量">5. 解法二：LoRA + 多适配器 —— 物理上隔离增量</h2>
-<p>LoRA（Low-Rank Adaptation，Hu et al. 2021）的思想是：<strong>不要改原始权重 $W$，而是学一个低秩增量 $\Delta W = BA$，推理时 $W + BA$</strong>。用 PyTorch 写出来大概长这样（可以对比 <code>model.py:80</code> 的 <code>self.c_fc</code>）：</p>
+<p>LoRA（Low-Rank Adaptation，Hu et al. 2021）的思想是：<strong>不要改原始权重 <span class="arithmatex">\(W\)</span>，而是学一个低秩增量 <span class="arithmatex">\(\Delta W = BA\)</span>，推理时 <span class="arithmatex">\(W + BA\)</span></strong>。用 PyTorch 写出来大概长这样（可以对比 <code>model.py:80</code> 的 <code>self.c_fc</code>）：</p>
 <div class="highlight"><pre><span></span><code><span class="k">class</span><span class="w"> </span><span class="nc">LoRALinear</span><span class="p">(</span><span class="n">nn</span><span class="o">.</span><span class="n">Module</span><span class="p">):</span>
     <span class="k">def</span><span class="w"> </span><span class="fm">__init__</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">base</span><span class="p">:</span> <span class="n">nn</span><span class="o">.</span><span class="n">Linear</span><span class="p">,</span> <span class="n">rank</span><span class="o">=</span><span class="mi">8</span><span class="p">):</span>
         <span class="nb">super</span><span class="p">()</span><span class="o">.</span><span class="fm">__init__</span><span class="p">()</span>

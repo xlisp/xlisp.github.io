@@ -19,6 +19,23 @@
 <meta name="twitter:image" content="../icon.jpeg">
 <link rel="stylesheet" href="../style.css?v=light1">
 <script>(function(){try{if(localStorage.getItem('theme')==='light')document.documentElement.setAttribute('data-theme','light');}catch(e){}})();</script>
+<!-- Math formula rendering via MathJax -->
+<script>
+window.MathJax = {
+  tex: {
+    // arithmatex emits \(...\) / \[...\] markup, so only these delimiters
+    // are needed; plain `$` is left alone (avoids currency false positives).
+    inlineMath: [['\\(', '\\)']],
+    displayMath: [['\\[', '\\]']],
+    processEscapes: true
+  },
+  options: {
+    skipHtmlTags: ['script', 'noscript', 'style', 'textarea', 'pre', 'code'],
+    ignoreHtmlClass: 'highlight'
+  }
+};
+</script>
+<script src="https://cdn.jsdelivr.net/npm/mathjax@3/es5/tex-chtml.js" async></script>
 </head>
 <body>
 <main class="wrap post">
@@ -59,7 +76,7 @@
 </ol>
 <hr />
 <h2 id="1-配分函数与-softmax同一个数学对象的两个名字">1. 配分函数与 Softmax：同一个数学对象的两个名字</h2>
-<p>统计力学第一课是玻尔兹曼分布——一个系统在能量 $E_i$ 上出现的概率：</p>
+<p>统计力学第一课是玻尔兹曼分布——一个系统在能量 <span class="arithmatex">\(E_i\)</span> 上出现的概率：</p>
 <div class="highlight"><pre><span></span><code>P(i) = exp(-E_i / kT) / Z      其中 Z = Σⱼ exp(-E_j / kT)
 </code></pre></div>
 
@@ -93,7 +110,7 @@
 <span class="n">logits</span> <span class="o">=</span> <span class="n">logits</span><span class="p">[:,</span> <span class="o">-</span><span class="mi">1</span><span class="p">,</span> <span class="p">:]</span> <span class="o">/</span> <span class="n">temperature</span>
 </code></pre></div>
 
-<p>把 <code>logits</code> 除以 <code>T</code> 再做 softmax，<strong>就是把分布变成 $\exp(-E/kT)$，T 大平、T 小尖</strong>。这不是借用术语——<code>temperature=0.0</code> 在物理上叫"绝对零度"，对应 argmax（所有概率塌缩到能量最低态，即"基态"）；<code>temperature=∞</code> 是无穷热，所有 token 等概率。</p>
+<p>把 <code>logits</code> 除以 <code>T</code> 再做 softmax，<strong>就是把分布变成 <span class="arithmatex">\(\exp(-E/kT)\)</span>，T 大平、T 小尖</strong>。这不是借用术语——<code>temperature=0.0</code> 在物理上叫"绝对零度"，对应 argmax（所有概率塌缩到能量最低态，即"基态"）；<code>temperature=∞</code> 是无穷热，所有 token 等概率。</p>
 <p>REPL 里调温度本质就是在做<strong>模拟退火</strong>（simulated annealing，Kirkpatrick 1983 直接借自冶金学的退火过程）：先用高温探索，再用低温收敛。物理学家看到 <code>temperature=0.7</code> 这个超参完全不需要解释。</p>
 <hr />
 <h2 id="3-hopfield-网络自旋玻璃-注意力机制">3. Hopfield 网络：自旋玻璃 → 注意力机制</h2>
@@ -111,7 +128,7 @@
 
 <p>把 <code>K</code> 当成<strong>存储的记忆</strong>（一组模式），把 <code>Q</code> 当成<strong>待补全的状态</strong>，那么：</p>
 <ul>
-<li><code>Q · Kᵀ</code>：计算当前状态与每个记忆的相似度（在 Hopfield 里就是 $\xi_i^T x$）</li>
+<li><code>Q · Kᵀ</code>：计算当前状态与每个记忆的相似度（在 Hopfield 里就是 <span class="arithmatex">\(\xi_i^T x\)</span>）</li>
 <li><code>softmax(...)</code>：用玻尔兹曼分布给每个记忆"投票"</li>
 <li><code>... @ V</code>：取加权平均（Hopfield 更新一步）</li>
 </ul>
@@ -127,7 +144,7 @@
 <li>给定均值和方差约束 → 高斯</li>
 <li>给定能量期望 → 玻尔兹曼分布</li>
 </ul>
-<p>把这条原理用于"建模数据 $p_{\text{data}}$"问题：你想找一个 $q_\theta$ 让它在数据上熵最大、同时与数据约束一致 → 极大似然估计 → 等价于最小化 $\text{KL}(p_{\text{data}} | q_\theta)$ → 等价于最小化交叉熵。</p>
+<p>把这条原理用于"建模数据 <span class="arithmatex">\(p_{\text{data}}\)</span>"问题：你想找一个 <span class="arithmatex">\(q_\theta\)</span> 让它在数据上熵最大、同时与数据约束一致 → 极大似然估计 → 等价于最小化 <span class="arithmatex">\(\text{KL}(p_{\text{data}} \| q_\theta)\)</span> → 等价于最小化交叉熵。</p>
 <div class="highlight"><pre><span></span><code><span class="c1"># model.py:192</span>
 <span class="n">loss</span> <span class="o">=</span> <span class="n">F</span><span class="o">.</span><span class="n">cross_entropy</span><span class="p">(</span><span class="n">logits</span><span class="o">.</span><span class="n">view</span><span class="p">(</span><span class="o">-</span><span class="mi">1</span><span class="p">,</span> <span class="n">logits</span><span class="o">.</span><span class="n">size</span><span class="p">(</span><span class="o">-</span><span class="mi">1</span><span class="p">)),</span>
                        <span class="n">targets</span><span class="o">.</span><span class="n">view</span><span class="p">(</span><span class="o">-</span><span class="mi">1</span><span class="p">),</span> <span class="n">ignore_index</span><span class="o">=-</span><span class="mi">1</span><span class="p">)</span>
@@ -140,11 +157,11 @@
 <div class="highlight"><pre><span></span><code>dx/dt = -∇U(x) + √(2kT) · η(t)        η ~ N(0, I)
 </code></pre></div>
 
-<p>确定性梯度 $-\nabla U$ + 高斯噪声 $\eta$，温度 $T$ 越高噪声越大。它的离散化就是：</p>
+<p>确定性梯度 <span class="arithmatex">\(-\nabla U\)</span> + 高斯噪声 <span class="arithmatex">\(\eta\)</span>，温度 <span class="arithmatex">\(T\)</span> 越高噪声越大。它的离散化就是：</p>
 <div class="highlight"><pre><span></span><code>x_{t+1} = x_t - η · ∇U(x_t) + √(2η · kT) · ε_t
 </code></pre></div>
 
-<p>把 $U$ 换成 loss、$\eta$ 换成学习率，<strong>这就是 SGD with noise</strong>。事实上 mini-batch SGD 自带的梯度噪声（不同 batch 给出不同梯度）已经被严格地证明等价于一种 Langevin dynamics——这是一整条研究线（"SGD as Bayesian inference"）。</p>
+<p>把 <span class="arithmatex">\(U\)</span> 换成 loss、<span class="arithmatex">\(\eta\)</span> 换成学习率，<strong>这就是 SGD with noise</strong>。事实上 mini-batch SGD 自带的梯度噪声（不同 batch 给出不同梯度）已经被严格地证明等价于一种 Langevin dynamics——这是一整条研究线（"SGD as Bayesian inference"）。</p>
 <p>CodeGPT 的训练循环里好几个地方都对应着 Langevin 视角下的物理直觉：</p>
 <div class="highlight"><pre><span></span><code><span class="c1"># train.py:68</span>
 <span class="n">dropout</span> <span class="o">=</span> <span class="mf">0.1</span>
@@ -156,29 +173,29 @@
 <span class="n">torch</span><span class="o">.</span><span class="n">nn</span><span class="o">.</span><span class="n">init</span><span class="o">.</span><span class="n">normal_</span><span class="p">(</span><span class="n">module</span><span class="o">.</span><span class="n">weight</span><span class="p">,</span> <span class="n">mean</span><span class="o">=</span><span class="mf">0.0</span><span class="p">,</span> <span class="n">std</span><span class="o">=</span><span class="mf">0.02</span><span class="p">)</span>
 </code></pre></div>
 
-<p>权重初始化用高斯分布——物理学家会立刻想到<strong>自旋玻璃的随机耦合 $J_{ij} \sim \mathcal{N}(0, \sigma^2)$</strong>。事实上 Choromanska 等人 2015 年的论文 <em>The Loss Surfaces of Multilayer Networks</em> 直接把神经网络的损失函数映射成一个球形自旋玻璃模型，证明了"绝大多数局部极小都几乎一样好"——这就是为什么 SGD 哪怕找不到全局最优，也能训出像样的模型。这是统计物理给深度学习最早的"理论支撑"之一。</p>
+<p>权重初始化用高斯分布——物理学家会立刻想到<strong>自旋玻璃的随机耦合 <span class="arithmatex">\(J_{ij} \sim \mathcal{N}(0, \sigma^2)\)</span></strong>。事实上 Choromanska 等人 2015 年的论文 <em>The Loss Surfaces of Multilayer Networks</em> 直接把神经网络的损失函数映射成一个球形自旋玻璃模型，证明了"绝大多数局部极小都几乎一样好"——这就是为什么 SGD 哪怕找不到全局最优，也能训出像样的模型。这是统计物理给深度学习最早的"理论支撑"之一。</p>
 <div class="highlight"><pre><span></span><code><span class="c1"># model.py:159</span>
 <span class="n">torch</span><span class="o">.</span><span class="n">nn</span><span class="o">.</span><span class="n">init</span><span class="o">.</span><span class="n">normal_</span><span class="p">(</span><span class="n">p</span><span class="p">,</span> <span class="n">mean</span><span class="o">=</span><span class="mf">0.0</span><span class="p">,</span> <span class="n">std</span><span class="o">=</span><span class="mf">0.02</span> <span class="o">/</span> <span class="n">math</span><span class="o">.</span><span class="n">sqrt</span><span class="p">(</span><span class="mi">2</span> <span class="o">*</span> <span class="n">config</span><span class="o">.</span><span class="n">n_layer</span><span class="p">))</span>
 </code></pre></div>
 
-<p>残差投影做了"按层数缩放方差"——这是为了让信号通过 $L$ 层残差累加之后方差仍然是 $O(1)$。物理学家看到 $\sigma^2 \propto 1/L$ 立刻知道这是<strong>中心极限定理 + 随机游走方差线性累加</strong>那一套。</p>
+<p>残差投影做了"按层数缩放方差"——这是为了让信号通过 <span class="arithmatex">\(L\)</span> 层残差累加之后方差仍然是 <span class="arithmatex">\(O(1)\)</span>。物理学家看到 <span class="arithmatex">\(\sigma^2 \propto 1/L\)</span> 立刻知道这是<strong>中心极限定理 + 随机游走方差线性累加</strong>那一套。</p>
 <hr />
 <h2 id="6-量子力学的影子hilbert-空间叠加测量">6. 量子力学的影子：Hilbert 空间、叠加、测量</h2>
 <h3 id="61-embedding-是-hilbert-空间里的态向量">6.1 Embedding 是 Hilbert 空间里的态向量</h3>
-<p>量子力学的核心：物理状态是高维<strong>复 Hilbert 空间</strong>里的单位向量 $|\psi\rangle$，可观测量是厄米算符。</p>
+<p>量子力学的核心：物理状态是高维<strong>复 Hilbert 空间</strong>里的单位向量 <span class="arithmatex">\(|\psi\rangle\)</span>，可观测量是厄米算符。</p>
 <p>CodeGPT 的 token embedding：</p>
 <div class="highlight"><pre><span></span><code><span class="c1"># model.py:145</span>
 <span class="n">wte</span><span class="o">=</span><span class="n">nn</span><span class="o">.</span><span class="n">Embedding</span><span class="p">(</span><span class="n">config</span><span class="o">.</span><span class="n">vocab_size</span><span class="p">,</span> <span class="n">config</span><span class="o">.</span><span class="n">n_embd</span><span class="p">),</span>
 </code></pre></div>
 
-<p>每个 token 对应一个 768 维的实向量。它<strong>不是</strong>严格的量子态（实数而非复数，且未归一），但概念上完全同构：一个"符号"被映射到一个高维向量空间里的一个点，这个空间的几何结构（内积、距离、夹角）就是模型对"语义相似性"的内部度量。物理学家熟悉的 $\langle \phi | \psi \rangle$ 在这里就是 cosine similarity 或 dot product attention。</p>
+<p>每个 token 对应一个 768 维的实向量。它<strong>不是</strong>严格的量子态（实数而非复数，且未归一），但概念上完全同构：一个"符号"被映射到一个高维向量空间里的一个点，这个空间的几何结构（内积、距离、夹角）就是模型对"语义相似性"的内部度量。物理学家熟悉的 <span class="arithmatex">\(\langle \phi | \psi \rangle\)</span> 在这里就是 cosine similarity 或 dot product attention。</p>
 <h3 id="62-注意力的内积是-born-rule-的近亲">6.2 注意力的内积是 Born rule 的近亲</h3>
 <div class="highlight"><pre><span></span><code><span class="c1"># model.py:66</span>
 <span class="n">att</span> <span class="o">=</span> <span class="p">(</span><span class="n">q</span> <span class="o">@</span> <span class="n">k</span><span class="o">.</span><span class="n">transpose</span><span class="p">(</span><span class="o">-</span><span class="mi">2</span><span class="p">,</span> <span class="o">-</span><span class="mi">1</span><span class="p">))</span> <span class="o">*</span> <span class="p">(</span><span class="mf">1.0</span> <span class="o">/</span> <span class="n">math</span><span class="o">.</span><span class="n">sqrt</span><span class="p">(</span><span class="n">k</span><span class="o">.</span><span class="n">size</span><span class="p">(</span><span class="o">-</span><span class="mi">1</span><span class="p">)))</span>
 </code></pre></div>
 
-<p>$Q \cdot K^T$ 是两组向量两两的内积矩阵——直接对应量子力学里"态在某个基底上的展开系数" $\langle k_i | q \rangle$。Softmax 给的概率就是 Born rule 的离散类比：$|\langle k_i | q \rangle|^2 / Z$ 给"测量到本征态 $k_i$"的概率（这里没有平方，因为我们用实数而非复数振幅，但归一化 + 概率诠释这一步是同一种思路）。</p>
-<p>那个 $1/\sqrt{d}$ 缩放因子——物理学家会立刻问"是不是为了让方差不依赖维度"，答案是肯定的：$Q$ 和 $K$ 的元素方差为 1 时，$Q \cdot K$ 的方差是 $d$，除以 $\sqrt{d}$ 让它回到 $O(1)$。这跟"把 $N$ 个独立粒子的能量平均到每粒子能量"是同一种归一化哲学。</p>
+<p><span class="arithmatex">\(Q \cdot K^T\)</span> 是两组向量两两的内积矩阵——直接对应量子力学里"态在某个基底上的展开系数" <span class="arithmatex">\(\langle k_i | q \rangle\)</span>。Softmax 给的概率就是 Born rule 的离散类比：<span class="arithmatex">\(|\langle k_i | q \rangle|^2 / Z\)</span> 给"测量到本征态 <span class="arithmatex">\(k_i\)</span>"的概率（这里没有平方，因为我们用实数而非复数振幅，但归一化 + 概率诠释这一步是同一种思路）。</p>
+<p>那个 <span class="arithmatex">\(1/\sqrt{d}\)</span> 缩放因子——物理学家会立刻问"是不是为了让方差不依赖维度"，答案是肯定的：<span class="arithmatex">\(Q\)</span> 和 <span class="arithmatex">\(K\)</span> 的元素方差为 1 时，<span class="arithmatex">\(Q \cdot K\)</span> 的方差是 <span class="arithmatex">\(d\)</span>，除以 <span class="arithmatex">\(\sqrt{d}\)</span> 让它回到 <span class="arithmatex">\(O(1)\)</span>。这跟"把 <span class="arithmatex">\(N\)</span> 个独立粒子的能量平均到每粒子能量"是同一种归一化哲学。</p>
 <h3 id="63-自回归采样-测量塌缩">6.3 自回归采样 = 测量塌缩</h3>
 <div class="highlight"><pre><span></span><code><span class="c1"># model.py:301-302</span>
 <span class="n">probs</span> <span class="o">=</span> <span class="n">F</span><span class="o">.</span><span class="n">softmax</span><span class="p">(</span><span class="n">logits</span><span class="p">,</span> <span class="n">dim</span><span class="o">=-</span><span class="mi">1</span><span class="p">)</span>
@@ -193,13 +210,13 @@
 <h2 id="7-变分原理从基态能量到-elbo-到-rlhf">7. 变分原理：从基态能量到 ELBO 到 RLHF</h2>
 <p>变分原理（variational principle）是物理学的"万能锤"：</p>
 <ul>
-<li><strong>量子力学</strong>：基态能量 $E_0 \le \langle\psi|H|\psi\rangle$，对任意试探波函数 $|\psi\rangle$ 都成立 → 用参数化波函数最小化能量期望。</li>
-<li><strong>统计力学</strong>：自由能 $F = -kT \log Z$ 可以用变分自由能 $F_q = \langle E \rangle_q - T S_q$ 上界逼近 → mean-field 近似。</li>
+<li><strong>量子力学</strong>：基态能量 <span class="arithmatex">\(E_0 \le \langle\psi|H|\psi\rangle\)</span>，对任意试探波函数 <span class="arithmatex">\(|\psi\rangle\)</span> 都成立 → 用参数化波函数最小化能量期望。</li>
+<li><strong>统计力学</strong>：自由能 <span class="arithmatex">\(F = -kT \log Z\)</span> 可以用变分自由能 <span class="arithmatex">\(F_q = \langle E \rangle_q - T S_q\)</span> 上界逼近 → mean-field 近似。</li>
 </ul>
 <p>机器学习里的对应物：</p>
 <ul>
-<li><strong>VAE 的 ELBO</strong>：$\log p(x) \ge \mathbb{E}_q[\log p(x,z)] - \mathbb{E}_q[\log q(z|x)]$，下界训练。结构上和变分自由能<strong>完全一致</strong>（就是把 $E$ 换成 $-\log p$，把 $-T S_q$ 写成 $\mathbb{E}_q[\log q]$）。</li>
-<li><strong>RLHF 的 KL 约束</strong>：策略 $\pi_\theta$ 不能离参考策略 $\pi_{\text{ref}}$ 太远——加一个 $\beta \cdot \text{KL}(\pi_\theta | \pi_{\text{ref}})$ 罚项。这就是统计力学里"在已知分布附近找最小自由能"的标准变分操作。</li>
+<li><strong>VAE 的 ELBO</strong>：<span class="arithmatex">\(\log p(x) \ge \mathbb{E}_q[\log p(x,z)] - \mathbb{E}_q[\log q(z|x)]\)</span>，下界训练。结构上和变分自由能<strong>完全一致</strong>（就是把 <span class="arithmatex">\(E\)</span> 换成 <span class="arithmatex">\(-\log p\)</span>，把 <span class="arithmatex">\(-T S_q\)</span> 写成 <span class="arithmatex">\(\mathbb{E}_q[\log q]\)</span>）。</li>
+<li><strong>RLHF 的 KL 约束</strong>：策略 <span class="arithmatex">\(\pi_\theta\)</span> 不能离参考策略 <span class="arithmatex">\(\pi_{\text{ref}}\)</span> 太远——加一个 <span class="arithmatex">\(\beta \cdot \text{KL}(\pi_\theta \| \pi_{\text{ref}})\)</span> 罚项。这就是统计力学里"在已知分布附近找最小自由能"的标准变分操作。</li>
 </ul>
 <p>所以 <code>RLHF_AND_PLATONIC_REPRESENTATION.md</code> 里讲的奖励模型 + KL 约束 + PPO，物理学家会一眼看出"这就是带约束的变分问题"。背后的数学工具——拉格朗日乘子、Legendre 变换、对偶——和他们做平均场近似时完全一样。</p>
 <hr />
@@ -256,7 +273,7 @@
 <p>每一个都是物理学家熟悉的工具。给一个做过临界现象的人讲 scaling laws，不需要解释什么是幂律。</p>
 <hr />
 <h2 id="11-向量化编程物理学家从牛顿那一天就在用的描述方式">11. 向量化编程：物理学家从牛顿那一天就在用的描述方式</h2>
-<p>物理学第一节课就教向量——力 $\vec{F}$、速度 $\vec{v}$、加速度 $\vec{a}$ 都是向量，<strong>有大小有方向，可以分解可以合成</strong>。整个经典力学就建立在 $\mathbb{R}^3$ 空间的向量代数之上。物理学家天然用向量思维：状态 = 一个高维空间的点；演化 = 这个点在空间里运动；相互作用 = 向量加法或线性变换。</p>
+<p>物理学第一节课就教向量——力 <span class="arithmatex">\(\vec{F}\)</span>、速度 <span class="arithmatex">\(\vec{v}\)</span>、加速度 <span class="arithmatex">\(\vec{a}\)</span> 都是向量，<strong>有大小有方向，可以分解可以合成</strong>。整个经典力学就建立在 <span class="arithmatex">\(\mathbb{R}^3\)</span> 空间的向量代数之上。物理学家天然用向量思维：状态 = 一个高维空间的点；演化 = 这个点在空间里运动；相互作用 = 向量加法或线性变换。</p>
 <p>深度学习的"向量化（vectorization）"不是工程优化的产物——是<strong>物理学已经用了 300 多年的描述语言</strong>直接搬过来。</p>
 <h3 id="111-token-position-力的合成">11.1 token + position = 力的合成</h3>
 <div class="highlight"><pre><span></span><code><span class="c1"># model.py:183-185</span>
@@ -275,7 +292,7 @@
 
 <p>物理学家会立即把这一行识别为"一个 3 倍维度的线性变换"——把状态向量同时投影到三组基底（Q, K, V），与"在动量基、能量基、位置基里同时观察一个量子态"完全同构。</p>
 <h3 id="113-张量积结构多头注意力-多体系统">11.3 张量积结构：多头注意力 = 多体系统</h3>
-<p>物理多粒子态的总希尔伯特空间是各粒子空间的张量积：$\mathcal{H} = \mathcal{H}_1 \otimes \mathcal{H}_2 \otimes \cdots \otimes \mathcal{H}_n$。多头注意力做的是同构操作：</p>
+<p>物理多粒子态的总希尔伯特空间是各粒子空间的张量积：<span class="arithmatex">\(\mathcal{H} = \mathcal{H}_1 \otimes \mathcal{H}_2 \otimes \cdots \otimes \mathcal{H}_n\)</span>。多头注意力做的是同构操作：</p>
 <div class="highlight"><pre><span></span><code><span class="c1"># model.py:54-56</span>
 <span class="n">k</span> <span class="o">=</span> <span class="n">k</span><span class="o">.</span><span class="n">view</span><span class="p">(</span><span class="n">B</span><span class="p">,</span> <span class="n">T</span><span class="p">,</span> <span class="bp">self</span><span class="o">.</span><span class="n">n_head</span><span class="p">,</span> <span class="n">C</span> <span class="o">//</span> <span class="bp">self</span><span class="o">.</span><span class="n">n_head</span><span class="p">)</span><span class="o">.</span><span class="n">transpose</span><span class="p">(</span><span class="mi">1</span><span class="p">,</span> <span class="mi">2</span><span class="p">)</span>
 <span class="n">q</span> <span class="o">=</span> <span class="n">q</span><span class="o">.</span><span class="n">view</span><span class="p">(</span><span class="n">B</span><span class="p">,</span> <span class="n">T</span><span class="p">,</span> <span class="bp">self</span><span class="o">.</span><span class="n">n_head</span><span class="p">,</span> <span class="n">C</span> <span class="o">//</span> <span class="bp">self</span><span class="o">.</span><span class="n">n_head</span><span class="p">)</span><span class="o">.</span><span class="n">transpose</span><span class="p">(</span><span class="mi">1</span><span class="p">,</span> <span class="mi">2</span><span class="p">)</span>
@@ -303,11 +320,11 @@
 <div class="highlight"><pre><span></span><code>S = k_B · log W
 </code></pre></div>
 
-<p>其中 $W$ 是宏观态对应的微观态数。这块墓志铭刻在他的墓碑上。Shannon 1948 年研究通信问题时独立得到了几乎一模一样的公式：</p>
+<p>其中 <span class="arithmatex">\(W\)</span> 是宏观态对应的微观态数。这块墓志铭刻在他的墓碑上。Shannon 1948 年研究通信问题时独立得到了几乎一模一样的公式：</p>
 <div class="highlight"><pre><span></span><code>H = -Σ p_i log p_i
 </code></pre></div>
 
-<p>物理学家看到 Shannon 公式会一眼认出这就是 Boltzmann 熵的连续概率版本（连常数 $k_B$ 都可以看作单位选择问题）。两个领域的"熵"是同一个数学对象，被用了三种不同的角色：</p>
+<p>物理学家看到 Shannon 公式会一眼认出这就是 Boltzmann 熵的连续概率版本（连常数 <span class="arithmatex">\(k_B\)</span> 都可以看作单位选择问题）。两个领域的"熵"是同一个数学对象，被用了三种不同的角色：</p>
 <h3 id="121-训练-loss-熵的下降">12.1 训练 loss = 熵的下降</h3>
 <div class="highlight"><pre><span></span><code><span class="c1"># model.py:192</span>
 <span class="n">loss</span> <span class="o">=</span> <span class="n">F</span><span class="o">.</span><span class="n">cross_entropy</span><span class="p">(</span><span class="n">logits</span><span class="o">.</span><span class="n">view</span><span class="p">(</span><span class="o">-</span><span class="mi">1</span><span class="p">,</span> <span class="n">logits</span><span class="o">.</span><span class="n">size</span><span class="p">(</span><span class="o">-</span><span class="mi">1</span><span class="p">)),</span>
@@ -318,22 +335,22 @@
 <div class="highlight"><pre><span></span><code>H(p_data, q_θ) = H(p_data) + KL(p_data ‖ q_θ)
 </code></pre></div>
 
-<p>$H(p_\text{data})$ 是数据本身的熵（不可约的"纯粹随机性"，由数据分布固定）；$\text{KL}$ 是模型分布偏离数据的"额外熵"。<strong>训练 = 把 KL 拍到零</strong>，让模型的不确定性降到数据本身的不确定性下限。</p>
+<p><span class="arithmatex">\(H(p_\text{data})\)</span> 是数据本身的熵（不可约的"纯粹随机性"，由数据分布固定）；<span class="arithmatex">\(\text{KL}\)</span> 是模型分布偏离数据的"额外熵"。<strong>训练 = 把 KL 拍到零</strong>，让模型的不确定性降到数据本身的不确定性下限。</p>
 <p>物理学家会注意到一件有趣的事：<strong>训练过程是局部熵减</strong>。模型权重从初始的高熵随机状态被推向能精确编码数据规律的低熵状态。这不违反热力学第二定律——SGD 把熵"排放"到了优化器的状态、GPU 的散热、和数据的访问历史里。整个过程结构上对应<strong>信息论里的 Maxwell 妖</strong>——梯度信号就是那只看着分子运动决定开关阀门的小妖。</p>
 <h3 id="122-注意力的熵模型在专注还是摊开">12.2 注意力的熵：模型在"专注"还是"摊开"？</h3>
 <div class="highlight"><pre><span></span><code><span class="c1"># model.py:68</span>
 <span class="n">att</span> <span class="o">=</span> <span class="n">F</span><span class="o">.</span><span class="n">softmax</span><span class="p">(</span><span class="n">att</span><span class="p">,</span> <span class="n">dim</span><span class="o">=-</span><span class="mi">1</span><span class="p">)</span>
 </code></pre></div>
 
-<p>每个 token 对其他 token 的注意力分布都有一个熵 $H = -\sum_j a_{ij} \log a_{ij}$：</p>
+<p>每个 token 对其他 token 的注意力分布都有一个熵 <span class="arithmatex">\(H = -\sum_j a_{ij} \log a_{ij}\)</span>：</p>
 <ul>
 <li>高熵：均匀注意（不知道该看哪里，多见于早期层）</li>
 <li>低熵：尖锐注意（在做精确检索，多见于 induction heads）</li>
 </ul>
 <p>可解释性研究（Anthropic 等）已经把"attention entropy"作为标准诊断指标。物理学家做凝聚态时计算"局域熵"分析相变区，做这件事完全不需要新工具。</p>
 <h3 id="123-rl-的熵正则化直接是自由能的-ts-项">12.3 RL 的熵正则化：直接是自由能的 -TS 项</h3>
-<p>PPO/SAC 训 RLHF 时常加一个熵正则项 $-\beta \cdot H(\pi_\theta(\cdot|s))$，鼓励策略保持探索性、防止过早塌缩到单点。物理学家会立刻认出这就是<strong>自由能 $F = E - TS$ 里的 $-TS$ 项</strong>——温度 $T$ 越高越鼓励熵大（exploration），$T$ 越低越鼓励能量低（exploitation）。RL 调 entropy coefficient 就是在调温度。</p>
-<p>这跟 RLHF 加 $\text{KL}(\pi_\theta | \pi_\text{ref})$ 是同家族——都是用拉格朗日乘子约束分布形态，就是平均场近似的标准操作。</p>
+<p>PPO/SAC 训 RLHF 时常加一个熵正则项 <span class="arithmatex">\(-\beta \cdot H(\pi_\theta(\cdot|s))\)</span>，鼓励策略保持探索性、防止过早塌缩到单点。物理学家会立刻认出这就是<strong>自由能 <span class="arithmatex">\(F = E - TS\)</span> 里的 <span class="arithmatex">\(-TS\)</span> 项</strong>——温度 <span class="arithmatex">\(T\)</span> 越高越鼓励熵大（exploration），<span class="arithmatex">\(T\)</span> 越低越鼓励能量低（exploitation）。RL 调 entropy coefficient 就是在调温度。</p>
+<p>这跟 RLHF 加 <span class="arithmatex">\(\text{KL}(\pi_\theta \| \pi_\text{ref})\)</span> 是同家族——都是用拉格朗日乘子约束分布形态，就是平均场近似的标准操作。</p>
 <h3 id="124-数据增强-dropout人工注入熵">12.4 数据增强 / dropout：人工注入熵</h3>
 <div class="highlight"><pre><span></span><code><span class="c1"># train.py:68</span>
 <span class="n">dropout</span> <span class="o">=</span> <span class="mf">0.1</span>
@@ -342,21 +359,21 @@
 <p>Dropout 主动给激活注入随机性——人为提高网络内部的熵。从信息论看是降低了表征的"过度确定性"，从物理学看是给系统加温防止它落入虚假的低能局部极小。两种解释指向同一个动作。</p>
 <hr />
 <h2 id="13-路径积分自回归生成本质上是-feynman-求和">13. 路径积分：自回归生成本质上是 Feynman 求和</h2>
-<p>Feynman 1948 年给量子力学一个新表述：粒子从 $A$ 到 $B$ 的概率振幅 = 对所有可能路径的振幅相干求和：</p>
+<p>Feynman 1948 年给量子力学一个新表述：粒子从 <span class="arithmatex">\(A\)</span> 到 <span class="arithmatex">\(B\)</span> 的概率振幅 = 对所有可能路径的振幅相干求和：</p>
 <div class="highlight"><pre><span></span><code>⟨B|U(t)|A⟩ = ∫ Dx(t) · exp(i S[x(t)] / ℏ)
 </code></pre></div>
 
-<p>其中 $S$ 是经典作用量。每条路径贡献一个相位 $\exp(iS/\hbar)$。统计场论里把 $i/\hbar$ 替换成 $-1/(k_BT)$（Wick 旋转）就得到虚时路径积分：</p>
+<p>其中 <span class="arithmatex">\(S\)</span> 是经典作用量。每条路径贡献一个相位 <span class="arithmatex">\(\exp(iS/\hbar)\)</span>。统计场论里把 <span class="arithmatex">\(i/\hbar\)</span> 替换成 <span class="arithmatex">\(-1/(k_BT)\)</span>（Wick 旋转）就得到虚时路径积分：</p>
 <div class="highlight"><pre><span></span><code>Z = ∫ Dφ · exp(-S[φ] / kT)
 </code></pre></div>
 
 <h3 id="131-语言模型的-likelihood-结构上就是路径积分">13.1 语言模型的 likelihood 结构上就是路径积分</h3>
-<p>一个序列 $x = (x_1, \ldots, x_T)$ 的概率：</p>
+<p>一个序列 <span class="arithmatex">\(x = (x_1, \ldots, x_T)\)</span> 的概率：</p>
 <div class="highlight"><pre><span></span><code><span class="c1"># 概念上 model.py:192 在做的事：</span>
 <span class="c1"># log p(x) = Σ_t log p(x_t | x_&lt;t)</span>
 </code></pre></div>
 
-<p>定义 "作用量" $S(x) = -\sum_t \log p(x_t | x_{&lt;t})$（就是该序列的总 NLL），那么：</p>
+<p>定义 "作用量" <span class="arithmatex">\(S(x) = -\sum_t \log p(x_t | x_{&lt;t})\)</span>（就是该序列的总 NLL），那么：</p>
 <div class="highlight"><pre><span></span><code>p(x) ∝ exp(-S(x))
 </code></pre></div>
 
@@ -373,7 +390,7 @@
 <span class="n">idx</span> <span class="o">=</span> <span class="n">torch</span><span class="o">.</span><span class="n">cat</span><span class="p">((</span><span class="n">idx</span><span class="p">,</span> <span class="n">idx_next</span><span class="p">),</span> <span class="n">dim</span><span class="o">=</span><span class="mi">1</span><span class="p">)</span>
 </code></pre></div>
 
-<p>这个循环每步采一个 token，$T$ 步采出一条完整路径。本质上是<strong>重要性采样</strong>——直接按 $p(x_t|x_{&lt;t})$ 采样而非均匀采，等价于路径积分里的 Metropolis Monte Carlo。物理学家做格点 QCD 每天都在写这种循环。</p>
+<p>这个循环每步采一个 token，<span class="arithmatex">\(T\)</span> 步采出一条完整路径。本质上是<strong>重要性采样</strong>——直接按 <span class="arithmatex">\(p(x_t|x_{&lt;t})\)</span> 采样而非均匀采，等价于路径积分里的 Metropolis Monte Carlo。物理学家做格点 QCD 每天都在写这种循环。</p>
 <p><strong>Beam search 是另一种近似</strong>——保留 top-k 条作用量最低的路径，与物理学里"WKB 近似 + 鞍点附近的路径"思路同源（鞍点 = 经典路径 = 作用量极值路径 = beam 上的 mode）。Greedy decoding (<code>top_k=1</code>) 就是纯经典极限——只走作用量绝对最小的那一条路径。</p>
 <h3 id="133-diffusion-model直接照搬非平衡态路径积分">13.3 Diffusion model：直接照搬非平衡态路径积分</h3>
 <p>Stable Diffusion 那篇开山之作（Sohl-Dickstein 2015）标题就叫 <em>Deep Unsupervised Learning using Nonequilibrium Thermodynamics</em>。它的前向过程是 Ornstein-Uhlenbeck SDE，反向过程是逆向 SDE——score-based diffusion 的反向公式</p>
@@ -387,7 +404,7 @@
 <h2 id="14-微积分原理autograd-是把-200-多年的数学自动化">14. 微积分原理：autograd 是把 200 多年的数学自动化</h2>
 <p>Newton 和 Leibniz 1670 年代发明微积分时，给出了人类描述"变化"和"局部线性化"的最强工具。深度学习训练就是这个工具的大规模工业化部署。</p>
 <h3 id="141-链式法则-反向传播">14.1 链式法则 = 反向传播</h3>
-<p>链式法则在大一微积分课讲过：$(f \circ g)'(x) = f'(g(x)) \cdot g'(x)$。多元 + 矩阵版本就是雅可比矩阵乘法：</p>
+<p>链式法则在大一微积分课讲过：<span class="arithmatex">\((f \circ g)'(x) = f'(g(x)) \cdot g'(x)\)</span>。多元 + 矩阵版本就是雅可比矩阵乘法：</p>
 <div class="highlight"><pre><span></span><code>∂L/∂θ = ∂L/∂y_n · ∂y_n/∂y_{n-1} · ... · ∂y_1/∂θ
 </code></pre></div>
 
@@ -395,9 +412,9 @@
 <div class="highlight"><pre><span></span><code><span class="n">loss</span><span class="o">.</span><span class="n">backward</span><span class="p">()</span>
 </code></pre></div>
 
-<p>底下做的是从 <code>loss</code> 节点出发沿计算图反向走，每个节点用预定义的 vector-Jacobian product 把梯度一路推回去。物理学家做扰动论写 Feynman 图时也是这种"链式贡献求和"——每条图代表一项贡献，所有图加起来。<strong>Backprop 本质上是一个高度工整的 Feynman 图求和</strong>：每条计算路径都贡献一项 $\partial L / \partial \theta$，全部相加就是总梯度。</p>
+<p>底下做的是从 <code>loss</code> 节点出发沿计算图反向走，每个节点用预定义的 vector-Jacobian product 把梯度一路推回去。物理学家做扰动论写 Feynman 图时也是这种"链式贡献求和"——每条图代表一项贡献，所有图加起来。<strong>Backprop 本质上是一个高度工整的 Feynman 图求和</strong>：每条计算路径都贡献一项 <span class="arithmatex">\(\partial L / \partial \theta\)</span>，全部相加就是总梯度。</p>
 <h3 id="142-梯度下降-沿势能面的最速下降">14.2 梯度下降 = 沿势能面的最速下降</h3>
-<p>多元微积分告诉我们：$L(\theta)$ 的梯度 $\nabla L$ 指向局部最快上升方向，反向就是最快下降。</p>
+<p>多元微积分告诉我们：<span class="arithmatex">\(L(\theta)\)</span> 的梯度 <span class="arithmatex">\(\nabla L\)</span> 指向局部最快上升方向，反向就是最快下降。</p>
 <div class="highlight"><pre><span></span><code><span class="c1"># 训练循环里：</span>
 <span class="n">optimizer</span><span class="o">.</span><span class="n">step</span><span class="p">()</span>    <span class="c1"># θ ← θ - lr · ∇L</span>
 </code></pre></div>
@@ -406,24 +423,24 @@
 <div class="highlight"><pre><span></span><code>dθ/dt = -∇L(θ)
 </code></pre></div>
 
-<p>如果 $L$ 是势能，这描述一个粒子在粘滞流体里滚下势能面。SGD 是这条 ODE 的离散化（Euler 法），加上 mini-batch 噪声就是 Langevin SDE（见第 5 节）。所有这些都是大一物理课内容。</p>
+<p>如果 <span class="arithmatex">\(L\)</span> 是势能，这描述一个粒子在粘滞流体里滚下势能面。SGD 是这条 ODE 的离散化（Euler 法），加上 mini-batch 噪声就是 Langevin SDE（见第 5 节）。所有这些都是大一物理课内容。</p>
 <h3 id="143-残差连接-微分方程的-euler-步">14.3 残差连接 = 微分方程的 Euler 步</h3>
 <div class="highlight"><pre><span></span><code><span class="c1"># model.py:103-104</span>
 <span class="n">x</span> <span class="o">=</span> <span class="n">x</span> <span class="o">+</span> <span class="bp">self</span><span class="o">.</span><span class="n">attn</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">ln_1</span><span class="p">(</span><span class="n">x</span><span class="p">))</span>
 <span class="n">x</span> <span class="o">=</span> <span class="n">x</span> <span class="o">+</span> <span class="bp">self</span><span class="o">.</span><span class="n">mlp</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">ln_2</span><span class="p">(</span><span class="n">x</span><span class="p">))</span>
 </code></pre></div>
 
-<p><code>x = x + f(x)</code> 这个结构物理学家一秒识别为 <strong>Euler 法解 $dx/dt = f(x)$ 的一步</strong>。这不是巧合——Neural ODE（Chen 2018）直接把残差网络看作 ODE 的离散化，深度 $L \to \infty$ 时就是连续动力系统。</p>
+<p><code>x = x + f(x)</code> 这个结构物理学家一秒识别为 <strong>Euler 法解 <span class="arithmatex">\(dx/dt = f(x)\)</span> 的一步</strong>。这不是巧合——Neural ODE（Chen 2018）直接把残差网络看作 ODE 的离散化，深度 <span class="arithmatex">\(L \to \infty\)</span> 时就是连续动力系统。</p>
 <div class="highlight"><pre><span></span><code><span class="c1"># model.py:186-187</span>
 <span class="k">for</span> <span class="n">block</span> <span class="ow">in</span> <span class="bp">self</span><span class="o">.</span><span class="n">transformer</span><span class="o">.</span><span class="n">h</span><span class="p">:</span>
     <span class="n">x</span> <span class="o">=</span> <span class="n">block</span><span class="p">(</span><span class="n">x</span><span class="p">)</span>
 </code></pre></div>
 
-<p>12 个 Block 就是用 12 步 Euler 法积分一个连续 ODE。物理学家做分子动力学每天用 Velocity Verlet 解 $\ddot{x} = F/m$，看到这个循环根本不需要"理解残差网络"——它就是积分一段时间的常微分方程。</p>
+<p>12 个 Block 就是用 12 步 Euler 法积分一个连续 ODE。物理学家做分子动力学每天用 Velocity Verlet 解 <span class="arithmatex">\(\ddot{x} = F/m\)</span>，看到这个循环根本不需要"理解残差网络"——它就是积分一段时间的常微分方程。</p>
 <h3 id="144-taylor-展开支配着所有的优化器">14.4 Taylor 展开支配着所有的优化器</h3>
 <ul>
-<li><strong>SGD</strong>：用一阶 Taylor。$L(\theta + \Delta) \approx L(\theta) + \nabla L \cdot \Delta$ → 选 $\Delta = -\eta \nabla L$。</li>
-<li><strong>Newton 法</strong>：用二阶 Taylor。$L(\theta + \Delta) \approx L(\theta) + \nabla L \cdot \Delta + \tfrac{1}{2} \Delta^T H \Delta$ → 选 $\Delta = -H^{-1} \nabla L$。</li>
+<li><strong>SGD</strong>：用一阶 Taylor。<span class="arithmatex">\(L(\theta + \Delta) \approx L(\theta) + \nabla L \cdot \Delta\)</span> → 选 <span class="arithmatex">\(\Delta = -\eta \nabla L\)</span>。</li>
+<li><strong>Newton 法</strong>：用二阶 Taylor。<span class="arithmatex">\(L(\theta + \Delta) \approx L(\theta) + \nabla L \cdot \Delta + \tfrac{1}{2} \Delta^T H \Delta\)</span> → 选 <span class="arithmatex">\(\Delta = -H^{-1} \nabla L\)</span>。</li>
 <li><strong>Adam / RMSProp</strong>：用一阶梯度的二阶矩做自适应学习率——本质是"用历史梯度的统计估计 Hessian 对角元"。</li>
 </ul>
 <p>物理学家做非线性分析（小振动近似、非线性最小二乘、Bogoliubov-de Gennes）就是这套——在某个点把势能 Taylor 展开到二阶，写下<strong>简正模式</strong>（normal modes）。Hessian 谱分析在 ML 里叫"loss landscape geometry"，在物理里叫"小振动谱"，是同一回事。Sharpness、flat minima、edge of stability 这些 ML 里的概念在物理里都有现成的对应：稳定性分析、临界点分类、Lyapunov 指数。</p>
@@ -439,8 +456,8 @@
 <span class="n">probs</span> <span class="o">=</span> <span class="n">F</span><span class="o">.</span><span class="n">softmax</span><span class="p">(</span><span class="n">logits</span><span class="p">,</span> <span class="n">dim</span><span class="o">=-</span><span class="mi">1</span><span class="p">)</span>
 </code></pre></div>
 
-<p>argmax 不可微，所以无法 backprop。Softmax 是它的"光滑化"：当温度 $T \to 0$，softmax → argmax；$T \to \infty$，softmax → 均匀分布。</p>
-<p>这套"用可微函数近似不可微操作"是微积分的经典操作（如 Heaviside 阶跃 → sigmoid，绝对值 → Huber loss）。物理学家做相变研究时用 $\tanh$ 近似阶跃、用高斯近似 delta 函数——逻辑完全一样：<strong>让一个不可微的极限过程在每一步都可导</strong>。</p>
+<p>argmax 不可微，所以无法 backprop。Softmax 是它的"光滑化"：当温度 <span class="arithmatex">\(T \to 0\)</span>，softmax → argmax；<span class="arithmatex">\(T \to \infty\)</span>，softmax → 均匀分布。</p>
+<p>这套"用可微函数近似不可微操作"是微积分的经典操作（如 Heaviside 阶跃 → sigmoid，绝对值 → Huber loss）。物理学家做相变研究时用 <span class="arithmatex">\(\tanh\)</span> 近似阶跃、用高斯近似 delta 函数——逻辑完全一样：<strong>让一个不可微的极限过程在每一步都可导</strong>。</p>
 <p><code>docs/DIFFERENTIABLE_PROGRAMMING.md</code> 把这个观察推到了底——"深度学习就是可微分编程"，本质上是"把原本的离散程序连续化、把离散判断换成可微的 soft 版本"。</p>
 <hr />
 <h2 id="15-思想史地图为什么物理学家转-ai-没有门槛">15. 思想史地图：为什么物理学家转 AI 没有门槛</h2>
@@ -629,11 +646,11 @@
 <p>本附录结合《物理双月刊》文章 <a href="https://bimonthly.ps-taiwan.org/articles/67bc2d041efd7411b20caacd">《亂中有序：從自旋玻璃到神經網絡》</a>，把第 3 节（Hopfield 网络）展开成一条完整的物理史脉络：从最朴素的 Ising 模型开始，经过阻挫、自旋玻璃、Parisi 的副本对称破缺，一路推到 Hopfield 网络、Boltzmann 机，最后接到现代 Transformer 的注意力机制。每个概念都给一段最短的、能跑的 PyTorch 代码。</p>
 </blockquote>
 <h3 id="a1-ising-模型自旋系统最朴素的描述">A.1 Ising 模型：自旋系统最朴素的描述</h3>
-<p>故事的起点是 1920 年代的 Ising 模型——晶格上每个格点放一个二值自旋 $s_i \in {-1, +1}$，相邻自旋之间有耦合 $J$：</p>
+<p>故事的起点是 1920 年代的 Ising 模型——晶格上每个格点放一个二值自旋 <span class="arithmatex">\(s_i \in \{-1, +1\}\)</span>，相邻自旋之间有耦合 <span class="arithmatex">\(J\)</span>：</p>
 <div class="highlight"><pre><span></span><code>H(s) = -J · Σ_{&lt;i,j&gt;} s_i s_j  -  h · Σ_i s_i
 </code></pre></div>
 
-<p><code>&lt;i,j&gt;</code> 表示相邻格点对，$h$ 是外加磁场。$J &gt; 0$ 时低能态是所有自旋同向（铁磁），$J &lt; 0$ 是反向交错（反铁磁）。</p>
+<p><code>&lt;i,j&gt;</code> 表示相邻格点对，<span class="arithmatex">\(h\)</span> 是外加磁场。<span class="arithmatex">\(J &gt; 0\)</span> 时低能态是所有自旋同向（铁磁），<span class="arithmatex">\(J &lt; 0\)</span> 是反向交错（反铁磁）。</p>
 <p>写成 PyTorch 直接可跑：</p>
 <div class="highlight"><pre><span></span><code><span class="kn">import</span><span class="w"> </span><span class="nn">torch</span>
 <span class="n">N</span> <span class="o">=</span> <span class="mi">8</span>
@@ -643,9 +660,9 @@
 <span class="n">E</span> <span class="o">=</span> <span class="o">-</span><span class="n">J</span> <span class="o">*</span> <span class="p">(</span><span class="n">s</span><span class="p">[:</span><span class="o">-</span><span class="mi">1</span><span class="p">,</span> <span class="p">:]</span> <span class="o">*</span> <span class="n">s</span><span class="p">[</span><span class="mi">1</span><span class="p">:,</span> <span class="p">:])</span><span class="o">.</span><span class="n">sum</span><span class="p">()</span> <span class="o">-</span> <span class="n">J</span> <span class="o">*</span> <span class="p">(</span><span class="n">s</span><span class="p">[:,</span> <span class="p">:</span><span class="o">-</span><span class="mi">1</span><span class="p">]</span> <span class="o">*</span> <span class="n">s</span><span class="p">[:,</span> <span class="mi">1</span><span class="p">:])</span><span class="o">.</span><span class="n">sum</span><span class="p">()</span>
 </code></pre></div>
 
-<p>整个统计力学第一年就在研究这个 $H$：求配分函数 $Z = \sum_s e^{-\beta H(s)}$、相变温度、临界指数。<strong>Onsager 1944 年解出 2D Ising 模型的精确解，这是 20 世纪理论物理最伟大的成就之一。</strong> 但它只是序幕。</p>
+<p>整个统计力学第一年就在研究这个 <span class="arithmatex">\(H\)</span>：求配分函数 <span class="arithmatex">\(Z = \sum_s e^{-\beta H(s)}\)</span>、相变温度、临界指数。<strong>Onsager 1944 年解出 2D Ising 模型的精确解，这是 20 世纪理论物理最伟大的成就之一。</strong> 但它只是序幕。</p>
 <h3 id="a2-阻挫frustration当无解成为常态">A.2 阻挫（Frustration）：当"无解"成为常态</h3>
-<p>文章用一个三角形说清了所有故事的起源：三个自旋 $s_1, s_2, s_3$ 两两之间是<strong>反铁磁</strong>耦合（$J &lt; 0$，喜欢异号）。任意两个自旋很容易满足——一上一下就行。但<strong>三个</strong>自旋一起？</p>
+<p>文章用一个三角形说清了所有故事的起源：三个自旋 <span class="arithmatex">\(s_1, s_2, s_3\)</span> 两两之间是<strong>反铁磁</strong>耦合（<span class="arithmatex">\(J &lt; 0\)</span>，喜欢异号）。任意两个自旋很容易满足——一上一下就行。但<strong>三个</strong>自旋一起？</p>
 <div class="highlight"><pre><span></span><code><span class="kn">import</span><span class="w"> </span><span class="nn">itertools</span>
 <span class="n">configs</span> <span class="o">=</span> <span class="nb">list</span><span class="p">(</span><span class="n">itertools</span><span class="o">.</span><span class="n">product</span><span class="p">([</span><span class="o">-</span><span class="mi">1</span><span class="p">,</span> <span class="mi">1</span><span class="p">],</span> <span class="n">repeat</span><span class="o">=</span><span class="mi">3</span><span class="p">))</span>
 <span class="n">J</span> <span class="o">=</span> <span class="o">-</span><span class="mf">1.0</span>
@@ -658,10 +675,10 @@
 <p>文章原话："無論選擇朝上或是朝下，總是會跟其中一個自旋同向"。</p>
 <p>阻挫不是一个边角病例——一旦把"耦合是随机的、有正有负"加进去，<strong>绝大多数构型都是阻挫的</strong>。这把整个能量地形从"一个干净的盆地"变成了"一片复杂的、布满局部极小的山脉"。</p>
 <h3 id="a3-自旋玻璃edwards-anderson-与-sherrington-kirkpatrick-模型">A.3 自旋玻璃：Edwards-Anderson 与 Sherrington-Kirkpatrick 模型</h3>
-<p>铜里掺杂少量铁/锰原子，磁性自旋随机散布在格点上，磁交互作用（RKKY）随距离正负震荡——任意两个自旋的耦合 $J_{ij}$ 实际上是<strong>随机变量</strong>：</p>
+<p>铜里掺杂少量铁/锰原子，磁性自旋随机散布在格点上，磁交互作用（RKKY）随距离正负震荡——任意两个自旋的耦合 <span class="arithmatex">\(J_{ij}\)</span> 实际上是<strong>随机变量</strong>：</p>
 <ul>
-<li><strong>Edwards-Anderson (EA) 模型 (1975)</strong>：晶格上每对相邻自旋的 $J_{ij}$ 独立从某个对称分布（比如 $\pm J$ 各 50%）抽取。</li>
-<li><strong>Sherrington-Kirkpatrick (SK) 模型 (1975)</strong>：所有自旋两两都耦合（mean-field），$J_{ij} \sim \mathcal{N}(0, 1/N)$。</li>
+<li><strong>Edwards-Anderson (EA) 模型 (1975)</strong>：晶格上每对相邻自旋的 <span class="arithmatex">\(J_{ij}\)</span> 独立从某个对称分布（比如 <span class="arithmatex">\(\pm J\)</span> 各 50%）抽取。</li>
+<li><strong>Sherrington-Kirkpatrick (SK) 模型 (1975)</strong>：所有自旋两两都耦合（mean-field），<span class="arithmatex">\(J_{ij} \sim \mathcal{N}(0, 1/N)\)</span>。</li>
 </ul>
 <div class="highlight"><pre><span></span><code><span class="n">N</span> <span class="o">=</span> <span class="mi">100</span>
 <span class="n">J</span> <span class="o">=</span> <span class="n">torch</span><span class="o">.</span><span class="n">randn</span><span class="p">(</span><span class="n">N</span><span class="p">,</span> <span class="n">N</span><span class="p">)</span> <span class="o">/</span> <span class="p">(</span><span class="n">N</span> <span class="o">**</span> <span class="mf">0.5</span><span class="p">)</span>
@@ -676,19 +693,19 @@
 <span class="n">torch</span><span class="o">.</span><span class="n">nn</span><span class="o">.</span><span class="n">init</span><span class="o">.</span><span class="n">normal_</span><span class="p">(</span><span class="n">module</span><span class="o">.</span><span class="n">weight</span><span class="p">,</span> <span class="n">mean</span><span class="o">=</span><span class="mf">0.0</span><span class="p">,</span> <span class="n">std</span><span class="o">=</span><span class="mf">0.02</span><span class="p">)</span>
 </code></pre></div>
 
-<p>神经网络的每一层 <code>nn.Linear</code> 的权重矩阵，在初始化的那一刻，<strong>结构上就是一个 SK 自旋玻璃的耦合矩阵</strong>。Choromanska 等人 2015 年的论文 <em>The Loss Surfaces of Multilayer Networks</em> 把这个对应做严格——多层 ReLU 网络的损失函数 $\mathbb{E}|y - f_\theta(x)|^2$ 在大宽度极限下确实可以映射到一个球形 $p$-自旋玻璃模型，并继承它"绝大多数局部极小都几乎一样深"的性质。这就是为什么 SGD 找到的不是全局最优、却也能训出像样的模型。</p>
+<p>神经网络的每一层 <code>nn.Linear</code> 的权重矩阵，在初始化的那一刻，<strong>结构上就是一个 SK 自旋玻璃的耦合矩阵</strong>。Choromanska 等人 2015 年的论文 <em>The Loss Surfaces of Multilayer Networks</em> 把这个对应做严格——多层 ReLU 网络的损失函数 <span class="arithmatex">\(\mathbb{E}\|y - f_\theta(x)\|^2\)</span> 在大宽度极限下确实可以映射到一个球形 <span class="arithmatex">\(p\)</span>-自旋玻璃模型，并继承它"绝大多数局部极小都几乎一样深"的性质。这就是为什么 SGD 找到的不是全局最优、却也能训出像样的模型。</p>
 <h3 id="a4-副本巧门与-parisi-的副本对称破缺rsb">A.4 副本巧门与 Parisi 的副本对称破缺（RSB）</h3>
-<p>自旋玻璃的核心难点：耦合 $J_{ij}$ 是随机的，要算的是<strong>自由能对耦合分布的平均</strong> $\overline{F} = -kT \, \overline{\log Z}$。但 $\overline{\log Z}$ 没法直接算——$\log$ 在外面挡着。</p>
+<p>自旋玻璃的核心难点：耦合 <span class="arithmatex">\(J_{ij}\)</span> 是随机的，要算的是<strong>自由能对耦合分布的平均</strong> <span class="arithmatex">\(\overline{F} = -kT \, \overline{\log Z}\)</span>。但 <span class="arithmatex">\(\overline{\log Z}\)</span> 没法直接算——<span class="arithmatex">\(\log\)</span> 在外面挡着。</p>
 <p>物理学家祭出<strong>副本巧门</strong>（replica trick）：</p>
 <div class="highlight"><pre><span></span><code>log Z = lim_{n→0}  (Z^n - 1) / n
 </code></pre></div>
 
-<p>把 $n$ 当成正整数算 $\overline{Z^n}$（这是 $n$ 个独立副本系统的配分函数乘起来再平均），再<strong>解析延拓</strong>到 $n \to 0$。<strong>这步在数学上根本不严格</strong>，但它给出了正确答案。</p>
-<p>副本平均后耦合的随机性消失，代价是引入了"副本对" $a, b \in {1, \ldots, n}$ 之间的耦合——<strong>副本之间通过共享的耦合分布相互纠缠</strong>。一个自然的假设是<strong>副本对称</strong>（replica symmetry）：所有副本对地位等价，序参量 $q_{ab}$ 只取一个值。</p>
+<p>把 <span class="arithmatex">\(n\)</span> 当成正整数算 <span class="arithmatex">\(\overline{Z^n}\)</span>（这是 <span class="arithmatex">\(n\)</span> 个独立副本系统的配分函数乘起来再平均），再<strong>解析延拓</strong>到 <span class="arithmatex">\(n \to 0\)</span>。<strong>这步在数学上根本不严格</strong>，但它给出了正确答案。</p>
+<p>副本平均后耦合的随机性消失，代价是引入了"副本对" <span class="arithmatex">\(a, b \in \{1, \ldots, n\}\)</span> 之间的耦合——<strong>副本之间通过共享的耦合分布相互纠缠</strong>。一个自然的假设是<strong>副本对称</strong>（replica symmetry）：所有副本对地位等价，序参量 <span class="arithmatex">\(q_{ab}\)</span> 只取一个值。</p>
 <p>Sherrington 和 Kirkpatrick 用这个假设算出来 SK 模型的解——但低温下熵居然<strong>变成负数</strong>。这在物理上荒谬：熵是状态数的对数，不可能小于零。整个领域卡住了 4 年。</p>
 <p>1979 年 <strong>Giorgio Parisi</strong> 的洞见（也是他获 2021 年诺贝尔物理学奖的核心工作）：<strong>副本对称是个错误的假设</strong>。文章原话："複本巧門並沒有要求複本對稱"。</p>
-<p>Parisi 的方案叫<strong>副本对称破缺</strong>（Replica Symmetry Breaking, RSB）：把 $n$ 个副本递归地分组——先分成 $n/m_1$ 组，每组 $m_1$ 个；每组再分成 $m_1/m_2$ 个亚组……最后写出一个<strong>层级结构</strong>的 $q_{ab}$ 矩阵。极限 $n \to 0$ 后，这个层级变成一个连续函数 $q(x), x \in [0,1]$。</p>
-<p>物理意义极深：<strong>自旋玻璃的低温相不是"几个简并基态"，而是无穷多的、按超度量（ultrametric）层级组织的纯态</strong>。任意两个纯态之间的"距离"满足 $d(A,C) \le \max(d(A,B), d(B,C))$（不等式比三角不等式更强）——正是树状层级的几何。</p>
+<p>Parisi 的方案叫<strong>副本对称破缺</strong>（Replica Symmetry Breaking, RSB）：把 <span class="arithmatex">\(n\)</span> 个副本递归地分组——先分成 <span class="arithmatex">\(n/m_1\)</span> 组，每组 <span class="arithmatex">\(m_1\)</span> 个；每组再分成 <span class="arithmatex">\(m_1/m_2\)</span> 个亚组……最后写出一个<strong>层级结构</strong>的 <span class="arithmatex">\(q_{ab}\)</span> 矩阵。极限 <span class="arithmatex">\(n \to 0\)</span> 后，这个层级变成一个连续函数 <span class="arithmatex">\(q(x), x \in [0,1]\)</span>。</p>
+<p>物理意义极深：<strong>自旋玻璃的低温相不是"几个简并基态"，而是无穷多的、按超度量（ultrametric）层级组织的纯态</strong>。任意两个纯态之间的"距离"满足 <span class="arithmatex">\(d(A,C) \le \max(d(A,B), d(B,C))\)</span>（不等式比三角不等式更强）——正是树状层级的几何。</p>
 <h3 id="a5-能量景观与超度量结构">A.5 能量景观与超度量结构</h3>
 <p>把上面的几何抽象具像化：</p>
 <div class="highlight"><pre><span></span><code><span class="k">def</span><span class="w"> </span><span class="nf">hopfield_energy</span><span class="p">(</span><span class="n">s</span><span class="p">,</span> <span class="n">J</span><span class="p">):</span>
@@ -702,20 +719,20 @@
 
 <p>把这些构型按能量画图——你会得到一个<strong>布满深谷、被高山隔开</strong>的"能量地形"（energy landscape）。重要的特性：</p>
 <ul>
-<li><strong>指数级多的局部极小</strong>：状态数随 $N$ 指数增长，绝大多数都是亚稳态（metastable）。</li>
+<li><strong>指数级多的局部极小</strong>：状态数随 <span class="arithmatex">\(N\)</span> 指数增长，绝大多数都是亚稳态（metastable）。</li>
 <li><strong>能垒高度同样指数大</strong>：从一个谷到另一个谷需要翻很高的山。</li>
 <li><strong>超度量层级</strong>：把所有谷按"两两之间能垒高度"聚类，得到一棵层级树。</li>
 </ul>
 <p>第 10 节提到的 <strong>Grokking 现象</strong>（训练 loss 早就收敛，验证 loss 经过长平台期突然下降）——结构上恰好对应 RSB 那种"亚稳态群之间的层级跃迁"。SGD 长时间被困在一个层级的盆地里，某次随机扰动让它跨过能垒，进入一个更深、更具泛化性的层级。</p>
 <h3 id="a6-hopfield-网络把自旋玻璃改造成记忆机器">A.6 Hopfield 网络：把自旋玻璃改造成记忆机器</h3>
 <p>1982 年 <strong>John Hopfield</strong>（2024 年诺贝尔物理学奖得主之一）做了一件颠覆性的事：<strong>反过来用自旋玻璃</strong>。</p>
-<p>物理学家研究自旋玻璃时把 $J_{ij}$ 当作<strong>自然给定的随机量</strong>，问"在这种耦合下系统会怎么演化"。Hopfield 反过来——<strong>人为设计 $J_{ij}$</strong>，让系统的局部极小<strong>恰好是我们想存的记忆</strong>。</p>
-<p>定义"神经元"为 $\pm 1$ 自旋，能量函数：</p>
+<p>物理学家研究自旋玻璃时把 <span class="arithmatex">\(J_{ij}\)</span> 当作<strong>自然给定的随机量</strong>，问"在这种耦合下系统会怎么演化"。Hopfield 反过来——<strong>人为设计 <span class="arithmatex">\(J_{ij}\)</span></strong>，让系统的局部极小<strong>恰好是我们想存的记忆</strong>。</p>
+<p>定义"神经元"为 <span class="arithmatex">\(\pm 1\)</span> 自旋，能量函数：</p>
 <div class="highlight"><pre><span></span><code><span class="k">def</span><span class="w"> </span><span class="nf">E</span><span class="p">(</span><span class="n">s</span><span class="p">,</span> <span class="n">W</span><span class="p">):</span>
     <span class="k">return</span> <span class="o">-</span><span class="mf">0.5</span> <span class="o">*</span> <span class="n">s</span> <span class="o">@</span> <span class="n">W</span> <span class="o">@</span> <span class="n">s</span>
 </code></pre></div>
 
-<p>异步更新规则：随机选一个神经元 $i$，让它沿能量下降方向翻：</p>
+<p>异步更新规则：随机选一个神经元 <span class="arithmatex">\(i\)</span>，让它沿能量下降方向翻：</p>
 <div class="highlight"><pre><span></span><code><span class="k">def</span><span class="w"> </span><span class="nf">hopfield_update</span><span class="p">(</span><span class="n">s</span><span class="p">,</span> <span class="n">W</span><span class="p">):</span>
     <span class="n">i</span> <span class="o">=</span> <span class="n">torch</span><span class="o">.</span><span class="n">randint</span><span class="p">(</span><span class="mi">0</span><span class="p">,</span> <span class="nb">len</span><span class="p">(</span><span class="n">s</span><span class="p">),</span> <span class="p">(</span><span class="mi">1</span><span class="p">,))</span><span class="o">.</span><span class="n">item</span><span class="p">()</span>
     <span class="n">s</span><span class="p">[</span><span class="n">i</span><span class="p">]</span> <span class="o">=</span> <span class="n">torch</span><span class="o">.</span><span class="n">sign</span><span class="p">((</span><span class="n">W</span><span class="p">[</span><span class="n">i</span><span class="p">]</span> <span class="o">@</span> <span class="n">s</span><span class="p">)</span><span class="o">.</span><span class="n">clamp</span><span class="p">(</span><span class="nb">min</span><span class="o">=</span><span class="mf">1e-9</span><span class="p">,</span> <span class="nb">max</span><span class="o">=</span><span class="mi">1</span><span class="p">)</span> <span class="o">+</span> <span class="mi">0</span><span class="p">)</span>
@@ -726,7 +743,7 @@
 <p>这个动力学<strong>永不增加能量</strong> —— Hopfield 1982 年的关键证明：定义的能量函数是 Lyapunov 函数，系统单调下降，必收敛到某个局部极小。</p>
 <p>把局部极小设计成"记忆模式"，那么从任何含噪声的初始态出发，系统都会<strong>自动滚到最近的记忆里</strong>——这就是<strong>联想记忆</strong>（associative memory）：给一段残缺的输入，输出最匹配的完整记忆。这正好对应人脑"由部分线索回忆整体"的能力。</p>
 <h3 id="a7-hebbian-学习相关即耦合">A.7 Hebbian 学习：相关即耦合</h3>
-<p>怎么把记忆 $\xi^{(\mu)} \in {-1,+1}^N, \mu = 1, \ldots, P$ 编码到 $W_{ij}$ 里？Hopfield 用了 1949 年 <strong>Donald Hebb</strong> 提出的规则——"一起激发的神经元一起接线"（cells that fire together wire together）：</p>
+<p>怎么把记忆 <span class="arithmatex">\(\xi^{(\mu)} \in \{-1,+1\}^N, \mu = 1, \ldots, P\)</span> 编码到 <span class="arithmatex">\(W_{ij}\)</span> 里？Hopfield 用了 1949 年 <strong>Donald Hebb</strong> 提出的规则——"一起激发的神经元一起接线"（cells that fire together wire together）：</p>
 <div class="highlight"><pre><span></span><code><span class="k">def</span><span class="w"> </span><span class="nf">hebbian_weights</span><span class="p">(</span><span class="n">patterns</span><span class="p">):</span>
 <span class="w">    </span><span class="sd">&quot;&quot;&quot;patterns: (P, N) tensor of ±1, returns (N, N) W&quot;&quot;&quot;</span>
     <span class="n">P</span><span class="p">,</span> <span class="n">N</span> <span class="o">=</span> <span class="n">patterns</span><span class="o">.</span><span class="n">shape</span>
@@ -735,13 +752,13 @@
     <span class="k">return</span> <span class="n">W</span>
 </code></pre></div>
 
-<p>这就一行——$W = \frac{1}{N} \sum_\mu \xi^{(\mu)} (\xi^{(\mu)})^T$（去对角线）。每个模式贡献一个外积。</p>
-<p>物理学家会立即认出：<strong>这就是 SK 自旋玻璃的耦合矩阵，只不过 $J_{ij}$ 不是从高斯抽，而是 $P$ 个固定模式的外积叠加。</strong> 当 $P$ 较小时，每个 $\xi^{(\mu)}$ 是一个能量极小（容易验证 $\xi^{(\mu)}$ 满足 $\text{sign}(W \xi^{(\mu)}) = \xi^{(\mu)}$）；当 $P$ 太大时，模式之间的串扰把所有局部极小搅成一团乱麻——又<strong>变回了普通的自旋玻璃</strong>。</p>
+<p>这就一行——<span class="arithmatex">\(W = \frac{1}{N} \sum_\mu \xi^{(\mu)} (\xi^{(\mu)})^T\)</span>（去对角线）。每个模式贡献一个外积。</p>
+<p>物理学家会立即认出：<strong>这就是 SK 自旋玻璃的耦合矩阵，只不过 <span class="arithmatex">\(J_{ij}\)</span> 不是从高斯抽，而是 <span class="arithmatex">\(P\)</span> 个固定模式的外积叠加。</strong> 当 <span class="arithmatex">\(P\)</span> 较小时，每个 <span class="arithmatex">\(\xi^{(\mu)}\)</span> 是一个能量极小（容易验证 <span class="arithmatex">\(\xi^{(\mu)}\)</span> 满足 <span class="arithmatex">\(\text{sign}(W \xi^{(\mu)}) = \xi^{(\mu)}\)</span>）；当 <span class="arithmatex">\(P\)</span> 太大时，模式之间的串扰把所有局部极小搅成一团乱麻——又<strong>变回了普通的自旋玻璃</strong>。</p>
 <h3 id="a8-容量极限014n-与灾难性遗忘">A.8 容量极限：0.14N 与灾难性遗忘</h3>
 <p>那么 Hopfield 网络能存几个记忆？Amit、Gutfreund、Sompolinsky 1985 年用副本巧门做了精确分析：</p>
 <ul>
-<li>$P/N &lt; \alpha_c \approx 0.138$：记忆能被准确检索（每个 $\xi^{(\mu)}$ 是一个 stable attractor）。</li>
-<li>$P/N &gt; 0.138$：相变发生，系统进入<strong>自旋玻璃相</strong>——每个记忆都被淹没在指数多的虚假极小（spurious states）里，无法检索。</li>
+<li><span class="arithmatex">\(P/N &lt; \alpha_c \approx 0.138\)</span>：记忆能被准确检索（每个 <span class="arithmatex">\(\xi^{(\mu)}\)</span> 是一个 stable attractor）。</li>
+<li><span class="arithmatex">\(P/N &gt; 0.138\)</span>：相变发生，系统进入<strong>自旋玻璃相</strong>——每个记忆都被淹没在指数多的虚假极小（spurious states）里，无法检索。</li>
 </ul>
 <p>这是物理学<strong>第一次给出一个神经网络的精确容量极限</strong>，而且工具就是副本巧门 + RSB——和分析普通自旋玻璃完全一样。</p>
 <p>容量瓶颈也是 1980 年代神经网络遇冷的原因之一——<strong>每神经元 0.14 个记忆</strong>实在太少。深度学习要等到 30 年后才解决这个问题（见 A.10）。</p>
@@ -755,13 +772,13 @@
     <span class="k">return</span> <span class="n">s</span>
 </code></pre></div>
 
-<p>这个更新让系统按 $P(s) \propto e^{-E(s)/T}$ 采样——温度 $T$ 让它能跳出局部极小。再加上<strong>隐变量</strong>（hidden units）扩展模型容量，再加上<strong>对比散度</strong>（contrastive divergence, Hinton 2002）让训练高效——这就是<strong>受限玻尔兹曼机</strong>（RBM）和<strong>深度信念网络</strong>（DBN），2006 年深度学习复兴的引爆点。</p>
+<p>这个更新让系统按 <span class="arithmatex">\(P(s) \propto e^{-E(s)/T}\)</span> 采样——温度 <span class="arithmatex">\(T\)</span> 让它能跳出局部极小。再加上<strong>隐变量</strong>（hidden units）扩展模型容量，再加上<strong>对比散度</strong>（contrastive divergence, Hinton 2002）让训练高效——这就是<strong>受限玻尔兹曼机</strong>（RBM）和<strong>深度信念网络</strong>（DBN），2006 年深度学习复兴的引爆点。</p>
 <p>注意第 1 节讲的 softmax = Boltzmann 分布——这个等号在玻尔兹曼机上是<strong>字面</strong>的，不是类比。<code>F.softmax(logits)</code> 在数学上就是玻尔兹曼机给某个状态的概率。Hinton 拿物理诺奖不是隐喻。</p>
 <h3 id="a10-现代-hopfield-网络指数容量-transformer-注意力">A.10 现代 Hopfield 网络：指数容量 → Transformer 注意力</h3>
 <p>2020 年 Ramsauer 等 <em><a href="https://arxiv.org/abs/2008.02217">Hopfield Networks is All You Need</a></em> 把 Hopfield 网络做了两件事：</p>
 <ol>
-<li><strong>二值 → 连续</strong>：自旋 $s \in \mathbb{R}^d$，能量改用 log-sum-exp 形式。</li>
-<li><strong>多项式 → 指数容量</strong>：新能量函数下能存 $\sim e^{cd}$ 个模式，远超 $0.14N$。</li>
+<li><strong>二值 → 连续</strong>：自旋 <span class="arithmatex">\(s \in \mathbb{R}^d\)</span>，能量改用 log-sum-exp 形式。</li>
+<li><strong>多项式 → 指数容量</strong>：新能量函数下能存 <span class="arithmatex">\(\sim e^{cd}\)</span> 个模式，远超 <span class="arithmatex">\(0.14N\)</span>。</li>
 </ol>
 <p>新能量与更新一步：</p>
 <div class="highlight"><pre><span></span><code><span class="kn">import</span><span class="w"> </span><span class="nn">torch.nn.functional</span><span class="w"> </span><span class="k">as</span><span class="w"> </span><span class="nn">F</span>
@@ -781,7 +798,7 @@
 </code></pre></div>
 
 <p><strong>结构完全一致</strong>：<code>q @ kᵀ</code> = 查询与每个存储模式的相似度；<code>softmax</code> = 给每个记忆按玻尔兹曼分布投票；<code>@ v</code> = 加权检索。每个注意力头就是一次 Hopfield 更新。多头无非是几个并行的 Hopfield 网络，每个在自己的子空间里检索一组不同的记忆。</p>
-<p><code>1/√d</code> 的缩放在 Ramsauer 论文里对应<strong>指数容量证明里的温度参数 $\beta$</strong>——没有它注意力会塌缩到单个 token，物理上等价于自旋玻璃的零温极限。</p>
+<p><code>1/√d</code> 的缩放在 Ramsauer 论文里对应<strong>指数容量证明里的温度参数 <span class="arithmatex">\(\beta\)</span></strong>——没有它注意力会塌缩到单个 token，物理上等价于自旋玻璃的零温极限。</p>
 <h3 id="a11-2024-年诺贝尔物理学奖物理对-ai-的承认">A.11 2024 年诺贝尔物理学奖：物理对 AI 的承认</h3>
 <p>2024 年 10 月，瑞典皇家科学院把诺贝尔物理学奖颁给 Hopfield 和 Hinton，引文是"for foundational discoveries and inventions that enable machine learning with artificial neural networks"。理由不是"他们做了 AI"，而是<strong>他们用统计物理的方法解决了 AI 的问题</strong>：</p>
 <ul>
@@ -801,22 +818,22 @@
 </thead>
 <tbody>
 <tr>
-<td>随机权重 $J_{ij} \sim \mathcal{N}(0, \sigma^2)$</td>
+<td>随机权重 <span class="arithmatex">\(J_{ij} \sim \mathcal{N}(0, \sigma^2)\)</span></td>
 <td>SK 自旋玻璃耦合</td>
 <td><code>model.py:171, 175</code> 高斯初始化</td>
 </tr>
 <tr>
-<td>能量函数 $E = -\tfrac{1}{2} s^T W s$</td>
+<td>能量函数 <span class="arithmatex">\(E = -\tfrac{1}{2} s^T W s\)</span></td>
 <td>Hopfield 网络</td>
-<td>注意力 logits 之前的 $Q K^T$ 矩阵</td>
+<td>注意力 logits 之前的 <span class="arithmatex">\(Q K^T\)</span> 矩阵</td>
 </tr>
 <tr>
-<td>玻尔兹曼分布 $e^{-\beta E}/Z$</td>
+<td>玻尔兹曼分布 <span class="arithmatex">\(e^{-\beta E}/Z\)</span></td>
 <td>统计力学</td>
 <td><code>F.softmax(att, dim=-1)</code> <code>model.py:68</code></td>
 </tr>
 <tr>
-<td>Hebbian 外积 $\sum_\mu \xi^{(\mu)} \xi^{(\mu)T}$</td>
+<td>Hebbian 外积 <span class="arithmatex">\(\sum_\mu \xi^{(\mu)} \xi^{(\mu)T}\)</span></td>
 <td>联想记忆学习规则</td>
 <td><code>K.T @ K</code> 这种结构（隐含在 Q/K 投影里）</td>
 </tr>
