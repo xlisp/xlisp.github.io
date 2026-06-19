@@ -29,13 +29,18 @@ window.MathJax = {
     displayMath: [['\\[', '\\]']],
     processEscapes: true
   },
+  svg: {
+    // Each formula gets its own self-contained <defs>, so the copy script can
+    // serialize one <svg> and rasterize it to a PNG for WeChat.
+    fontCache: 'local'
+  },
   options: {
     skipHtmlTags: ['script', 'noscript', 'style', 'textarea', 'pre', 'code'],
     ignoreHtmlClass: 'highlight'
   }
 };
 </script>
-<script src="https://cdn.jsdelivr.net/npm/mathjax@3/es5/tex-chtml.js" async></script>
+<script src="https://cdn.jsdelivr.net/npm/mathjax@3/es5/tex-svg.js" async></script>
 </head>
 <body>
 <main class="wrap post">
@@ -965,7 +970,7 @@ window.MathJax = {
 <script src="https://github.com/tonsky/datascript/releases/download/1.7.8/datascript-1.7.8.min.js"></script>
 <script src="../notes.js?v=6"></script>
 <script src="../theme.js"></script>
-<script src="../wechat-copy.js?v=2"></script>
+<script src="../wechat-copy.js?v=3"></script>
 
 </body>
 </html>

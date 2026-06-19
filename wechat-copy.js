@@ -142,6 +142,80 @@
     return pre;
   }
 
+  // ---- Math → image -------------------------------------------------------
+  // WeChat strips the CSS/web-fonts MathJax relies on, so rendered formulas
+  // scramble on paste. Fix: take each MathJax <svg>, draw it onto a canvas at
+  // hi-DPI, and emit a transparent base64 PNG <img> that pastes intact.
+  var MATH_SCALE = 3; // raster at 3x for crisp formulas on retina + WeChat zoom
+
+  function rasterizeMath(container) {
+    var svg = container.querySelector("svg");
+    if (!svg) return Promise.resolve(null);
+    var rect = svg.getBoundingClientRect();
+    var w = rect.width;
+    var h = rect.height;
+    if (!w || !h) return Promise.resolve(null);
+
+    var clone = svg.cloneNode(true);
+    clone.setAttribute("xmlns", "http://www.w3.org/2000/svg");
+    clone.setAttribute("xmlns:xlink", "http://www.w3.org/1999/xlink");
+    // MathJax paints with `currentColor`; pin it to the WeChat ink color.
+    clone.style.color = C.ink;
+    // Replace ex-based sizing with explicit pixels so the standalone SVG
+    // rasterizes at the size it renders on the page.
+    clone.setAttribute("width", w + "px");
+    clone.setAttribute("height", h + "px");
+
+    var svgStr = new XMLSerializer().serializeToString(clone);
+    var src =
+      "data:image/svg+xml;charset=utf-8," + encodeURIComponent(svgStr);
+
+    return new Promise(function (resolve) {
+      var img = new Image();
+      img.onload = function () {
+        try {
+          var canvas = document.createElement("canvas");
+          canvas.width = Math.ceil(w * MATH_SCALE);
+          canvas.height = Math.ceil(h * MATH_SCALE);
+          var ctx = canvas.getContext("2d");
+          ctx.scale(MATH_SCALE, MATH_SCALE);
+          ctx.drawImage(img, 0, 0, w, h);
+          resolve({
+            url: canvas.toDataURL("image/png"),
+            w: w,
+            h: h,
+            display: container.getAttribute("display") === "true",
+            valign: svg.style.verticalAlign || "",
+          });
+        } catch (e) {
+          resolve(null);
+        }
+      };
+      img.onerror = function () { resolve(null); };
+      img.src = src;
+    });
+  }
+
+  function mathImg(res) {
+    var img = document.createElement("img");
+    img.src = res.url;
+    if (res.display) {
+      setStyle(
+        img,
+        "display:block;margin:18px auto;max-width:100%;" +
+        "width:" + Math.round(res.w) + "px;height:auto;"
+      );
+    } else {
+      setStyle(
+        img,
+        "display:inline-block;width:" + Math.round(res.w) + "px;" +
+        "height:" + Math.round(res.h) + "px;" +
+        "vertical-align:" + (res.valign || "middle") + ";"
+      );
+    }
+    return img;
+  }
+
   // Apply inline styles to a "normal" (non-code) element based on its tag.
   function styleBlock(el) {
     var tag = el.tagName;
@@ -208,11 +282,29 @@
   }
 
   // Build the full WeChat-ready HTML string from the live article content.
-  function buildWeChatHTML() {
+  async function buildWeChatHTML() {
     var content = document.querySelector("article .content");
     if (!content) return null;
 
+    // 0) Rasterize math from the LIVE DOM (getBoundingClientRect needs the
+    //    elements rendered), then map results into the clone by index.
+    var liveMath = Array.prototype.slice.call(
+      content.querySelectorAll("mjx-container")
+    );
+    var mathResults = await Promise.all(liveMath.map(rasterizeMath));
+
     var work = content.cloneNode(true);
+
+    var cloneMath = work.querySelectorAll("mjx-container");
+    var mathImgSet = new Set();
+    for (var m = 0; m < cloneMath.length; m++) {
+      var res = mathResults[m];
+      var node = cloneMath[m];
+      if (!res) continue; // leave the original if rasterizing failed
+      var picture = mathImg(res);
+      mathImgSet.add(picture);
+      node.parentNode.replaceChild(picture, node);
+    }
 
     // 1) Replace every code block first (before generic styling touches them).
     var highlights = work.querySelectorAll("div.highlight, pre");
@@ -224,11 +316,12 @@
       h.parentNode.replaceChild(block, h);
     }
 
-    // 2) Style all remaining elements (skip the code we just built).
+    // 2) Style all remaining elements (skip the code + math images).
     var all = work.querySelectorAll("*");
     for (var j = 0; j < all.length; j++) {
       var el = all[j];
       if (el.tagName === "PRE" || el.closest("pre")) continue;
+      if (mathImgSet.has(el)) continue; // keep the sizing we set above
       styleBlock(el);
     }
 
@@ -319,7 +412,7 @@
 
     btn.addEventListener("click", async function () {
       flash(btn, "处理中…");
-      var html = buildWeChatHTML();
+      var html = await buildWeChatHTML();
       if (!html) {
         flash(btn, "没有内容", false);
         return;
