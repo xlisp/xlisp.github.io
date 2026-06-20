@@ -1,0 +1,673 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>把提示词当代码写：Prompt Engineering 的第一性原理 · Steve Chan — xlisp</title>
+<meta name="description" content="大多数人对 Prompt Engineering 的理解停留在&quot;把话说清楚&quot;。于是出现了一堆玄学：加个&quot;请你扮演专家&quot;、结尾来一句&quot;这很重要&quot;、再不行就&quot;深呼吸一步步想&quot;。">
+<meta name="author" content="Steve Chan">
+<link rel="icon" type="image/jpeg" href="../icon.jpeg">
+<link rel="apple-touch-icon" href="../icon.jpeg">
+<meta property="og:type" content="article">
+<meta property="og:title" content="把提示词当代码写：Prompt Engineering 的第一性原理">
+<meta property="og:description" content="大多数人对 Prompt Engineering 的理解停留在&quot;把话说清楚&quot;。于是出现了一堆玄学：加个&quot;请你扮演专家&quot;、结尾来一句&quot;这很重要&quot;、再不行就&quot;深呼吸一步步想&quot;。">
+<meta property="og:image" content="../icon.jpeg">
+<meta property="og:site_name" content="Steve Chan — xlisp">
+<meta name="twitter:card" content="summary_large_image">
+<meta name="twitter:title" content="把提示词当代码写：Prompt Engineering 的第一性原理">
+<meta name="twitter:description" content="大多数人对 Prompt Engineering 的理解停留在&quot;把话说清楚&quot;。于是出现了一堆玄学：加个&quot;请你扮演专家&quot;、结尾来一句&quot;这很重要&quot;、再不行就&quot;深呼吸一步步想&quot;。">
+<meta name="twitter:image" content="../icon.jpeg">
+<link rel="stylesheet" href="../style.css?v=light1">
+<script>(function(){try{if(localStorage.getItem('theme')==='light')document.documentElement.setAttribute('data-theme','light');}catch(e){}})();</script>
+<!-- Math formula rendering via MathJax -->
+<script>
+window.MathJax = {
+  tex: {
+    // arithmatex emits \(...\) / \[...\] markup, so only these delimiters
+    // are needed; plain `$` is left alone (avoids currency false positives).
+    inlineMath: [['\\(', '\\)']],
+    displayMath: [['\\[', '\\]']],
+    processEscapes: true
+  },
+  svg: {
+    // Each formula gets its own self-contained <defs>, so the copy script can
+    // serialize one <svg> and rasterize it to a PNG for WeChat.
+    fontCache: 'local'
+  },
+  options: {
+    skipHtmlTags: ['script', 'noscript', 'style', 'textarea', 'pre', 'code'],
+    ignoreHtmlClass: 'highlight'
+  }
+};
+</script>
+<script src="https://cdn.jsdelivr.net/npm/mathjax@3/es5/tex-svg.js" async></script>
+</head>
+<body>
+<main class="wrap post">
+
+  <nav class="topnav">
+    <a href="../index.html">← home</a>
+  </nav>
+
+  <article>
+    <header class="post-header">
+      <h1>把提示词当代码写：Prompt Engineering 的第一性原理</h1>
+      <p class="meta">2026-06-20 · Steve Chan</p>
+    </header>
+
+    <div class="content">
+<blockquote>
+<p>"让提示词更像编程语言，减少降维变换的损失，甚至直接用 Python 语言本身作为提示词。"
+—— 本项目 README 第一性原理之一</p>
+<p>这篇文章只讲一层：<strong>提示词本身怎么写</strong>。
+至于提示词之外的那套循环、工具、记忆——也就是 <strong>harness / ReAct</strong>——我在另外两篇里写透了，本文不再重复，只在该衔接的地方给链接。</p>
+</blockquote>
+<hr />
+<h2 id="〇一个反直觉的开场">〇、一个反直觉的开场</h2>
+<p>大多数人对 Prompt Engineering 的理解停留在"把话说清楚"。于是出现了一堆玄学：加个"请你扮演专家"、结尾来一句"这很重要"、再不行就"深呼吸一步步想"。</p>
+<p>这些技巧有用，但它们都没回答一个更根本的问题：</p>
+<blockquote>
+<p><strong>为什么"把话说清楚"这件事本身这么难？</strong></p>
+</blockquote>
+<p>答案是：<strong>自然语言是有损的</strong>。你脑子里那个精确的需求是高维的、带结构的；你用一句中文把它说出来时，结构被压扁了；模型再把这句中文"翻译"回它要执行的高维结构时，又得猜一次。<strong>一来一回两次降维，损失叠加，结果就跑偏。</strong></p>
+<p>理解了这一点，README 里那十几条看似零散的"第一性原理"，其实是同一条主线的不同侧面。这篇文章就把这条主线拎出来：</p>
+<blockquote>
+<p><strong>提示词工程的本质，是控制"人的意图 → 模型的执行"这条翻译链路上的降维损失。</strong>
+<strong>而控制损失最有效的手段，是让提示词越来越像代码。</strong></p>
+</blockquote>
+<hr />
+<h2 id="一第一性原理transformer-最强的是翻译">一、第一性原理：Transformer 最强的是翻译</h2>
+<p>先把地基打牢。</p>
+<p>Transformer 这个架构，它<strong>最擅长、最稳定、最不容易出错的能力是翻译</strong>——准确说，是<strong>高维向量到高维向量的、保结构的映射</strong>。机器翻译是它的起家本行，但"翻译"远不止语言之间：</p>
+<ul>
+<li>把英文翻成中文，是翻译；</li>
+<li>把自然语言描述翻成 Python 代码，是翻译；</li>
+<li>把 Python 代码翻成 Rust，是翻译；</li>
+<li>把一段需求翻成一个 JSON 结构，也是翻译。</li>
+</ul>
+<p><strong>只要源和目标都是"结构清晰、信息密度高"的表示，Transformer 的翻译就既稳又准。</strong> 反过来，源头越模糊（一句没头没尾的口语），它要补的结构越多，幻觉就越多。</p>
+<p>这给了我们第一条可操作的推论：</p>
+<blockquote>
+<p><strong>不要让模型从"模糊"翻译到"精确"，那是它最吃力的方向。</strong>
+<strong>要让模型从"精确"翻译到"精确"——也就是把你的提示词，提前写成接近代码的精确结构。</strong></p>
+</blockquote>
+<p>这就是 README 那句"让提示词更像编程语言"的全部理由。它不是审美偏好，是顺着 Transformer 的能力梯度在走。</p>
+<hr />
+<h2 id="二prompt-as-code把提示词写成代码">二、Prompt as Code：把提示词写成代码</h2>
+<p>既然要"精确到精确",最极端的做法就是<strong>直接用代码当提示词</strong>。本项目 README 给了好几种梯度，从弱到强排一下。</p>
+<h3 id="21-最强形态直接用-python-代码-填空">2.1 最强形态：直接用 Python 代码 + 填空</h3>
+<p>让模型"补全代码"，而不是"回答问题"。代码的语法本身就是一副最严格的约束模具：</p>
+<div class="highlight"><pre><span></span><code><span class="c1">## Your problem {you question}, you MUST fill code in the blank:</span>
+<span class="k">def</span><span class="w"> </span><span class="nf">get_weather</span><span class="p">():</span>
+    <span class="n">api_weather</span><span class="p">({</span><span class="n">write</span> <span class="n">you</span> <span class="n">location</span> <span class="n">xyz</span><span class="p">})</span>
+</code></pre></div>
+
+<p>或者更进一步，把"可调用的函数"提供给模型，逼它只能在给定函数里组合答案：</p>
+<div class="highlight"><pre><span></span><code><span class="c1"># Please complete the code according to the context, keep it concise.</span>
+<span class="c1"># Note:</span>
+<span class="c1"># 1. Only output the code content, no explanations.</span>
+<span class="c1"># 2. Only functions provided by the context are allowed.</span>
+<span class="c1"># 3. Only one line of code is allowed.</span>
+
+<span class="k">def</span><span class="w"> </span><span class="nf">get_weather</span><span class="p">(</span><span class="n">location</span><span class="p">:</span> <span class="nb">str</span><span class="p">,</span> <span class="n">time</span><span class="p">:</span> <span class="nb">str</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="n">List</span><span class="p">[</span><span class="nb">str</span><span class="p">]:</span>
+<span class="w">    </span><span class="sd">&quot;&quot;&quot;Query the weather for a specific location and time.&quot;&quot;&quot;</span>
+
+<span class="k">def</span><span class="w"> </span><span class="nf">answer</span><span class="p">():</span>
+<span class="w">    </span><span class="sd">&quot;&quot;&quot; {{QUESTIONS}}, should call function &quot;&quot;&quot;</span>
+</code></pre></div>
+
+<p>注意这里发生了什么：<strong>类型签名 <code>(location: str, time: str) -&gt; List[str]</code> 就是提示词的一部分</strong>。你没写一句"请注意参数类型"，但模型已经被签名约束住了。这是把"自然语言里要啰嗦半天的约束"，压进了"代码里一行就说清的结构"。这就是降维损失最小的写法。</p>
+<blockquote>
+<p>⚠️ 代价：代码输出需要 <code>ast</code> 解析、或正则抽取代码块，偶尔不稳定。README 也老实承认了"json output parse sometimes unstable"。所以——见下一条。</p>
+</blockquote>
+<h3 id="22-结构化输出用括号-json-代码块锁住边界">2.2 结构化输出：用括号 / JSON / 代码块锁住边界</h3>
+<p>模型的输出要能被下游程序消费，就必须有<strong>机器可解析的边界</strong>。README 的经验是：</p>
+<blockquote>
+<p>只有用括号、JSON、或 Python 代码块（```json）包起来的输出，才能稳定地被抽取出来。</p>
+</blockquote>
+<p>所以约定一个铁律式的输出尾巴：</p>
+<div class="highlight"><pre><span></span><code>MUST be **LAST output json** like below format:
+```json
+{&quot;file&quot;: ..., &quot;name&quot;: ...}
+</code></pre></div>
+
+<div class="highlight"><pre><span></span><code>配一个朴素但够用的抽取器：
+
+```python
+def parse_code_blocks(markdown):
+    code_blocks = re.findall(r&#39;```json(?:[a-zA-Z]*)\n([\s\S]*?)\n```&#39;, markdown)
+    if not code_blocks:
+        raise ValueError(&quot;No code blocks found&quot;)
+    return [b.strip() for b in code_blocks]
+</code></pre></div>
+
+<p><strong>输出格式 = 函数的返回类型。</strong> 你不会允许一个函数"有时返回 dict，有时返回一段散文"，提示词的输出也不该。</p>
+<h3 id="23-绝对语气-类型约束">2.3 绝对语气 = 类型约束</h3>
+<p>README 里反复强调"拒绝模糊语气，用绝对语气如 MUST"，还专门有一节叫 <em>Grammar capitalization highlights tone</em>：</p>
+<div class="highlight"><pre><span></span><code>Step1. you first MUST find xxx
+*MUST NOT* include xxx
+Every *BEGIN/END block* must use this format:
+</code></pre></div>
+
+<p>为什么大写、为什么 <code>MUST</code> / <code>MUST NOT</code>？因为在"翻译"的视角下，<strong>"尽量""最好""如果可以"这类词是噪声</strong>——它们在目标侧没有对应的确定结构，模型只能概率性地猜要不要执行。而 <code>MUST</code> 像一个布尔断言，把概率压到接近 1。</p>
+<p><strong>模糊词之于提示词，等于隐式类型转换之于代码：能省则省，越显式越安全。</strong></p>
+<h3 id="24-多变量约定func-与-var">2.4 多变量约定：<code>{func}</code> 与 <code>(var)</code></h3>
+<p>README 提了一个很妙的小约定，呼应 Markdown 的设计哲学（<code>[text](link)</code>、<code>[[d-link]]</code>、<code>((block)</code>）：</p>
+<div class="highlight"><pre><span></span><code>{funcabc}  →  花括号是&quot;函数 / 占位结构&quot;
+(xyz)      →  圆括号是&quot;变量 / 要填的值&quot;
+**{INPUT}** →  加粗 + 包裹，强调这是关键输入
+</code></pre></div>
+
+<div class="highlight"><pre><span></span><code><span class="sd">&quot;&quot;&quot;</span>
+<span class="sd">Step1: Your problem is **{INPUT}**, ...</span>
+<span class="sd">Step2: Answer this question **{INPUT}**, ...</span>
+<span class="sd">&quot;&quot;&quot;</span>
+</code></pre></div>
+
+<p>这一步看着小，意义却大：<strong>你给提示词引入了"变量"和"作用域"</strong>。一旦有了变量，提示词就不再是一段死文本，而是一个可以被参数化、被复用、被组合的<strong>模板函数</strong>。这直接通向下一节。</p>
+<hr />
+<h2 id="三lambda-演算提示词是可组合的函数">三、Lambda 演算：提示词是可组合的函数</h2>
+<p>README 有一条很硬核的原则：</p>
+<blockquote>
+<p>"Lambda calculus uses the same idea to calculate prompt words."</p>
+</blockquote>
+<p>意思是：<strong>把每一段提示词当成一个纯函数</strong>，输入是变量，输出是文本；然后用组合、套用、复用去搭出复杂行为，而不是写一坨巨型 prompt。</p>
+<p>README 里那些命名好的消息常量就是这个思路的雏形：</p>
+<div class="highlight"><pre><span></span><code><span class="n">content_gpt_edits</span>      <span class="o">=</span> <span class="s1">&#39;I committed the changes with git hash </span><span class="si">{hash}</span><span class="s1"> &amp; msg: </span><span class="si">{message}</span><span class="s1">&#39;</span>
+<span class="n">content_gpt_no_edits</span>   <span class="o">=</span> <span class="s2">&quot;I didn&#39;t see any properly formatted edits in your reply?!&quot;</span>
+<span class="n">lazy_prompt</span> <span class="o">=</span> <span class="s2">&quot;&quot;&quot;You are diligent and tireless!</span>
+<span class="s2">You NEVER leave comments describing code without implementing it!</span>
+<span class="s2">You always COMPLETELY IMPLEMENT the needed code!</span>
+<span class="s2">&quot;&quot;&quot;</span>
+</code></pre></div>
+
+<p>每一段都是一个"小提示词函数"，带着自己的占位变量、负责一件极小的事。需要时拼装，不需要时放着。<strong>提示词工程到这一步，已经从"写作"变成了"软件设计"。</strong></p>
+<hr />
+<h2 id="四一个-system-role-只做一件事粒度即稳定性">四、一个 system role 只做一件事：粒度即稳定性</h2>
+<p>接着上一节最关键的工程纪律，也是 README 我最认同的一条：</p>
+<blockquote>
+<p>"A system role prompt does one thing well. The smaller the granularity, the more stable it is."</p>
+</blockquote>
+<p>为什么粒度越小越稳？还是翻译视角：<strong>一个职责单一的 prompt，它的"目标结构"是收敛的、可预测的</strong>；一个又要查库、又要写代码、又要润色文案的巨型 prompt，目标结构发散，模型每一步都在多个意图之间摇摆，损失累积得飞快。</p>
+<p>看 README 里 <code>shell_gpt</code> 的角色定义——干净得像一个 Unix 小工具：</p>
+<div class="highlight"><pre><span></span><code><span class="n">SHELL_ROLE</span> <span class="o">=</span> <span class="s2">&quot;&quot;&quot;</span>
+<span class="s2">You are Shell Command Generator</span>
+<span class="s2">Provide only xonsh commands for </span><span class="si">{os}</span><span class="s2"> without any description.</span>
+<span class="s2">If there is a lack of details, provide most logical solution.</span>
+<span class="s2">Ensure the output is a valid shell command.</span>
+<span class="s2">If multiple steps required try to combine them together using &amp;&amp;.</span>
+<span class="s2">Provide only plain text without Markdown formatting.</span>
+<span class="s2">Do not provide markdown formatting such as ```.</span>
+<span class="s2">&quot;&quot;&quot;</span>
+</code></pre></div>
+
+<p>它只做一件事：<strong>自然语言 → 一条合法 shell 命令</strong>。没有寒暄、没有解释、没有 Markdown。输入输出都被压到最窄。这种"小而专"的 role，正是可以被批量组合、可以被便宜模型驱动、可以被无人值守地串进流水线的前提。</p>
+<blockquote>
+<p>这里和 harness 那篇文章里的 <strong>subagent（每个子智能体只拿一小撮精准工具）</strong> 是同构的——把"专一职责 + 精准接口"这条原则,从工具层递归地用到了提示词层。详见：<a href="./harness-is-everything.md">Harness 即一切</a>。</p>
+</blockquote>
+<hr />
+<h2 id="五多提示词自动协作拒绝手工搬运">五、多提示词自动协作：拒绝手工搬运</h2>
+<p>README 里有一句话，是整本"提示词设计"的灵魂：</p>
+<blockquote>
+<p>"The most important thing about Prompt Engineering is to realize <strong>automatic collaboration</strong> of input and output of multiple prompt words, don't output and sort it out manually."</p>
+</blockquote>
+<p>翻译过来：<strong>最重要的不是把单个提示词调到完美，而是让多个提示词的输入输出自动地接起来——你不要做那个手工复制粘贴、手工整理中间结果的人。</strong></p>
+<p>这正是第二、三、四节那一切结构化努力的<strong>目的所在</strong>：</p>
+<ul>
+<li>输出锁成 JSON（§2.2）→ 是为了让下一个 prompt 能直接吃；</li>
+<li>提示词参数化成函数（§3）→ 是为了能被程序自动填值调用；</li>
+<li>role 拆到足够小（§4）→ 是为了能像零件一样被流水线串起来。</li>
+</ul>
+<p>README 还专门提到中间结果的传递纪律：</p>
+<div class="highlight"><pre><span></span><code><span class="c1"># SUMMARY &amp; SORTING：把上下文压缩后传给下一个 agent 或用户</span>
+<span class="k">finally</span> <span class="n">end</span> <span class="n">MUST</span> <span class="n">SUMMARY</span> <span class="n">of</span> <span class="n">what</span> <span class="n">the</span> <span class="n">code</span> <span class="n">does</span>
+</code></pre></div>
+
+<p>每一棒交接前先 <strong>SUMMARY</strong>，把噪声滤掉、只把精华传下去——这既省 token，又防止上下文污染。</p>
+<blockquote>
+<p>这条"自动协作"的原则，往前再走一步就是 <strong>ReAct 的 Thought→Action→Observation 闭环</strong>，以及 harness 怎么把这套循环工业化。那是另一层的事，完整论述见：<a href="./In-depth-analysis-of-ReAct.md">从 CoT 到 ReAct，再到"会自己思考"的模型</a>。本文到此为止，只强调一点：<strong>结构化的提示词，是自动协作的前置条件。</strong> 输出是散文，就没法自动接棒。</p>
+</blockquote>
+<hr />
+<h2 id="六检索足够的外部上下文update-context-模式">六、检索足够的外部上下文：UPDATE CONTEXT 模式</h2>
+<p>README 另一条第一性原理：</p>
+<blockquote>
+<p>"One of the greatest significances of Prompt Engineering is to <strong>retrieve enough effective and accurate external context.</strong>"</p>
+</blockquote>
+<p>模型权重里没有你公司今天的数据、没有那个内部文档、没有这次报错的现场。<strong>再精确的提示词，喂的是空气，也只能产出空气。</strong> 所以"把对的上下文检索进来"和"把提示词写精确"是同等重要的两件事。</p>
+<p>README 给了一个很优雅的"自知之明"模式——让模型在上下文不足时<strong>主动喊话</strong>，而不是硬编：</p>
+<div class="highlight"><pre><span></span><code><span class="sd">&quot;&quot;&quot;You&#39;re a retrieve augmented chatbot. You answer based on your own</span>
+<span class="sd">knowledge and the context provided by the user.</span>
+<span class="sd">If you can&#39;t answer with or without the current context, you should</span>
+<span class="sd">reply exactly `UPDATE CONTEXT`.</span>
+<span class="sd">You must give as short an answer as possible.</span>
+
+<span class="sd">User&#39;s question is: {input_question}</span>
+<span class="sd">Context is: {input_context}</span>
+<span class="sd">&quot;&quot;&quot;</span>
+</code></pre></div>
+
+<p><code>UPDATE CONTEXT</code> 这个固定 token 就是一个<strong>控制信号</strong>：外层程序一旦收到它，就去检索更多资料、补进 <code>{input_context}</code>、重新调用。<strong>提示词在这里不只是产出答案，还在驱动一个检索循环。</strong> 这又一次回到 §2.2 —— 用一个机器可识别的固定输出，把"模型"和"程序"焊在一起。</p>
+<hr />
+<h2 id="七把一次问对换成多次逼近">七、把"一次问对"换成"多次逼近"</h2>
+<p>人类工程师调试代码不指望一遍跑通，提示词也别指望一次问对。README 有三条原则讲的是同一件事：</p>
+<blockquote>
+<ul>
+<li>"Multiple executions, retries on failure, and loops for a goal."</li>
+<li>复杂问题先用简单问题测，用返回结果纠正提示词再问——相当于 <strong>"a belief network or GPT fingerprint"</strong>。</li>
+<li>复杂算法先生成 Python 代码，多次确认正确后，再用 GPT 翻译成其它语言。</li>
+</ul>
+</blockquote>
+<h3 id="71-gpt-fingerprint用简单问题校准提示词">7.1 GPT Fingerprint：用简单问题校准提示词</h3>
+<p>这条特别值得展开。面对一个很复杂的问题，<strong>不要一上来就把全部复杂度砸给模型</strong>。先用一个你<strong>已知答案</strong>的简单问题去问，看模型怎么回、它的"思路指纹"是什么样：</p>
+<ul>
+<li>如果简单问题它都答歪 → 说明你的提示词框架本身有问题，改框架；</li>
+<li>如果简单问题答对了 → 用它的回答风格、它理解的措辞，<strong>反过来修订你的提示词</strong>，再上复杂问题。</li>
+</ul>
+<p>这就是 README 说的 <strong>belief network / GPT fingerprint</strong>：你在用一组小探针，去标定模型对你这套提示词的"响应曲线"，然后顺着曲线把真正的问题喂进去。本质是<strong>把提示词调优变成一个有反馈的迭代过程</strong>，而不是一锤子买卖。</p>
+<h3 id="72-先写-python再翻译成目标语言">7.2 先写 Python，再翻译成目标语言</h3>
+<p>对复杂的算法/逻辑题，README 的路径是：</p>
+<blockquote>
+<p><strong>先让模型生成 Python</strong>（生态最熟、模型最擅长、最容易验证），跑几遍确认逻辑正确，<strong>再让模型把这段已验证的 Python 翻译成 Rust / Go / Java。</strong></p>
+</blockquote>
+<p>这又回到了第一节的主线：<strong>翻译是 Transformer 最稳的能力。</strong> 与其让它直接生成不熟的 Rust（一步到位、难验证），不如把任务拆成"生成 Python（可验证）+ 翻译（最稳）"两段。<strong>把不确定性集中到一个可验证的中间表示上</strong>——Python 就是那个中间表示。</p>
+<hr />
+<h2 id="八mre最小可复现样例是最强的例子引导">八、MRE：最小可复现样例，是最强的"例子引导"</h2>
+<p>README 压轴的一条：</p>
+<blockquote>
+<p>"The most effective way to solve complex code issues is to find a <strong>minimal reproducible example</strong> and let the AI generate what you need based on that pattern."</p>
+</blockquote>
+<p>为什么 MRE 这么强？因为<strong>一个好例子的信息密度，远高于一段描述</strong>。你描述"我想要一个带重试和指数退避的 HTTP 客户端"，模型要补一堆结构；你直接给它一个 20 行的最小可跑样例，让它"照这个 pattern 改/扩"——它要做的又变回了<strong>翻译</strong>（从一个已知结构映射到一个相邻结构），而不是凭空创造。</p>
+<p>MRE 还有一个隐藏好处：<strong>它顺手把上下文也最小化了</strong>。没有无关代码的干扰，模型不会被噪声带偏。这与 §4"粒度越小越稳"、§6"精准上下文"是同一个道理在不同尺度上的回声。</p>
+<blockquote>
+<p>把"给一个最小例子让模型照着干"这件事放大到整个研究流程，就是 Karpathy 的 <code>autoresearch</code>、就是"训练模型本身也是一种逆向工程"——那条线我在 harness 那篇里展开了，这里不重复。</p>
+</blockquote>
+<hr />
+<h2 id="九边界提示词工程的尽头是微调">九、边界：提示词工程的尽头是微调</h2>
+<p>最后要诚实地划一条线。README 写道：</p>
+<blockquote>
+<p>"The limit of Prompt Engineering is to <strong>fine tune the model by yourself</strong>, and use the training data to QA the DL descriptors that are closer."</p>
+</blockquote>
+<p>提示词工程是有上限的。当你发现：</p>
+<ul>
+<li>同一类任务你要反复贴几千 token 的 few-shot；</li>
+<li>某种领域措辞模型怎么都对不准；</li>
+<li>你想要的输出分布，本质上不在预训练分布里——</li>
+</ul>
+<p>那就说明你已经顶到了<strong>"in-context（上下文内）"这条路的天花板</strong>。再往上，就该把这些经验<strong>从提示词里搬进权重里</strong>——也就是微调 / SFT，用训练数据让模型的内部"描述符"更贴近你的领域。</p>
+<p>这条边界，恰好和 ReAct 那篇文章的主线接上了：<strong>"怎么想"正越来越多地从 prompt 下沉进模型权重</strong>（CoT → o1 → R1）。提示词工程不会消失，但它和"训练"之间的分界线一直在移动。今天要写一长串提示词才能逼出的行为，明天可能一个微调就内化了。<strong>好的提示词工程师，要清楚自己什么时候该停下来去标数据。</strong></p>
+<hr />
+<h2 id="十收束提示词工程像-web-设计">十、收束：提示词工程像 Web 设计</h2>
+<p>README 里有一句很轻巧但很准的比喻：</p>
+<blockquote>
+<p>"Prompt Engineering is like web design, rich in various elements and combinations."</p>
+</blockquote>
+<p>把全文压成一张表，你会发现这十几条原则，全是"用代码的纪律去组织文本"的不同元素：</p>
+<table>
+<thead>
+<tr>
+<th>README 原则</th>
+<th>翻译视角下的本质</th>
+<th>类比的编程概念</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>提示词更像编程语言</td>
+<td>减少"模糊→精确"的降维损失</td>
+<td>强类型</td>
+</tr>
+<tr>
+<td>绝对语气 MUST</td>
+<td>把概率压到 1</td>
+<td>断言 / 类型约束</td>
+</tr>
+<tr>
+<td>直接用 Python 当 prompt</td>
+<td>让任务退化成"翻译/填空"</td>
+<td>代码模板</td>
+</tr>
+<tr>
+<td>JSON / 代码块输出</td>
+<td>给输出一个可解析边界</td>
+<td>返回类型</td>
+</tr>
+<tr>
+<td><code>{func}</code> <code>(var)</code> 变量</td>
+<td>提示词参数化</td>
+<td>函数签名</td>
+</tr>
+<tr>
+<td>Lambda 计算提示词</td>
+<td>小提示词的组合</td>
+<td>纯函数组合</td>
+</tr>
+<tr>
+<td>一个 role 做一件事</td>
+<td>目标结构收敛 → 稳</td>
+<td>单一职责</td>
+</tr>
+<tr>
+<td>多提示词自动协作</td>
+<td>输出自动接棒，不手工搬</td>
+<td>管道 / 函数复合</td>
+</tr>
+<tr>
+<td>检索精准上下文</td>
+<td>给翻译喂对源数据</td>
+<td>依赖注入</td>
+</tr>
+<tr>
+<td>多次执行 / 重试 / 循环</td>
+<td>把一次问对换成迭代逼近</td>
+<td>测试驱动</td>
+</tr>
+<tr>
+<td>GPT fingerprint</td>
+<td>用简单探针标定响应曲线</td>
+<td>单元测试 / 二分定位</td>
+</tr>
+<tr>
+<td>先 Python 再翻译</td>
+<td>把不确定性收到可验证中间表示</td>
+<td>中间表示 / 编译</td>
+</tr>
+<tr>
+<td>最小可复现样例</td>
+<td>用高密度例子代替低密度描述</td>
+<td>样例驱动</td>
+</tr>
+<tr>
+<td>尽头是微调</td>
+<td>in-context 顶到天花板就进权重</td>
+<td>从配置到编译</td>
+</tr>
+</tbody>
+</table>
+<p>一句话总结整篇：</p>
+<blockquote>
+<p><strong>Transformer 最稳的能力是翻译。所以最好的提示词，是把你脑子里那个高维、精确、带结构的意图，提前写成接近代码的样子——让模型只需要"翻译"，而不需要"猜"。</strong></p>
+</blockquote>
+<p>剩下那一层——循环、工具、记忆、子智能体——是 harness 的事。两篇姊妹文在这里：</p>
+<ul>
+<li><a href="./harness-is-everything.md">Harness 即一切：模型不是不够聪明，而是是否有足够有用的 tools</a></li>
+<li><a href="./In-depth-analysis-of-ReAct.md">从 CoT 到 ReAct，再到"会自己思考"的模型</a></li>
+</ul>
+<p>提示词把单点写精确，harness 把多点串起来。<strong>两者合起来，才是完整的"用自然语言编程"。</strong></p>
+<hr />
+<p><em>本文所有提示词片段均摘自本仓库 <a href="../README.md"><code>README.md</code></a>。</em></p>
+    </div>
+  </article>
+
+</main>
+
+<!-- Floating Ask-AI chat widget -->
+<button class="ai-fab" id="ai-fab" aria-label="Ask AI about this article" title="Ask AI about this article">
+  <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+    <path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"/>
+  </svg>
+  <span class="ai-fab-label">Ask AI</span>
+</button>
+
+<div class="ai-panel" id="ai-panel" role="dialog" aria-labelledby="ai-panel-title" aria-hidden="true">
+  <header class="ai-panel-head">
+    <div class="ai-panel-title-wrap">
+      <span class="ai-dot"></span>
+      <h3 id="ai-panel-title">Ask AI about this post</h3>
+    </div>
+    <div class="ai-panel-actions">
+      <button class="ai-icon-btn" id="ai-clear" title="Clear conversation" aria-label="Clear">
+        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><polyline points="3 6 5 6 21 6"/><path d="M19 6l-1 14a2 2 0 0 1-2 2H8a2 2 0 0 1-2-2L5 6"/><path d="M10 11v6M14 11v6"/><path d="M9 6V4a1 1 0 0 1 1-1h4a1 1 0 0 1 1 1v2"/></svg>
+      </button>
+      <button class="ai-icon-btn" id="ai-close" title="Minimize" aria-label="Minimize">
+        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><polyline points="6 9 12 15 18 9"/></svg>
+      </button>
+    </div>
+  </header>
+
+  <div class="ai-messages" id="ai-messages">
+    <div class="ai-empty" id="ai-empty">
+      <p class="ai-empty-title">On-device AI · Gemini Nano</p>
+      <p class="ai-empty-sub">Ask anything about this article. Runs in your browser — nothing leaves your device.</p>
+    </div>
+  </div>
+
+  <div class="ai-status" id="ai-status" hidden></div>
+
+  <form class="ai-composer" id="ai-form">
+    <textarea id="ai-input" rows="1" placeholder="Ask about this post…" autocomplete="off"></textarea>
+    <button type="submit" id="ai-send" class="ai-send" aria-label="Send" disabled>
+      <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><line x1="22" y1="2" x2="11" y2="13"/><polygon points="22 2 15 22 11 13 2 9 22 2"/></svg>
+    </button>
+  </form>
+</div>
+
+<script>
+(function () {
+  const POST_TITLE = "\u628a\u63d0\u793a\u8bcd\u5f53\u4ee3\u7801\u5199\uff1aPrompt Engineering \u7684\u7b2c\u4e00\u6027\u539f\u7406";
+  const contentEl = document.querySelector('article .content');
+
+  const fab = document.getElementById('ai-fab');
+  const panel = document.getElementById('ai-panel');
+  const closeBtn = document.getElementById('ai-close');
+  const clearBtn = document.getElementById('ai-clear');
+  const msgsEl = document.getElementById('ai-messages');
+  const emptyEl = document.getElementById('ai-empty');
+  const statusEl = document.getElementById('ai-status');
+  const formEl = document.getElementById('ai-form');
+  const inputEl = document.getElementById('ai-input');
+  const sendBtn = document.getElementById('ai-send');
+
+  function articleText() {
+    if (!contentEl) return '';
+    return (contentEl.innerText || contentEl.textContent || '')
+      .replace(/[ \t]+\n/g, '\n')
+      .replace(/\n{3,}/g, '\n\n')
+      .trim();
+  }
+
+  function setStatus(msg, cls) {
+    if (!msg) { statusEl.hidden = true; statusEl.textContent = ''; statusEl.className = 'ai-status'; return; }
+    statusEl.hidden = false;
+    statusEl.textContent = msg;
+    statusEl.className = 'ai-status' + (cls ? ' ' + cls : '');
+  }
+
+  function hideEmpty() { if (emptyEl) emptyEl.style.display = 'none'; }
+
+  function appendBubble(role, text) {
+    hideEmpty();
+    const wrap = document.createElement('div');
+    wrap.className = 'ai-msg ai-msg-' + role;
+    const bubble = document.createElement('div');
+    bubble.className = 'ai-bubble';
+    bubble.textContent = text;
+    wrap.appendChild(bubble);
+    msgsEl.appendChild(wrap);
+    msgsEl.scrollTop = msgsEl.scrollHeight;
+    return bubble;
+  }
+
+  function appendTyping() {
+    hideEmpty();
+    const wrap = document.createElement('div');
+    wrap.className = 'ai-msg ai-msg-assistant ai-typing';
+    wrap.innerHTML = '<div class="ai-bubble"><span class="ai-dots"><i></i><i></i><i></i></span></div>';
+    msgsEl.appendChild(wrap);
+    msgsEl.scrollTop = msgsEl.scrollHeight;
+    return wrap;
+  }
+
+  function autoSize() {
+    inputEl.style.height = 'auto';
+    inputEl.style.height = Math.min(inputEl.scrollHeight, 140) + 'px';
+  }
+
+  function openPanel() {
+    panel.classList.add('open');
+    panel.setAttribute('aria-hidden', 'false');
+    fab.classList.add('hidden');
+    setTimeout(() => inputEl.focus(), 50);
+  }
+  function closePanel() {
+    panel.classList.remove('open');
+    panel.setAttribute('aria-hidden', 'true');
+    fab.classList.remove('hidden');
+  }
+
+  fab.addEventListener('click', openPanel);
+  closeBtn.addEventListener('click', closePanel);
+  document.addEventListener('keydown', e => {
+    if (e.key === 'Escape' && panel.classList.contains('open')) closePanel();
+  });
+
+  // ---- LanguageModel session ----
+  let session = null;
+  let creating = null;
+  let history = [];
+
+  function buildSystemPrompt() {
+    // Keep article context modest — Gemini Nano's input quota is small.
+    const article = articleText().slice(0, 4000);
+    return (
+      'You are a concise, helpful assistant answering questions about a blog post. ' +
+      'Use the article below as your primary source. If the answer is not in it, say so briefly and answer generally. ' +
+      'Reply in the same language as the user\'s question. Keep answers short unless asked for detail.\n\n' +
+      '=== ARTICLE TITLE ===\n' + POST_TITLE + '\n\n' +
+      '=== ARTICLE CONTENT ===\n' + article
+    );
+  }
+
+  async function ensureSession() {
+    if (session) return session;
+    if (creating) return creating;
+
+    if (!('LanguageModel' in self)) {
+      throw new Error(
+        'On-device AI not available. Use Chrome 138+ on desktop, or enable ' +
+        '"Prompt API for Gemini Nano" in chrome://flags.'
+      );
+    }
+
+    setStatus('Checking model…', 'info');
+    const status = await LanguageModel.availability();
+    if (status === 'unavailable') {
+      throw new Error('Model unavailable on this device.');
+    }
+
+    creating = (async () => {
+      // Only show download UI when the model isn't already there.
+      const willDownload = (status !== 'available');
+      if (willDownload) setStatus('Preparing model (first run downloads ~2GB)…', 'info');
+      else setStatus('Warming up…', 'info');
+
+      const s = await LanguageModel.create({
+        initialPrompts: [{ role: 'system', content: buildSystemPrompt() }],
+        monitor(m) {
+          m.addEventListener('downloadprogress', e => {
+            // Skip the spurious 0% event Chrome fires for cached models.
+            if (!willDownload && e.loaded === 0) return;
+            const pct = (e.loaded * 100).toFixed(1);
+            setStatus('Downloading model: ' + pct + '%', 'info');
+          });
+        }
+      });
+      session = s;
+      setStatus('');
+      return s;
+    })();
+
+    try { return await creating; }
+    finally { creating = null; }
+  }
+
+  async function ask(q) {
+    appendBubble('user', q);
+    history.push({ role: 'user', content: q });
+
+    sendBtn.disabled = true;
+    inputEl.disabled = true;
+    const typing = appendTyping();
+
+    let answerBubble = null;
+    let acc = '';
+    try {
+      const s = await ensureSession();
+      const stream = s.promptStreaming(q);
+      for await (const chunk of stream) {
+        if (!answerBubble) {
+          typing.remove();
+          const wrap = document.createElement('div');
+          wrap.className = 'ai-msg ai-msg-assistant';
+          answerBubble = document.createElement('div');
+          answerBubble.className = 'ai-bubble';
+          wrap.appendChild(answerBubble);
+          msgsEl.appendChild(wrap);
+        }
+        acc += chunk;
+        answerBubble.textContent = acc;
+        msgsEl.scrollTop = msgsEl.scrollHeight;
+      }
+      if (acc) history.push({ role: 'assistant', content: acc });
+      else { typing.remove(); appendBubble('assistant', '(no response)'); }
+    } catch (e) {
+      if (typing && typing.parentNode) typing.remove();
+      const err = document.createElement('div');
+      err.className = 'ai-msg ai-msg-error';
+      err.innerHTML = '<div class="ai-bubble">⚠ ' + (e && e.message ? e.message : String(e)) + '</div>';
+      msgsEl.appendChild(err);
+      msgsEl.scrollTop = msgsEl.scrollHeight;
+    } finally {
+      sendBtn.disabled = !inputEl.value.trim();
+      inputEl.disabled = false;
+      inputEl.focus();
+    }
+  }
+
+  formEl.addEventListener('submit', e => {
+    e.preventDefault();
+    const q = inputEl.value.trim();
+    if (!q) return;
+    inputEl.value = '';
+    autoSize();
+    sendBtn.disabled = true;
+    ask(q);
+  });
+
+  inputEl.addEventListener('input', () => {
+    autoSize();
+    sendBtn.disabled = !inputEl.value.trim();
+  });
+  inputEl.addEventListener('keydown', e => {
+    if (e.key === 'Enter' && !e.shiftKey) {
+      e.preventDefault();
+      formEl.requestSubmit();
+    }
+  });
+
+  clearBtn.addEventListener('click', () => {
+    msgsEl.innerHTML = '';
+    msgsEl.appendChild(emptyEl);
+    emptyEl.style.display = '';
+    history = [];
+    if (session && session.destroy) { try { session.destroy(); } catch (_) {} }
+    session = null;
+    setStatus('');
+  });
+
+  if (!('LanguageModel' in self)) {
+    fab.addEventListener('click', () => {
+      openPanel();
+      setStatus('On-device AI not detected. Use Chrome 138+ desktop, or enable "Prompt API for Gemini Nano" in chrome://flags.', 'bad');
+    }, { once: true });
+  }
+})();
+</script>
+
+<!-- Outline notes / comments — DataScript + IndexedDB -->
+<script src="https://github.com/tonsky/datascript/releases/download/1.7.8/datascript-1.7.8.min.js"></script>
+<script src="../notes.js?v=6"></script>
+<script src="../theme.js"></script>
+<script src="../wechat-copy.js?v=3"></script>
+
+</body>
+</html>
