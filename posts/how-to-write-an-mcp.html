@@ -1,0 +1,716 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>用最小作用原理写一个 MCP：模型的那双手，该怎么造 · Steve Chan — xlisp</title>
+<meta name="description" content="上一篇《Harness 即一切》讲清了一件事：agent 之间真正的差距，越来越不在模型本身，而在你给模型装上的那双手——tools。 而在今天，&quot;给模型造一双手&quot;的标准做法，就叫 MCP（Model Context Protocol）。">
+<meta name="author" content="Steve Chan">
+<link rel="icon" type="image/jpeg" href="../icon.jpeg">
+<link rel="apple-touch-icon" href="../icon.jpeg">
+<meta property="og:type" content="article">
+<meta property="og:title" content="用最小作用原理写一个 MCP：模型的那双手，该怎么造">
+<meta property="og:description" content="上一篇《Harness 即一切》讲清了一件事：agent 之间真正的差距，越来越不在模型本身，而在你给模型装上的那双手——tools。 而在今天，&quot;给模型造一双手&quot;的标准做法，就叫 MCP（Model Context Protocol）。">
+<meta property="og:image" content="../icon.jpeg">
+<meta property="og:site_name" content="Steve Chan — xlisp">
+<meta name="twitter:card" content="summary_large_image">
+<meta name="twitter:title" content="用最小作用原理写一个 MCP：模型的那双手，该怎么造">
+<meta name="twitter:description" content="上一篇《Harness 即一切》讲清了一件事：agent 之间真正的差距，越来越不在模型本身，而在你给模型装上的那双手——tools。 而在今天，&quot;给模型造一双手&quot;的标准做法，就叫 MCP（Model Context Protocol）。">
+<meta name="twitter:image" content="../icon.jpeg">
+<link rel="stylesheet" href="../style.css?v=light1">
+<script>(function(){try{if(localStorage.getItem('theme')==='light')document.documentElement.setAttribute('data-theme','light');}catch(e){}})();</script>
+<!-- Math formula rendering via MathJax -->
+<script>
+window.MathJax = {
+  tex: {
+    // arithmatex emits \(...\) / \[...\] markup, so only these delimiters
+    // are needed; plain `$` is left alone (avoids currency false positives).
+    inlineMath: [['\\(', '\\)']],
+    displayMath: [['\\[', '\\]']],
+    processEscapes: true
+  },
+  svg: {
+    // Each formula gets its own self-contained <defs>, so the copy script can
+    // serialize one <svg> and rasterize it to a PNG for WeChat.
+    fontCache: 'local'
+  },
+  options: {
+    skipHtmlTags: ['script', 'noscript', 'style', 'textarea', 'pre', 'code'],
+    ignoreHtmlClass: 'highlight'
+  }
+};
+</script>
+<script src="https://cdn.jsdelivr.net/npm/mathjax@3/es5/tex-svg.js" async></script>
+</head>
+<body>
+<main class="wrap post">
+
+  <nav class="topnav">
+    <a href="../index.html">← home</a>
+  </nav>
+
+  <article>
+    <header class="post-header">
+      <h1>用最小作用原理写一个 MCP：模型的那双手，该怎么造</h1>
+      <p class="meta">2026-06-21 · Steve Chan</p>
+    </header>
+
+    <div class="content">
+<blockquote>
+<p>"模型不是不够聪明，而是是否有足够有用的 tools。"
+—— 上一篇《Harness 即一切》留下的那句话</p>
+<p>"自然用最少的动作完成事情。"
+—— 物理学的最小作用原理</p>
+</blockquote>
+<p>上一篇《Harness 即一切》讲清了一件事：<strong>agent 之间真正的差距，越来越不在模型本身，而在你给模型装上的那双手——tools。</strong> 而在今天，"给模型造一双手"的标准做法，就叫 <strong>MCP（Model Context Protocol）</strong>。</p>
+<p>这一篇就回答一个具体问题：<strong>MCP 到底是什么、它为什么这么设计、以及——你怎么用半小时写出一个能用的 MCP？</strong></p>
+<p>全文用本项目 <code>code-hacker</code> 里两个真实的 MCP server（<code>filesystem.py</code> / <code>git_tools.py</code>）当解剖样本，配套一个 skill，让你照着就能写出自己的第一个 MCP。</p>
+<hr />
+<h2 id="一一句话讲清-mcp">一、一句话讲清 MCP</h2>
+<p>LLM 本质是一个<strong>文本生成器</strong>。它关在自己的脑子里，看不到你的文件、跑不了你的代码、读不到你的 git log。</p>
+<p>MCP 就是那条把模型接到真实世界的标准电线：</p>
+<div class="highlight"><pre><span></span><code>            ┌─────────────┐         MCP 协议          ┌──────────────┐
+   模型  ←→ │   Host /    │ ←──── tools/list ────→   │  你的 MCP    │
+（脑子）    │   Client    │ ──── tools/call ─────→   │  Server      │
+            │ (CC / IDE)  │ ←──── 结构化结果 ────    │ (你写的代码) │
+            └─────────────┘                           └──────────────┘
+                                                            │
+                                                            ▼
+                                              文件 / git / 数据库 / API / ...
+                                                       （真实世界）
+</code></pre></div>
+
+<ul>
+<li><strong>模型</strong> 负责"想"——它产出一个意图："我想读 <code>train.py</code> 这个文件"。</li>
+<li><strong>MCP server</strong> 负责"做"——它把意图变成真实动作（<code>open().read()</code>），再把世界的状态<strong>结构化地</strong>喂回模型。</li>
+</ul>
+<blockquote>
+<p>没有 tools，模型是脱缰的野马，只会"说";
+有了 MCP，模型才长出手脚，能"读世界的状态、把行动作用回去"。</p>
+</blockquote>
+<p>一个 MCP server 就是一组 <strong>tool</strong> 的集合。写 MCP，本质就是<strong>写 tool</strong>。所以这篇文章真正的主题是：<strong>怎么设计一个好 tool。</strong></p>
+<hr />
+<h2 id="一五mcp-从哪来从-function-calling-到一个开放协议">一·五、MCP 从哪来：从 function calling 到一个开放协议</h2>
+<p>"给模型装手"这件事，不是 MCP 发明的。MCP 是这条路走到第三步时，被逼出来的标准。把这段史展开，你才会明白 MCP 解决的到底是什么问题。</p>
+<h3 id="第-0-步prompt-层的-hack20222023-初">第 0 步：prompt 层的 hack（2022—2023 初）</h3>
+<p>最早大家是<strong>纯靠提示词</strong>让模型"用工具"的：</p>
+<ul>
+<li><strong>ReAct（2022）</strong> —— 让模型按 <code>Thought → Action → Observation</code> 的格式输出，人类写代码去解析它那行 <code>Action: search("...")</code>，执行，再把结果拼回 prompt。</li>
+<li><strong>Toolformer（Meta, 2023.2）</strong> —— 训练模型自己在文本里插入 API 调用。</li>
+<li><strong>LangChain</strong> 等框架 —— 把这套"解析模型输出 → 调函数 → 回填"封装成 agent/tool 抽象。</li>
+</ul>
+<p>问题很明显：<strong>模型输出的是自由文本，解析全靠正则和运气。</strong> 模型多打一个空格、少一个引号，整条链就断了。"调用工具"还不是一等公民，只是 prompt 工程的小聪明。</p>
+<h3 id="第-1-步function-calling-工具调用进了-api20236">第 1 步：Function Calling —— 工具调用进了 API（2023.6）</h3>
+<p>2023 年 6 月 13 日，OpenAI 在 <code>gpt-4-0613</code> / <code>gpt-3.5-turbo-0613</code> 里引入了 <strong>function calling</strong>：</p>
+<ul>
+<li>开发者用 JSON Schema 描述一个函数（名字、参数、类型）。</li>
+<li>模型不再吐自由文本，而是<strong>直接输出一段结构化 JSON</strong>：<code>{"name": "get_weather", "arguments": {"city": "Beijing"}}</code>。</li>
+<li>解析不再靠运气——模型被对齐到"按 schema 说话"。</li>
+</ul>
+<p>这是关键一跃：<strong>"调用外部工具"第一次成了模型 API 的一等公民。</strong> 今天你在 <code>git_tools.py</code> 里写的类型签名会被翻译成 schema 发给模型——这套机制的源头就在这里。</p>
+<blockquote>
+<p>同期还有 <strong>ChatGPT Plugins（2023.3）</strong>：让 ChatGPT 通过 OpenAPI spec 调第三方服务。
+方向对，但每家插件各写各的，生态碎片化，很快沉寂。</p>
+</blockquote>
+<h3 id="第-2-步mn-的集成噩梦">第 2 步：M×N 的集成噩梦</h3>
+<p>function calling 让"单个应用接单个模型"变简单了，但放到整个生态就爆炸了：</p>
+<div class="highlight"><pre><span></span><code>   每个应用 ×  每个数据源 / 工具  =  各写一套适配
+
+   Claude  ─┐   ┌─ 文件系统          M 个模型
+   GPT     ─┼─×─┼─ Git                   ×
+   Gemini  ─┘   ├─ 数据库            N 个工具/数据源
+                ├─ Slack                 ‖
+                └─ ...               M × N 套胶水代码
+</code></pre></div>
+
+<p>每个模型厂商的 function calling 格式略有不同，每个工具又要为每个应用单独接一遍。<strong>M 个模型 × N 个工具 = M×N 的集成噩梦。</strong> 这正是 USB 出现之前，每个设备配一根专用线的世界。</p>
+<h3 id="第-3-步anthropic-发明-mcp-把-mn-变成-mn202411">第 3 步：Anthropic 发明 MCP —— 把 M×N 变成 M+N（2024.11）</h3>
+<p>2024 年 11 月 25 日，Anthropic <strong>开源了 Model Context Protocol（MCP）</strong>：不再让每个应用各自接每个工具，而是定义<strong>一个开放协议</strong>，规定"模型一侧（client）怎么和工具一侧（server）对话"。</p>
+<ul>
+<li>工具方只要实现一次 MCP server（像本项目的 <code>filesystem.py</code>），<strong>任何</strong> MCP 客户端都能用。</li>
+<li>客户端只要会说 MCP，就能接入<strong>任何</strong> MCP server。</li>
+<li><strong>M×N → M+N。</strong></li>
+</ul>
+<p>Anthropic 自己的两个类比最传神：</p>
+<table>
+<thead>
+<tr>
+<th>类比</th>
+<th>含义</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><strong>AI 应用的 USB-C 接口</strong></td>
+<td>一个统一插口，插上就能用，不用为每个设备配专用线</td>
+</tr>
+<tr>
+<td><strong>LSP（Language Server Protocol）之于编辑器</strong></td>
+<td>当年 LSP 让"一个语言服务器 × 所有编辑器"成为可能；MCP 想做"一个工具 server × 所有 AI 应用"</td>
+</tr>
+</tbody>
+</table>
+<p>2025 年，OpenAI、Google DeepMind 等相继宣布支持 MCP——一个由竞争对手发明的协议，被全行业采纳，这本身就说明它戳中了真问题。</p>
+<h3 id="一句话串起来">一句话串起来</h3>
+<div class="highlight"><pre><span></span><code>prompt hack（解析靠运气）
+      ↓  把工具调用做进 API
+function calling（结构化 JSON，但每家一套）
+      ↓  M×N 集成噩梦
+MCP（一个开放协议，M+N，USB-C for AI）
+</code></pre></div>
+
+<blockquote>
+<p>function calling 解决的是"<strong>模型怎么说出一次工具调用</strong>"。
+MCP 解决的是"<strong>这次调用怎么跨模型、跨应用地标准化传递</strong>"。
+前者是语法，后者是协议。本文后面教你写的，就是协议这一侧的 server。</p>
+</blockquote>
+<hr />
+<h2 id="二把最小作用原理搬到-mcp-设计上">二、把"最小作用原理"搬到 MCP 设计上</h2>
+<p>物理学里，自然总是用<strong>最少的动作</strong>完成一件事。这个原则迁移到工程，就是高手的雷达：</p>
+<ul>
+<li>这个 feature 的最小实现路径是什么？</li>
+<li>这个 bug 的最小复现是什么？</li>
+<li>这次能砍掉的最大开销是什么？</li>
+</ul>
+<p>写 MCP 时，"最小作用"有一个非常具体、非常省钱的含义：</p>
+<blockquote>
+<p><strong>一次 tool 调用，要让模型本来需要绕 5 个来回才能拼出来的信息，一次性拿到。</strong>
+这就是上一篇说的——<strong>精准 tool 即精准上下文。</strong></p>
+</blockquote>
+<p>模型的每一次 <code>Thought → Action → Observation</code> 来回，都在烧 token、烧延迟、烧它有限的注意力。一个设计得好的 tool，等价于给模型一个更短、更准、更便宜的 prompt。</p>
+<p>把 README《Why you not student》里那三件高维武器对照过来，就是 MCP 设计的三条铁律：</p>
+<table>
+<thead>
+<tr>
+<th>高维武器</th>
+<th>写 MCP 时的含义</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><strong>最小作用原理</strong></td>
+<td>一个 tool 一次就把模型要的东西给全，别让它绕来绕去</td>
+</tr>
+<tr>
+<td><strong>最小可运行</strong></td>
+<td>先写一个 10 行能跑通的 tool，验证链路，再加功能</td>
+</tr>
+<tr>
+<td><strong>"为什么不行"</strong></td>
+<td>在暴露 tool 之前先想：模型会怎么用错它、怎么把我的机器搞坏</td>
+</tr>
+</tbody>
+</table>
+<p>下面我们用真实代码，把这三条落到地面。</p>
+<hr />
+<h2 id="三解剖一个真实的-mcp-server">三、解剖一个真实的 MCP server</h2>
+<p>打开 <code>git_tools.py</code>,一个完整的 MCP server 只有三段式：</p>
+<div class="highlight"><pre><span></span><code><span class="kn">from</span><span class="w"> </span><span class="nn">mcp.server.fastmcp</span><span class="w"> </span><span class="kn">import</span> <span class="n">FastMCP</span>
+
+<span class="c1"># ① 起一个 server</span>
+<span class="n">mcp</span> <span class="o">=</span> <span class="n">FastMCP</span><span class="p">(</span><span class="n">name</span><span class="o">=</span><span class="s2">&quot;git-tools&quot;</span><span class="p">,</span> <span class="n">host</span><span class="o">=</span><span class="s2">&quot;localhost&quot;</span><span class="p">,</span> <span class="n">port</span><span class="o">=</span><span class="mi">8002</span><span class="p">)</span>
+
+<span class="c1"># ② 用装饰器把一个普通函数变成 tool</span>
+<span class="nd">@mcp</span><span class="o">.</span><span class="n">tool</span><span class="p">()</span>
+<span class="k">async</span> <span class="k">def</span><span class="w"> </span><span class="nf">git_status</span><span class="p">(</span><span class="n">repo_path</span><span class="p">:</span> <span class="nb">str</span> <span class="o">=</span> <span class="s2">&quot;.&quot;</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="nb">str</span><span class="p">:</span>
+<span class="w">    </span><span class="sd">&quot;&quot;&quot;Show working tree status: staged, unstaged, and untracked files.</span>
+
+<span class="sd">    Args:</span>
+<span class="sd">        repo_path: Path to the git repository (default: current directory)</span>
+<span class="sd">    &quot;&quot;&quot;</span>
+    <span class="k">return</span> <span class="n">format_result</span><span class="p">(</span><span class="n">run_git</span><span class="p">([</span><span class="s2">&quot;status&quot;</span><span class="p">],</span> <span class="n">cwd</span><span class="o">=</span><span class="n">repo_path</span><span class="p">))</span>
+
+<span class="c1"># ③ 跑起来</span>
+<span class="k">if</span> <span class="vm">__name__</span> <span class="o">==</span> <span class="s2">&quot;__main__&quot;</span><span class="p">:</span>
+    <span class="n">mcp</span><span class="o">.</span><span class="n">run</span><span class="p">(</span><span class="n">transport</span><span class="o">=</span><span class="s2">&quot;streamable-http&quot;</span><span class="p">)</span>
+</code></pre></div>
+
+<p>就这么多。<code>FastMCP</code> 帮你做完了所有协议层的脏活——握手、<code>tools/list</code>、<code>tools/call</code>、序列化。<strong>你只需要写函数。</strong></p>
+<p>但魔鬼在细节里。上面这个 <code>git_status</code> 短短几行，藏着四个<strong>写给模型而不是写给人</strong>的设计决定：</p>
+<h3 id="1-函数签名-给模型的-schema">1. 函数签名 = 给模型的 schema</h3>
+<div class="highlight"><pre><span></span><code><span class="k">async</span> <span class="k">def</span><span class="w"> </span><span class="nf">git_status</span><span class="p">(</span><span class="n">repo_path</span><span class="p">:</span> <span class="nb">str</span> <span class="o">=</span> <span class="s2">&quot;.&quot;</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="nb">str</span><span class="p">:</span>
+</code></pre></div>
+
+<p>你写的类型注解（<code>repo_path: str</code>）和默认值（<code>= "."</code>），<code>FastMCP</code> 会自动翻译成 JSON Schema，发给模型。模型靠这个 schema 知道："哦，这个 tool 要一个叫 <code>repo_path</code> 的字符串，不给的话默认当前目录。"</p>
+<blockquote>
+<p><strong>原则：类型签名即契约。</strong> 参数名要让模型一看就懂——<code>repo_path</code> 比 <code>p</code> 强一万倍。</p>
+</blockquote>
+<h3 id="2-docstring-写给模型的-prompt">2. docstring = 写给模型的 prompt</h3>
+<div class="highlight"><pre><span></span><code><span class="sd">&quot;&quot;&quot;Show working tree status: staged, unstaged, and untracked files.</span>
+
+<span class="sd">Args:</span>
+<span class="sd">    repo_path: Path to the git repository (default: current directory)</span>
+<span class="sd">&quot;&quot;&quot;</span>
+</code></pre></div>
+
+<p>这段 docstring <strong>不是给人看的注释，是给模型看的说明书</strong>。模型读它来决定"什么时候该调这个 tool"。所以它必须：</p>
+<ul>
+<li>第一句话说清"这个 tool 做什么"——一个<strong>核心动词</strong>(show status)。</li>
+<li><code>Args</code> 里解释每个参数,尤其是默认行为。</li>
+</ul>
+<blockquote>
+<p><strong>原则:docstring 是 tool 的脸。</strong> 模型选不选你这个 tool,全看这张脸说清楚没有。</p>
+</blockquote>
+<h3 id="3-返回值要自带上下文">3. 返回值要"自带上下文"</h3>
+<p>看 <code>filesystem.py</code> 里的 <code>read_file</code>,它没有只 <code>return content</code>,而是:</p>
+<div class="highlight"><pre><span></span><code><span class="k">return</span> <span class="sa">f</span><span class="s2">&quot;File: </span><span class="si">{</span><span class="n">file_path</span><span class="si">}</span><span class="se">\n</span><span class="s2">Size: </span><span class="si">{</span><span class="nb">len</span><span class="p">(</span><span class="n">content</span><span class="p">)</span><span class="si">}</span><span class="s2"> characters</span><span class="se">\n\n</span><span class="si">{</span><span class="n">content</span><span class="si">}</span><span class="s2">&quot;</span>
+</code></pre></div>
+
+<p>返回里带上了文件名、大小。这样模型在后续推理时,不用再回头问"我刚读的是哪个文件",上下文里已经写着了。这正是<strong>最小作用</strong>——一次返回,信息给全。</p>
+<blockquote>
+<p><strong>原则:返回值是下一轮的 prompt。</strong> 让模型读完就知道发生了什么,而不是只拿到一坨裸数据。</p>
+</blockquote>
+<h3 id="4-安全边界-护城河这就是为什么不行">4. 安全边界 = 护城河(这就是"为什么不行")</h3>
+<p>这是 <code>filesystem.py</code> 最值得学的地方。在真正动手之前,它先问"模型会怎么用错我":</p>
+<div class="highlight"><pre><span></span><code><span class="n">BLOCKED_COMMANDS</span> <span class="o">=</span> <span class="p">{</span><span class="s1">&#39;rm&#39;</span><span class="p">,</span> <span class="s1">&#39;del&#39;</span><span class="p">,</span> <span class="s1">&#39;format&#39;</span><span class="p">,</span> <span class="s1">&#39;mkfs&#39;</span><span class="p">,</span> <span class="s1">&#39;dd&#39;</span><span class="p">,</span> <span class="s1">&#39;shutdown&#39;</span><span class="p">,</span> <span class="o">...</span><span class="p">}</span>
+
+<span class="k">def</span><span class="w"> </span><span class="nf">is_safe_path</span><span class="p">(</span><span class="n">path</span><span class="p">:</span> <span class="nb">str</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="nb">bool</span><span class="p">:</span>
+<span class="w">    </span><span class="sd">&quot;&quot;&quot;Check if the path is safe (no directory traversal).&quot;&quot;&quot;</span>
+    <span class="k">return</span> <span class="ow">not</span> <span class="nb">any</span><span class="p">(</span><span class="n">part</span><span class="o">.</span><span class="n">startswith</span><span class="p">(</span><span class="s1">&#39;..&#39;</span><span class="p">)</span> <span class="k">for</span> <span class="n">part</span> <span class="ow">in</span> <span class="n">Path</span><span class="p">(</span><span class="n">path</span><span class="p">)</span><span class="o">.</span><span class="n">parts</span><span class="p">)</span>
+</code></pre></div>
+
+<p>每个会改变世界的 tool,动手前都先过一道闸:</p>
+<div class="highlight"><pre><span></span><code><span class="nd">@mcp</span><span class="o">.</span><span class="n">tool</span><span class="p">()</span>
+<span class="k">async</span> <span class="k">def</span><span class="w"> </span><span class="nf">write_file</span><span class="p">(</span><span class="n">file_path</span><span class="p">:</span> <span class="nb">str</span><span class="p">,</span> <span class="n">content</span><span class="p">:</span> <span class="nb">str</span><span class="p">,</span> <span class="o">...</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="nb">str</span><span class="p">:</span>
+    <span class="k">if</span> <span class="ow">not</span> <span class="n">is_safe_path</span><span class="p">(</span><span class="n">file_path</span><span class="p">):</span>
+        <span class="k">return</span> <span class="sa">f</span><span class="s2">&quot;Error: Unsafe file path: </span><span class="si">{</span><span class="n">file_path</span><span class="si">}</span><span class="s2">&quot;</span>
+    <span class="k">if</span> <span class="ow">not</span> <span class="n">is_allowed_file</span><span class="p">(</span><span class="n">file_path</span><span class="p">):</span>
+        <span class="k">return</span> <span class="sa">f</span><span class="s2">&quot;Error: File type not allowed: </span><span class="si">{</span><span class="n">Path</span><span class="p">(</span><span class="n">file_path</span><span class="p">)</span><span class="o">.</span><span class="n">suffix</span><span class="si">}</span><span class="s2">&quot;</span>
+    <span class="k">if</span> <span class="nb">len</span><span class="p">(</span><span class="n">content</span><span class="o">.</span><span class="n">encode</span><span class="p">(</span><span class="n">encoding</span><span class="p">))</span> <span class="o">&gt;</span> <span class="n">MAX_FILE_SIZE</span><span class="p">:</span>
+        <span class="k">return</span> <span class="sa">f</span><span class="s2">&quot;Error: Content too large&quot;</span>
+    <span class="c1"># ...真正写入</span>
+</code></pre></div>
+
+<p>注意:出错时它<strong>返回一句人话给模型</strong>,而不是抛异常崩掉。模型读到 <code>Error: Unsafe file path</code> 就会自己纠正。</p>
+<blockquote>
+<p><strong>原则:把模型当成一个聪明但会犯错的实习生。</strong> 给它锋利的工具,但在工具上装好护栏。
+一个错的动作 × 一个能干的模型 = 把你的机器高效地搞坏。</p>
+</blockquote>
+<hr />
+<h2 id="四可以长在身上的-mcp-设计原则">四、可以"长在身上"的 MCP 设计原则</h2>
+<p>招式可以查文档,<strong>原则必须长在身上</strong>。下面这张表,是写任何 MCP 时该在 0.1 秒内调用的反射:</p>
+<table>
+<thead>
+<tr>
+<th>表层(招式)</th>
+<th>内核(原则)</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>给 docstring 写清楚第一句</td>
+<td><strong>docstring 是写给模型的 prompt,不是注释</strong></td>
+</tr>
+<tr>
+<td>参数起个好名字、给默认值</td>
+<td><strong>类型签名即契约,默认值即最小作用</strong></td>
+</tr>
+<tr>
+<td>返回里带上文件名/数量/状态</td>
+<td><strong>返回值是下一轮的 prompt,要自带上下文</strong></td>
+</tr>
+<tr>
+<td>一个函数只干一件事</td>
+<td><strong>一个 tool 一个核心动词</strong></td>
+</tr>
+<tr>
+<td>把 5 次小查询合并成 1 个 tool</td>
+<td><strong>精准 tool 即精准上下文</strong></td>
+</tr>
+<tr>
+<td>动手前检查路径/大小/命令</td>
+<td><strong>在工具上装护栏——先想"模型会怎么用错"</strong></td>
+</tr>
+<tr>
+<td>出错 return 一句话,不抛异常</td>
+<td><strong>错误信息也是给模型的反馈,要能自我纠正</strong></td>
+</tr>
+<tr>
+<td>先写 10 行能跑的,再加功能</td>
+<td><strong>最小可运行——先验证链路,别一上来造航母</strong></td>
+</tr>
+</tbody>
+</table>
+<blockquote>
+<p>几条原则,少而锋利,所以能在写代码的当下瞬间调用。
+这正是 review 一个 AI 写的 tool 时,那 5 秒里你身体调用的东西。</p>
+</blockquote>
+<h3 id="一个反例别把-tool-写成面">一个反例:别把 tool 写成"面"</h3>
+<p>模型擅长把一个点扩充成面,人类的价值在点的精度。同理,<strong>别把一个 tool 设计成"什么都能干"的瑞士军刀</strong>:</p>
+<div class="highlight"><pre><span></span><code><span class="c1"># ❌ 坏味道:一个 tool 吞下整个 git</span>
+<span class="nd">@mcp</span><span class="o">.</span><span class="n">tool</span><span class="p">()</span>
+<span class="k">def</span><span class="w"> </span><span class="nf">git</span><span class="p">(</span><span class="n">subcommand</span><span class="p">:</span> <span class="nb">str</span><span class="p">,</span> <span class="n">args</span><span class="p">:</span> <span class="nb">str</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="nb">str</span><span class="p">:</span>
+<span class="w">    </span><span class="sd">&quot;&quot;&quot;Run any git command.&quot;&quot;&quot;</span>   <span class="c1"># 等于没给 tool,模型还是在猜</span>
+</code></pre></div>
+
+<div class="highlight"><pre><span></span><code><span class="c1"># ✅ 好味道:一个 tool 一个核心动词(看 git_tools.py 怎么做的)</span>
+<span class="nd">@mcp</span><span class="o">.</span><span class="n">tool</span><span class="p">()</span>
+<span class="k">def</span><span class="w"> </span><span class="nf">git_status</span><span class="p">(</span><span class="n">repo_path</span><span class="p">:</span> <span class="nb">str</span> <span class="o">=</span> <span class="s2">&quot;.&quot;</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="nb">str</span><span class="p">:</span> <span class="o">...</span>
+<span class="nd">@mcp</span><span class="o">.</span><span class="n">tool</span><span class="p">()</span>
+<span class="k">def</span><span class="w"> </span><span class="nf">git_diff</span><span class="p">(</span><span class="n">repo_path</span><span class="p">:</span> <span class="nb">str</span> <span class="o">=</span> <span class="s2">&quot;.&quot;</span><span class="p">,</span> <span class="n">staged</span><span class="p">:</span> <span class="nb">bool</span> <span class="o">=</span> <span class="kc">False</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="nb">str</span><span class="p">:</span> <span class="o">...</span>
+<span class="nd">@mcp</span><span class="o">.</span><span class="n">tool</span><span class="p">()</span>
+<span class="k">def</span><span class="w"> </span><span class="nf">git_log</span><span class="p">(</span><span class="n">repo_path</span><span class="p">:</span> <span class="nb">str</span> <span class="o">=</span> <span class="s2">&quot;.&quot;</span><span class="p">,</span> <span class="n">max_count</span><span class="p">:</span> <span class="nb">int</span> <span class="o">=</span> <span class="mi">20</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="nb">str</span><span class="p">:</span> <span class="o">...</span>
+</code></pre></div>
+
+<p>拆开之后,每个 tool 的 schema 和 docstring 都在<strong>精确地告诉模型它能做什么</strong>。这就是"精准 tool 即精准上下文"的反面教材与正面教材。</p>
+<hr />
+<h2 id="五最小可运行半小时写出你的第一个-mcp">五、最小可运行:半小时写出你的第一个 MCP</h2>
+<p>理论讲完,上手。遵循<strong>最小可运行</strong>——先写一个 10 行能跑通的,验证链路。</p>
+<h3 id="第-1-步装依赖">第 1 步:装依赖</h3>
+<div class="highlight"><pre><span></span><code>pip<span class="w"> </span>install<span class="w"> </span><span class="s2">&quot;mcp[cli]&quot;</span><span class="w">      </span><span class="c1"># 或 uv add &quot;mcp[cli]&quot;</span>
+</code></pre></div>
+
+<h3 id="第-2-步写-server完整文件可直接跑">第 2 步:写 server(完整文件,可直接跑)</h3>
+<p><code>weather.py</code>:</p>
+<div class="highlight"><pre><span></span><code><span class="kn">from</span><span class="w"> </span><span class="nn">mcp.server.fastmcp</span><span class="w"> </span><span class="kn">import</span> <span class="n">FastMCP</span>
+
+<span class="n">mcp</span> <span class="o">=</span> <span class="n">FastMCP</span><span class="p">(</span><span class="n">name</span><span class="o">=</span><span class="s2">&quot;weather&quot;</span><span class="p">,</span> <span class="n">host</span><span class="o">=</span><span class="s2">&quot;localhost&quot;</span><span class="p">,</span> <span class="n">port</span><span class="o">=</span><span class="mi">8010</span><span class="p">)</span>
+
+<span class="nd">@mcp</span><span class="o">.</span><span class="n">tool</span><span class="p">()</span>
+<span class="k">async</span> <span class="k">def</span><span class="w"> </span><span class="nf">get_weather</span><span class="p">(</span><span class="n">city</span><span class="p">:</span> <span class="nb">str</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="nb">str</span><span class="p">:</span>
+<span class="w">    </span><span class="sd">&quot;&quot;&quot;Get the current weather for a city.</span>
+
+<span class="sd">    Args:</span>
+<span class="sd">        city: City name, e.g. &quot;Beijing&quot;</span>
+<span class="sd">    &quot;&quot;&quot;</span>
+    <span class="c1"># 真实场景这里会调天气 API;先用假数据验证链路</span>
+    <span class="k">return</span> <span class="sa">f</span><span class="s2">&quot;Weather in </span><span class="si">{</span><span class="n">city</span><span class="si">}</span><span class="s2">: Sunny, 23°C, humidity 40%.&quot;</span>
+
+<span class="k">if</span> <span class="vm">__name__</span> <span class="o">==</span> <span class="s2">&quot;__main__&quot;</span><span class="p">:</span>
+    <span class="n">mcp</span><span class="o">.</span><span class="n">run</span><span class="p">(</span><span class="n">transport</span><span class="o">=</span><span class="s2">&quot;streamable-http&quot;</span><span class="p">)</span>
+</code></pre></div>
+
+<p>跑起来:</p>
+<div class="highlight"><pre><span></span><code>python<span class="w"> </span>weather.py<span class="w">        </span><span class="c1"># 监听 localhost:8010</span>
+</code></pre></div>
+
+<h3 id="第-3-步接到-claude-code或任意-mcp-客户端">第 3 步:接到 Claude Code(或任意 MCP 客户端)</h3>
+<p>在项目的 <code>.mcp.json</code> / <code>mcp.json</code> 里加一条:</p>
+<div class="highlight"><pre><span></span><code><span class="p">{</span>
+<span class="w">  </span><span class="nt">&quot;mcpServers&quot;</span><span class="p">:</span><span class="w"> </span><span class="p">{</span>
+<span class="w">    </span><span class="nt">&quot;weather&quot;</span><span class="p">:</span><span class="w"> </span><span class="p">{</span><span class="w"> </span><span class="nt">&quot;url&quot;</span><span class="p">:</span><span class="w"> </span><span class="s2">&quot;http://localhost:8010/mcp&quot;</span><span class="w"> </span><span class="p">}</span>
+<span class="w">  </span><span class="p">}</span>
+<span class="p">}</span>
+</code></pre></div>
+
+<p>重启客户端,问它"北京天气怎么样",它就会自动调用你的 <code>get_weather</code>。</p>
+<blockquote>
+<p>这一步跑通的那一刻,你就完成了一次完整的 <strong>Thought → Action(call get_weather) → Observation</strong> 闭环。
+链路通了,剩下的只是<strong>把假数据换成真 API、把 tool 越加越多</strong>。</p>
+</blockquote>
+<h3 id="第-4-步从能跑到能用把第四节那张表过一遍">第 4 步:从"能跑"到"能用"——把第四节那张表过一遍</h3>
+<p>回头给 <code>get_weather</code> 补上:更准的 docstring、输入校验(空城市名怎么办?)、自带上下文的返回、错误时 return 一句话。一个玩具 tool 就长成了一个生产 tool。</p>
+<hr />
+<h2 id="六配套-skill让写-mcp-变成提一嘴的事">六、配套 skill:让写 MCP 变成"提一嘴"的事</h2>
+<p>为了让"模型越强,harness 越松"落到实处,本项目配了一个 skill:<strong><code>write-mcp</code></strong>(在 <code>.claude/skills/write-mcp.md</code>)。</p>
+<p>它把上面这套流程压缩成了模型可以直接执行的步骤:你只要说一句"帮我写一个查天气的 MCP",Claude(或本项目的 Code Hacker agent)就会:</p>
+<ol>
+<li>用 FastMCP 三段式生成 server 骨架;</li>
+<li>按"一个 tool 一个核心动词"拆分工具;</li>
+<li>自动补上 docstring、类型签名、输入校验、自带上下文的返回;</li>
+<li>选一个不冲突的端口,给出 <code>mcp.json</code> 接入片段;</li>
+<li>给出最小可运行的验证命令。</li>
+</ol>
+<blockquote>
+<p>这就是 harness 的自指之美:<strong>我们用一个 skill(harness 的一部分),去更快地造出更多 tool(harness 的另一部分)。</strong></p>
+</blockquote>
+<hr />
+<h2 id="七收尾tool-是模型的手而手怎么造是你的判断">七、收尾:tool 是模型的手,而手怎么造,是你的判断</h2>
+<p>回到最开始那句话——"模型不是不够聪明,而是是否有足够有用的 tools"。</p>
+<p>写 MCP 这件事,代码层面 <code>FastMCP</code> 已经简单到几行。真正的难度、也是真正的价值,从来不在"怎么写",而在那些 AI 替你答不了的判断:</p>
+<ul>
+<li><strong>这个 tool 该不该存在?</strong>(还是模型自己用 Bash 就够了)</li>
+<li><strong>它的边界画在哪?</strong>(给多大的权力,装多厚的护栏)</li>
+<li><strong>它一次该返回什么?</strong>(怎样才算"精准上下文")</li>
+</ul>
+<p>这些判断,正是 README 里说的——<strong>提出一个高维度的、有效的突破点,再让 AI 把它扩充成面。</strong></p>
+<blockquote>
+<p>FastMCP 把"写 tool"这件事压平了。
+但"该给模型造一双什么样的手"——这个问题没有训练数据,只能靠你。</p>
+</blockquote>
+<p>去写你的第一个 MCP 吧。从那个 10 行的 <code>weather.py</code> 开始。</p>
+<hr />
+<h2 id="参考">参考</h2>
+<ul>
+<li>本项目源码:<code>filesystem.py</code>(文件系统 MCP)、<code>git_tools.py</code>(Git MCP)</li>
+<li>配套 skill:<code>.claude/skills/write-mcp.md</code></li>
+<li>前文:《Harness 即一切:模型不是不够聪明,而是是否有足够有用的 tools》(<code>docs/harness-is-everything.md</code>)</li>
+<li>思想来源:《Why you not student?》——最小作用原理 / 最小可运行 / "为什么不行"</li>
+<li>协议规范:Model Context Protocol(modelcontextprotocol.io)</li>
+</ul>
+    </div>
+  </article>
+
+</main>
+
+<!-- Floating Ask-AI chat widget -->
+<button class="ai-fab" id="ai-fab" aria-label="Ask AI about this article" title="Ask AI about this article">
+  <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+    <path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"/>
+  </svg>
+  <span class="ai-fab-label">Ask AI</span>
+</button>
+
+<div class="ai-panel" id="ai-panel" role="dialog" aria-labelledby="ai-panel-title" aria-hidden="true">
+  <header class="ai-panel-head">
+    <div class="ai-panel-title-wrap">
+      <span class="ai-dot"></span>
+      <h3 id="ai-panel-title">Ask AI about this post</h3>
+    </div>
+    <div class="ai-panel-actions">
+      <button class="ai-icon-btn" id="ai-clear" title="Clear conversation" aria-label="Clear">
+        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><polyline points="3 6 5 6 21 6"/><path d="M19 6l-1 14a2 2 0 0 1-2 2H8a2 2 0 0 1-2-2L5 6"/><path d="M10 11v6M14 11v6"/><path d="M9 6V4a1 1 0 0 1 1-1h4a1 1 0 0 1 1 1v2"/></svg>
+      </button>
+      <button class="ai-icon-btn" id="ai-close" title="Minimize" aria-label="Minimize">
+        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><polyline points="6 9 12 15 18 9"/></svg>
+      </button>
+    </div>
+  </header>
+
+  <div class="ai-messages" id="ai-messages">
+    <div class="ai-empty" id="ai-empty">
+      <p class="ai-empty-title">On-device AI · Gemini Nano</p>
+      <p class="ai-empty-sub">Ask anything about this article. Runs in your browser — nothing leaves your device.</p>
+    </div>
+  </div>
+
+  <div class="ai-status" id="ai-status" hidden></div>
+
+  <form class="ai-composer" id="ai-form">
+    <textarea id="ai-input" rows="1" placeholder="Ask about this post…" autocomplete="off"></textarea>
+    <button type="submit" id="ai-send" class="ai-send" aria-label="Send" disabled>
+      <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><line x1="22" y1="2" x2="11" y2="13"/><polygon points="22 2 15 22 11 13 2 9 22 2"/></svg>
+    </button>
+  </form>
+</div>
+
+<script>
+(function () {
+  const POST_TITLE = "\u7528\u6700\u5c0f\u4f5c\u7528\u539f\u7406\u5199\u4e00\u4e2a MCP\uff1a\u6a21\u578b\u7684\u90a3\u53cc\u624b\uff0c\u8be5\u600e\u4e48\u9020";
+  const contentEl = document.querySelector('article .content');
+
+  const fab = document.getElementById('ai-fab');
+  const panel = document.getElementById('ai-panel');
+  const closeBtn = document.getElementById('ai-close');
+  const clearBtn = document.getElementById('ai-clear');
+  const msgsEl = document.getElementById('ai-messages');
+  const emptyEl = document.getElementById('ai-empty');
+  const statusEl = document.getElementById('ai-status');
+  const formEl = document.getElementById('ai-form');
+  const inputEl = document.getElementById('ai-input');
+  const sendBtn = document.getElementById('ai-send');
+
+  function articleText() {
+    if (!contentEl) return '';
+    return (contentEl.innerText || contentEl.textContent || '')
+      .replace(/[ \t]+\n/g, '\n')
+      .replace(/\n{3,}/g, '\n\n')
+      .trim();
+  }
+
+  function setStatus(msg, cls) {
+    if (!msg) { statusEl.hidden = true; statusEl.textContent = ''; statusEl.className = 'ai-status'; return; }
+    statusEl.hidden = false;
+    statusEl.textContent = msg;
+    statusEl.className = 'ai-status' + (cls ? ' ' + cls : '');
+  }
+
+  function hideEmpty() { if (emptyEl) emptyEl.style.display = 'none'; }
+
+  function appendBubble(role, text) {
+    hideEmpty();
+    const wrap = document.createElement('div');
+    wrap.className = 'ai-msg ai-msg-' + role;
+    const bubble = document.createElement('div');
+    bubble.className = 'ai-bubble';
+    bubble.textContent = text;
+    wrap.appendChild(bubble);
+    msgsEl.appendChild(wrap);
+    msgsEl.scrollTop = msgsEl.scrollHeight;
+    return bubble;
+  }
+
+  function appendTyping() {
+    hideEmpty();
+    const wrap = document.createElement('div');
+    wrap.className = 'ai-msg ai-msg-assistant ai-typing';
+    wrap.innerHTML = '<div class="ai-bubble"><span class="ai-dots"><i></i><i></i><i></i></span></div>';
+    msgsEl.appendChild(wrap);
+    msgsEl.scrollTop = msgsEl.scrollHeight;
+    return wrap;
+  }
+
+  function autoSize() {
+    inputEl.style.height = 'auto';
+    inputEl.style.height = Math.min(inputEl.scrollHeight, 140) + 'px';
+  }
+
+  function openPanel() {
+    panel.classList.add('open');
+    panel.setAttribute('aria-hidden', 'false');
+    fab.classList.add('hidden');
+    setTimeout(() => inputEl.focus(), 50);
+  }
+  function closePanel() {
+    panel.classList.remove('open');
+    panel.setAttribute('aria-hidden', 'true');
+    fab.classList.remove('hidden');
+  }
+
+  fab.addEventListener('click', openPanel);
+  closeBtn.addEventListener('click', closePanel);
+  document.addEventListener('keydown', e => {
+    if (e.key === 'Escape' && panel.classList.contains('open')) closePanel();
+  });
+
+  // ---- LanguageModel session ----
+  let session = null;
+  let creating = null;
+  let history = [];
+
+  function buildSystemPrompt() {
+    // Keep article context modest — Gemini Nano's input quota is small.
+    const article = articleText().slice(0, 4000);
+    return (
+      'You are a concise, helpful assistant answering questions about a blog post. ' +
+      'Use the article below as your primary source. If the answer is not in it, say so briefly and answer generally. ' +
+      'Reply in the same language as the user\'s question. Keep answers short unless asked for detail.\n\n' +
+      '=== ARTICLE TITLE ===\n' + POST_TITLE + '\n\n' +
+      '=== ARTICLE CONTENT ===\n' + article
+    );
+  }
+
+  async function ensureSession() {
+    if (session) return session;
+    if (creating) return creating;
+
+    if (!('LanguageModel' in self)) {
+      throw new Error(
+        'On-device AI not available. Use Chrome 138+ on desktop, or enable ' +
+        '"Prompt API for Gemini Nano" in chrome://flags.'
+      );
+    }
+
+    setStatus('Checking model…', 'info');
+    const status = await LanguageModel.availability();
+    if (status === 'unavailable') {
+      throw new Error('Model unavailable on this device.');
+    }
+
+    creating = (async () => {
+      // Only show download UI when the model isn't already there.
+      const willDownload = (status !== 'available');
+      if (willDownload) setStatus('Preparing model (first run downloads ~2GB)…', 'info');
+      else setStatus('Warming up…', 'info');
+
+      const s = await LanguageModel.create({
+        initialPrompts: [{ role: 'system', content: buildSystemPrompt() }],
+        monitor(m) {
+          m.addEventListener('downloadprogress', e => {
+            // Skip the spurious 0% event Chrome fires for cached models.
+            if (!willDownload && e.loaded === 0) return;
+            const pct = (e.loaded * 100).toFixed(1);
+            setStatus('Downloading model: ' + pct + '%', 'info');
+          });
+        }
+      });
+      session = s;
+      setStatus('');
+      return s;
+    })();
+
+    try { return await creating; }
+    finally { creating = null; }
+  }
+
+  async function ask(q) {
+    appendBubble('user', q);
+    history.push({ role: 'user', content: q });
+
+    sendBtn.disabled = true;
+    inputEl.disabled = true;
+    const typing = appendTyping();
+
+    let answerBubble = null;
+    let acc = '';
+    try {
+      const s = await ensureSession();
+      const stream = s.promptStreaming(q);
+      for await (const chunk of stream) {
+        if (!answerBubble) {
+          typing.remove();
+          const wrap = document.createElement('div');
+          wrap.className = 'ai-msg ai-msg-assistant';
+          answerBubble = document.createElement('div');
+          answerBubble.className = 'ai-bubble';
+          wrap.appendChild(answerBubble);
+          msgsEl.appendChild(wrap);
+        }
+        acc += chunk;
+        answerBubble.textContent = acc;
+        msgsEl.scrollTop = msgsEl.scrollHeight;
+      }
+      if (acc) history.push({ role: 'assistant', content: acc });
+      else { typing.remove(); appendBubble('assistant', '(no response)'); }
+    } catch (e) {
+      if (typing && typing.parentNode) typing.remove();
+      const err = document.createElement('div');
+      err.className = 'ai-msg ai-msg-error';
+      err.innerHTML = '<div class="ai-bubble">⚠ ' + (e && e.message ? e.message : String(e)) + '</div>';
+      msgsEl.appendChild(err);
+      msgsEl.scrollTop = msgsEl.scrollHeight;
+    } finally {
+      sendBtn.disabled = !inputEl.value.trim();
+      inputEl.disabled = false;
+      inputEl.focus();
+    }
+  }
+
+  formEl.addEventListener('submit', e => {
+    e.preventDefault();
+    const q = inputEl.value.trim();
+    if (!q) return;
+    inputEl.value = '';
+    autoSize();
+    sendBtn.disabled = true;
+    ask(q);
+  });
+
+  inputEl.addEventListener('input', () => {
+    autoSize();
+    sendBtn.disabled = !inputEl.value.trim();
+  });
+  inputEl.addEventListener('keydown', e => {
+    if (e.key === 'Enter' && !e.shiftKey) {
+      e.preventDefault();
+      formEl.requestSubmit();
+    }
+  });
+
+  clearBtn.addEventListener('click', () => {
+    msgsEl.innerHTML = '';
+    msgsEl.appendChild(emptyEl);
+    emptyEl.style.display = '';
+    history = [];
+    if (session && session.destroy) { try { session.destroy(); } catch (_) {} }
+    session = null;
+    setStatus('');
+  });
+
+  if (!('LanguageModel' in self)) {
+    fab.addEventListener('click', () => {
+      openPanel();
+      setStatus('On-device AI not detected. Use Chrome 138+ desktop, or enable "Prompt API for Gemini Nano" in chrome://flags.', 'bad');
+    }, { once: true });
+  }
+})();
+</script>
+
+<!-- Outline notes / comments — DataScript + IndexedDB -->
+<script src="https://github.com/tonsky/datascript/releases/download/1.7.8/datascript-1.7.8.min.js"></script>
+<script src="../notes.js?v=6"></script>
+<script src="../theme.js"></script>
+<script src="../wechat-copy.js?v=3"></script>
+
+</body>
+</html>
