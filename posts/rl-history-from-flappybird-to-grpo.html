@@ -1,0 +1,750 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>从《飞翔的小鸟》到大模型：一篇讲透强化学习的来龙去脉 · Steve Chan — xlisp</title>
+<meta name="description" content="先看两段我手头真实跑过的代码。">
+<meta name="author" content="Steve Chan">
+<link rel="icon" type="image/jpeg" href="../icon.jpeg">
+<link rel="apple-touch-icon" href="../icon.jpeg">
+<meta property="og:type" content="article">
+<meta property="og:title" content="从《飞翔的小鸟》到大模型：一篇讲透强化学习的来龙去脉">
+<meta property="og:description" content="先看两段我手头真实跑过的代码。">
+<meta property="og:image" content="../icon.jpeg">
+<meta property="og:site_name" content="Steve Chan — xlisp">
+<meta name="twitter:card" content="summary_large_image">
+<meta name="twitter:title" content="从《飞翔的小鸟》到大模型：一篇讲透强化学习的来龙去脉">
+<meta name="twitter:description" content="先看两段我手头真实跑过的代码。">
+<meta name="twitter:image" content="../icon.jpeg">
+<link rel="stylesheet" href="../style.css?v=light1">
+<script>(function(){try{if(localStorage.getItem('theme')==='light')document.documentElement.setAttribute('data-theme','light');}catch(e){}})();</script>
+<!-- Math formula rendering via MathJax -->
+<script>
+window.MathJax = {
+  tex: {
+    // arithmatex emits \(...\) / \[...\] markup, so only these delimiters
+    // are needed; plain `$` is left alone (avoids currency false positives).
+    inlineMath: [['\\(', '\\)']],
+    displayMath: [['\\[', '\\]']],
+    processEscapes: true
+  },
+  svg: {
+    // Each formula gets its own self-contained <defs>, so the copy script can
+    // serialize one <svg> and rasterize it to a PNG for WeChat.
+    fontCache: 'local'
+  },
+  options: {
+    skipHtmlTags: ['script', 'noscript', 'style', 'textarea', 'pre', 'code'],
+    ignoreHtmlClass: 'highlight'
+  }
+};
+</script>
+<script src="https://cdn.jsdelivr.net/npm/mathjax@3/es5/tex-svg.js" async></script>
+</head>
+<body>
+<main class="wrap post">
+
+  <nav class="topnav">
+    <a href="../index.html">← home</a>
+  </nav>
+
+  <article>
+    <header class="post-header">
+      <h1>从《飞翔的小鸟》到大模型：一篇讲透强化学习的来龙去脉</h1>
+      <p class="meta">2026-06-21 · Steve Chan</p>
+    </header>
+
+    <div class="content">
+<blockquote>
+<p>用两个能跑起来的真实项目，把强化学习六十年的历史串成一条线。</p>
+<ul>
+<li>一个让 AI 学会玩 Flappy Bird 的 <strong>DQN</strong>（<code>rl_games/flappy_bird_app</code>）</li>
+<li>一个让大语言模型学会做数学题的 <strong>GRPO</strong>（MathGPT 项目）</li>
+</ul>
+<p>前者是 2013 年点燃深度强化学习的那把火，后者是 2024 年让 DeepSeek、OpenAI 们封神的同一把火——只不过烧到了语言模型上。本文不堆术语，我们顺着"一个矛盾催生一个方法"的逻辑走一遍。</p>
+</blockquote>
+<hr />
+<h2 id="引子两个看起来毫不相关的项目内核完全一样">引子：两个看起来毫不相关的项目，内核完全一样</h2>
+<p>先看两段我手头真实跑过的代码。</p>
+<p><strong>第一段</strong>，让一只像素小鸟学会自己穿管道（<code>flappy_bird_torch_dqn.py</code>）：</p>
+<div class="highlight"><pre><span></span><code><span class="c1"># 小鸟看到屏幕画面，神经网络输出&quot;扇翅膀&quot;还是&quot;不动&quot;两个动作的价值</span>
+<span class="n">current_q_values</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">model</span><span class="p">(</span><span class="n">states</span><span class="p">)</span><span class="o">.</span><span class="n">gather</span><span class="p">(</span><span class="mi">1</span><span class="p">,</span> <span class="n">actions</span><span class="o">.</span><span class="n">unsqueeze</span><span class="p">(</span><span class="mi">1</span><span class="p">))</span>
+<span class="n">next_q_values</span>    <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">model</span><span class="p">(</span><span class="n">next_states</span><span class="p">)</span><span class="o">.</span><span class="n">max</span><span class="p">(</span><span class="mi">1</span><span class="p">)[</span><span class="mi">0</span><span class="p">]</span>
+<span class="n">target_q_values</span>  <span class="o">=</span> <span class="n">rewards</span> <span class="o">+</span> <span class="p">(</span><span class="mi">1</span> <span class="o">-</span> <span class="n">dones</span><span class="p">)</span> <span class="o">*</span> <span class="bp">self</span><span class="o">.</span><span class="n">gamma</span> <span class="o">*</span> <span class="n">next_q_values</span>
+<span class="n">loss</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">criterion</span><span class="p">(</span><span class="n">current_q_values</span><span class="p">,</span> <span class="n">target_q_values</span><span class="p">)</span>
+</code></pre></div>
+
+<p><strong>第二段</strong>，让一个大语言模型学会做小学数学应用题（MathGPT 的 <code>train_rl.py</code>）：</p>
+<div class="highlight"><pre><span></span><code><span class="c1"># 模型对一道数学题生成 N 个答案，答对给 1 分答错给 0 分</span>
+<span class="n">advantages</span> <span class="o">=</span> <span class="n">rewards</span> <span class="o">-</span> <span class="n">rewards</span><span class="o">.</span><span class="n">mean</span><span class="p">()</span>
+<span class="c1"># 然后提高&quot;得分高的答案&quot;被生成的概率</span>
+<span class="n">logp</span>   <span class="o">=</span> <span class="o">-</span><span class="n">model</span><span class="p">(</span><span class="n">inputs</span><span class="p">,</span> <span class="n">targets</span><span class="p">,</span> <span class="n">loss_reduction</span><span class="o">=</span><span class="s1">&#39;none&#39;</span><span class="p">)</span>
+<span class="n">pg_obj</span> <span class="o">=</span> <span class="p">(</span><span class="n">logp</span> <span class="o">*</span> <span class="n">advantages</span><span class="o">.</span><span class="n">unsqueeze</span><span class="p">(</span><span class="o">-</span><span class="mi">1</span><span class="p">))</span><span class="o">.</span><span class="n">sum</span><span class="p">()</span>
+<span class="n">loss</span>   <span class="o">=</span> <span class="o">-</span><span class="n">pg_obj</span>
+</code></pre></div>
+
+<p>一个在玩游戏，一个在解数学题；一个处理像素，一个处理文字。但它们都在干同一件事：</p>
+<blockquote>
+<p><strong>在没有"标准答案"告诉你"每一步该怎么做"的情况下，仅凭一个最终的"好/坏"信号（奖励），让 AI 自己摸索出一套行为策略。</strong></p>
+</blockquote>
+<p>这就是<strong>强化学习（Reinforcement Learning, RL）</strong>。它和我们熟悉的"监督学习"有本质区别——监督学习是有老师手把手教（这张图是猫、那句话翻译成这样），强化学习是没有老师，只有一个最终打分的考官。</p>
+<h3 id="一句话先看懂大模型其实是在玩文字游戏">一句话先看懂:大模型其实是在"玩文字游戏"</h3>
+<p>如果上面还有点抽象,这里有个特别好用的类比——你完全可以这么理解这两个项目:</p>
+<blockquote>
+<p><strong>DQN 是在玩游戏:看着画面,一帧一帧地决定"上飞还是不动",目标是活得久。</strong>
+<strong>大模型是在玩"文字游戏":看着上文,一个字一个字地决定"下一个字写啥",目标是答得对。</strong></p>
+</blockquote>
+<p>是不是一下子就通了?<strong>写一段话,本质上就是一局"一步步做选择"的游戏</strong>——每蹦出一个字,就相当于游戏里走了一步。小鸟在像素世界里选动作,大模型在文字世界里选词,玩法一模一样:</p>
+<table>
+<thead>
+<tr>
+<th></th>
+<th>DQN(玩游戏)</th>
+<th>大模型(玩文字游戏)</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>看什么</td>
+<td>当前画面</td>
+<td>当前上下文(前面的字)</td>
+</tr>
+<tr>
+<td>做什么</td>
+<td>上飞 / 不动</td>
+<td>从词库里挑下一个字</td>
+</tr>
+<tr>
+<td>怎么进行</td>
+<td>一帧一帧地操作</td>
+<td>一个字一个字地往外蹦</td>
+</tr>
+<tr>
+<td>图什么</td>
+<td>活得久、得分高</td>
+<td>最终答案是对的</td>
+</tr>
+</tbody>
+</table>
+<p>两者都是同一个循环:<strong>看情况 → 做选择 → 拿反馈 → 变得更会选</strong>。同一台发动机,一个开在游戏里,一个开在文字里。</p>
+<p>(后面我们会看到,它俩有两个有意思的不同:小鸟的动作只有 2 个、大模型每步要从几万个字里挑;小鸟每一帧都有反馈、而数学题要整段答完才知道对错。正是这两点差异,催生了从 DQN 到 GRPO 的整条进化路线。)</p>
+<p>理解了这一点，我们就能从头讲起了。</p>
+<hr />
+<h2 id="第一幕史前时代rl-的思想比深度学习老得多">第一幕：史前时代——RL 的思想比深度学习老得多</h2>
+<p>强化学习的核心思想，可以追溯到心理学的<strong>行为主义</strong>：动物通过"试错"和"奖惩"来学习。狗做对动作给骨头，做错了不给——多来几次，狗就学会了。这套"trial and error + reward"的范式，就是 RL 的哲学源头。</p>
+<p>数学化的奠基发生在上世纪：</p>
+<ul>
+<li>
+<p><strong>1950s,贝尔曼方程（Bellman Equation）</strong>：理查德·贝尔曼提出"动态规划",给出了"当前决策的价值 = 即时回报 + 未来价值的折扣"这个递归结构。你在上面两段代码里看到的 <code>rewards + gamma * next_q_values</code>，本质上就是贝尔曼方程。<code>gamma</code>(折扣因子,代码里是 0.99)代表"未来的奖励要打个折"——眼前的一分钱比明年的一分钱更值钱。</p>
+</li>
+<li>
+<p><strong>1980s,时序差分学习（Temporal Difference, TD）</strong>：Sutton 提出 TD 学习，让 agent 不必等到一局游戏结束，每走一步就能更新自己的估计。</p>
+</li>
+<li>
+<p><strong>1989 年,Q-Learning</strong>：Watkins 提出了 Q-Learning。所谓 "Q"，就是 <strong>Q(状态, 动作)</strong>——在某个状态下做某个动作，长远来看到底有多大价值。如果我们能学到一张精确的 Q 表，那策略就很简单了：每一步都选 Q 值最大的动作。</p>
+</li>
+</ul>
+<p>但 Q-Learning 有个致命问题：<strong>状态空间一大就爆炸</strong>。Flappy Bird 的画面有多少种可能?如果用一张表格记录每个画面下每个动作的 Q 值，宇宙的原子都不够用。这个矛盾,卡了强化学习二十多年。</p>
+<hr />
+<h2 id="第二幕2013深度学习点火dqn-与那只小鸟">第二幕：2013，深度学习点火——DQN 与那只小鸟</h2>
+<p>2013 年,DeepMind 发表了一篇改变历史的论文:用深度神经网络去<strong>逼近</strong>那张大到不可能存下的 Q 表。这就是 <strong>DQN(Deep Q-Network)</strong>。他们让一个 AI 仅凭屏幕像素,在 Atari 游戏上打到了超越人类的水平。深度强化学习(Deep RL)由此诞生。</p>
+<p>我们的 Flappy Bird 项目,就是 DQN 最朴素、最经典的实现。它把 DQN 的几个关键创新都用上了:</p>
+<h3 id="1-用神经网络代替-q-表">1. 用神经网络代替 Q 表</h3>
+<p>不再为每个状态存一个值,而是训练一个网络,输入状态、输出每个动作的 Q 值:</p>
+<div class="highlight"><pre><span></span><code><span class="k">class</span><span class="w"> </span><span class="nc">DQN</span><span class="p">(</span><span class="n">nn</span><span class="o">.</span><span class="n">Module</span><span class="p">):</span>
+    <span class="k">def</span><span class="w"> </span><span class="fm">__init__</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">input_shape</span><span class="p">,</span> <span class="n">n_actions</span><span class="p">):</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">conv</span> <span class="o">=</span> <span class="n">nn</span><span class="o">.</span><span class="n">Sequential</span><span class="p">(</span>   <span class="c1"># 卷积层&quot;看懂&quot;游戏画面</span>
+            <span class="n">nn</span><span class="o">.</span><span class="n">Conv2d</span><span class="p">(</span><span class="n">input_shape</span><span class="p">[</span><span class="mi">0</span><span class="p">],</span> <span class="mi">32</span><span class="p">,</span> <span class="n">kernel_size</span><span class="o">=</span><span class="mi">8</span><span class="p">,</span> <span class="n">stride</span><span class="o">=</span><span class="mi">4</span><span class="p">),</span> <span class="n">nn</span><span class="o">.</span><span class="n">ReLU</span><span class="p">(),</span>
+            <span class="n">nn</span><span class="o">.</span><span class="n">Conv2d</span><span class="p">(</span><span class="mi">32</span><span class="p">,</span> <span class="mi">64</span><span class="p">,</span> <span class="n">kernel_size</span><span class="o">=</span><span class="mi">4</span><span class="p">,</span> <span class="n">stride</span><span class="o">=</span><span class="mi">2</span><span class="p">),</span> <span class="n">nn</span><span class="o">.</span><span class="n">ReLU</span><span class="p">(),</span>
+            <span class="n">nn</span><span class="o">.</span><span class="n">Conv2d</span><span class="p">(</span><span class="mi">64</span><span class="p">,</span> <span class="mi">64</span><span class="p">,</span> <span class="n">kernel_size</span><span class="o">=</span><span class="mi">3</span><span class="p">,</span> <span class="n">stride</span><span class="o">=</span><span class="mi">1</span><span class="p">),</span> <span class="n">nn</span><span class="o">.</span><span class="n">ReLU</span><span class="p">())</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">fc</span> <span class="o">=</span> <span class="n">nn</span><span class="o">.</span><span class="n">Sequential</span><span class="p">(</span>     <span class="c1"># 全连接层输出每个动作的价值</span>
+            <span class="n">nn</span><span class="o">.</span><span class="n">Linear</span><span class="p">(</span><span class="n">conv_out_size</span><span class="p">,</span> <span class="mi">512</span><span class="p">),</span> <span class="n">nn</span><span class="o">.</span><span class="n">ReLU</span><span class="p">(),</span>
+            <span class="n">nn</span><span class="o">.</span><span class="n">Linear</span><span class="p">(</span><span class="mi">512</span><span class="p">,</span> <span class="n">n_actions</span><span class="p">))</span>
+</code></pre></div>
+
+<p>输入是小鸟看到的画面(<code>(3, 高, 宽)</code> 的 RGB 图),输出是两个数:不扇翅膀的价值、扇翅膀的价值。哪个大就做哪个。这正是 DeepMind"仅凭像素玩游戏"的原汁原味复现。</p>
+<blockquote>
+<p>项目里还有一个更轻量的版本(<code>dqn.py</code>),不读像素,直接读取游戏状态(小鸟的 y 坐标、最近管道的位置)。这说明:DQN 的思想和"用什么神经网络""喂什么状态"是解耦的——卷积网络处理图像,简单的全连接网络处理结构化数据,内核完全一样。</p>
+</blockquote>
+<h3 id="2-经验回放experience-replay">2. 经验回放(Experience Replay)</h3>
+<p>人不会学一次就忘,DQN 也一样。它把每一步的经历 <code>(状态,动作,奖励,下一状态)</code> 存进一个"记忆库",训练时随机抽一批出来学:</p>
+<div class="highlight"><pre><span></span><code><span class="bp">self</span><span class="o">.</span><span class="n">memory</span> <span class="o">=</span> <span class="n">deque</span><span class="p">(</span><span class="n">maxlen</span><span class="o">=</span><span class="mi">10000</span><span class="p">)</span>         <span class="c1"># 记忆库,最多存一万条</span>
+<span class="k">def</span><span class="w"> </span><span class="nf">remember</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">state</span><span class="p">,</span> <span class="n">action</span><span class="p">,</span> <span class="n">reward</span><span class="p">,</span> <span class="n">next_state</span><span class="p">,</span> <span class="n">done</span><span class="p">):</span>
+    <span class="bp">self</span><span class="o">.</span><span class="n">memory</span><span class="o">.</span><span class="n">append</span><span class="p">((</span><span class="n">state</span><span class="p">,</span> <span class="n">action</span><span class="p">,</span> <span class="n">reward</span><span class="p">,</span> <span class="n">next_state</span><span class="p">,</span> <span class="n">done</span><span class="p">))</span>
+<span class="c1"># 训练时随机采样,打破数据间的时间相关性</span>
+<span class="n">batch</span> <span class="o">=</span> <span class="n">random</span><span class="o">.</span><span class="n">sample</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">memory</span><span class="p">,</span> <span class="bp">self</span><span class="o">.</span><span class="n">batch_size</span><span class="p">)</span>
+</code></pre></div>
+
+<p>为什么要随机采样?因为连续几帧画面高度相似,如果按顺序学,网络会"钻牛角尖"。打乱顺序能让训练更稳定。这是 DQN 能 work 的关键技巧之一。</p>
+<h3 id="3-探索与利用的平衡ε-greedy">3. 探索与利用的平衡(ε-greedy)</h3>
+<p>这是 RL 永恒的难题:<strong>该按现有经验稳妥行事(利用),还是冒险尝试新动作以发现更好的策略(探索)?</strong></p>
+<p>DQN 用一个简单优雅的办法 ε-greedy:以概率 ε 随机乱试,其余时间选当前最优动作。而且 ε 随训练衰减——一开始什么都不会,就大胆乱试;越到后面越相信自己的判断:</p>
+<div class="highlight"><pre><span></span><code><span class="k">def</span><span class="w"> </span><span class="nf">get_action</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">state</span><span class="p">):</span>
+    <span class="k">if</span> <span class="n">random</span><span class="o">.</span><span class="n">random</span><span class="p">()</span> <span class="o">&lt;</span> <span class="bp">self</span><span class="o">.</span><span class="n">epsilon</span><span class="p">:</span>        <span class="c1"># 以 ε 的概率随机探索</span>
+        <span class="k">return</span> <span class="n">random</span><span class="o">.</span><span class="n">randint</span><span class="p">(</span><span class="mi">0</span><span class="p">,</span> <span class="bp">self</span><span class="o">.</span><span class="n">n_actions</span> <span class="o">-</span> <span class="mi">1</span><span class="p">)</span>
+    <span class="n">q_values</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">model</span><span class="p">(</span><span class="n">state</span><span class="p">)</span>              <span class="c1"># 否则选 Q 值最大的动作</span>
+    <span class="k">return</span> <span class="n">torch</span><span class="o">.</span><span class="n">argmax</span><span class="p">(</span><span class="n">q_values</span><span class="p">)</span><span class="o">.</span><span class="n">item</span><span class="p">()</span>
+
+<span class="k">def</span><span class="w"> </span><span class="nf">update_epsilon</span><span class="p">(</span><span class="bp">self</span><span class="p">):</span>                     <span class="c1"># ε 从 1.0 慢慢衰减到 0.01</span>
+    <span class="bp">self</span><span class="o">.</span><span class="n">epsilon</span> <span class="o">=</span> <span class="nb">max</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">epsilon_final</span><span class="p">,</span> <span class="bp">self</span><span class="o">.</span><span class="n">epsilon</span> <span class="o">*</span> <span class="bp">self</span><span class="o">.</span><span class="n">epsilon_decay</span><span class="p">)</span>
+</code></pre></div>
+
+<p><strong>小结这一幕</strong>:DQN 是"基于价值(value-based)"的方法。它不直接学"该做什么",而是学"每个动作值多少分",再间接地选最高分。这条路在游戏、机器人控制上大放异彩。但它有个先天局限——</p>
+<blockquote>
+<p><strong>DQN 只擅长"动作有限且离散"的场景</strong>(扇翅膀/不动,上/下/左/右)。可一旦动作空间是连续的(机械臂转多少度),或者大到天文数字(语言模型每一步要从几万个词里选一个),"遍历所有动作找最大 Q 值"就行不通了。</p>
+</blockquote>
+<p>这个矛盾,把我们推向了另一条技术路线。</p>
+<hr />
+<h2 id="第三幕另一条路直接学该怎么做策略梯度">第三幕:另一条路——直接学"该怎么做"(策略梯度)</h2>
+<p>这一幕有三个看着唬人的词:<strong>策略、策略网络、策略梯度</strong>。别慌,我们先用大白话把它们拆开,你会发现它们简单到家。</p>
+<h3 id="先搞懂策略是什么">先搞懂"策略"是什么</h3>
+<p><strong>"策略"说白了就是"遇到某个情况,该怎么做"的习惯。</strong></p>
+<ul>
+<li>你过马路看到红灯就停、绿灯就走——这套"看到什么、就做什么"的反应,就是你的<strong>策略</strong>。</li>
+<li>那只小鸟"看到管道快撞上了就扇翅膀"——这也是一套策略。</li>
+</ul>
+<p>注意它和第二幕 DQN 的区别。DQN 是个<strong>纠结的人</strong>:每一步它要先在心里给每个动作打分("扇翅膀值 8 分,不动值 3 分"),再挑分高的做。而"策略"是个<strong>爽快的人</strong>:看一眼情况,直接告诉你"该扇翅膀",不报分数、不纠结。</p>
+<blockquote>
+<p><strong>DQN:先算每个选择值多少分,再挑最高分的。(绕一道弯)</strong>
+<strong>策略:看一眼,直接说该干嘛。(一步到位)</strong></p>
+</blockquote>
+<p>为什么要"一步到位"?回想第二幕的矛盾:语言模型每一步要从几万个词里挑一个。让 DQN 那样"给几万个词逐个打分再挑最大"太慢太难了;而"看一眼上文、直接说出下一个词最可能是哪几个",反而自然得多。<strong>动作越多,"直接学怎么做"就越划算。</strong></p>
+<h3 id="策略网络和策略梯度">"策略网络"和"策略梯度"</h3>
+<p>把这套"看情况、说该干嘛"的本事,装进一个神经网络里,这个网络就叫<strong>策略网络</strong>——名字唬人,其实就是"决策大脑"。</p>
+<p>那它怎么变聪明?靠一条朴素到家的规则:</p>
+<blockquote>
+<p><strong>做完一件事,如果结果好,就调整大脑、让它下次更容易这么做;如果结果差,就让它下次别这么做。</strong></p>
+</blockquote>
+<p>这个"根据结果好坏,反过来调整决策大脑"的过程,就是<strong>策略梯度</strong>(梯度 = 神经网络调整参数的方向,你可以直接理解成"往变好的方向拧一下")。</p>
+<p>就这么简单。一句话总结这三个词:</p>
+<blockquote>
+<p><strong>策略 = 遇事怎么办的习惯;策略网络 = 装着这套习惯的大脑;策略梯度 = 根据结果好坏去拧这个大脑的旋钮。</strong></p>
+</blockquote>
+<h3 id="它最早的样子reinforce1992">它最早的样子:REINFORCE(1992)</h3>
+<p>最经典的策略梯度算法叫 <strong>REINFORCE</strong>,它把上面那条规则写成了一行式子:</p>
+<div class="highlight"><pre><span></span><code>loss = - log(这个动作被选中的概率) × 这个动作最终拿到的回报
+</code></pre></div>
+
+<p>不用怕这行公式,它说的就是大白话那句话:回报高的动作,被"按"着提高概率;回报低甚至倒扣分的,被压低概率。做得多了,这个"决策大脑"就越来越偏向高回报的做法了。</p>
+<p>但 REINFORCE 有个老毛病:<strong>方差太大,训练不稳定</strong>。同一个策略,这局运气好拿 100 分,下局运气差拿 10 分,信号忽上忽下,网络无所适从。</p>
+<p>解决办法是引入一个<strong>基线(baseline)</strong>:不看绝对得分,而看"比平均水平高多少"。这个"比平均高多少"就叫<strong>优势(Advantage)</strong>:</p>
+<div class="highlight"><pre><span></span><code>优势 = 这次的回报 - 平均回报
+</code></pre></div>
+
+<p>记住"优势 = 回报 - 平均回报"这个式子,<strong>它就是后面 GRPO 的灵魂</strong>。</p>
+<p>到这里,我们手上已经有了两条路:</p>
+<ul>
+<li><strong>基于价值</strong>(第二幕 DQN):学"每个动作值多少分",擅长离散小动作;</li>
+<li><strong>基于策略</strong>(第三幕 REINFORCE):直接学"该怎么做",能应付更大的动作空间。</li>
+</ul>
+<p>接下来这一幕,这两条路第一次合二为一,并诞生了强化学习历史上最出圈的事件。</p>
+<hr />
+<h2 id="第四幕2016alphago两条路的合流与自己跟自己下棋">第四幕:2016,AlphaGo——两条路的合流,与"自己跟自己下棋"</h2>
+<p>DQN 征服了 Atari,但那些都是<strong>反应类</strong>游戏。真正的圣杯是<strong>围棋</strong>。</p>
+<p>围棋为什么难?它的合法局面约有 10 的 170 次方种——比可观测宇宙的原子总数还多得多。"遍历所有可能"在围棋面前是个笑话;高手下棋靠的是难以言传的"棋感"和"大局观"。几十年来,围棋一直被认为是 AI "至少还要二十年"才能攻克的堡垒。</p>
+<p>结果 2016 年,DeepMind 的 <strong>AlphaGo</strong> 以 4:1 击败世界冠军李世石,举世震动。这是深度强化学习第一次真正进入大众视野。</p>
+<p>AlphaGo 的精妙,恰恰在于它<strong>同时用上了前两幕的两条路</strong>:</p>
+<h3 id="1-两个网络策略网络-价值网络">1. 两个网络:策略网络 + 价值网络</h3>
+<div class="highlight"><pre><span></span><code>策略网络(决策大脑):看着当前棋盘,直接说&quot;下一手该下在哪里&quot;
+                     —— 这就是第三幕的&quot;策略&quot;:看一眼,说该干嘛
+价值网络(打分大脑):看着当前棋盘,说&quot;现在这个局面,我方赢面有多大&quot;
+                     —— 这就是第二幕的&quot;价值&quot;:给局面打个分
+</code></pre></div>
+
+<p>一个管"该怎么走",一个管"走完之后局面好不好"。<strong>第二幕的"打分"和第三幕的"决策",在 AlphaGo 这里第一次握手言和、协同作战。</strong></p>
+<h3 id="2-蒙特卡洛树搜索mcts让-ai-学会深思熟虑">2. 蒙特卡洛树搜索(MCTS):让 AI 学会"深思熟虑"</h3>
+<p>光有直觉(网络的瞬时判断)还不够,高手会"往后多想几步"。AlphaGo 用 <strong>蒙特卡洛树搜索(MCTS)</strong>,在策略网络和价值网络的指引下,在脑子里推演"如果我下这里、对手会怎么应、然后我再……",只在最有希望的分支上深入搜索。</p>
+<p>这是一个关键升级:<strong>前面的 DQN、REINFORCE 都是"看一眼就出手",而 AlphaGo 是"先在脑内模拟推演,再落子"。</strong> 这种"行动前先思考"的思想,和今天大模型的"思维链(Chain-of-Thought)、推理时计算(test-time compute)"一脉相承。</p>
+<h3 id="3-训练三部曲先模仿人类再自我对弈进化">3. 训练三部曲:先模仿人类,再自我对弈进化</h3>
+<p>最值得玩味的是 AlphaGo 的训练流程,它和今天的大模型训练<strong>惊人地相似</strong>:</p>
+<div class="highlight"><pre><span></span><code>第一步:监督学习  —— 喂给它几十万局人类高手的棋谱,先学会&quot;像高手一样下&quot;
+                     (对应大模型的 SFT:模仿人类示范)
+第二步:强化学习  —— 让它自己跟自己下千万局棋,用策略梯度强化&quot;能赢的下法&quot;
+                     (对应大模型的 RL 微调:超越模仿,自我提升)
+</code></pre></div>
+
+<p>看出来了吗?<strong>"先模仿、再用 RL 超越模仿"——这条路线,正是后来 ChatGPT、MathGPT 走的路线。</strong> AlphaGo 在 2016 年就把这个范式跑通了,只是当时跑在棋盘上,今天跑在语言上。</p>
+<h3 id="4-alphago-zero把人类老师也扔掉">4. AlphaGo Zero:把人类老师也扔掉</h3>
+<p>2017 年的 <strong>AlphaGo Zero</strong> 更激进:它<strong>完全不看任何人类棋谱</strong>,从随机乱下开始,纯靠"自己跟自己下棋(self-play)"从零摸索,几天之内就碾压了击败李世石的初代 AlphaGo。后来的 <strong>AlphaZero</strong> 更把这套方法推广到国际象棋、将棋,通用得吓人。</p>
+<p>这里藏着一个对今天至关重要的思想——<strong>自我对弈(self-play):AI 自己生成训练数据,自己跟自己博弈,自己变强,不再依赖人类标注。</strong></p>
+<p>请记住这个思想。因为当我们走到第六幕 GRPO 时会发现:<strong>让大模型对一道数学题自己生成一组答案、自己评判对错、自己强化正确的那个——这本质上就是 AlphaGo "自我对弈" 在语言模型上的回声。</strong></p>
+<blockquote>
+<p><strong>小结这一幕</strong>:AlphaGo 是"游戏强化学习"的复杂度巅峰——它把价值、策略、树搜索、自我对弈缝合成一个系统,堪称工程艺术品。但它高度依赖"围棋有明确规则、能自动判胜负、状态完全可见"这些特性。当我们想把 RL 用到更开放、更主观的语言任务上时,需要一种既保留"自我生成、自我提升"精髓、又更轻量通用的方法。这就要先解决"如何稳定地做策略梯度"——下一幕的 PPO。</p>
+</blockquote>
+<hr />
+<h2 id="第五幕工业级的策略梯度ppo与它的复杂代价">第五幕:工业级的策略梯度——PPO,与它的复杂代价</h2>
+<p>策略梯度还有个隐患:每次更新如果步子迈太大,策略可能突然"学崩",再也回不来。</p>
+<p>2017 年 OpenAI 提出的 <strong>PPO(Proximal Policy Optimization,近端策略优化)</strong> 解决了这个问题。它的核心是给更新"上一道保险":每次策略只允许在旧策略附近小幅改动(通过一个 clip 裁剪机制),不准一步跳太远。PPO 稳定、好用,成了之后很多年的"默认选项"。</p>
+<p>后来轰动世界的 <strong>ChatGPT</strong>,背后的 <strong>RLHF(基于人类反馈的强化学习)</strong> 用的就是 PPO。它的流程是:</p>
+<ol>
+<li>人类对模型的多个回答排序,标出"哪个更好";</li>
+<li>用这些偏好数据训练一个<strong>奖励模型(Reward Model)</strong>,让它学会给回答打分;</li>
+<li>用 PPO,以奖励模型的打分作为奖励,去优化语言模型。</li>
+</ol>
+<p>这套方法让 GPT 从"会续写"变成了"会帮忙、懂分寸"。但它<strong>又重又复杂</strong>:</p>
+<ul>
+<li>要额外训练一个奖励模型;</li>
+<li>PPO 训练时,内存里要同时塞下<strong>四个模型</strong>(策略模型、参考模型、奖励模型、价值模型),显存吃紧;</li>
+<li>工程链路长,调参困难。</li>
+</ul>
+<p>这个"太重"的矛盾,催生了 2024 年的主角。</p>
+<hr />
+<h2 id="第六幕2024grpo把策略梯度做到极简然后封神">第六幕:2024,GRPO——把策略梯度做到极简,然后封神</h2>
+<p>DeepSeek 在训练其数学/推理模型时提出了 <strong>GRPO(Group Relative Policy Optimization,组相对策略优化)</strong>。它的洞察非常聪明:</p>
+<blockquote>
+<p><strong>在数学题、代码题这类"答案能自动判对错"的任务上,我们根本不需要训练一个奖励模型——对照标准答案,答对给 1 分、答错给 0 分就行了。也不需要单独的价值网络——让模型对同一道题生成一组(group)答案,用这组答案的平均分当基线就行了。</strong></p>
+</blockquote>
+<p>省掉了奖励模型,省掉了价值网络,PPO 那"四个模型"瘦身成基本上"一个模型"。这就是 GRPO "组相对"三个字的含义:<strong>优势不靠额外网络估计,而是靠"组内相对比较"算出来。</strong></p>
+<p>而这,正是我们 MathGPT 项目里跑的东西。看 <code>train_rl.py</code> 的核心,你会发现它干净得像教科书:</p>
+<h3 id="第一步对同一道题采样一组答案rollout">第一步:对同一道题,采样一组答案(Rollout)</h3>
+<div class="highlight"><pre><span></span><code><span class="c1"># 对一道 GSM8K 数学题,生成 num_samples 个候选答案</span>
+<span class="n">seqs_batch</span><span class="p">,</span> <span class="n">masks_batch</span> <span class="o">=</span> <span class="n">engine</span><span class="o">.</span><span class="n">generate_batch</span><span class="p">(</span>
+    <span class="n">tokens</span><span class="p">,</span> <span class="n">num_samples</span><span class="o">=</span><span class="n">args</span><span class="o">.</span><span class="n">device_batch_size</span><span class="p">,</span>
+    <span class="n">max_tokens</span><span class="o">=</span><span class="n">args</span><span class="o">.</span><span class="n">max_new_tokens</span><span class="p">,</span> <span class="n">temperature</span><span class="o">=</span><span class="n">args</span><span class="o">.</span><span class="n">temperature</span><span class="p">)</span>
+</code></pre></div>
+
+<p>同一道题让模型答 8 遍、16 遍,有的对有的错——这"一组"就是 GRPO 里的 group。<strong>这一步,就是第四幕 AlphaGo "自我对弈"在语言模型上的回声</strong>:没有人给标准解题过程,模型自己生成一堆候选,自己跟自己博弈,从中分出高下。</p>
+<h3 id="第二步用标准答案自动打分无需奖励模型">第二步:用标准答案自动打分(无需奖励模型)</h3>
+<div class="highlight"><pre><span></span><code><span class="c1"># 答对 reward=1.0,答错 reward=0.0,直接和标准答案比对</span>
+<span class="k">for</span> <span class="n">sample_tokens</span> <span class="ow">in</span> <span class="n">generated_seqs</span><span class="p">:</span>
+    <span class="n">generated_text</span> <span class="o">=</span> <span class="n">tokenizer</span><span class="o">.</span><span class="n">decode</span><span class="p">(</span><span class="n">sample_tokens</span><span class="p">[</span><span class="n">prefix_length</span><span class="p">:])</span>
+    <span class="n">rewards</span><span class="o">.</span><span class="n">append</span><span class="p">(</span><span class="n">train_task</span><span class="o">.</span><span class="n">reward</span><span class="p">(</span><span class="n">conversation</span><span class="p">,</span> <span class="n">generated_text</span><span class="p">))</span>
+</code></pre></div>
+
+<p>这就是 GRPO 在数学题上的精髓:<strong>奖励是规则算出来的,不是另一个网络猜出来的</strong>,干净、零成本、无偏差。</p>
+<h3 id="第三步组内算优势无需价值网络">第三步:组内算优势(无需价值网络)</h3>
+<div class="highlight"><pre><span></span><code><span class="n">rewards</span>    <span class="o">=</span> <span class="n">torch</span><span class="o">.</span><span class="n">tensor</span><span class="p">(</span><span class="n">rewards</span><span class="p">,</span> <span class="o">...</span><span class="p">)</span>
+<span class="n">advantages</span> <span class="o">=</span> <span class="n">rewards</span> <span class="o">-</span> <span class="n">rewards</span><span class="o">.</span><span class="n">mean</span><span class="p">()</span>   <span class="c1"># 优势 = 自己的分 - 这一组的平均分</span>
+</code></pre></div>
+
+<p>看到没?<strong>还是第三幕那个"优势 = 回报 - 平均回报"的式子</strong>。只不过这里的"平均"是"同一道题这一组答案的平均分"。一道题如果模型答 8 次对了 2 次,那这 2 个正确答案的优势为正(高于平均),会被鼓励;6 个错误答案优势为负,会被抑制。</p>
+<h3 id="第四步策略梯度更新还是那个-reinforce">第四步:策略梯度更新(还是那个 REINFORCE)</h3>
+<div class="highlight"><pre><span></span><code><span class="c1"># 提高&quot;高优势答案&quot;被生成的概率,这就是策略梯度</span>
+<span class="n">logp</span>   <span class="o">=</span> <span class="o">-</span><span class="n">model</span><span class="p">(</span><span class="n">inputs</span><span class="p">,</span> <span class="n">targets</span><span class="p">,</span> <span class="n">loss_reduction</span><span class="o">=</span><span class="s1">&#39;none&#39;</span><span class="p">)</span><span class="o">.</span><span class="n">view_as</span><span class="p">(</span><span class="n">inputs</span><span class="p">)</span>
+<span class="n">pg_obj</span> <span class="o">=</span> <span class="p">(</span><span class="n">logp</span> <span class="o">*</span> <span class="n">advantages</span><span class="o">.</span><span class="n">unsqueeze</span><span class="p">(</span><span class="o">-</span><span class="mi">1</span><span class="p">))</span><span class="o">.</span><span class="n">sum</span><span class="p">()</span>
+<span class="n">loss</span>   <span class="o">=</span> <span class="o">-</span><span class="n">pg_obj</span>
+<span class="n">loss</span><span class="o">.</span><span class="n">backward</span><span class="p">()</span>
+</code></pre></div>
+
+<p><code>logp × advantage</code>——这正是第三幕 REINFORCE 的更新公式!<strong>GRPO 本质上就是"带组内基线的 REINFORCE"</strong>。MathGPT 的实现是它最纯粹的形态:没有 KL 正则、没有 PPO 的 clip,采用 DAPO 风格的 token 级归一化,一条干净的策略梯度。</p>
+<blockquote>
+<p>MathGPT 在 A800 上完成了从零预训练 → SFT → GRPO 的完整链路:一个约 700M 参数的小模型,经过 GRPO 在 GSM8K 上训练后,数学推理从"基本全错"提升到了能解出复杂应用题(Pass@1 约 14.75%)。模型甚至学会了在该算的地方调用计算器工具(<code>&lt;|python_start|&gt;16*7&lt;|python_end|&gt;</code>)做精确计算。</p>
+</blockquote>
+<hr />
+<h2 id="第七幕为什么大模型时代rl-突然又火了">第七幕:为什么大模型时代,RL 突然又火了?</h2>
+<p>这里要补一个关键背景:<strong>为什么大语言模型需要 RL?光靠监督学习(SFT)不够吗?</strong></p>
+<p>大模型的训练通常是三步:</p>
+<ol>
+<li><strong>预训练</strong>:在海量文本上学"预测下一个词",学会的是"像人一样说话",但不知道什么是"有用的回答"。</li>
+<li><strong>SFT(监督微调)</strong>:用人写的优质问答示范,教模型"该怎么回答"。但 SFT 的本质是<strong>模仿</strong>——它只会复刻示范数据的模式,有个天花板:它无法"自我评价对错",对数学这种要求精确的任务尤其吃力(允许小概率蹦出一个错 token,答案就崩了)。</li>
+<li><strong>RL 微调</strong>:这就是 GRPO 登场的地方。它让模型<strong>自己生成、自己被打分、自己改进</strong>,突破了"只能模仿"的天花板。模型不再是背答案,而是真正学会了"什么样的推理路径更容易得到正确结果"。</li>
+</ol>
+<p>这正好呼应了开头那只小鸟:<strong>Flappy Bird 没有"标准飞法"示范给小鸟看,数学题的"正确推理路径"也无法穷举地写给模型看。两者都只能靠"试错 + 奖励"自己摸索。</strong> 这就是 RL 不可替代的价值所在,也是它在大模型时代第二次爆发的根本原因。</p>
+<hr />
+<h2 id="dqn-vs-grpo同一个内核不同的假设">DQN vs GRPO:同一个内核,不同的假设</h2>
+<p>讲到这里,我们把全文的两个主角拉到一起做个<strong>正面对比</strong>——这是理解强化学习最快的方式:它们的内核完全一样,区别只在于"对环境做了什么假设"。</p>
+<p><strong>先说"完全一样"的内核</strong>,一句话:</p>
+<blockquote>
+<p>拿一个神经网络当大脑,让它去试;试出来好的(奖励高),就调参数让这种行为更容易发生;试出来差的,就让它更不容易发生。反复循环,网络就变强了。</p>
+</blockquote>
+<p>DQN 和 GRPO 都在做这一件事,一个字不差。它们的差异,全部来自<strong>任务环境长得不一样</strong>,于是各自做了不同的简化假设:</p>
+<table>
+<thead>
+<tr>
+<th>对比维度</th>
+<th>DQN(Flappy Bird 那只鸟)</th>
+<th>GRPO(MathGPT 做数学题)</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><strong>网络学什么</strong></td>
+<td>每个动作"值多少分"(价值)</td>
+<td>每个输出"该以多大概率说出来"(策略)</td>
+</tr>
+<tr>
+<td><strong>路线</strong></td>
+<td>基于价值(value-based)</td>
+<td>基于策略(policy-based)</td>
+</tr>
+<tr>
+<td><strong>有几个动作可选</strong></td>
+<td>2 个(扇翅膀 / 不动)</td>
+<td>几万个(每一步从整个词表里挑一个词)</td>
+</tr>
+<tr>
+<td><strong>为什么不能互换</strong></td>
+<td>动作少,能逐个比 Q 值挑最大</td>
+<td>动作太多,没法逐个比,只能直接学概率</td>
+</tr>
+<tr>
+<td><strong>奖励从哪来</strong></td>
+<td>游戏环境(没死 +分,撞管道 -分)</td>
+<td>规则判分(答案对 = 1,错 = 0)</td>
+</tr>
+<tr>
+<td><strong>奖励多久给一次</strong></td>
+<td>每走一步都有(密集)</td>
+<td>整段答案写完才有一个(稀疏)</td>
+</tr>
+<tr>
+<td><strong>怎么降低"运气波动"</strong></td>
+<td>用贝尔曼方程自举出目标 Q 值</td>
+<td>用"同组答案的平均分"当基线(优势=自己分-平均分)</td>
+</tr>
+<tr>
+<td><strong>怎么探索新可能</strong></td>
+<td>ε-greedy:以一定概率随机乱试</td>
+<td>采样温度:让生成带点随机性,答出不同版本</td>
+</tr>
+<tr>
+<td><strong>训练数据从哪来</strong></td>
+<td>经验回放:存进记忆库反复抽用</td>
+<td>自我对弈:当场让模型自己生成一组答案</td>
+</tr>
+</tbody>
+</table>
+<p>读这张表的正确姿势是:<strong>从左往右看,你会发现没有一处是"GRPO 发明了全新原理",全都是"换了个假设、做了个适配"。</strong></p>
+<ul>
+<li>因为大模型动作太多(几万个词),没法像 DQN 那样"挑 Q 值最大的",所以走了策略路线;</li>
+<li>因为数学题只有最后才知道对错,奖励天然稀疏,所以干脆"整段答完再打一个分";</li>
+<li>因为没有现成的价值网络去降方差,所以用"同一道题的一组答案取平均"这个最省事的基线——这就是"组相对(Group Relative)"的由来。</li>
+</ul>
+<p>一句话收束这张表:</p>
+<blockquote>
+<p><strong>DQN 是"动作少、奖励密、能精确比价值"时的最优解;GRPO 是"动作海量、奖励稀疏、只能整体打分"时的最优解。环境的假设变了,方法就跟着变——但底层那台"试错 + 奖励 + 调参"的发动机,从那只小鸟到大模型,一台都没换过。</strong></p>
+</blockquote>
+<p>理解了这张表,你就不会再把 DQN 和 GRPO 当成两个孤立的"黑话";它们是同一条河的上游和下游。</p>
+<hr />
+<h2 id="一张图看懂这条历史主线">一张图看懂这条历史主线</h2>
+<div class="highlight"><pre><span></span><code>心理学:试错与奖惩
+        │
+   贝尔曼方程(1950s) ── &quot;价值 = 即时回报 + 未来价值的折扣&quot;
+        │
+   Q-Learning(1989) ── 学 Q(状态,动作),但状态一多就爆炸
+        │
+   ┌────┴─────────────────────────────────┐
+   │                                       │
+基于价值(Value-based)                基于策略(Policy-based)
+   │                                       │
+ DQN(2013) ★Flappy Bird            REINFORCE(1992)
+ 用神经网络逼近 Q 表                 直接学策略,但方差大
+ 经验回放 + ε-greedy                     │
+ 擅长离散小动作空间                  +基线 → 优势 = 回报 - 平均
+   │                                       │
+   └───────────────┬───────────────────────┘
+                   │  两条路合流
+          AlphaGo(2016) ── 策略网络 + 价值网络 + 蒙特卡洛树搜索
+                   │        &quot;先模仿人类、再自我对弈超越&quot;
+          AlphaGo Zero(2017) ── 纯自我对弈(self-play),抛弃人类数据
+                   │        ★ 自己生成数据、自己变强
+                   │
+             PPO(2017) ── clip 稳定更新
+                   │
+             RLHF(ChatGPT) ── PPO + 奖励模型,但太重(四个模型)
+                   │
+             GRPO(2024) ★MathGPT
+               去掉奖励模型(规则打分)
+               去掉价值网络(组内平均当基线)
+               本质 = 带组内基线的 REINFORCE + 自我对弈精神
+</code></pre></div>
+
+<hr />
+<h2 id="结语同一团火烧了两个时代">结语:同一团火,烧了两个时代</h2>
+<p>回到开头那两段代码。</p>
+<p>那只学飞的像素小鸟(DQN),和那个学做数学题的大模型(GRPO),相隔十一年,处理的数据天差地别,但它们共享着完全相同的灵魂:</p>
+<blockquote>
+<p><strong>没有人手把手教每一步,只有一个最终的好坏信号;AI 通过一遍遍试错,自己把"什么行为能带来好结果"刻进了神经网络的权重里。</strong></p>
+</blockquote>
+<p>从贝尔曼方程到 Q-Learning,从 DQN 到策略梯度,从 AlphaGo 到 PPO/RLHF,再到 GRPO——六十年里,方法从简单到复杂、再回归极简,但每一次进化的逻辑都一样:<strong>前一个方法留下一个矛盾,后一个方法去解决它。</strong></p>
+<ul>
+<li>状态太多,Q 表存不下 → <strong>DQN</strong> 用神经网络逼近(2013,Flappy Bird);</li>
+<li>DQN 处理不了海量/连续动作 → <strong>策略梯度</strong>直接学策略(REINFORCE);</li>
+<li>价值与策略各有所长,围棋两者都要 → <strong>AlphaGo</strong> 合二为一 + 树搜索 + 自我对弈(2016);</li>
+<li>策略梯度方差大、易学崩 → 优势基线 + <strong>PPO</strong> 裁剪(2017);</li>
+<li>给语言模型对齐,但 RLHF 太重(四个模型) → <strong>GRPO</strong> 用规则打分 + 组内基线极致瘦身(2024)。</li>
+</ul>
+<p>特别值得回味的是最后一步:<strong>GRPO 不是更复杂了,而是更简单了。</strong> AlphaGo 把系统堆到了复杂度的顶峰,而 GRPO 把它精炼回一条干净的策略梯度——却继承了 AlphaGo 最珍贵的那个思想:<strong>让 AI 自己生成数据、自己评判、自己变强。</strong> 从围棋盘上的自我对弈,到数学题上的"一组答案里挑出对的强化它",是同一种智慧的两次绽放。</p>
+<p>理解了这条主线,你就理解了今天 DeepSeek、OpenAI 们训练推理模型的核心引擎。而最好的理解方式,永远是<strong>亲手跑一遍</strong>:先让那只小鸟飞起来,再让大模型算对一道数学题。</p>
+<p>两个项目,一条主线,一团从未熄灭的火。</p>
+<hr />
+<p><em>本文基于两个开源实践项目写成:</em>
+- <em>Flappy Bird DQN:<code>rl_games/flappy_bird_app</code>(PyTorch 实现的经典深度 Q 网络)</em>
+- <em>MathGPT GRPO:从零预训练 → SFT → GRPO 的完整大模型强化学习链路(基于 nanochat)</em></p>
+    </div>
+  </article>
+
+</main>
+
+<!-- Floating Ask-AI chat widget -->
+<button class="ai-fab" id="ai-fab" aria-label="Ask AI about this article" title="Ask AI about this article">
+  <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+    <path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"/>
+  </svg>
+  <span class="ai-fab-label">Ask AI</span>
+</button>
+
+<div class="ai-panel" id="ai-panel" role="dialog" aria-labelledby="ai-panel-title" aria-hidden="true">
+  <header class="ai-panel-head">
+    <div class="ai-panel-title-wrap">
+      <span class="ai-dot"></span>
+      <h3 id="ai-panel-title">Ask AI about this post</h3>
+    </div>
+    <div class="ai-panel-actions">
+      <button class="ai-icon-btn" id="ai-clear" title="Clear conversation" aria-label="Clear">
+        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><polyline points="3 6 5 6 21 6"/><path d="M19 6l-1 14a2 2 0 0 1-2 2H8a2 2 0 0 1-2-2L5 6"/><path d="M10 11v6M14 11v6"/><path d="M9 6V4a1 1 0 0 1 1-1h4a1 1 0 0 1 1 1v2"/></svg>
+      </button>
+      <button class="ai-icon-btn" id="ai-close" title="Minimize" aria-label="Minimize">
+        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><polyline points="6 9 12 15 18 9"/></svg>
+      </button>
+    </div>
+  </header>
+
+  <div class="ai-messages" id="ai-messages">
+    <div class="ai-empty" id="ai-empty">
+      <p class="ai-empty-title">On-device AI · Gemini Nano</p>
+      <p class="ai-empty-sub">Ask anything about this article. Runs in your browser — nothing leaves your device.</p>
+    </div>
+  </div>
+
+  <div class="ai-status" id="ai-status" hidden></div>
+
+  <form class="ai-composer" id="ai-form">
+    <textarea id="ai-input" rows="1" placeholder="Ask about this post…" autocomplete="off"></textarea>
+    <button type="submit" id="ai-send" class="ai-send" aria-label="Send" disabled>
+      <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><line x1="22" y1="2" x2="11" y2="13"/><polygon points="22 2 15 22 11 13 2 9 22 2"/></svg>
+    </button>
+  </form>
+</div>
+
+<script>
+(function () {
+  const POST_TITLE = "\u4ece\u300a\u98de\u7fd4\u7684\u5c0f\u9e1f\u300b\u5230\u5927\u6a21\u578b\uff1a\u4e00\u7bc7\u8bb2\u900f\u5f3a\u5316\u5b66\u4e60\u7684\u6765\u9f99\u53bb\u8109";
+  const contentEl = document.querySelector('article .content');
+
+  const fab = document.getElementById('ai-fab');
+  const panel = document.getElementById('ai-panel');
+  const closeBtn = document.getElementById('ai-close');
+  const clearBtn = document.getElementById('ai-clear');
+  const msgsEl = document.getElementById('ai-messages');
+  const emptyEl = document.getElementById('ai-empty');
+  const statusEl = document.getElementById('ai-status');
+  const formEl = document.getElementById('ai-form');
+  const inputEl = document.getElementById('ai-input');
+  const sendBtn = document.getElementById('ai-send');
+
+  function articleText() {
+    if (!contentEl) return '';
+    return (contentEl.innerText || contentEl.textContent || '')
+      .replace(/[ \t]+\n/g, '\n')
+      .replace(/\n{3,}/g, '\n\n')
+      .trim();
+  }
+
+  function setStatus(msg, cls) {
+    if (!msg) { statusEl.hidden = true; statusEl.textContent = ''; statusEl.className = 'ai-status'; return; }
+    statusEl.hidden = false;
+    statusEl.textContent = msg;
+    statusEl.className = 'ai-status' + (cls ? ' ' + cls : '');
+  }
+
+  function hideEmpty() { if (emptyEl) emptyEl.style.display = 'none'; }
+
+  function appendBubble(role, text) {
+    hideEmpty();
+    const wrap = document.createElement('div');
+    wrap.className = 'ai-msg ai-msg-' + role;
+    const bubble = document.createElement('div');
+    bubble.className = 'ai-bubble';
+    bubble.textContent = text;
+    wrap.appendChild(bubble);
+    msgsEl.appendChild(wrap);
+    msgsEl.scrollTop = msgsEl.scrollHeight;
+    return bubble;
+  }
+
+  function appendTyping() {
+    hideEmpty();
+    const wrap = document.createElement('div');
+    wrap.className = 'ai-msg ai-msg-assistant ai-typing';
+    wrap.innerHTML = '<div class="ai-bubble"><span class="ai-dots"><i></i><i></i><i></i></span></div>';
+    msgsEl.appendChild(wrap);
+    msgsEl.scrollTop = msgsEl.scrollHeight;
+    return wrap;
+  }
+
+  function autoSize() {
+    inputEl.style.height = 'auto';
+    inputEl.style.height = Math.min(inputEl.scrollHeight, 140) + 'px';
+  }
+
+  function openPanel() {
+    panel.classList.add('open');
+    panel.setAttribute('aria-hidden', 'false');
+    fab.classList.add('hidden');
+    setTimeout(() => inputEl.focus(), 50);
+  }
+  function closePanel() {
+    panel.classList.remove('open');
+    panel.setAttribute('aria-hidden', 'true');
+    fab.classList.remove('hidden');
+  }
+
+  fab.addEventListener('click', openPanel);
+  closeBtn.addEventListener('click', closePanel);
+  document.addEventListener('keydown', e => {
+    if (e.key === 'Escape' && panel.classList.contains('open')) closePanel();
+  });
+
+  // ---- LanguageModel session ----
+  let session = null;
+  let creating = null;
+  let history = [];
+
+  function buildSystemPrompt() {
+    // Keep article context modest — Gemini Nano's input quota is small.
+    const article = articleText().slice(0, 4000);
+    return (
+      'You are a concise, helpful assistant answering questions about a blog post. ' +
+      'Use the article below as your primary source. If the answer is not in it, say so briefly and answer generally. ' +
+      'Reply in the same language as the user\'s question. Keep answers short unless asked for detail.\n\n' +
+      '=== ARTICLE TITLE ===\n' + POST_TITLE + '\n\n' +
+      '=== ARTICLE CONTENT ===\n' + article
+    );
+  }
+
+  async function ensureSession() {
+    if (session) return session;
+    if (creating) return creating;
+
+    if (!('LanguageModel' in self)) {
+      throw new Error(
+        'On-device AI not available. Use Chrome 138+ on desktop, or enable ' +
+        '"Prompt API for Gemini Nano" in chrome://flags.'
+      );
+    }
+
+    setStatus('Checking model…', 'info');
+    const status = await LanguageModel.availability();
+    if (status === 'unavailable') {
+      throw new Error('Model unavailable on this device.');
+    }
+
+    creating = (async () => {
+      // Only show download UI when the model isn't already there.
+      const willDownload = (status !== 'available');
+      if (willDownload) setStatus('Preparing model (first run downloads ~2GB)…', 'info');
+      else setStatus('Warming up…', 'info');
+
+      const s = await LanguageModel.create({
+        initialPrompts: [{ role: 'system', content: buildSystemPrompt() }],
+        monitor(m) {
+          m.addEventListener('downloadprogress', e => {
+            // Skip the spurious 0% event Chrome fires for cached models.
+            if (!willDownload && e.loaded === 0) return;
+            const pct = (e.loaded * 100).toFixed(1);
+            setStatus('Downloading model: ' + pct + '%', 'info');
+          });
+        }
+      });
+      session = s;
+      setStatus('');
+      return s;
+    })();
+
+    try { return await creating; }
+    finally { creating = null; }
+  }
+
+  async function ask(q) {
+    appendBubble('user', q);
+    history.push({ role: 'user', content: q });
+
+    sendBtn.disabled = true;
+    inputEl.disabled = true;
+    const typing = appendTyping();
+
+    let answerBubble = null;
+    let acc = '';
+    try {
+      const s = await ensureSession();
+      const stream = s.promptStreaming(q);
+      for await (const chunk of stream) {
+        if (!answerBubble) {
+          typing.remove();
+          const wrap = document.createElement('div');
+          wrap.className = 'ai-msg ai-msg-assistant';
+          answerBubble = document.createElement('div');
+          answerBubble.className = 'ai-bubble';
+          wrap.appendChild(answerBubble);
+          msgsEl.appendChild(wrap);
+        }
+        acc += chunk;
+        answerBubble.textContent = acc;
+        msgsEl.scrollTop = msgsEl.scrollHeight;
+      }
+      if (acc) history.push({ role: 'assistant', content: acc });
+      else { typing.remove(); appendBubble('assistant', '(no response)'); }
+    } catch (e) {
+      if (typing && typing.parentNode) typing.remove();
+      const err = document.createElement('div');
+      err.className = 'ai-msg ai-msg-error';
+      err.innerHTML = '<div class="ai-bubble">⚠ ' + (e && e.message ? e.message : String(e)) + '</div>';
+      msgsEl.appendChild(err);
+      msgsEl.scrollTop = msgsEl.scrollHeight;
+    } finally {
+      sendBtn.disabled = !inputEl.value.trim();
+      inputEl.disabled = false;
+      inputEl.focus();
+    }
+  }
+
+  formEl.addEventListener('submit', e => {
+    e.preventDefault();
+    const q = inputEl.value.trim();
+    if (!q) return;
+    inputEl.value = '';
+    autoSize();
+    sendBtn.disabled = true;
+    ask(q);
+  });
+
+  inputEl.addEventListener('input', () => {
+    autoSize();
+    sendBtn.disabled = !inputEl.value.trim();
+  });
+  inputEl.addEventListener('keydown', e => {
+    if (e.key === 'Enter' && !e.shiftKey) {
+      e.preventDefault();
+      formEl.requestSubmit();
+    }
+  });
+
+  clearBtn.addEventListener('click', () => {
+    msgsEl.innerHTML = '';
+    msgsEl.appendChild(emptyEl);
+    emptyEl.style.display = '';
+    history = [];
+    if (session && session.destroy) { try { session.destroy(); } catch (_) {} }
+    session = null;
+    setStatus('');
+  });
+
+  if (!('LanguageModel' in self)) {
+    fab.addEventListener('click', () => {
+      openPanel();
+      setStatus('On-device AI not detected. Use Chrome 138+ desktop, or enable "Prompt API for Gemini Nano" in chrome://flags.', 'bad');
+    }, { once: true });
+  }
+})();
+</script>
+
+<!-- Outline notes / comments — DataScript + IndexedDB -->
+<script src="https://github.com/tonsky/datascript/releases/download/1.7.8/datascript-1.7.8.min.js"></script>
+<script src="../notes.js?v=6"></script>
+<script src="../theme.js"></script>
+<script src="../wechat-copy.js?v=3"></script>
+
+</body>
+</html>
