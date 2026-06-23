@@ -476,6 +476,24 @@ softmax 把它<strong>软化成连续的概率分布</strong>，于是可导：<
     <span class="nb">print</span><span class="p">(</span><span class="sa">f</span><span class="s2">&quot;温度 </span><span class="si">{</span><span class="n">T</span><span class="si">}</span><span class="s2">: </span><span class="si">{</span><span class="n">p</span><span class="o">.</span><span class="n">numpy</span><span class="p">()</span><span class="o">.</span><span class="n">round</span><span class="p">(</span><span class="mi">3</span><span class="p">)</span><span class="si">}</span><span class="s2">&quot;</span><span class="p">)</span>   <span class="c1"># T 越小越接近 one-hot 硬选择</span>
 </code></pre></div>
 
+<p><strong>光看数字还是抽象——跑一个动画，亲眼看"硬台阶"怎么变成"可导的斜坡"：</strong></p>
+<div class="highlight"><pre><span></span><code>python<span class="w"> </span>discrete_to_differentiable_visualization.py
+</code></pre></div>
+
+<blockquote>
+<p>这是整段最该"看见"的一幕。<strong>"可导"到底意味着什么？意味着曲线上每一点都有一条切线（斜率），
+梯度下降就靠这个斜率知道往哪走。</strong></p>
+<ul>
+<li><strong>左图</strong>：灰色虚线是 <code>argmax</code>——一个<strong>硬台阶</strong>。台阶到处是平的、在跳变处又直接竖起来，
+  <strong>画不出切线 = 不可导</strong>，梯度下降在它上面彻底瞎了。蓝色是 <code>softmax</code>——一条<strong>光滑斜坡</strong>，
+  随便哪一点都能画出切线（图里那条红色切线），切线的斜率就是梯度。</li>
+<li><strong>右图</strong>：把两者的梯度画出来对比。<code>argmax</code> 的梯度<strong>恒为 0</strong>（一条贴着零的虚线，无坡可下、学不动）；
+  <code>softmax</code> 的梯度是一个<strong>非零的鼓包</strong>——这就是反向传播能跟着走的"坡"。</li>
+<li>拖动<strong>温度 T 从大到小</strong>，蓝色斜坡越变越陡、越来越逼近那个硬台阶，
+  但只要 <code>T&gt;0</code>，它<strong>始终是光滑可导的</strong>。这正是"用一个连续旋钮，在可导的软选择和不可导的硬选择之间滑动"。</li>
+</ul>
+<p>一句话：<strong>softmax 干的事，就是把"不可导的台阶"换成"处处有坡度的斜坡"，于是梯度有了方向，离散选择就能被训练了。</strong></p>
+</blockquote>
 <p><strong>这就是"离散变连续可导"的全部魔法：</strong></p>
 <blockquote>
 <p>用 embedding 把离散符号搬进连续向量空间（可以求导的浮点数），
