@@ -1,0 +1,1004 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>大学4年没讲明白的线性代数，被一段 PyTorch 代码讲透了 · Steve Chan — xlisp</title>
+<meta name="description" content="如果只能留一句话，那就是这句：">
+<meta name="author" content="Steve Chan">
+<link rel="icon" type="image/jpeg" href="../icon.jpeg">
+<link rel="apple-touch-icon" href="../icon.jpeg">
+<meta property="og:type" content="article">
+<meta property="og:title" content="大学4年没讲明白的线性代数，被一段 PyTorch 代码讲透了">
+<meta property="og:description" content="如果只能留一句话，那就是这句：">
+<meta property="og:image" content="../icon.jpeg">
+<meta property="og:site_name" content="Steve Chan — xlisp">
+<meta name="twitter:card" content="summary_large_image">
+<meta name="twitter:title" content="大学4年没讲明白的线性代数，被一段 PyTorch 代码讲透了">
+<meta name="twitter:description" content="如果只能留一句话，那就是这句：">
+<meta name="twitter:image" content="../icon.jpeg">
+<link rel="stylesheet" href="../style.css?v=light1">
+<script>(function(){try{if(localStorage.getItem('theme')==='light')document.documentElement.setAttribute('data-theme','light');}catch(e){}})();</script>
+<!-- Math formula rendering via MathJax -->
+<script>
+window.MathJax = {
+  tex: {
+    // arithmatex emits \(...\) / \[...\] markup, so only these delimiters
+    // are needed; plain `$` is left alone (avoids currency false positives).
+    inlineMath: [['\\(', '\\)']],
+    displayMath: [['\\[', '\\]']],
+    processEscapes: true
+  },
+  svg: {
+    // Each formula gets its own self-contained <defs>, so the copy script can
+    // serialize one <svg> and rasterize it to a PNG for WeChat.
+    fontCache: 'local'
+  },
+  options: {
+    skipHtmlTags: ['script', 'noscript', 'style', 'textarea', 'pre', 'code'],
+    ignoreHtmlClass: 'highlight'
+  }
+};
+</script>
+<script src="https://cdn.jsdelivr.net/npm/mathjax@3/es5/tex-svg.js" async></script>
+</head>
+<body>
+<main class="wrap post">
+
+  <nav class="topnav">
+    <a href="../index.html">← home</a>
+  </nav>
+
+  <article>
+    <header class="post-header">
+      <h1>大学4年没讲明白的线性代数，被一段 PyTorch 代码讲透了</h1>
+      <p class="meta">2026-06-23 · Steve Chan</p>
+    </header>
+
+    <div class="content">
+<blockquote>
+<p>行列式、特征值、矩阵的秩、向量空间……当年背得滚瓜烂熟，考完试就全忘了。
+因为老师只给了你<strong>算法</strong>，没给你<strong>画面</strong>。</p>
+<p>这篇文章反过来：<strong>不背一个定义，不证一个定理</strong>，全部用能跑起来的 PyTorch 代码，
+把线性代数最核心的那几个概念，一段一段"跑"给你看。</p>
+<p>并且顺手回答四个让无数人卡住的灵魂拷问：</p>
+<ul>
+<li>人类识别的"特征"，和矩阵里的"特征值/特征向量"，到底是不是一回事？</li>
+<li>难道大模型、神经网络，说穿了就是在做<strong>向量点积</strong>？</li>
+<li>一个个<strong>离散</strong>的字、像素、整数，是怎么变成<strong>连续可导</strong>、能被梯度下降优化的东西的？</li>
+<li>都说训练靠 GPU，<strong>GPU 是不是就是一台大型向量机</strong>？</li>
+</ul>
+</blockquote>
+<hr />
+<h2 id="0-一句话主线">0. 一句话主线</h2>
+<p>如果只能留一句话，那就是这句：</p>
+<blockquote>
+<p><strong>线性代数不是"算数表"，是"搬空间"。一个矩阵就是一台把整个空间整体搬动的机器。</strong></p>
+</blockquote>
+<p>整个深度学习里，你看到的所有 <code>@</code>、<code>matmul</code>、<code>nn.Linear</code>、<code>Q @ K.T</code>，
+本质都是在反复做同一件事：<strong>把数据从一个空间，搬到另一个更好处理的空间。</strong></p>
+<div class="highlight"><pre><span></span><code><span class="kn">import</span><span class="w"> </span><span class="nn">torch</span>
+
+<span class="n">x</span> <span class="o">=</span> <span class="n">torch</span><span class="o">.</span><span class="n">tensor</span><span class="p">([</span><span class="mf">1.0</span><span class="p">,</span> <span class="mf">2.0</span><span class="p">])</span>          <span class="c1"># 一个点 / 一个向量</span>
+<span class="n">M</span> <span class="o">=</span> <span class="n">torch</span><span class="o">.</span><span class="n">tensor</span><span class="p">([[</span><span class="mf">2.0</span><span class="p">,</span> <span class="mf">0.0</span><span class="p">],</span>
+                  <span class="p">[</span><span class="mf">0.0</span><span class="p">,</span> <span class="mf">3.0</span><span class="p">]])</span>         <span class="c1"># 一台机器：横向拉 2 倍，纵向拉 3 倍</span>
+
+<span class="nb">print</span><span class="p">(</span><span class="n">M</span> <span class="o">@</span> <span class="n">x</span><span class="p">)</span>                          <span class="c1"># tensor([2., 6.]) —— 这个点被&quot;搬&quot;走了</span>
+</code></pre></div>
+
+<p>记住这个画面，下面所有概念都挂在它上面。</p>
+<hr />
+<h2 id="1-向量不是一列数字是空间里的一个箭头">1. 向量：不是"一列数字"，是"空间里的一个箭头"</h2>
+<p>课本第一页就给你一个列向量 <code>[1, 2, 3]^T</code>，然后让你背"加法、数乘"。
+但向量真正的意思是：<strong>从原点指出去的一根箭头</strong>，它有方向、有长度。</p>
+<div class="highlight"><pre><span></span><code><span class="kn">import</span><span class="w"> </span><span class="nn">torch</span>
+
+<span class="n">a</span> <span class="o">=</span> <span class="n">torch</span><span class="o">.</span><span class="n">tensor</span><span class="p">([</span><span class="mf">3.0</span><span class="p">,</span> <span class="mf">4.0</span><span class="p">])</span>
+
+<span class="n">length</span> <span class="o">=</span> <span class="n">torch</span><span class="o">.</span><span class="n">linalg</span><span class="o">.</span><span class="n">norm</span><span class="p">(</span><span class="n">a</span><span class="p">)</span>         <span class="c1"># 长度 = 勾股定理 = sqrt(3^2 + 4^2)</span>
+<span class="nb">print</span><span class="p">(</span><span class="s2">&quot;这根箭头的长度:&quot;</span><span class="p">,</span> <span class="n">length</span><span class="o">.</span><span class="n">item</span><span class="p">())</span>   <span class="c1"># 5.0</span>
+</code></pre></div>
+
+<p>两个向量之间最重要的关系是<strong>点积</strong>。点积衡量"两根箭头有多同向"：</p>
+<div class="highlight"><pre><span></span><code><span class="kn">import</span><span class="w"> </span><span class="nn">torch</span>
+
+<span class="n">a</span> <span class="o">=</span> <span class="n">torch</span><span class="o">.</span><span class="n">tensor</span><span class="p">([</span><span class="mf">1.0</span><span class="p">,</span> <span class="mf">0.0</span><span class="p">])</span>          <span class="c1"># 指向正右</span>
+<span class="n">b</span> <span class="o">=</span> <span class="n">torch</span><span class="o">.</span><span class="n">tensor</span><span class="p">([</span><span class="mf">0.0</span><span class="p">,</span> <span class="mf">1.0</span><span class="p">])</span>          <span class="c1"># 指向正上</span>
+<span class="n">c</span> <span class="o">=</span> <span class="n">torch</span><span class="o">.</span><span class="n">tensor</span><span class="p">([</span><span class="mf">1.0</span><span class="p">,</span> <span class="mf">1.0</span><span class="p">])</span>          <span class="c1"># 指向右上 45°</span>
+
+<span class="nb">print</span><span class="p">(</span><span class="n">torch</span><span class="o">.</span><span class="n">dot</span><span class="p">(</span><span class="n">a</span><span class="p">,</span> <span class="n">b</span><span class="p">))</span>   <span class="c1"># 0.0  —— 垂直，毫不相关</span>
+<span class="nb">print</span><span class="p">(</span><span class="n">torch</span><span class="o">.</span><span class="n">dot</span><span class="p">(</span><span class="n">a</span><span class="p">,</span> <span class="n">c</span><span class="p">))</span>   <span class="c1"># 1.0  —— 有点同向</span>
+<span class="nb">print</span><span class="p">(</span><span class="n">torch</span><span class="o">.</span><span class="n">dot</span><span class="p">(</span><span class="n">a</span><span class="p">,</span> <span class="n">a</span><span class="p">))</span>   <span class="c1"># 1.0  —— 和自己最同向</span>
+</code></pre></div>
+
+<p><strong>点积 = 0 就是"垂直/正交/无关"，点积大就是"方向相近"。</strong>
+记住这个直觉——它会在第 6 节"神经网络只是点积吗"里变成主角。</p>
+<hr />
+<h2 id="2-矩阵就是映射把空间整体搬动">2. 矩阵就是映射：把空间整体搬动</h2>
+<p>别把矩阵看成"一堆数字排成方块"，把它看成"对空间里<strong>所有点</strong>施加的同一个动作"。
+喂几个点进去，看它们被搬到哪：</p>
+<div class="highlight"><pre><span></span><code><span class="kn">import</span><span class="w"> </span><span class="nn">torch</span>
+
+<span class="n">M</span> <span class="o">=</span> <span class="n">torch</span><span class="o">.</span><span class="n">tensor</span><span class="p">([[</span><span class="mf">2.0</span><span class="p">,</span> <span class="mf">0.0</span><span class="p">],</span>
+                  <span class="p">[</span><span class="mf">0.0</span><span class="p">,</span> <span class="mf">3.0</span><span class="p">]])</span>         <span class="c1"># 横向拉 2 倍，纵向拉 3 倍</span>
+
+<span class="n">points</span> <span class="o">=</span> <span class="n">torch</span><span class="o">.</span><span class="n">tensor</span><span class="p">([[</span><span class="mf">1.0</span><span class="p">,</span> <span class="mf">0.0</span><span class="p">],</span>     <span class="c1"># 右</span>
+                       <span class="p">[</span><span class="mf">0.0</span><span class="p">,</span> <span class="mf">1.0</span><span class="p">],</span>     <span class="c1"># 上</span>
+                       <span class="p">[</span><span class="mf">1.0</span><span class="p">,</span> <span class="mf">1.0</span><span class="p">]])</span>    <span class="c1"># 右上角</span>
+<span class="nb">print</span><span class="p">(</span><span class="n">points</span> <span class="o">@</span> <span class="n">M</span><span class="o">.</span><span class="n">t</span><span class="p">())</span>
+<span class="c1"># [[2, 0], [0, 3], [2, 3]] —— 每个点都被同一条规则搬动</span>
+</code></pre></div>
+
+<p>换一个矩阵，就是换一个动作。下面四台机器：旋转、剪切、投影、放大：</p>
+<div class="highlight"><pre><span></span><code><span class="kn">import</span><span class="w"> </span><span class="nn">torch</span><span class="o">,</span><span class="w"> </span><span class="nn">math</span>
+
+<span class="n">theta</span> <span class="o">=</span> <span class="n">math</span><span class="o">.</span><span class="n">radians</span><span class="p">(</span><span class="mi">30</span><span class="p">)</span>
+<span class="n">rotate</span>  <span class="o">=</span> <span class="n">torch</span><span class="o">.</span><span class="n">tensor</span><span class="p">([[</span><span class="n">math</span><span class="o">.</span><span class="n">cos</span><span class="p">(</span><span class="n">theta</span><span class="p">),</span> <span class="o">-</span><span class="n">math</span><span class="o">.</span><span class="n">sin</span><span class="p">(</span><span class="n">theta</span><span class="p">)],</span>   <span class="c1"># 转 30°</span>
+                        <span class="p">[</span><span class="n">math</span><span class="o">.</span><span class="n">sin</span><span class="p">(</span><span class="n">theta</span><span class="p">),</span>  <span class="n">math</span><span class="o">.</span><span class="n">cos</span><span class="p">(</span><span class="n">theta</span><span class="p">)]])</span>
+<span class="n">shear</span>   <span class="o">=</span> <span class="n">torch</span><span class="o">.</span><span class="n">tensor</span><span class="p">([[</span><span class="mf">1.0</span><span class="p">,</span> <span class="mf">1.0</span><span class="p">],</span>     <span class="c1"># 剪切：越往上越往右滑（像推一摞书）</span>
+                        <span class="p">[</span><span class="mf">0.0</span><span class="p">,</span> <span class="mf">1.0</span><span class="p">]])</span>
+<span class="n">project</span> <span class="o">=</span> <span class="n">torch</span><span class="o">.</span><span class="n">tensor</span><span class="p">([[</span><span class="mf">1.0</span><span class="p">,</span> <span class="mf">0.0</span><span class="p">],</span>     <span class="c1"># 投影：所有点拍扁到 x 轴</span>
+                        <span class="p">[</span><span class="mf">0.0</span><span class="p">,</span> <span class="mf">0.0</span><span class="p">]])</span>
+
+<span class="n">v</span> <span class="o">=</span> <span class="n">torch</span><span class="o">.</span><span class="n">tensor</span><span class="p">([</span><span class="mf">1.0</span><span class="p">,</span> <span class="mf">2.0</span><span class="p">])</span>
+<span class="nb">print</span><span class="p">(</span><span class="n">rotate</span>  <span class="o">@</span> <span class="n">v</span><span class="p">)</span>   <span class="c1"># 转了角度，长度不变</span>
+<span class="nb">print</span><span class="p">(</span><span class="n">shear</span>   <span class="o">@</span> <span class="n">v</span><span class="p">)</span>   <span class="c1"># x 被 y 拖着走</span>
+<span class="nb">print</span><span class="p">(</span><span class="n">project</span> <span class="o">@</span> <span class="n">v</span><span class="p">)</span>   <span class="c1"># y 变 0，二维塌成一维</span>
+</code></pre></div>
+
+<p>把一整张网格喂进去，你就能<strong>亲眼看见</strong>空间被扭曲：</p>
+<div class="highlight"><pre><span></span><code><span class="kn">import</span><span class="w"> </span><span class="nn">torch</span>
+<span class="kn">import</span><span class="w"> </span><span class="nn">matplotlib.pyplot</span><span class="w"> </span><span class="k">as</span><span class="w"> </span><span class="nn">plt</span>
+
+<span class="n">xs</span><span class="p">,</span> <span class="n">ys</span> <span class="o">=</span> <span class="n">torch</span><span class="o">.</span><span class="n">meshgrid</span><span class="p">(</span><span class="n">torch</span><span class="o">.</span><span class="n">linspace</span><span class="p">(</span><span class="o">-</span><span class="mi">2</span><span class="p">,</span> <span class="mi">2</span><span class="p">,</span> <span class="mi">11</span><span class="p">),</span>
+                        <span class="n">torch</span><span class="o">.</span><span class="n">linspace</span><span class="p">(</span><span class="o">-</span><span class="mi">2</span><span class="p">,</span> <span class="mi">2</span><span class="p">,</span> <span class="mi">11</span><span class="p">),</span> <span class="n">indexing</span><span class="o">=</span><span class="s2">&quot;xy&quot;</span><span class="p">)</span>
+<span class="n">grid</span> <span class="o">=</span> <span class="n">torch</span><span class="o">.</span><span class="n">stack</span><span class="p">([</span><span class="n">xs</span><span class="o">.</span><span class="n">reshape</span><span class="p">(</span><span class="o">-</span><span class="mi">1</span><span class="p">),</span> <span class="n">ys</span><span class="o">.</span><span class="n">reshape</span><span class="p">(</span><span class="o">-</span><span class="mi">1</span><span class="p">)],</span> <span class="n">dim</span><span class="o">=</span><span class="mi">1</span><span class="p">)</span>
+
+<span class="n">M</span> <span class="o">=</span> <span class="n">torch</span><span class="o">.</span><span class="n">tensor</span><span class="p">([[</span><span class="mf">1.0</span><span class="p">,</span> <span class="mf">0.8</span><span class="p">],</span>
+                  <span class="p">[</span><span class="mf">0.3</span><span class="p">,</span> <span class="mf">1.2</span><span class="p">]])</span>
+<span class="n">moved</span> <span class="o">=</span> <span class="n">grid</span> <span class="o">@</span> <span class="n">M</span><span class="o">.</span><span class="n">t</span><span class="p">()</span>
+
+<span class="n">fig</span><span class="p">,</span> <span class="n">ax</span> <span class="o">=</span> <span class="n">plt</span><span class="o">.</span><span class="n">subplots</span><span class="p">(</span><span class="mi">1</span><span class="p">,</span> <span class="mi">2</span><span class="p">,</span> <span class="n">figsize</span><span class="o">=</span><span class="p">(</span><span class="mi">10</span><span class="p">,</span> <span class="mi">5</span><span class="p">))</span>
+<span class="n">ax</span><span class="p">[</span><span class="mi">0</span><span class="p">]</span><span class="o">.</span><span class="n">scatter</span><span class="p">(</span><span class="n">grid</span><span class="p">[:,</span> <span class="mi">0</span><span class="p">],</span>  <span class="n">grid</span><span class="p">[:,</span> <span class="mi">1</span><span class="p">]);</span>  <span class="n">ax</span><span class="p">[</span><span class="mi">0</span><span class="p">]</span><span class="o">.</span><span class="n">set_title</span><span class="p">(</span><span class="s2">&quot;原始空间&quot;</span><span class="p">)</span>
+<span class="n">ax</span><span class="p">[</span><span class="mi">1</span><span class="p">]</span><span class="o">.</span><span class="n">scatter</span><span class="p">(</span><span class="n">moved</span><span class="p">[:,</span> <span class="mi">0</span><span class="p">],</span> <span class="n">moved</span><span class="p">[:,</span> <span class="mi">1</span><span class="p">]);</span> <span class="n">ax</span><span class="p">[</span><span class="mi">1</span><span class="p">]</span><span class="o">.</span><span class="n">set_title</span><span class="p">(</span><span class="s2">&quot;被矩阵 M 映射后&quot;</span><span class="p">)</span>
+<span class="n">plt</span><span class="o">.</span><span class="n">show</span><span class="p">()</span>
+<span class="c1"># 横平竖直的网格，被整体&quot;斜拉&quot;成平行四边形网格</span>
+</code></pre></div>
+
+<p><strong>这就是线性代数最该记住的一张图：直线还是直线、原点还是原点，但整个空间被均匀地拉斜了。</strong></p>
+<hr />
+<h2 id="3-行列式-面积的缩放倍数">3. 行列式 = 面积的缩放倍数</h2>
+<p>老师让你背"按行展开""余子式""代数余子式"，背完你还是不知道行列式<strong>是什么</strong>。
+其实它简单到一句话：<strong>行列式 = 这台机器把面积放大/缩小了几倍。</strong></p>
+<p>取单位正方形（面积 1）的两条边，用矩阵搬动它们，搬完后围出的面积，正好等于行列式：</p>
+<div class="highlight"><pre><span></span><code><span class="kn">import</span><span class="w"> </span><span class="nn">torch</span>
+
+<span class="n">M</span> <span class="o">=</span> <span class="n">torch</span><span class="o">.</span><span class="n">tensor</span><span class="p">([[</span><span class="mf">2.0</span><span class="p">,</span> <span class="mf">1.0</span><span class="p">],</span>
+                  <span class="p">[</span><span class="mf">0.0</span><span class="p">,</span> <span class="mf">3.0</span><span class="p">]])</span>
+
+<span class="n">e1</span> <span class="o">=</span> <span class="n">torch</span><span class="o">.</span><span class="n">tensor</span><span class="p">([</span><span class="mf">1.0</span><span class="p">,</span> <span class="mf">0.0</span><span class="p">])</span>
+<span class="n">e2</span> <span class="o">=</span> <span class="n">torch</span><span class="o">.</span><span class="n">tensor</span><span class="p">([</span><span class="mf">0.0</span><span class="p">,</span> <span class="mf">1.0</span><span class="p">])</span>
+<span class="n">a</span><span class="p">,</span> <span class="n">b</span> <span class="o">=</span> <span class="n">M</span> <span class="o">@</span> <span class="n">e1</span><span class="p">,</span> <span class="n">M</span> <span class="o">@</span> <span class="n">e2</span>                 <span class="c1"># 两条边被搬动后</span>
+
+<span class="n">area</span> <span class="o">=</span> <span class="nb">abs</span><span class="p">(</span><span class="n">a</span><span class="p">[</span><span class="mi">0</span><span class="p">]</span> <span class="o">*</span> <span class="n">b</span><span class="p">[</span><span class="mi">1</span><span class="p">]</span> <span class="o">-</span> <span class="n">a</span><span class="p">[</span><span class="mi">1</span><span class="p">]</span> <span class="o">*</span> <span class="n">b</span><span class="p">[</span><span class="mi">0</span><span class="p">])</span> <span class="c1"># 平行四边形面积</span>
+<span class="nb">print</span><span class="p">(</span><span class="s2">&quot;搬动后面积:&quot;</span><span class="p">,</span> <span class="n">area</span><span class="o">.</span><span class="n">item</span><span class="p">())</span>          <span class="c1"># 6.0</span>
+<span class="nb">print</span><span class="p">(</span><span class="s2">&quot;行列式:    &quot;</span><span class="p">,</span> <span class="n">torch</span><span class="o">.</span><span class="n">det</span><span class="p">(</span><span class="n">M</span><span class="p">)</span><span class="o">.</span><span class="n">item</span><span class="p">())</span>  <span class="c1"># 6.0 —— 完全一样</span>
+</code></pre></div>
+
+<ul>
+<li><code>det = 2</code>：面积变 2 倍。</li>
+<li><code>det = 1</code>：面积不变（旋转就是，它只转不拉）。</li>
+<li><code>det = 0</code>：<strong>面积被压成 0</strong>，整个平面被拍扁成一条线，信息丢了，再也回不来。</li>
+</ul>
+<p><code>det = 0</code> 就是课本里那个抽象的"矩阵不可逆/奇异"。它一点不抽象——
+<strong>就是你把立体拍成了影子，没法从影子反推回立体。</strong></p>
+<div class="highlight"><pre><span></span><code><span class="kn">import</span><span class="w"> </span><span class="nn">torch</span>
+<span class="n">project</span> <span class="o">=</span> <span class="n">torch</span><span class="o">.</span><span class="n">tensor</span><span class="p">([[</span><span class="mf">1.0</span><span class="p">,</span> <span class="mf">0.0</span><span class="p">],</span>
+                        <span class="p">[</span><span class="mf">0.0</span><span class="p">,</span> <span class="mf">0.0</span><span class="p">]])</span>   <span class="c1"># 拍扁到 x 轴</span>
+<span class="nb">print</span><span class="p">(</span><span class="n">torch</span><span class="o">.</span><span class="n">det</span><span class="p">(</span><span class="n">project</span><span class="p">)</span><span class="o">.</span><span class="n">item</span><span class="p">())</span>       <span class="c1"># 0.0 —— 拍扁了，不可逆</span>
+</code></pre></div>
+
+<hr />
+<h2 id="4-特征向量映射里不改方向的那几根轴">4. 特征向量：映射里"不改方向"的那几根轴</h2>
+<p>这是线性代数最被神化、也最被讲烂的概念。其实就一句话：</p>
+<blockquote>
+<p>大多数点被矩阵搬动后<strong>方向会变</strong>；但总有那么几根特殊方向，搬动后<strong>方向不变，只是被拉长或缩短</strong>。
+这几根方向就是<strong>特征向量</strong>，拉伸的倍数就是<strong>特征值</strong>。</p>
+</blockquote>
+<p>代码找出来并验证：</p>
+<div class="highlight"><pre><span></span><code><span class="kn">import</span><span class="w"> </span><span class="nn">torch</span>
+
+<span class="n">M</span> <span class="o">=</span> <span class="n">torch</span><span class="o">.</span><span class="n">tensor</span><span class="p">([[</span><span class="mf">2.0</span><span class="p">,</span> <span class="mf">1.0</span><span class="p">],</span>
+                  <span class="p">[</span><span class="mf">1.0</span><span class="p">,</span> <span class="mf">2.0</span><span class="p">]])</span>
+<span class="n">vals</span><span class="p">,</span> <span class="n">vecs</span> <span class="o">=</span> <span class="n">torch</span><span class="o">.</span><span class="n">linalg</span><span class="o">.</span><span class="n">eig</span><span class="p">(</span><span class="n">M</span><span class="p">)</span>
+<span class="nb">print</span><span class="p">(</span><span class="s2">&quot;特征值:&quot;</span><span class="p">,</span> <span class="n">vals</span><span class="o">.</span><span class="n">real</span><span class="p">)</span>            <span class="c1"># [1., 3.]</span>
+
+<span class="n">v</span> <span class="o">=</span> <span class="n">vecs</span><span class="p">[:,</span> <span class="mi">1</span><span class="p">]</span><span class="o">.</span><span class="n">real</span>                    <span class="c1"># 取特征值 3 对应的特征向量</span>
+<span class="nb">print</span><span class="p">(</span><span class="s2">&quot;M @ v :&quot;</span><span class="p">,</span> <span class="n">M</span> <span class="o">@</span> <span class="n">v</span><span class="p">)</span>                <span class="c1"># 等于 3*v</span>
+<span class="nb">print</span><span class="p">(</span><span class="s2">&quot;3 * v :&quot;</span><span class="p">,</span> <span class="mi">3</span> <span class="o">*</span> <span class="n">v</span><span class="p">)</span>                <span class="c1"># 方向完全一样，只是长度 ×3</span>
+</code></pre></div>
+
+<p><code>M @ v</code> 和 <code>3 * v</code> 一模一样：方向没动，只是被拉长了 3 倍。
+<strong>特征向量是这台机器的"骨架方向"。</strong> 任何复杂的线性变换，
+都可以理解成"沿着这几根骨架，各自拉伸不同倍数"。PCA 降维、协方差分析、PageRank，全靠它。</p>
+<hr />
+<h2 id="疑惑点一人类识别的特征和矩阵的特征值特征向量是一回事吗">🤔 疑惑点一：人类识别的"特征"，和矩阵的"特征值/特征向量"是一回事吗？</h2>
+<p><strong>不是。它们连英文都不是同一个词，是中文翻译把两个毫不相干的概念都叫成了"特征"。</strong></p>
+<p>一句话先把它们分开：</p>
+<ul>
+<li><strong>人脸的"特征"（feature）= 描述这个东西长什么样。</strong> 高鼻梁、大眼睛、爱笑——
+  是<strong>名词的属性</strong>，回答的是"它是什么样的"。</li>
+<li><strong>矩阵的"特征"向量（eigenvector）= 描述一个变换动作里，哪个方向不会被带偏。</strong>
+  回答的是"这台机器在怎么动"，<strong>和东西长什么样毫无关系。</strong></li>
+</ul>
+<p>打个比方就懂了——<strong>eigenvector 就像旋转的地轴</strong>：</p>
+<blockquote>
+<p>地球在自转，地表上几乎每一个点都在被甩着转圈。但有一根方向是例外——
+穿过南北极的那根<strong>地轴</strong>，方向始终不变。这根"转不动的轴"，就是这个旋转变换的特征向量。
+它描述的是<strong>"地球在怎么转"</strong>，而不是"地球上有什么"（海洋、山脉那才是 feature）。</p>
+</blockquote>
+<p>换成第 2 节"矩阵就是揉空间"的画面：<strong>大多数箭头被矩阵一搬，方向都会偏；
+只有那么几根特殊方向的箭头，搬完只是被拉长/缩短，方向纹丝不动。</strong> 那几根就是特征向量。
+还是上面那个 <code>M</code>，亲手验证一下"拉伸方向不变":</p>
+<div class="highlight"><pre><span></span><code><span class="kn">import</span><span class="w"> </span><span class="nn">torch</span>
+
+<span class="n">M</span> <span class="o">=</span> <span class="n">torch</span><span class="o">.</span><span class="n">tensor</span><span class="p">([[</span><span class="mf">2.0</span><span class="p">,</span> <span class="mf">1.0</span><span class="p">],</span>
+                  <span class="p">[</span><span class="mf">1.0</span><span class="p">,</span> <span class="mf">2.0</span><span class="p">]])</span>
+
+<span class="n">a</span> <span class="o">=</span> <span class="n">torch</span><span class="o">.</span><span class="n">tensor</span><span class="p">([</span><span class="mf">1.0</span><span class="p">,</span> <span class="mf">0.0</span><span class="p">])</span>           <span class="c1"># 一根&quot;歪着&quot;的普通箭头</span>
+<span class="nb">print</span><span class="p">(</span><span class="s2">&quot;普通方向被搬后:&quot;</span><span class="p">,</span> <span class="n">M</span> <span class="o">@</span> <span class="n">a</span><span class="p">,</span> <span class="s2">&quot;  &lt;- (2,1)，方向偏了&quot;</span><span class="p">)</span>
+
+<span class="n">v</span> <span class="o">=</span> <span class="n">torch</span><span class="o">.</span><span class="n">tensor</span><span class="p">([</span><span class="mf">1.0</span><span class="p">,</span> <span class="mf">1.0</span><span class="p">])</span>           <span class="c1"># 正好顺着拉伸轴的箭头</span>
+<span class="nb">print</span><span class="p">(</span><span class="s2">&quot;特征方向被搬后:&quot;</span><span class="p">,</span> <span class="n">M</span> <span class="o">@</span> <span class="n">v</span><span class="p">,</span> <span class="s2">&quot;  &lt;- (3,3)，还在同一条线上，只是长 ×3&quot;</span><span class="p">)</span>
+</code></pre></div>
+
+<p>普通箭头 <code>(1,0)</code> 被搬到 <code>(2,1)</code>——方向歪了；而顺着对角线的 <code>(1,1)</code> 被搬到 <code>(3,3)</code>，
+<strong>还在原来那条线上，只是被拉长了 3 倍</strong>。这个"3"就是特征值。</p>
+<p><strong>光看数字不过瘾——跑一个 3Blue1Brown 风格的动画，亲眼看它发生：</strong></p>
+<div class="highlight"><pre><span></span><code>python<span class="w"> </span>eigenvector_visualization.py
+</code></pre></div>
+
+<blockquote>
+<p>画面里，整个空间（灰色网格）被这个矩阵慢慢揉斜。注意看那一圈灰色"探针"箭头：
+它们几乎都被<strong>转离了自己出发的方向</strong>。唯独<strong>红、蓝两根粗箭头</strong>——
+它们死死贴在自己的虚线上，<strong>自始至终不转向，只是变长</strong>：
+蓝色那根长度不变（特征值 1），红色那根被拉长到 3 倍（特征值 3）。
+同时那个单位圆被压成一个椭圆，<strong>椭圆的长短轴方向，正好就是这两根特征向量</strong>。</p>
+<p>这就是"特征向量 = 变换里不被带偏的那几根轴"最直观的一幕。</p>
+</blockquote>
+<p>所以：</p>
+<table>
+<thead>
+<tr>
+<th></th>
+<th>人脸"特征"</th>
+<th>矩阵"特征"向量</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>英文</td>
+<td><strong>feature</strong></td>
+<td><strong>eigen</strong>vector（eigen=德语"自身固有的"）</td>
+</tr>
+<tr>
+<td>描述的是</td>
+<td>一个东西<strong>长什么样</strong>（属性）</td>
+<td>一个变换<strong>怎么动</strong>（哪根轴不被带偏）</td>
+</tr>
+<tr>
+<td>例子</td>
+<td>高鼻梁、爱笑、身高 178</td>
+<td>旋转的地轴、拉伸的方向</td>
+</tr>
+<tr>
+<td>谁在用</td>
+<td>你看脸、神经网络提特征</td>
+<td>PCA、振动分析、PageRank</td>
+</tr>
+</tbody>
+</table>
+<p><strong>记住这一条就够了：feature 是"长什么样"，eigenvector 是"往哪个方向不被带偏"。
+两个八竿子打不着，只是倒霉地共用了"特征"两个字。</strong></p>
+<hr />
+<p><strong>彩蛋：它们唯一会握手的地方——PCA。</strong></p>
+<p>有意思的是，有一个场景能让这两个"特征"恰好对上号，就是 <strong>PCA（主成分分析）</strong>。
+道理很简单：<strong>人类想找的"语义特征方向"，正好等于"数据这朵点云散得最开的方向"，
+而那个方向，就是数据协方差矩阵的最大特征向量。</strong> 一段代码看它对上号：</p>
+<div class="highlight"><pre><span></span><code><span class="kn">import</span><span class="w"> </span><span class="nn">torch</span>
+
+<span class="c1"># 造一批&quot;又高又重&quot;的人：身高和体重强相关，点云挤成一条斜带子</span>
+<span class="n">torch</span><span class="o">.</span><span class="n">manual_seed</span><span class="p">(</span><span class="mi">0</span><span class="p">)</span>
+<span class="n">h</span> <span class="o">=</span> <span class="n">torch</span><span class="o">.</span><span class="n">randn</span><span class="p">(</span><span class="mi">500</span><span class="p">)</span> <span class="o">*</span> <span class="mi">10</span> <span class="o">+</span> <span class="mi">170</span>        <span class="c1"># 身高</span>
+<span class="n">w</span> <span class="o">=</span> <span class="n">h</span> <span class="o">*</span> <span class="mf">0.6</span> <span class="o">+</span> <span class="n">torch</span><span class="o">.</span><span class="n">randn</span><span class="p">(</span><span class="mi">500</span><span class="p">)</span> <span class="o">*</span> <span class="mi">2</span>     <span class="c1"># 体重 ≈ 0.6×身高 + 噪声</span>
+<span class="n">data</span> <span class="o">=</span> <span class="n">torch</span><span class="o">.</span><span class="n">stack</span><span class="p">([</span><span class="n">h</span><span class="p">,</span> <span class="n">w</span><span class="p">],</span> <span class="n">dim</span><span class="o">=</span><span class="mi">1</span><span class="p">)</span>
+<span class="n">data</span> <span class="o">=</span> <span class="n">data</span> <span class="o">-</span> <span class="n">data</span><span class="o">.</span><span class="n">mean</span><span class="p">(</span><span class="mi">0</span><span class="p">)</span>             <span class="c1"># 去均值</span>
+
+<span class="n">cov</span> <span class="o">=</span> <span class="p">(</span><span class="n">data</span><span class="o">.</span><span class="n">T</span> <span class="o">@</span> <span class="n">data</span><span class="p">)</span> <span class="o">/</span> <span class="nb">len</span><span class="p">(</span><span class="n">data</span><span class="p">)</span>      <span class="c1"># 协方差矩阵</span>
+<span class="n">vals</span><span class="p">,</span> <span class="n">vecs</span> <span class="o">=</span> <span class="n">torch</span><span class="o">.</span><span class="n">linalg</span><span class="o">.</span><span class="n">eigh</span><span class="p">(</span><span class="n">cov</span><span class="p">)</span>
+<span class="nb">print</span><span class="p">(</span><span class="s2">&quot;最大特征向量(点云最长的方向):&quot;</span><span class="p">,</span> <span class="n">vecs</span><span class="p">[:,</span> <span class="o">-</span><span class="mi">1</span><span class="p">])</span>   <span class="c1"># 指向&quot;又高又重&quot;那条斜线</span>
+</code></pre></div>
+
+<p>输出那根<strong>最大特征向量</strong>，指向身高体重点云拉得最长的那条斜线。人类一看就给它起个名：
+"<strong>体型大小</strong>"——一个能听懂的 feature。</p>
+<blockquote>
+<p>一句话收尾：<strong>eigenvector 是数学算出来的"轴"，feature 是人类给这根轴起的"名"。</strong>
+算法找轴，人类命名，这才是两个"特征"唯一的交集。</p>
+<p>顺带提一句：神经网络里 <code>nn.Linear</code> 提取的"特征"，是 feature 那个意思——
+它在学一组新的坐标方向，把数据投影上去量分量。见下一节。</p>
+</blockquote>
+<hr />
+<h2 id="5-nnlinear-就是一次矩阵映射线性代数和深度学习的接头">5. nn.Linear 就是一次矩阵映射（线性代数和深度学习的接头）</h2>
+<p>现在把前四节的画面，对接到 PyTorch 最基础的 <code>nn.Linear</code>：</p>
+<div class="highlight"><pre><span></span><code><span class="kn">import</span><span class="w"> </span><span class="nn">torch</span>
+<span class="kn">import</span><span class="w"> </span><span class="nn">torch.nn</span><span class="w"> </span><span class="k">as</span><span class="w"> </span><span class="nn">nn</span>
+
+<span class="n">x</span> <span class="o">=</span> <span class="n">torch</span><span class="o">.</span><span class="n">tensor</span><span class="p">([[</span><span class="mf">2.0</span><span class="p">,</span> <span class="mf">3.0</span><span class="p">]])</span>         <span class="c1"># 1 个样本，2 个特征</span>
+<span class="n">layer</span> <span class="o">=</span> <span class="n">nn</span><span class="o">.</span><span class="n">Linear</span><span class="p">(</span><span class="mi">2</span><span class="p">,</span> <span class="mi">1</span><span class="p">)</span>                <span class="c1"># 2 维输入 -&gt; 1 维输出</span>
+<span class="n">W</span><span class="p">,</span> <span class="n">b</span> <span class="o">=</span> <span class="n">layer</span><span class="o">.</span><span class="n">weight</span><span class="p">,</span> <span class="n">layer</span><span class="o">.</span><span class="n">bias</span>        <span class="c1"># W 形状 (1,2)，b 形状 (1,)</span>
+
+<span class="n">manual</span> <span class="o">=</span> <span class="n">x</span> <span class="o">@</span> <span class="n">W</span><span class="o">.</span><span class="n">t</span><span class="p">()</span> <span class="o">+</span> <span class="n">b</span>                 <span class="c1"># PyTorch 内部做的事</span>
+<span class="nb">print</span><span class="p">(</span><span class="n">torch</span><span class="o">.</span><span class="n">allclose</span><span class="p">(</span><span class="n">layer</span><span class="p">(</span><span class="n">x</span><span class="p">),</span> <span class="n">manual</span><span class="p">))</span>  <span class="c1"># True</span>
+</code></pre></div>
+
+<p><code>nn.Linear(2, 1)</code> 就是<strong>一次矩阵乘法加偏置</strong>，一点不神秘。
+看高维一点的——<code>nn.Linear(3, 128)</code>：</p>
+<div class="highlight"><pre><span></span><code><span class="kn">import</span><span class="w"> </span><span class="nn">torch.nn</span><span class="w"> </span><span class="k">as</span><span class="w"> </span><span class="nn">nn</span>
+<span class="n">layer</span> <span class="o">=</span> <span class="n">nn</span><span class="o">.</span><span class="n">Linear</span><span class="p">(</span><span class="mi">3</span><span class="p">,</span> <span class="mi">128</span><span class="p">)</span>
+<span class="nb">print</span><span class="p">(</span><span class="n">layer</span><span class="o">.</span><span class="n">weight</span><span class="o">.</span><span class="n">shape</span><span class="p">)</span>              <span class="c1"># torch.Size([128, 3])</span>
+</code></pre></div>
+
+<p>它是一个 <code>128 × 3</code> 的矩阵，把 <strong>3 维输入映射到 128 维空间</strong>。
+矩阵的<strong>每一行</strong>是一个 3 维方向；输入和这一行做点积，就是<strong>把输入投影到这个方向上</strong>，
+量出"输入在这个方向有多少分量"。<strong>128 行 = 从 128 个角度同时打量同一个输入。</strong></p>
+<p>为什么要升维？因为<strong>在低维挤成一团、分不开的数据，升到高维往往一刀就能切开</strong>：</p>
+<div class="highlight"><pre><span></span><code><span class="kn">import</span><span class="w"> </span><span class="nn">torch</span>
+
+<span class="c1"># 同心内外圈，在 2D 平面无法用一条直线分开</span>
+<span class="n">theta</span> <span class="o">=</span> <span class="n">torch</span><span class="o">.</span><span class="n">linspace</span><span class="p">(</span><span class="mi">0</span><span class="p">,</span> <span class="mi">2</span> <span class="o">*</span> <span class="mf">3.14159</span><span class="p">,</span> <span class="mi">100</span><span class="p">)</span>
+<span class="n">inner</span> <span class="o">=</span> <span class="n">torch</span><span class="o">.</span><span class="n">stack</span><span class="p">([</span><span class="n">torch</span><span class="o">.</span><span class="n">cos</span><span class="p">(</span><span class="n">theta</span><span class="p">),</span> <span class="n">torch</span><span class="o">.</span><span class="n">sin</span><span class="p">(</span><span class="n">theta</span><span class="p">)],</span> <span class="mi">1</span><span class="p">)</span> <span class="o">*</span> <span class="mf">1.0</span>
+<span class="n">outer</span> <span class="o">=</span> <span class="n">torch</span><span class="o">.</span><span class="n">stack</span><span class="p">([</span><span class="n">torch</span><span class="o">.</span><span class="n">cos</span><span class="p">(</span><span class="n">theta</span><span class="p">),</span> <span class="n">torch</span><span class="o">.</span><span class="n">sin</span><span class="p">(</span><span class="n">theta</span><span class="p">)],</span> <span class="mi">1</span><span class="p">)</span> <span class="o">*</span> <span class="mf">2.0</span>
+
+<span class="k">def</span><span class="w"> </span><span class="nf">lift</span><span class="p">(</span><span class="n">p</span><span class="p">):</span>                           <span class="c1"># 升维：加一维 z = x^2 + y^2（半径平方）</span>
+    <span class="n">z</span> <span class="o">=</span> <span class="p">(</span><span class="n">p</span> <span class="o">**</span> <span class="mi">2</span><span class="p">)</span><span class="o">.</span><span class="n">sum</span><span class="p">(</span><span class="mi">1</span><span class="p">,</span> <span class="n">keepdim</span><span class="o">=</span><span class="kc">True</span><span class="p">)</span>
+    <span class="k">return</span> <span class="n">torch</span><span class="o">.</span><span class="n">cat</span><span class="p">([</span><span class="n">p</span><span class="p">,</span> <span class="n">z</span><span class="p">],</span> <span class="mi">1</span><span class="p">)</span>
+
+<span class="nb">print</span><span class="p">(</span><span class="s2">&quot;内圈 z 均值约:&quot;</span><span class="p">,</span> <span class="n">lift</span><span class="p">(</span><span class="n">inner</span><span class="p">)[:,</span> <span class="mi">2</span><span class="p">]</span><span class="o">.</span><span class="n">mean</span><span class="p">()</span><span class="o">.</span><span class="n">item</span><span class="p">())</span>   <span class="c1"># ≈ 1</span>
+<span class="nb">print</span><span class="p">(</span><span class="s2">&quot;外圈 z 均值约:&quot;</span><span class="p">,</span> <span class="n">lift</span><span class="p">(</span><span class="n">outer</span><span class="p">)[:,</span> <span class="mi">2</span><span class="p">]</span><span class="o">.</span><span class="n">mean</span><span class="p">()</span><span class="o">.</span><span class="n">item</span><span class="p">())</span>   <span class="c1"># ≈ 4</span>
+<span class="c1"># 升到 3D 后，内外圈在 z 轴上彻底分开，一个平面 z=2.5 就切开了</span>
+</code></pre></div>
+
+<p><strong><code>nn.Linear</code> 升维 + 激活函数折弯，合起来就干一件事：把搅在一起的数据，
+搬到一个能被简单切开的新空间。</strong> 训练，就是在学"往哪个空间搬"。</p>
+<hr />
+<h2 id="疑惑点二大模型神经网络说穿了就是在做向量点积吗">🤔 疑惑点二：大模型、神经网络，说穿了就是在做"向量点积"吗？</h2>
+<p><strong>大体上，是的——但"点积"这两个字撑起了整座大厦。</strong> 我们一层层拆。</p>
+<p><strong>第一层：单个神经元 = 一次点积。</strong></p>
+<div class="highlight"><pre><span></span><code><span class="kn">import</span><span class="w"> </span><span class="nn">torch</span>
+
+<span class="n">x</span> <span class="o">=</span> <span class="n">torch</span><span class="o">.</span><span class="n">tensor</span><span class="p">([</span><span class="mf">0.5</span><span class="p">,</span> <span class="mf">0.2</span><span class="p">,</span> <span class="mf">0.9</span><span class="p">])</span>      <span class="c1"># 输入向量</span>
+<span class="n">w</span> <span class="o">=</span> <span class="n">torch</span><span class="o">.</span><span class="n">tensor</span><span class="p">([</span><span class="mf">1.0</span><span class="p">,</span> <span class="o">-</span><span class="mf">2.0</span><span class="p">,</span> <span class="mf">0.5</span><span class="p">])</span>     <span class="c1"># 一个神经元的权重</span>
+<span class="n">b</span> <span class="o">=</span> <span class="mf">0.1</span>
+<span class="nb">print</span><span class="p">(</span><span class="s2">&quot;神经元输出:&quot;</span><span class="p">,</span> <span class="n">torch</span><span class="o">.</span><span class="n">dot</span><span class="p">(</span><span class="n">x</span><span class="p">,</span> <span class="n">w</span><span class="p">)</span> <span class="o">+</span> <span class="n">b</span><span class="p">)</span>   <span class="c1"># 一次点积 + 偏置，仅此而已</span>
+</code></pre></div>
+
+<p><strong>第二层：一个 Linear 层 = 一堆点积打包成矩阵乘法。</strong></p>
+<div class="highlight"><pre><span></span><code><span class="kn">import</span><span class="w"> </span><span class="nn">torch</span>
+<span class="n">x</span> <span class="o">=</span> <span class="n">torch</span><span class="o">.</span><span class="n">randn</span><span class="p">(</span><span class="mi">4</span><span class="p">,</span> <span class="mi">3</span><span class="p">)</span>                  <span class="c1"># 4 个样本，每个 3 维</span>
+<span class="n">W</span> <span class="o">=</span> <span class="n">torch</span><span class="o">.</span><span class="n">randn</span><span class="p">(</span><span class="mi">8</span><span class="p">,</span> <span class="mi">3</span><span class="p">)</span>                  <span class="c1"># 8 个神经元，每个 3 维权重</span>
+<span class="n">out</span> <span class="o">=</span> <span class="n">x</span> <span class="o">@</span> <span class="n">W</span><span class="o">.</span><span class="n">t</span><span class="p">()</span>                        <span class="c1"># 一次性算完 4×8=32 个点积</span>
+<span class="nb">print</span><span class="p">(</span><span class="n">out</span><span class="o">.</span><span class="n">shape</span><span class="p">)</span>                       <span class="c1"># (4, 8)</span>
+</code></pre></div>
+
+<p>矩阵乘法的本质，就是<strong>左边每一行和右边每一列做点积</strong>。GPU 拼命优化的，就是这个。</p>
+<p><strong>第三层：连 Transformer 的注意力（Attention），核心也是点积。</strong> 大模型最性感的那个机制，
+其实就是"每个词去和别的词做点积，看谁和谁最相关"——回想第 1 节：<strong>点积衡量两根箭头多同向</strong>：</p>
+<div class="highlight"><pre><span></span><code><span class="kn">import</span><span class="w"> </span><span class="nn">torch</span>
+<span class="kn">import</span><span class="w"> </span><span class="nn">torch.nn.functional</span><span class="w"> </span><span class="k">as</span><span class="w"> </span><span class="nn">F</span>
+
+<span class="c1"># 3 个词，每个用 4 维向量表示</span>
+<span class="n">Q</span> <span class="o">=</span> <span class="n">torch</span><span class="o">.</span><span class="n">randn</span><span class="p">(</span><span class="mi">3</span><span class="p">,</span> <span class="mi">4</span><span class="p">)</span>                  <span class="c1"># Query</span>
+<span class="n">K</span> <span class="o">=</span> <span class="n">torch</span><span class="o">.</span><span class="n">randn</span><span class="p">(</span><span class="mi">3</span><span class="p">,</span> <span class="mi">4</span><span class="p">)</span>                  <span class="c1"># Key</span>
+<span class="n">V</span> <span class="o">=</span> <span class="n">torch</span><span class="o">.</span><span class="n">randn</span><span class="p">(</span><span class="mi">3</span><span class="p">,</span> <span class="mi">4</span><span class="p">)</span>                  <span class="c1"># Value</span>
+
+<span class="n">scores</span> <span class="o">=</span> <span class="n">Q</span> <span class="o">@</span> <span class="n">K</span><span class="o">.</span><span class="n">t</span><span class="p">()</span>                     <span class="c1"># 每个词和每个词做点积 = &quot;相关度矩阵&quot;</span>
+<span class="n">attn</span> <span class="o">=</span> <span class="n">F</span><span class="o">.</span><span class="n">softmax</span><span class="p">(</span><span class="n">scores</span><span class="p">,</span> <span class="n">dim</span><span class="o">=-</span><span class="mi">1</span><span class="p">)</span>       <span class="c1"># 归一化成权重</span>
+<span class="n">out</span> <span class="o">=</span> <span class="n">attn</span> <span class="o">@</span> <span class="n">V</span>                         <span class="c1"># 按相关度加权求和</span>
+<span class="nb">print</span><span class="p">(</span><span class="s2">&quot;注意力输出形状:&quot;</span><span class="p">,</span> <span class="n">out</span><span class="o">.</span><span class="n">shape</span><span class="p">)</span>        <span class="c1"># (3, 4)</span>
+</code></pre></div>
+
+<p><code>Q @ K.t()</code> 就是在算"谁和谁同向/相关"。整个 GPT，堆的就是这套
+<strong>点积 → 加权 → 再点积</strong>。</p>
+<p><strong>那为什么不只是点积？</strong> 因为纯点积/纯矩阵乘法叠多少层都还是线性的（多个映射可以合并成一个），
+表达不了曲线。所以每层后面要插一个<strong>非线性</strong>（ReLU 等）"折一下"，才打破线性封闭性：</p>
+<div class="highlight"><pre><span></span><code><span class="kn">import</span><span class="w"> </span><span class="nn">torch</span>
+<span class="kn">import</span><span class="w"> </span><span class="nn">torch.nn</span><span class="w"> </span><span class="k">as</span><span class="w"> </span><span class="nn">nn</span>
+
+<span class="c1"># 纯线性叠两层，等价于一层 —— 用代码证明</span>
+<span class="n">torch</span><span class="o">.</span><span class="n">manual_seed</span><span class="p">(</span><span class="mi">0</span><span class="p">)</span>
+<span class="n">x</span> <span class="o">=</span> <span class="n">torch</span><span class="o">.</span><span class="n">randn</span><span class="p">(</span><span class="mi">5</span><span class="p">,</span> <span class="mi">3</span><span class="p">)</span>
+<span class="n">a</span><span class="p">,</span> <span class="n">b</span> <span class="o">=</span> <span class="n">nn</span><span class="o">.</span><span class="n">Linear</span><span class="p">(</span><span class="mi">3</span><span class="p">,</span> <span class="mi">4</span><span class="p">),</span> <span class="n">nn</span><span class="o">.</span><span class="n">Linear</span><span class="p">(</span><span class="mi">4</span><span class="p">,</span> <span class="mi">2</span><span class="p">)</span>
+<span class="n">two</span> <span class="o">=</span> <span class="n">b</span><span class="p">(</span><span class="n">a</span><span class="p">(</span><span class="n">x</span><span class="p">))</span>
+<span class="n">W</span> <span class="o">=</span> <span class="n">b</span><span class="o">.</span><span class="n">weight</span> <span class="o">@</span> <span class="n">a</span><span class="o">.</span><span class="n">weight</span>                          <span class="c1"># 合并成一台机器</span>
+<span class="n">one</span> <span class="o">=</span> <span class="n">x</span> <span class="o">@</span> <span class="n">W</span><span class="o">.</span><span class="n">t</span><span class="p">()</span> <span class="o">+</span> <span class="p">(</span><span class="n">b</span><span class="o">.</span><span class="n">weight</span> <span class="o">@</span> <span class="n">a</span><span class="o">.</span><span class="n">bias</span> <span class="o">+</span> <span class="n">b</span><span class="o">.</span><span class="n">bias</span><span class="p">)</span>
+<span class="nb">print</span><span class="p">(</span><span class="n">torch</span><span class="o">.</span><span class="n">allclose</span><span class="p">(</span><span class="n">two</span><span class="p">,</span> <span class="n">one</span><span class="p">,</span> <span class="n">atol</span><span class="o">=</span><span class="mf">1e-6</span><span class="p">))</span>       <span class="c1"># True —— 叠了也白叠</span>
+</code></pre></div>
+
+<p>所以最准确的回答是：</p>
+<blockquote>
+<p><strong>神经网络 = 大量点积（线性代数）+ 少量折弯（非线性）。</strong>
+点积负责"在新空间里量分量、算相关性"，折弯负责"让模型能表达曲线"。
+大模型的"智能"，是几千亿个点积在超高维空间里协作的涌现结果——
+单看每一步，确实平平无奇，就是点积。</p>
+</blockquote>
+<hr />
+<h2 id="疑惑点三离散的字像素整数怎么变成连续可导的">🤔 疑惑点三：离散的字/像素/整数，怎么变成"连续可导"的？</h2>
+<p>这是初学者最大的困惑：梯度下降要求<strong>对参数可导</strong>，可现实世界全是离散的——
+一个字、一个像素灰度、一个运算符 <code>+</code>，怎么"求导"？</p>
+<p>答案分两步：<strong>①把离散对象塞进连续空间（embedding）；②对离散的"选择"动作做软化（softmax/温度）。</strong></p>
+<p><strong>第一步：embedding——给每个离散符号发一个可学习的连续向量。</strong>
+字本身不可导，但"代表这个字的那串浮点数"可导。</p>
+<div class="highlight"><pre><span></span><code><span class="kn">import</span><span class="w"> </span><span class="nn">torch</span>
+<span class="kn">import</span><span class="w"> </span><span class="nn">torch.nn</span><span class="w"> </span><span class="k">as</span><span class="w"> </span><span class="nn">nn</span>
+
+<span class="c1"># 词表里 10 个词，每个词用一个 4 维连续向量表示</span>
+<span class="n">emb</span> <span class="o">=</span> <span class="n">nn</span><span class="o">.</span><span class="n">Embedding</span><span class="p">(</span><span class="n">num_embeddings</span><span class="o">=</span><span class="mi">10</span><span class="p">,</span> <span class="n">embedding_dim</span><span class="o">=</span><span class="mi">4</span><span class="p">)</span>
+
+<span class="n">ids</span> <span class="o">=</span> <span class="n">torch</span><span class="o">.</span><span class="n">tensor</span><span class="p">([</span><span class="mi">1</span><span class="p">,</span> <span class="mi">5</span><span class="p">,</span> <span class="mi">9</span><span class="p">])</span>          <span class="c1"># 三个离散的词 id（不可导）</span>
+<span class="n">vecs</span> <span class="o">=</span> <span class="n">emb</span><span class="p">(</span><span class="n">ids</span><span class="p">)</span>                        <span class="c1"># 查表 -&gt; 连续向量（可导！）</span>
+<span class="nb">print</span><span class="p">(</span><span class="n">vecs</span><span class="o">.</span><span class="n">shape</span><span class="p">)</span>                      <span class="c1"># (3, 4)</span>
+<span class="nb">print</span><span class="p">(</span><span class="n">vecs</span><span class="o">.</span><span class="n">requires_grad</span><span class="p">)</span>              <span class="c1"># True —— 这些浮点数能被梯度更新</span>
+</code></pre></div>
+
+<p><code>nn.Embedding</code> 本质就是<strong>一张可学习的查找表</strong>：离散 id 进去，连续向量出来。
+训练时，梯度回传去微调这张表里的浮点数。<strong>"猫"和"狗"这两个离散符号的语义远近，
+就编码在它们对应向量的点积里</strong>（又是点积！）。</p>
+<p><strong>第二步：argmax 不可导，就用 softmax 这个"软化版"替身。</strong>
+"在 10 个词里挑概率最大的那个"是 <code>argmax</code>——一个阶梯式的硬选择，梯度处处为 0，没法学。
+softmax 把它<strong>软化成连续的概率分布</strong>，于是可导：</p>
+<div class="highlight"><pre><span></span><code><span class="kn">import</span><span class="w"> </span><span class="nn">torch</span>
+
+<span class="n">logits</span> <span class="o">=</span> <span class="n">torch</span><span class="o">.</span><span class="n">tensor</span><span class="p">([</span><span class="mf">2.0</span><span class="p">,</span> <span class="mf">1.0</span><span class="p">,</span> <span class="mf">0.1</span><span class="p">],</span> <span class="n">requires_grad</span><span class="o">=</span><span class="kc">True</span><span class="p">)</span>
+
+<span class="n">hard</span> <span class="o">=</span> <span class="n">logits</span><span class="o">.</span><span class="n">argmax</span><span class="p">()</span>                 <span class="c1"># 硬选择：返回索引 0，不可导</span>
+<span class="n">soft</span> <span class="o">=</span> <span class="n">torch</span><span class="o">.</span><span class="n">softmax</span><span class="p">(</span><span class="n">logits</span><span class="p">,</span> <span class="n">dim</span><span class="o">=</span><span class="mi">0</span><span class="p">)</span>    <span class="c1"># 软选择：连续概率 [0.66, 0.24, 0.10]</span>
+<span class="nb">print</span><span class="p">(</span><span class="s2">&quot;硬:&quot;</span><span class="p">,</span> <span class="n">hard</span><span class="p">,</span> <span class="s2">&quot; 软:&quot;</span><span class="p">,</span> <span class="n">soft</span><span class="p">)</span>
+
+<span class="n">soft</span><span class="o">.</span><span class="n">sum</span><span class="p">()</span><span class="o">.</span><span class="n">backward</span><span class="p">()</span>                  <span class="c1"># 软版本能求导</span>
+<span class="nb">print</span><span class="p">(</span><span class="s2">&quot;softmax 可以回传梯度:&quot;</span><span class="p">,</span> <span class="n">logits</span><span class="o">.</span><span class="n">grad</span> <span class="ow">is</span> <span class="ow">not</span> <span class="kc">None</span><span class="p">)</span>   <span class="c1"># True</span>
+</code></pre></div>
+
+<p>温度参数还能在"软"和"硬"之间连续滑动——温度→0 时 softmax 逼近 argmax：</p>
+<div class="highlight"><pre><span></span><code><span class="kn">import</span><span class="w"> </span><span class="nn">torch</span>
+<span class="n">logits</span> <span class="o">=</span> <span class="n">torch</span><span class="o">.</span><span class="n">tensor</span><span class="p">([</span><span class="mf">2.0</span><span class="p">,</span> <span class="mf">1.0</span><span class="p">,</span> <span class="mf">0.1</span><span class="p">])</span>
+<span class="k">for</span> <span class="n">T</span> <span class="ow">in</span> <span class="p">[</span><span class="mf">3.0</span><span class="p">,</span> <span class="mf">1.0</span><span class="p">,</span> <span class="mf">0.1</span><span class="p">]:</span>
+    <span class="n">p</span> <span class="o">=</span> <span class="n">torch</span><span class="o">.</span><span class="n">softmax</span><span class="p">(</span><span class="n">logits</span> <span class="o">/</span> <span class="n">T</span><span class="p">,</span> <span class="n">dim</span><span class="o">=</span><span class="mi">0</span><span class="p">)</span>
+    <span class="nb">print</span><span class="p">(</span><span class="sa">f</span><span class="s2">&quot;温度 </span><span class="si">{</span><span class="n">T</span><span class="si">}</span><span class="s2">: </span><span class="si">{</span><span class="n">p</span><span class="o">.</span><span class="n">numpy</span><span class="p">()</span><span class="o">.</span><span class="n">round</span><span class="p">(</span><span class="mi">3</span><span class="p">)</span><span class="si">}</span><span class="s2">&quot;</span><span class="p">)</span>   <span class="c1"># T 越小越接近 one-hot 硬选择</span>
+</code></pre></div>
+
+<p><strong>这就是"离散变连续可导"的全部魔法：</strong></p>
+<blockquote>
+<p>用 embedding 把离散符号搬进连续向量空间（可以求导的浮点数），
+用 softmax/温度把离散的"选择"动作软化成连续概率（可以求导的分布）。
+训练完，再用 argmax 把连续概率"硬化"回离散的字——
+<strong>训练时连续可导，推理时离散输出。</strong> 两头都要，中间靠这两招缝合。</p>
+<p>像素其实天生就是连续的（0–255 归一化成 0–1 的浮点），所以图像神经网络
+一开始就不太有这个烦恼；真正难的是文字、类别、动作这类<strong>纯符号</strong>的东西。</p>
+</blockquote>
+<hr />
+<h2 id="6-训练就是把搬空间的机器一点点调好线性代数遇上微积分">6. 训练，就是把"搬空间的机器"一点点调好（线性代数遇上微积分）</h2>
+<p>前面所有矩阵都是手写死的。<strong>训练，就是让模型自己学出这些矩阵该长什么样。</strong>
+把第 2~5 节缝进一个最小训练循环：</p>
+<div class="highlight"><pre><span></span><code><span class="kn">import</span><span class="w"> </span><span class="nn">torch</span>
+<span class="kn">import</span><span class="w"> </span><span class="nn">torch.nn</span><span class="w"> </span><span class="k">as</span><span class="w"> </span><span class="nn">nn</span>
+
+<span class="c1"># 目标：学一个 2x2 矩阵，把输入&quot;旋转 90°&quot;</span>
+<span class="n">torch</span><span class="o">.</span><span class="n">manual_seed</span><span class="p">(</span><span class="mi">0</span><span class="p">)</span>
+<span class="n">target</span> <span class="o">=</span> <span class="n">torch</span><span class="o">.</span><span class="n">tensor</span><span class="p">([[</span><span class="mf">0.0</span><span class="p">,</span> <span class="o">-</span><span class="mf">1.0</span><span class="p">],</span>
+                       <span class="p">[</span><span class="mf">1.0</span><span class="p">,</span>  <span class="mf">0.0</span><span class="p">]])</span>    <span class="c1"># 真正的旋转矩阵（模型不知道）</span>
+
+<span class="n">x</span> <span class="o">=</span> <span class="n">torch</span><span class="o">.</span><span class="n">randn</span><span class="p">(</span><span class="mi">200</span><span class="p">,</span> <span class="mi">2</span><span class="p">)</span>
+<span class="n">y</span> <span class="o">=</span> <span class="n">x</span> <span class="o">@</span> <span class="n">target</span><span class="o">.</span><span class="n">t</span><span class="p">()</span>                      <span class="c1"># 标准答案</span>
+
+<span class="n">model</span> <span class="o">=</span> <span class="n">nn</span><span class="o">.</span><span class="n">Linear</span><span class="p">(</span><span class="mi">2</span><span class="p">,</span> <span class="mi">2</span><span class="p">,</span> <span class="n">bias</span><span class="o">=</span><span class="kc">False</span><span class="p">)</span>     <span class="c1"># 模型：一个待学习的 2x2 矩阵</span>
+<span class="n">opt</span> <span class="o">=</span> <span class="n">torch</span><span class="o">.</span><span class="n">optim</span><span class="o">.</span><span class="n">Adam</span><span class="p">(</span><span class="n">model</span><span class="o">.</span><span class="n">parameters</span><span class="p">(),</span> <span class="n">lr</span><span class="o">=</span><span class="mf">0.05</span><span class="p">)</span>
+
+<span class="k">for</span> <span class="n">step</span> <span class="ow">in</span> <span class="nb">range</span><span class="p">(</span><span class="mi">300</span><span class="p">):</span>
+    <span class="n">pred</span> <span class="o">=</span> <span class="n">model</span><span class="p">(</span><span class="n">x</span><span class="p">)</span>
+    <span class="n">loss</span> <span class="o">=</span> <span class="p">((</span><span class="n">pred</span> <span class="o">-</span> <span class="n">y</span><span class="p">)</span> <span class="o">**</span> <span class="mi">2</span><span class="p">)</span><span class="o">.</span><span class="n">mean</span><span class="p">()</span>     <span class="c1"># 搬得对不对</span>
+    <span class="n">opt</span><span class="o">.</span><span class="n">zero_grad</span><span class="p">();</span> <span class="n">loss</span><span class="o">.</span><span class="n">backward</span><span class="p">();</span> <span class="n">opt</span><span class="o">.</span><span class="n">step</span><span class="p">()</span>
+
+<span class="nb">print</span><span class="p">(</span><span class="s2">&quot;学到的矩阵:</span><span class="se">\n</span><span class="s2">&quot;</span><span class="p">,</span> <span class="n">model</span><span class="o">.</span><span class="n">weight</span><span class="o">.</span><span class="n">detach</span><span class="p">()</span><span class="o">.</span><span class="n">round</span><span class="p">(</span><span class="n">decimals</span><span class="o">=</span><span class="mi">2</span><span class="p">))</span>
+<span class="nb">print</span><span class="p">(</span><span class="s2">&quot;目标矩阵:</span><span class="se">\n</span><span class="s2">&quot;</span><span class="p">,</span> <span class="n">target</span><span class="p">)</span>             <span class="c1"># 两者几乎一样 —— 模型&quot;猜出&quot;了旋转</span>
+</code></pre></div>
+
+<p>跑完你会看到 <code>model.weight</code> 收敛到那个旋转矩阵。
+<strong>这就是深度学习的全部：用梯度下降，把一台台"搬空间的机器"调到正好把数据搬对位置。</strong>
+线性代数提供"机器"，微积分提供"怎么调"。</p>
+<hr />
+<h2 id="疑惑点四gpu-是不是就是一台大型向量机">🤔 疑惑点四：GPU 是不是就是一台"大型向量机"？</h2>
+<p><strong>基本上，是的——而且这个直觉惊人地准确。</strong> 但要补一个关键修正。</p>
+<p>CPU 像一个<strong>博士</strong>：单核极聪明，能处理复杂分支逻辑，但一次只干一件事（核心少）。
+GPU 像<strong>几千个小学生</strong>：每个都只会做简单算术，但<strong>几千个同时做同一道题</strong>。
+而矩阵乘法——第 6 节我们反复在做的——恰好就是"对成千上万个数，同时做同样的乘加"。
+这正是 GPU 的主场：</p>
+<div class="highlight"><pre><span></span><code><span class="kn">import</span><span class="w"> </span><span class="nn">torch</span><span class="o">,</span><span class="w"> </span><span class="nn">time</span>
+
+<span class="c1"># 一个 4096x4096 的矩阵乘法 = 约 1370 亿次乘加</span>
+<span class="n">A</span> <span class="o">=</span> <span class="n">torch</span><span class="o">.</span><span class="n">randn</span><span class="p">(</span><span class="mi">4096</span><span class="p">,</span> <span class="mi">4096</span><span class="p">)</span>
+<span class="n">B</span> <span class="o">=</span> <span class="n">torch</span><span class="o">.</span><span class="n">randn</span><span class="p">(</span><span class="mi">4096</span><span class="p">,</span> <span class="mi">4096</span><span class="p">)</span>
+
+<span class="n">t</span> <span class="o">=</span> <span class="n">time</span><span class="o">.</span><span class="n">time</span><span class="p">();</span> <span class="n">_</span> <span class="o">=</span> <span class="n">A</span> <span class="o">@</span> <span class="n">B</span><span class="p">;</span> <span class="n">cpu_t</span> <span class="o">=</span> <span class="n">time</span><span class="o">.</span><span class="n">time</span><span class="p">()</span> <span class="o">-</span> <span class="n">t</span>
+<span class="nb">print</span><span class="p">(</span><span class="sa">f</span><span class="s2">&quot;CPU 矩阵乘法耗时: </span><span class="si">{</span><span class="n">cpu_t</span><span class="o">*</span><span class="mi">1000</span><span class="si">:</span><span class="s2">.1f</span><span class="si">}</span><span class="s2"> ms&quot;</span><span class="p">)</span>
+
+<span class="k">if</span> <span class="n">torch</span><span class="o">.</span><span class="n">cuda</span><span class="o">.</span><span class="n">is_available</span><span class="p">():</span>
+    <span class="n">Ag</span><span class="p">,</span> <span class="n">Bg</span> <span class="o">=</span> <span class="n">A</span><span class="o">.</span><span class="n">cuda</span><span class="p">(),</span> <span class="n">B</span><span class="o">.</span><span class="n">cuda</span><span class="p">()</span>
+    <span class="n">torch</span><span class="o">.</span><span class="n">cuda</span><span class="o">.</span><span class="n">synchronize</span><span class="p">()</span>
+    <span class="n">t</span> <span class="o">=</span> <span class="n">time</span><span class="o">.</span><span class="n">time</span><span class="p">();</span> <span class="n">_</span> <span class="o">=</span> <span class="n">Ag</span> <span class="o">@</span> <span class="n">Bg</span><span class="p">;</span> <span class="n">torch</span><span class="o">.</span><span class="n">cuda</span><span class="o">.</span><span class="n">synchronize</span><span class="p">()</span>
+    <span class="n">gpu_t</span> <span class="o">=</span> <span class="n">time</span><span class="o">.</span><span class="n">time</span><span class="p">()</span> <span class="o">-</span> <span class="n">t</span>
+    <span class="nb">print</span><span class="p">(</span><span class="sa">f</span><span class="s2">&quot;GPU 矩阵乘法耗时: </span><span class="si">{</span><span class="n">gpu_t</span><span class="o">*</span><span class="mi">1000</span><span class="si">:</span><span class="s2">.1f</span><span class="si">}</span><span class="s2"> ms&quot;</span><span class="p">)</span>     <span class="c1"># 通常快几十到上百倍</span>
+    <span class="nb">print</span><span class="p">(</span><span class="sa">f</span><span class="s2">&quot;加速比: </span><span class="si">{</span><span class="n">cpu_t</span><span class="o">/</span><span class="n">gpu_t</span><span class="si">:</span><span class="s2">.0f</span><span class="si">}</span><span class="s2">x&quot;</span><span class="p">)</span>
+</code></pre></div>
+
+<p>为什么差这么多？因为矩阵乘法的每个输出元素，都是<strong>互不依赖</strong>的一次点积，
+天然可以并行。GPU 有几千个核心，一口气把几千个点积同时算了：</p>
+<div class="highlight"><pre><span></span><code><span class="kn">import</span><span class="w"> </span><span class="nn">torch</span>
+
+<span class="c1"># 矩阵乘法 = 一大批彼此独立的点积，谁也不等谁 -&gt; 完美并行</span>
+<span class="n">A</span> <span class="o">=</span> <span class="n">torch</span><span class="o">.</span><span class="n">randn</span><span class="p">(</span><span class="mi">3</span><span class="p">,</span> <span class="mi">4</span><span class="p">)</span>
+<span class="n">B</span> <span class="o">=</span> <span class="n">torch</span><span class="o">.</span><span class="n">randn</span><span class="p">(</span><span class="mi">4</span><span class="p">,</span> <span class="mi">5</span><span class="p">)</span>
+<span class="n">manual</span> <span class="o">=</span> <span class="n">torch</span><span class="o">.</span><span class="n">stack</span><span class="p">([</span><span class="n">torch</span><span class="o">.</span><span class="n">stack</span><span class="p">([</span><span class="n">torch</span><span class="o">.</span><span class="n">dot</span><span class="p">(</span><span class="n">A</span><span class="p">[</span><span class="n">i</span><span class="p">],</span> <span class="n">B</span><span class="p">[:,</span> <span class="n">j</span><span class="p">])</span>  <span class="c1"># 每个格子一个点积</span>
+                                   <span class="k">for</span> <span class="n">j</span> <span class="ow">in</span> <span class="nb">range</span><span class="p">(</span><span class="mi">5</span><span class="p">)])</span>
+                      <span class="k">for</span> <span class="n">i</span> <span class="ow">in</span> <span class="nb">range</span><span class="p">(</span><span class="mi">3</span><span class="p">)])</span>
+<span class="nb">print</span><span class="p">(</span><span class="n">torch</span><span class="o">.</span><span class="n">allclose</span><span class="p">(</span><span class="n">manual</span><span class="p">,</span> <span class="n">A</span> <span class="o">@</span> <span class="n">B</span><span class="p">))</span>   <span class="c1"># True —— matmul 就是一堆并行点积</span>
+</code></pre></div>
+
+<p><strong>需要补的那个修正：</strong> 现代 GPU 不只是"向量机"，更准确说是"<strong>矩阵机/张量机</strong>"。
+NVIDIA 的 <strong>Tensor Core</strong> 是直接为"小矩阵块乘加"定制的硬件电路，
+比起一个数一个数地算向量，它一个时钟周期就吞下一整块矩阵。所以更精确的说法是：</p>
+<blockquote>
+<p><strong>GPU 是一台大规模并行的"张量计算机"。</strong>
+它的存在意义，就是把第 6 节那种"成千上万个互相独立的点积/矩阵乘"在同一瞬间算完。
+深度学习之所以在 2012 年后爆发，硬件上就一句话：
+<strong>有人发现，神经网络的计算 = 海量矩阵乘法 = 正好是 GPU 最擅长的事。</strong></p>
+</blockquote>
+<p>线性代数（矩阵乘法）、神经网络（堆叠点积）、GPU（并行算点积）——
+<strong>三者是同一件事在数学、模型、硬件三个层面的三张面孔。</strong></p>
+<hr />
+<h2 id="动手-a一张纸变形的故事-深度学习在学空间变换">🎬 动手 A：一张纸变形的故事 —— 深度学习在学"空间变换"</h2>
+<p>前面所有矩阵都是手写死的。这一节，我们让网络<strong>自己学出一个变换</strong>，并且把它<strong>动起来看</strong>。整个故事分两幕。</p>
+<blockquote>
+<p>把一张脸画在一张<strong>橡皮纸</strong>上。<strong>捏一捏纸的不同部位，脸就有了不同表情</strong>——
+嘴角往上一推是微笑，往下一拉是沮丧，把下巴拽下来、眉眼上挑就是惊讶。
+每一种表情，本质都是对<strong>整张纸的一次变形</strong>，也就是一次<strong>空间变换</strong>——
+第 2 节说的"矩阵就是把整个空间搬动的机器"，只不过这里的揉法是非线性的（真实人脸之间的变化也不是简单旋转拉伸）。</p>
+</blockquote>
+<p><strong>第一幕：先看清"表情 = 纸的变形"。</strong> 每个表情就是一个作用在平面上的位移场，捏哪、捏多大，决定了哪种表情：</p>
+<div class="highlight"><pre><span></span><code><span class="kn">import</span><span class="w"> </span><span class="nn">numpy</span><span class="w"> </span><span class="k">as</span><span class="w"> </span><span class="nn">np</span>
+
+<span class="k">def</span><span class="w"> </span><span class="nf">expr_field</span><span class="p">(</span><span class="n">p</span><span class="p">,</span> <span class="n">kind</span><span class="p">,</span> <span class="n">a</span><span class="p">):</span>            <span class="c1"># 把平面上的点按某种表情、强度 a 揉一下</span>
+    <span class="n">x</span><span class="p">,</span> <span class="n">y</span> <span class="o">=</span> <span class="n">p</span><span class="p">[:,</span> <span class="mi">0</span><span class="p">]</span><span class="o">.</span><span class="n">copy</span><span class="p">(),</span> <span class="n">p</span><span class="p">[:,</span> <span class="mi">1</span><span class="p">]</span><span class="o">.</span><span class="n">copy</span><span class="p">()</span>
+    <span class="n">mouth</span> <span class="o">=</span> <span class="n">np</span><span class="o">.</span><span class="n">exp</span><span class="p">(</span><span class="o">-</span><span class="p">((</span><span class="n">y</span> <span class="o">+</span> <span class="mf">0.7</span><span class="p">)</span> <span class="o">**</span> <span class="mi">2</span><span class="p">)</span> <span class="o">/</span> <span class="mf">0.18</span><span class="p">)</span>     <span class="c1"># 嘴巴附近的区域权重</span>
+    <span class="n">eye</span>   <span class="o">=</span> <span class="n">np</span><span class="o">.</span><span class="n">exp</span><span class="p">(</span><span class="o">-</span><span class="p">((</span><span class="n">y</span> <span class="o">-</span> <span class="mf">0.45</span><span class="p">)</span> <span class="o">**</span> <span class="mi">2</span><span class="p">)</span> <span class="o">/</span> <span class="mf">0.10</span><span class="p">)</span>    <span class="c1"># 眼睛附近的区域权重</span>
+    <span class="n">dy</span> <span class="o">=</span> <span class="n">np</span><span class="o">.</span><span class="n">zeros_like</span><span class="p">(</span><span class="n">y</span><span class="p">)</span>
+    <span class="k">if</span>   <span class="n">kind</span> <span class="o">==</span> <span class="s2">&quot;smile&quot;</span><span class="p">:</span>    <span class="n">dy</span> <span class="o">+=</span> <span class="n">a</span> <span class="o">*</span> <span class="p">(</span> <span class="mf">0.9</span> <span class="o">*</span> <span class="n">x</span><span class="o">**</span><span class="mi">2</span> <span class="o">-</span> <span class="mf">0.18</span><span class="p">)</span> <span class="o">*</span> <span class="n">mouth</span>   <span class="c1"># 嘴角上扬</span>
+    <span class="k">elif</span> <span class="n">kind</span> <span class="o">==</span> <span class="s2">&quot;sad&quot;</span><span class="p">:</span>      <span class="n">dy</span> <span class="o">+=</span> <span class="n">a</span> <span class="o">*</span> <span class="p">(</span><span class="o">-</span><span class="p">(</span><span class="mf">0.9</span> <span class="o">*</span> <span class="n">x</span><span class="o">**</span><span class="mi">2</span> <span class="o">-</span> <span class="mf">0.18</span><span class="p">))</span> <span class="o">*</span> <span class="n">mouth</span> <span class="c1"># 嘴角下垂</span>
+    <span class="k">elif</span> <span class="n">kind</span> <span class="o">==</span> <span class="s2">&quot;surprise&quot;</span><span class="p">:</span>                                         <span class="c1"># 张嘴 + 挑眉</span>
+        <span class="n">dy</span> <span class="o">+=</span> <span class="n">a</span> <span class="o">*</span> <span class="p">(</span><span class="o">-</span><span class="mf">0.55</span><span class="p">)</span> <span class="o">*</span> <span class="n">mouth</span> <span class="o">*</span> <span class="n">np</span><span class="o">.</span><span class="n">exp</span><span class="p">(</span><span class="o">-</span><span class="p">(</span><span class="n">x</span><span class="o">**</span><span class="mi">2</span><span class="p">)</span> <span class="o">/</span> <span class="mf">0.30</span><span class="p">)</span>
+        <span class="n">dy</span> <span class="o">+=</span> <span class="n">a</span> <span class="o">*</span>  <span class="mf">0.22</span>  <span class="o">*</span> <span class="n">eye</span>
+    <span class="k">return</span> <span class="n">np</span><span class="o">.</span><span class="n">stack</span><span class="p">([</span><span class="n">x</span><span class="p">,</span> <span class="n">y</span> <span class="o">+</span> <span class="n">dy</span><span class="p">],</span> <span class="mi">1</span><span class="p">)</span>
+<span class="c1"># 同一张脸，三个不同的 kind，就是三种表情 —— 都只是&quot;纸怎么揉&quot;的区别</span>
+</code></pre></div>
+
+<p>动画的第一幕，就是依次把这张脸捏成 微笑 → 沮丧 → 惊讶，让你<strong>先建立"表情就是空间变换"的直觉</strong>。</p>
+<p><strong>第二幕：让深度学习自己学会其中一种变换。</strong> 现在反过来——只给网络看"纸上每个点揉之前 / 揉之后的位置"，
+让它把这套揉纸规则<strong>自己反推出来</strong>。网络学的是"平面上任意一点该搬到哪"：</p>
+<div class="highlight"><pre><span></span><code><span class="kn">import</span><span class="w"> </span><span class="nn">numpy</span><span class="w"> </span><span class="k">as</span><span class="w"> </span><span class="nn">np</span><span class="o">,</span><span class="w"> </span><span class="nn">torch</span><span class="o">,</span><span class="w"> </span><span class="nn">torch.nn</span><span class="w"> </span><span class="k">as</span><span class="w"> </span><span class="nn">nn</span>
+
+<span class="c1"># 让网络去学的&quot;复合表情&quot;（又惊又喜）—— 网络看不到这个函数，只能从数据里猜</span>
+<span class="k">def</span><span class="w"> </span><span class="nf">target_warp</span><span class="p">(</span><span class="n">p</span><span class="p">):</span>
+    <span class="k">return</span> <span class="n">expr_field</span><span class="p">(</span><span class="n">expr_field</span><span class="p">(</span><span class="n">p</span><span class="p">,</span> <span class="s2">&quot;smile&quot;</span><span class="p">,</span> <span class="mf">1.0</span><span class="p">),</span> <span class="s2">&quot;surprise&quot;</span><span class="p">,</span> <span class="mf">0.7</span><span class="p">)</span>
+
+<span class="c1"># 数据：纸上随机撒点，记录&quot;揉之前 -&gt; 揉之后&quot;</span>
+<span class="n">X</span> <span class="o">=</span> <span class="n">np</span><span class="o">.</span><span class="n">random</span><span class="o">.</span><span class="n">uniform</span><span class="p">(</span><span class="o">-</span><span class="mf">1.7</span><span class="p">,</span> <span class="mf">1.7</span><span class="p">,</span> <span class="p">(</span><span class="mi">3000</span><span class="p">,</span> <span class="mi">2</span><span class="p">))</span><span class="o">.</span><span class="n">astype</span><span class="p">(</span><span class="s2">&quot;float32&quot;</span><span class="p">)</span>
+<span class="n">Y</span> <span class="o">=</span> <span class="n">target_warp</span><span class="p">(</span><span class="n">X</span><span class="p">)</span><span class="o">.</span><span class="n">astype</span><span class="p">(</span><span class="s2">&quot;float32&quot;</span><span class="p">)</span>
+<span class="n">Xt</span><span class="p">,</span> <span class="n">Yt</span> <span class="o">=</span> <span class="n">torch</span><span class="o">.</span><span class="n">tensor</span><span class="p">(</span><span class="n">X</span><span class="p">),</span> <span class="n">torch</span><span class="o">.</span><span class="n">tensor</span><span class="p">(</span><span class="n">Y</span><span class="p">)</span>
+
+<span class="c1"># 一个小网络去学这套规则：输入 2 维坐标 -&gt; 输出 2 维新坐标</span>
+<span class="n">net</span> <span class="o">=</span> <span class="n">nn</span><span class="o">.</span><span class="n">Sequential</span><span class="p">(</span><span class="n">nn</span><span class="o">.</span><span class="n">Linear</span><span class="p">(</span><span class="mi">2</span><span class="p">,</span> <span class="mi">64</span><span class="p">),</span> <span class="n">nn</span><span class="o">.</span><span class="n">Tanh</span><span class="p">(),</span>
+                    <span class="n">nn</span><span class="o">.</span><span class="n">Linear</span><span class="p">(</span><span class="mi">64</span><span class="p">,</span> <span class="mi">64</span><span class="p">),</span> <span class="n">nn</span><span class="o">.</span><span class="n">Tanh</span><span class="p">(),</span> <span class="n">nn</span><span class="o">.</span><span class="n">Linear</span><span class="p">(</span><span class="mi">64</span><span class="p">,</span> <span class="mi">2</span><span class="p">))</span>
+<span class="n">opt</span> <span class="o">=</span> <span class="n">torch</span><span class="o">.</span><span class="n">optim</span><span class="o">.</span><span class="n">Adam</span><span class="p">(</span><span class="n">net</span><span class="o">.</span><span class="n">parameters</span><span class="p">(),</span> <span class="n">lr</span><span class="o">=</span><span class="mf">0.01</span><span class="p">)</span>
+
+<span class="k">for</span> <span class="n">step</span> <span class="ow">in</span> <span class="nb">range</span><span class="p">(</span><span class="mi">3000</span><span class="p">):</span>
+    <span class="n">loss</span> <span class="o">=</span> <span class="p">((</span><span class="n">net</span><span class="p">(</span><span class="n">Xt</span><span class="p">)</span> <span class="o">-</span> <span class="n">Yt</span><span class="p">)</span> <span class="o">**</span> <span class="mi">2</span><span class="p">)</span><span class="o">.</span><span class="n">mean</span><span class="p">()</span>
+    <span class="n">opt</span><span class="o">.</span><span class="n">zero_grad</span><span class="p">();</span> <span class="n">loss</span><span class="o">.</span><span class="n">backward</span><span class="p">();</span> <span class="n">opt</span><span class="o">.</span><span class="n">step</span><span class="p">()</span>
+<span class="c1"># 训练完，net 就成了那套揉纸规则：喂任意点进去，它知道该搬到哪</span>
+</code></pre></div>
+
+<p>学会之后，把这套规则同时作用在 <strong>① 脸的点</strong> 和 <strong>② 整张纸的网格线</strong> 上：
+你会看到脸被正确地揉成目标脸，而<strong>整张纸（网格）也跟着一起均匀地扭曲</strong>——
+这正是"矩阵就是映射、把整个空间搬动"那句话的<strong>动态实证</strong>。</p>
+<p>完整的动画脚本在仓库里，直接跑就能看到训练过程中纸一帧帧地变形：</p>
+<div class="highlight"><pre><span></span><code>python<span class="w"> </span>face_morph_paper_transform.py
+</code></pre></div>
+
+<blockquote>
+<p>画面里你会看到两幕：
+<strong>第一幕</strong>，同一张脸被依次捏成微笑、沮丧、惊讶，网格（纸）跟着局部鼓起/凹陷——
+让你先认定"表情 = 纸的变形 = 空间变换"。
+<strong>第二幕</strong>，一开始网络乱揉一通（随机初始化），脸是一团乱点；
+随着 loss 下降，网格线慢慢"长"成目标形状，红色的脸点逐渐贴合灰色的目标脸。
+<strong>深度学习的"学习"，肉眼可见地就是在学这张纸该怎么揉。</strong></p>
+</blockquote>
+<hr />
+<h2 id="动手-b亲眼看着权重被改-线性回归的动态可视化">🎬 动手 B：亲眼看着"权重"被改 —— 线性回归的动态可视化</h2>
+<p>疑惑了半天"权重到底在变什么"，不如把它<strong>放慢镜头</strong>看一遍。
+最简单的网络只有两个参数：斜率 <code>w</code> 和截距 <code>b</code>（<code>y = w·x + b</code>）。训练就是不停微调这两个数。</p>
+<div class="highlight"><pre><span></span><code><span class="kn">import</span><span class="w"> </span><span class="nn">torch</span>
+
+<span class="c1"># 数据服从 y = 2x + 1（真实权重 w=2, b=1），故意从离谱的 w=0,b=0 起步</span>
+<span class="n">x</span> <span class="o">=</span> <span class="n">torch</span><span class="o">.</span><span class="n">linspace</span><span class="p">(</span><span class="o">-</span><span class="mi">3</span><span class="p">,</span> <span class="mi">3</span><span class="p">,</span> <span class="mi">60</span><span class="p">)</span><span class="o">.</span><span class="n">unsqueeze</span><span class="p">(</span><span class="mi">1</span><span class="p">)</span>
+<span class="n">y</span> <span class="o">=</span> <span class="mi">2</span> <span class="o">*</span> <span class="n">x</span> <span class="o">+</span> <span class="mi">1</span> <span class="o">+</span> <span class="n">torch</span><span class="o">.</span><span class="n">randn</span><span class="p">(</span><span class="mi">60</span><span class="p">,</span> <span class="mi">1</span><span class="p">)</span> <span class="o">*</span> <span class="mf">0.7</span>
+<span class="n">w</span> <span class="o">=</span> <span class="n">torch</span><span class="o">.</span><span class="n">tensor</span><span class="p">([[</span><span class="mf">0.0</span><span class="p">]],</span> <span class="n">requires_grad</span><span class="o">=</span><span class="kc">True</span><span class="p">)</span>
+<span class="n">b</span> <span class="o">=</span> <span class="n">torch</span><span class="o">.</span><span class="n">tensor</span><span class="p">([</span><span class="mf">0.0</span><span class="p">],</span> <span class="n">requires_grad</span><span class="o">=</span><span class="kc">True</span><span class="p">)</span>
+<span class="n">lr</span> <span class="o">=</span> <span class="mf">0.03</span>
+
+<span class="k">for</span> <span class="n">step</span> <span class="ow">in</span> <span class="nb">range</span><span class="p">(</span><span class="mi">120</span><span class="p">):</span>
+    <span class="n">loss</span> <span class="o">=</span> <span class="p">((</span><span class="n">x</span> <span class="o">@</span> <span class="n">w</span> <span class="o">+</span> <span class="n">b</span> <span class="o">-</span> <span class="n">y</span><span class="p">)</span> <span class="o">**</span> <span class="mi">2</span><span class="p">)</span><span class="o">.</span><span class="n">mean</span><span class="p">()</span>
+    <span class="n">loss</span><span class="o">.</span><span class="n">backward</span><span class="p">()</span>
+    <span class="k">with</span> <span class="n">torch</span><span class="o">.</span><span class="n">no_grad</span><span class="p">():</span>            <span class="c1"># 这两行就是 optimizer.step() 在做的事</span>
+        <span class="n">w</span> <span class="o">-=</span> <span class="n">lr</span> <span class="o">*</span> <span class="n">w</span><span class="o">.</span><span class="n">grad</span>
+        <span class="n">b</span> <span class="o">-=</span> <span class="n">lr</span> <span class="o">*</span> <span class="n">b</span><span class="o">.</span><span class="n">grad</span>
+    <span class="n">w</span><span class="o">.</span><span class="n">grad</span><span class="o">.</span><span class="n">zero_</span><span class="p">();</span> <span class="n">b</span><span class="o">.</span><span class="n">grad</span><span class="o">.</span><span class="n">zero_</span><span class="p">()</span>
+    <span class="nb">print</span><span class="p">(</span><span class="sa">f</span><span class="s2">&quot;step </span><span class="si">{</span><span class="n">step</span><span class="si">}</span><span class="s2">: w=</span><span class="si">{</span><span class="n">w</span><span class="o">.</span><span class="n">item</span><span class="p">()</span><span class="si">:</span><span class="s2">.3f</span><span class="si">}</span><span class="s2">  b=</span><span class="si">{</span><span class="n">b</span><span class="o">.</span><span class="n">item</span><span class="p">()</span><span class="si">:</span><span class="s2">.3f</span><span class="si">}</span><span class="s2">  loss=</span><span class="si">{</span><span class="n">loss</span><span class="o">.</span><span class="n">item</span><span class="p">()</span><span class="si">:</span><span class="s2">.3f</span><span class="si">}</span><span class="s2">&quot;</span><span class="p">)</span>
+<span class="c1"># w 从 0 一路爬到 ≈2，b 从 0 爬到 ≈1 —— 这串数字就是&quot;权重被修改&quot;的全过程</span>
+</code></pre></div>
+
+<p>仓库里的动画脚本把这串数字画成了<strong>双面板动图</strong>：</p>
+<div class="highlight"><pre><span></span><code>python<span class="w"> </span>linear_regression_weight_animation.py
+</code></pre></div>
+
+<ul>
+<li><strong>左面板</strong>：数据点 + 当前拟合直线。你会看到红线从一条平躺的水平线，一帧帧<strong>转动、上移</strong>，直到压在数据中间。</li>
+<li><strong>右面板</strong>：一张 <code>loss</code> 随 <code>(w, b)</code> 变化的<strong>地形等高线图</strong>，红点（当前权重）拖着一条白色轨迹，
+  从山坡上<strong>一步步滚向谷底那颗黄星</strong>（真正的 <code>w=2, b=1</code>）。</li>
+</ul>
+<p><strong>这就是"训练"最朴素的真相</strong>：右面板那个红点的移动，就是 <code>optimizer.step()</code> 在真实地改写权重；
+它走的每一步方向，都是第 5 节讲的"负梯度方向"。
+把动手 A 和动手 B 连起来看——<strong>A 让你看到网络学到的变换有多复杂，B 让你看清这个变换是怎样一个数一个数被调出来的。</strong></p>
+<hr />
+<h2 id="7-把所有画面缝合起来">7. 把所有画面缝合起来</h2>
+<p>最后回到开头那句话，现在每个概念都有了画面和代码出处：</p>
+<table>
+<thead>
+<tr>
+<th>线性代数概念</th>
+<th>课本怎么讲（抽象）</th>
+<th>这篇文章怎么看（画面）</th>
+<th>在深度学习里是什么</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><strong>向量</strong></td>
+<td>一列数</td>
+<td>空间里一根有方向的箭头（第 1 节）</td>
+<td>一个样本 / 一个词的 embedding</td>
+</tr>
+<tr>
+<td><strong>点积</strong></td>
+<td>Σ 对应相乘</td>
+<td>两根箭头有多同向（第 1 节）</td>
+<td>神经元、注意力相关度（疑惑点二）</td>
+</tr>
+<tr>
+<td><strong>矩阵</strong></td>
+<td>数表 + 运算法则</td>
+<td>把整个空间搬动的机器（第 2 节）</td>
+<td><code>nn.Linear</code> / 权重矩阵（第 5 节）</td>
+</tr>
+<tr>
+<td><strong>行列式</strong></td>
+<td>按行展开</td>
+<td>面积被放大几倍，0 = 拍扁不可逆（第 3 节）</td>
+<td>衡量映射是否丢信息</td>
+</tr>
+<tr>
+<td><strong>特征向量</strong></td>
+<td>解 <code>det(A-λI)=0</code></td>
+<td>映射里方向不变的骨架轴（第 4 节）</td>
+<td>PCA / 数据主方向（疑惑点一）</td>
+</tr>
+<tr>
+<td><strong>矩阵乘法</strong></td>
+<td>行乘列</td>
+<td>一堆独立点积，可并行（疑惑点四）</td>
+<td>GPU 上的核心运算</td>
+</tr>
+</tbody>
+</table>
+<p>三句话总结这篇文章：</p>
+<blockquote>
+<p><strong>线性代数的灵魂是"矩阵就是映射"</strong>——一台把空间整体搬动的机器（第 2、3 节）；
+<strong>神经网络的灵魂是"海量点积"</strong>——在高维空间里量分量、算相关，再用非线性折弯（疑惑点二）；
+<strong>而离散变可导（embedding + softmax）让符号也能进这套机器，GPU 让这套机器一瞬间跑完</strong>（疑惑点三、四）。</p>
+</blockquote>
+<p>当年线性代数没讲明白，不是因为它难，是因为没人告诉你：
+<strong>这些符号，最后全都活在一段能跑起来的 PyTorch 代码里。</strong>
+现在你把上面每段代码都跑一遍，比期末复习四个晚上都管用。</p>
+    </div>
+  </article>
+
+</main>
+
+<!-- Floating Ask-AI chat widget -->
+<button class="ai-fab" id="ai-fab" aria-label="Ask AI about this article" title="Ask AI about this article">
+  <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+    <path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"/>
+  </svg>
+  <span class="ai-fab-label">Ask AI</span>
+</button>
+
+<div class="ai-panel" id="ai-panel" role="dialog" aria-labelledby="ai-panel-title" aria-hidden="true">
+  <header class="ai-panel-head">
+    <div class="ai-panel-title-wrap">
+      <span class="ai-dot"></span>
+      <h3 id="ai-panel-title">Ask AI about this post</h3>
+    </div>
+    <div class="ai-panel-actions">
+      <button class="ai-icon-btn" id="ai-clear" title="Clear conversation" aria-label="Clear">
+        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><polyline points="3 6 5 6 21 6"/><path d="M19 6l-1 14a2 2 0 0 1-2 2H8a2 2 0 0 1-2-2L5 6"/><path d="M10 11v6M14 11v6"/><path d="M9 6V4a1 1 0 0 1 1-1h4a1 1 0 0 1 1 1v2"/></svg>
+      </button>
+      <button class="ai-icon-btn" id="ai-close" title="Minimize" aria-label="Minimize">
+        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><polyline points="6 9 12 15 18 9"/></svg>
+      </button>
+    </div>
+  </header>
+
+  <div class="ai-messages" id="ai-messages">
+    <div class="ai-empty" id="ai-empty">
+      <p class="ai-empty-title">On-device AI · Gemini Nano</p>
+      <p class="ai-empty-sub">Ask anything about this article. Runs in your browser — nothing leaves your device.</p>
+    </div>
+  </div>
+
+  <div class="ai-status" id="ai-status" hidden></div>
+
+  <form class="ai-composer" id="ai-form">
+    <textarea id="ai-input" rows="1" placeholder="Ask about this post…" autocomplete="off"></textarea>
+    <button type="submit" id="ai-send" class="ai-send" aria-label="Send" disabled>
+      <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><line x1="22" y1="2" x2="11" y2="13"/><polygon points="22 2 15 22 11 13 2 9 22 2"/></svg>
+    </button>
+  </form>
+</div>
+
+<script>
+(function () {
+  const POST_TITLE = "\u5927\u5b664\u5e74\u6ca1\u8bb2\u660e\u767d\u7684\u7ebf\u6027\u4ee3\u6570\uff0c\u88ab\u4e00\u6bb5 PyTorch \u4ee3\u7801\u8bb2\u900f\u4e86";
+  const contentEl = document.querySelector('article .content');
+
+  const fab = document.getElementById('ai-fab');
+  const panel = document.getElementById('ai-panel');
+  const closeBtn = document.getElementById('ai-close');
+  const clearBtn = document.getElementById('ai-clear');
+  const msgsEl = document.getElementById('ai-messages');
+  const emptyEl = document.getElementById('ai-empty');
+  const statusEl = document.getElementById('ai-status');
+  const formEl = document.getElementById('ai-form');
+  const inputEl = document.getElementById('ai-input');
+  const sendBtn = document.getElementById('ai-send');
+
+  function articleText() {
+    if (!contentEl) return '';
+    return (contentEl.innerText || contentEl.textContent || '')
+      .replace(/[ \t]+\n/g, '\n')
+      .replace(/\n{3,}/g, '\n\n')
+      .trim();
+  }
+
+  function setStatus(msg, cls) {
+    if (!msg) { statusEl.hidden = true; statusEl.textContent = ''; statusEl.className = 'ai-status'; return; }
+    statusEl.hidden = false;
+    statusEl.textContent = msg;
+    statusEl.className = 'ai-status' + (cls ? ' ' + cls : '');
+  }
+
+  function hideEmpty() { if (emptyEl) emptyEl.style.display = 'none'; }
+
+  function appendBubble(role, text) {
+    hideEmpty();
+    const wrap = document.createElement('div');
+    wrap.className = 'ai-msg ai-msg-' + role;
+    const bubble = document.createElement('div');
+    bubble.className = 'ai-bubble';
+    bubble.textContent = text;
+    wrap.appendChild(bubble);
+    msgsEl.appendChild(wrap);
+    msgsEl.scrollTop = msgsEl.scrollHeight;
+    return bubble;
+  }
+
+  function appendTyping() {
+    hideEmpty();
+    const wrap = document.createElement('div');
+    wrap.className = 'ai-msg ai-msg-assistant ai-typing';
+    wrap.innerHTML = '<div class="ai-bubble"><span class="ai-dots"><i></i><i></i><i></i></span></div>';
+    msgsEl.appendChild(wrap);
+    msgsEl.scrollTop = msgsEl.scrollHeight;
+    return wrap;
+  }
+
+  function autoSize() {
+    inputEl.style.height = 'auto';
+    inputEl.style.height = Math.min(inputEl.scrollHeight, 140) + 'px';
+  }
+
+  function openPanel() {
+    panel.classList.add('open');
+    panel.setAttribute('aria-hidden', 'false');
+    fab.classList.add('hidden');
+    setTimeout(() => inputEl.focus(), 50);
+  }
+  function closePanel() {
+    panel.classList.remove('open');
+    panel.setAttribute('aria-hidden', 'true');
+    fab.classList.remove('hidden');
+  }
+
+  fab.addEventListener('click', openPanel);
+  closeBtn.addEventListener('click', closePanel);
+  document.addEventListener('keydown', e => {
+    if (e.key === 'Escape' && panel.classList.contains('open')) closePanel();
+  });
+
+  // ---- LanguageModel session ----
+  let session = null;
+  let creating = null;
+  let history = [];
+
+  function buildSystemPrompt() {
+    // Keep article context modest — Gemini Nano's input quota is small.
+    const article = articleText().slice(0, 4000);
+    return (
+      'You are a concise, helpful assistant answering questions about a blog post. ' +
+      'Use the article below as your primary source. If the answer is not in it, say so briefly and answer generally. ' +
+      'Reply in the same language as the user\'s question. Keep answers short unless asked for detail.\n\n' +
+      '=== ARTICLE TITLE ===\n' + POST_TITLE + '\n\n' +
+      '=== ARTICLE CONTENT ===\n' + article
+    );
+  }
+
+  async function ensureSession() {
+    if (session) return session;
+    if (creating) return creating;
+
+    if (!('LanguageModel' in self)) {
+      throw new Error(
+        'On-device AI not available. Use Chrome 138+ on desktop, or enable ' +
+        '"Prompt API for Gemini Nano" in chrome://flags.'
+      );
+    }
+
+    setStatus('Checking model…', 'info');
+    const status = await LanguageModel.availability();
+    if (status === 'unavailable') {
+      throw new Error('Model unavailable on this device.');
+    }
+
+    creating = (async () => {
+      // Only show download UI when the model isn't already there.
+      const willDownload = (status !== 'available');
+      if (willDownload) setStatus('Preparing model (first run downloads ~2GB)…', 'info');
+      else setStatus('Warming up…', 'info');
+
+      const s = await LanguageModel.create({
+        initialPrompts: [{ role: 'system', content: buildSystemPrompt() }],
+        monitor(m) {
+          m.addEventListener('downloadprogress', e => {
+            // Skip the spurious 0% event Chrome fires for cached models.
+            if (!willDownload && e.loaded === 0) return;
+            const pct = (e.loaded * 100).toFixed(1);
+            setStatus('Downloading model: ' + pct + '%', 'info');
+          });
+        }
+      });
+      session = s;
+      setStatus('');
+      return s;
+    })();
+
+    try { return await creating; }
+    finally { creating = null; }
+  }
+
+  async function ask(q) {
+    appendBubble('user', q);
+    history.push({ role: 'user', content: q });
+
+    sendBtn.disabled = true;
+    inputEl.disabled = true;
+    const typing = appendTyping();
+
+    let answerBubble = null;
+    let acc = '';
+    try {
+      const s = await ensureSession();
+      const stream = s.promptStreaming(q);
+      for await (const chunk of stream) {
+        if (!answerBubble) {
+          typing.remove();
+          const wrap = document.createElement('div');
+          wrap.className = 'ai-msg ai-msg-assistant';
+          answerBubble = document.createElement('div');
+          answerBubble.className = 'ai-bubble';
+          wrap.appendChild(answerBubble);
+          msgsEl.appendChild(wrap);
+        }
+        acc += chunk;
+        answerBubble.textContent = acc;
+        msgsEl.scrollTop = msgsEl.scrollHeight;
+      }
+      if (acc) history.push({ role: 'assistant', content: acc });
+      else { typing.remove(); appendBubble('assistant', '(no response)'); }
+    } catch (e) {
+      if (typing && typing.parentNode) typing.remove();
+      const err = document.createElement('div');
+      err.className = 'ai-msg ai-msg-error';
+      err.innerHTML = '<div class="ai-bubble">⚠ ' + (e && e.message ? e.message : String(e)) + '</div>';
+      msgsEl.appendChild(err);
+      msgsEl.scrollTop = msgsEl.scrollHeight;
+    } finally {
+      sendBtn.disabled = !inputEl.value.trim();
+      inputEl.disabled = false;
+      inputEl.focus();
+    }
+  }
+
+  formEl.addEventListener('submit', e => {
+    e.preventDefault();
+    const q = inputEl.value.trim();
+    if (!q) return;
+    inputEl.value = '';
+    autoSize();
+    sendBtn.disabled = true;
+    ask(q);
+  });
+
+  inputEl.addEventListener('input', () => {
+    autoSize();
+    sendBtn.disabled = !inputEl.value.trim();
+  });
+  inputEl.addEventListener('keydown', e => {
+    if (e.key === 'Enter' && !e.shiftKey) {
+      e.preventDefault();
+      formEl.requestSubmit();
+    }
+  });
+
+  clearBtn.addEventListener('click', () => {
+    msgsEl.innerHTML = '';
+    msgsEl.appendChild(emptyEl);
+    emptyEl.style.display = '';
+    history = [];
+    if (session && session.destroy) { try { session.destroy(); } catch (_) {} }
+    session = null;
+    setStatus('');
+  });
+
+  if (!('LanguageModel' in self)) {
+    fab.addEventListener('click', () => {
+      openPanel();
+      setStatus('On-device AI not detected. Use Chrome 138+ desktop, or enable "Prompt API for Gemini Nano" in chrome://flags.', 'bad');
+    }, { once: true });
+  }
+})();
+</script>
+
+<!-- Outline notes / comments — DataScript + IndexedDB -->
+<script src="https://github.com/tonsky/datascript/releases/download/1.7.8/datascript-1.7.8.min.js"></script>
+<script src="../notes.js?v=6"></script>
+<script src="../theme.js"></script>
+<script src="../wechat-copy.js?v=3"></script>
+
+</body>
+</html>
