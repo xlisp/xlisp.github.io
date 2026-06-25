@@ -1,0 +1,1050 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>高中老师说&quot;买菜用得上求根公式吗&quot;——可这条公式，是整个大模型的祖宗 · Steve Chan — xlisp</title>
+<meta name="description" content="如果只能留一句话：">
+<meta name="author" content="Steve Chan">
+<link rel="icon" type="image/jpeg" href="../icon.jpeg">
+<link rel="apple-touch-icon" href="../icon.jpeg">
+<meta property="og:type" content="article">
+<meta property="og:title" content="高中老师说&quot;买菜用得上求根公式吗&quot;——可这条公式，是整个大模型的祖宗">
+<meta property="og:description" content="如果只能留一句话：">
+<meta property="og:image" content="../icon.jpeg">
+<meta property="og:site_name" content="Steve Chan — xlisp">
+<meta name="twitter:card" content="summary_large_image">
+<meta name="twitter:title" content="高中老师说&quot;买菜用得上求根公式吗&quot;——可这条公式，是整个大模型的祖宗">
+<meta name="twitter:description" content="如果只能留一句话：">
+<meta name="twitter:image" content="../icon.jpeg">
+<link rel="stylesheet" href="../style.css?v=light1">
+<script>(function(){try{if(localStorage.getItem('theme')==='light')document.documentElement.setAttribute('data-theme','light');}catch(e){}})();</script>
+<!-- Math formula rendering via MathJax -->
+<script>
+window.MathJax = {
+  tex: {
+    // arithmatex emits \(...\) / \[...\] markup, so only these delimiters
+    // are needed; plain `$` is left alone (avoids currency false positives).
+    inlineMath: [['\\(', '\\)']],
+    displayMath: [['\\[', '\\]']],
+    processEscapes: true
+  },
+  svg: {
+    // Each formula gets its own self-contained <defs>, so the copy script can
+    // serialize one <svg> and rasterize it to a PNG for WeChat.
+    fontCache: 'local'
+  },
+  options: {
+    skipHtmlTags: ['script', 'noscript', 'style', 'textarea', 'pre', 'code'],
+    ignoreHtmlClass: 'highlight'
+  }
+};
+</script>
+<script src="https://cdn.jsdelivr.net/npm/mathjax@3/es5/tex-svg.js" async></script>
+</head>
+<body>
+<main class="wrap post">
+
+  <nav class="topnav">
+    <a href="../index.html">← home</a>
+  </nav>
+
+  <article>
+    <header class="post-header">
+      <h1>高中老师说&quot;买菜用得上求根公式吗&quot;——可这条公式，是整个大模型的祖宗</h1>
+      <p class="meta">2026-06-25 · Steve Chan</p>
+    </header>
+
+    <div class="content">
+<blockquote>
+<p>上一篇《<a href="./linear_algebra_in_one_pytorch_snippet.md">大学4年没讲明白的线性代数，被一段 PyTorch 代码讲透了</a>》，
+讲的是"线性代数是什么"。很多人留言问得更狠：<strong>这些东西到底是怎么一步步被逼出来的？</strong></p>
+<p>这篇就从<strong>根上</strong>讲——从初中的 <code>y = ax + b</code>、高中的求根公式开始，
+一路讲到矩阵、行列式、特征值，最后落到一段大模型的代码里。</p>
+<p>起因是一句很多人都听过的话。高中老师一脸不屑：</p>
+<blockquote>
+<p><strong>"你买菜会用求根公式吗？"</strong></p>
+</blockquote>
+<p>言下之意：数学里有用的就是加减乘除，剩下的求根公式、矩阵、行列式都是考试用完就扔的废物。</p>
+<p>这篇文章想替数学翻个案：<strong>求根公式恰恰是人类第一次意识到"有些方程能有公式"；
+而整个线性代数、整个大模型，恰恰诞生于一个更深刻的发现——"有些方程没有公式"。</strong>
+买菜确实用不上，但你手机里那个能聊天的大模型，骨子里全是它的子孙。</p>
+</blockquote>
+<hr />
+<h2 id="0-一句话主线">0. 一句话主线</h2>
+<p>如果只能留一句话：</p>
+<blockquote>
+<p><strong>一部代数史，就是"方程越来越解不动，于是人类发明了越来越强的工具"的历史。
+一次方程一步解出 → 二次方程要套公式 → 多个方程要用矩阵 → 高次方程干脆没有公式，只能一步步逼近。
+大模型，就站在这条链的最末端：它没有"一个公式解出最优权重"，只能用梯度下降一步步爬。</strong></p>
+</blockquote>
+<p>这条链，七站：</p>
+<table>
+<thead>
+<tr>
+<th>站</th>
+<th>方程 / 对象</th>
+<th>逼出来的工具</th>
+<th>在大模型里是什么</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>①</td>
+<td>一次 <code>y = ax + b</code></td>
+<td>直接解</td>
+<td><code>nn.Linear</code>、线性回归</td>
+</tr>
+<tr>
+<td>②</td>
+<td>二次 <code>ax²+bx+c=0</code></td>
+<td>求根公式 / <strong>配方法</strong> → 二次型</td>
+<td>MSE、注意力分数、协方差</td>
+</tr>
+<tr>
+<td>③</td>
+<td>多元一次方程组</td>
+<td><strong>行列式 → 矩阵</strong></td>
+<td>权重矩阵、<code>Ax=b</code></td>
+</tr>
+<tr>
+<td>④</td>
+<td>高次（≥5 次）</td>
+<td><strong>没有求根公式</strong> → 迭代逼近</td>
+<td>梯度下降（训练的本体）</td>
+</tr>
+<tr>
+<td>⑤</td>
+<td>特征方程 <code>det(A-λI)=0</code></td>
+<td>特征值（③④合流）</td>
+<td>PCA、谱、为什么只能迭代</td>
+</tr>
+<tr>
+<td>⑥</td>
+<td>曲线的次数</td>
+<td>高次曲线 → <strong>一堆"小弯"叠加</strong></td>
+<td>sigmoid/tanh/ReLU、通用逼近</td>
+</tr>
+<tr>
+<td>⑦</td>
+<td>数列 / 递推</td>
+<td><strong>递推=矩阵幂，通项=特征值</strong></td>
+<td>RNN、序列模型、梯度爆炸/消失</td>
+</tr>
+</tbody>
+</table>
+<p>下面一站一站走，每站都有能跑的代码。</p>
+<hr />
+<h2 id="1-第一站一次方程-y-ax-b-简单到一步解出于是有了-nnlinear">1. 第一站：一次方程 <code>y = ax + b</code> —— 简单到"一步解出"，于是有了 <code>nn.Linear</code></h2>
+<p>最开始，方程长这样（图里那位朋友的原话）：</p>
+<div class="highlight"><pre><span></span><code>y = sx + b      （s 是斜率 slope）
+y = ax + b
+</code></pre></div>
+
+<p>要"解"它（求 <code>ax + b = 0</code> 的根），一步到位：</p>
+<div class="highlight"><pre><span></span><code><span class="kn">import</span><span class="w"> </span><span class="nn">torch</span>
+
+<span class="n">a</span><span class="p">,</span> <span class="n">b</span> <span class="o">=</span> <span class="n">torch</span><span class="o">.</span><span class="n">tensor</span><span class="p">(</span><span class="mf">2.0</span><span class="p">),</span> <span class="n">torch</span><span class="o">.</span><span class="n">tensor</span><span class="p">(</span><span class="o">-</span><span class="mf">6.0</span><span class="p">)</span>
+<span class="n">x</span> <span class="o">=</span> <span class="o">-</span><span class="n">b</span> <span class="o">/</span> <span class="n">a</span>                      <span class="c1"># 求根：移项、两边除以 a</span>
+<span class="nb">print</span><span class="p">(</span><span class="s2">&quot;根 x =&quot;</span><span class="p">,</span> <span class="n">x</span><span class="o">.</span><span class="n">item</span><span class="p">())</span>        <span class="c1"># 3.0  —— 一步解出，没有任何悬念</span>
+</code></pre></div>
+
+<p>一次方程的世界里，<strong>没有"解不出"这回事</strong>。也正因为简单，它成了机器学习的起点——
+你在 PyTorch 里写的第一行 <code>nn.Linear</code>，本质就是一堆 <code>y = ax + b</code> 并排放在一起：</p>
+<div class="highlight"><pre><span></span><code><span class="kn">import</span><span class="w"> </span><span class="nn">torch</span>
+<span class="kn">import</span><span class="w"> </span><span class="nn">torch.nn</span><span class="w"> </span><span class="k">as</span><span class="w"> </span><span class="nn">nn</span>
+
+<span class="n">x</span> <span class="o">=</span> <span class="n">torch</span><span class="o">.</span><span class="n">tensor</span><span class="p">([[</span><span class="mf">2.0</span><span class="p">,</span> <span class="mf">3.0</span><span class="p">]])</span>   <span class="c1"># 一个样本，两个特征</span>
+<span class="n">layer</span> <span class="o">=</span> <span class="n">nn</span><span class="o">.</span><span class="n">Linear</span><span class="p">(</span><span class="mi">2</span><span class="p">,</span> <span class="mi">1</span><span class="p">)</span>          <span class="c1"># 就是 y = w1·x1 + w2·x2 + b</span>
+<span class="n">W</span><span class="p">,</span> <span class="n">b</span> <span class="o">=</span> <span class="n">layer</span><span class="o">.</span><span class="n">weight</span><span class="p">,</span> <span class="n">layer</span><span class="o">.</span><span class="n">bias</span>
+
+<span class="nb">print</span><span class="p">(</span><span class="n">torch</span><span class="o">.</span><span class="n">allclose</span><span class="p">(</span><span class="n">layer</span><span class="p">(</span><span class="n">x</span><span class="p">),</span> <span class="n">x</span> <span class="o">@</span> <span class="n">W</span><span class="o">.</span><span class="n">t</span><span class="p">()</span> <span class="o">+</span> <span class="n">b</span><span class="p">))</span>   <span class="c1"># True —— 还是那个 ax+b</span>
+</code></pre></div>
+
+<p><strong><code>nn.Linear</code> 不神秘，它就是初中那条直线方程，升级成了向量版。</strong>
+但只靠直线，你拟合不了任何弯曲的东西。世界是弯的，于是人类被迫往下走一站。</p>
+<hr />
+<h2 id="2-第二站二次方程与求根公式-配方法埋下了大模型里到处都是的二次型">2. 第二站：二次方程与求根公式 —— "配方法"埋下了大模型里到处都是的"二次型"</h2>
+<p>二次方程 <code>ax² + bx + c = 0</code>，初中生都背得出那条求根公式：</p>
+<div class="highlight"><pre><span></span><code><span class="kn">import</span><span class="w"> </span><span class="nn">torch</span>
+
+<span class="k">def</span><span class="w"> </span><span class="nf">solve_quadratic</span><span class="p">(</span><span class="n">a</span><span class="p">,</span> <span class="n">b</span><span class="p">,</span> <span class="n">c</span><span class="p">):</span>
+    <span class="n">disc</span> <span class="o">=</span> <span class="n">b</span> <span class="o">*</span> <span class="n">b</span> <span class="o">-</span> <span class="mi">4</span> <span class="o">*</span> <span class="n">a</span> <span class="o">*</span> <span class="n">c</span>             <span class="c1"># 判别式：决定有没有实根</span>
+    <span class="n">sqrt_disc</span> <span class="o">=</span> <span class="n">torch</span><span class="o">.</span><span class="n">sqrt</span><span class="p">(</span><span class="n">torch</span><span class="o">.</span><span class="n">abs</span><span class="p">(</span><span class="n">disc</span><span class="p">))</span>
+    <span class="k">if</span> <span class="n">disc</span> <span class="o">&gt;=</span> <span class="mi">0</span><span class="p">:</span>
+        <span class="k">return</span> <span class="p">((</span><span class="o">-</span><span class="n">b</span> <span class="o">+</span> <span class="n">sqrt_disc</span><span class="p">)</span> <span class="o">/</span> <span class="p">(</span><span class="mi">2</span> <span class="o">*</span> <span class="n">a</span><span class="p">),</span> <span class="p">(</span><span class="o">-</span><span class="n">b</span> <span class="o">-</span> <span class="n">sqrt_disc</span><span class="p">)</span> <span class="o">/</span> <span class="p">(</span><span class="mi">2</span> <span class="o">*</span> <span class="n">a</span><span class="p">))</span>
+    <span class="k">return</span> <span class="kc">None</span>                          <span class="c1"># 判别式 &lt; 0，曲线碰不到 x 轴</span>
+
+<span class="n">a</span><span class="p">,</span> <span class="n">b</span><span class="p">,</span> <span class="n">c</span> <span class="o">=</span> <span class="n">torch</span><span class="o">.</span><span class="n">tensor</span><span class="p">(</span><span class="mf">1.0</span><span class="p">),</span> <span class="n">torch</span><span class="o">.</span><span class="n">tensor</span><span class="p">(</span><span class="o">-</span><span class="mf">5.0</span><span class="p">),</span> <span class="n">torch</span><span class="o">.</span><span class="n">tensor</span><span class="p">(</span><span class="mf">6.0</span><span class="p">)</span>
+<span class="nb">print</span><span class="p">(</span><span class="s2">&quot;两个根:&quot;</span><span class="p">,</span> <span class="n">solve_quadratic</span><span class="p">(</span><span class="n">a</span><span class="p">,</span> <span class="n">b</span><span class="p">,</span> <span class="n">c</span><span class="p">))</span>   <span class="c1"># (3., 2.)</span>
+</code></pre></div>
+
+<p>老师说"买菜用不上"——对，买菜确实用不上。但<strong>求根公式是怎么推出来的</strong>，才是真正值钱的东西。
+它靠的是一招叫<strong>配方法（completing the square）</strong>：把 <code>ax²+bx+c</code> 硬凑成"一个平方 + 一个常数"。</p>
+<div class="highlight"><pre><span></span><code><span class="kn">import</span><span class="w"> </span><span class="nn">torch</span>
+
+<span class="c1"># y = x² - 4x + 5，配方：x²-4x+5 = (x-2)² + 1</span>
+<span class="n">x</span> <span class="o">=</span> <span class="n">torch</span><span class="o">.</span><span class="n">linspace</span><span class="p">(</span><span class="o">-</span><span class="mi">1</span><span class="p">,</span> <span class="mi">5</span><span class="p">,</span> <span class="mi">7</span><span class="p">)</span>
+<span class="n">y_raw</span> <span class="o">=</span> <span class="n">x</span> <span class="o">**</span> <span class="mi">2</span> <span class="o">-</span> <span class="mi">4</span> <span class="o">*</span> <span class="n">x</span> <span class="o">+</span> <span class="mi">5</span>
+<span class="n">y_done</span> <span class="o">=</span> <span class="p">(</span><span class="n">x</span> <span class="o">-</span> <span class="mi">2</span><span class="p">)</span> <span class="o">**</span> <span class="mi">2</span> <span class="o">+</span> <span class="mi">1</span>
+<span class="nb">print</span><span class="p">(</span><span class="n">torch</span><span class="o">.</span><span class="n">allclose</span><span class="p">(</span><span class="n">y_raw</span><span class="p">,</span> <span class="n">y_done</span><span class="p">))</span>    <span class="c1"># True —— 配方法只是换个写法</span>
+<span class="c1"># 写成 (x-2)²+1 后，一眼看出：碗底在 x=2，最小值是 1</span>
+</code></pre></div>
+
+<p><strong>配方法做的事，就是把抛物线写成"碗"的标准形——一眼看出碗底（最小值）在哪。</strong>
+而"求最小值"正是机器学习训练的全部目标（最小化 loss）。这不是巧合：</p>
+<ul>
+<li>你写的 <code>MSELoss</code>，<code>(pred - y)²</code>，是个<strong>二次</strong>函数 → 它的图像就是一口碗 → 配方法找碗底 = 找最优解。</li>
+<li>把它升到高维（向量版的平方），就是<strong>二次型</strong> <code>xᵀ A x</code>——</li>
+</ul>
+<div class="highlight"><pre><span></span><code><span class="kn">import</span><span class="w"> </span><span class="nn">torch</span>
+
+<span class="n">x</span> <span class="o">=</span> <span class="n">torch</span><span class="o">.</span><span class="n">tensor</span><span class="p">([</span><span class="mf">1.0</span><span class="p">,</span> <span class="mf">2.0</span><span class="p">])</span>
+<span class="n">A</span> <span class="o">=</span> <span class="n">torch</span><span class="o">.</span><span class="n">tensor</span><span class="p">([[</span><span class="mf">2.0</span><span class="p">,</span> <span class="mf">0.5</span><span class="p">],</span>
+                  <span class="p">[</span><span class="mf">0.5</span><span class="p">,</span> <span class="mf">1.0</span><span class="p">]])</span>
+<span class="n">quad_form</span> <span class="o">=</span> <span class="n">x</span> <span class="o">@</span> <span class="n">A</span> <span class="o">@</span> <span class="n">x</span>                   <span class="c1"># xᵀ A x，&quot;向量版的 ax²&quot;</span>
+<span class="nb">print</span><span class="p">(</span><span class="s2">&quot;二次型的值:&quot;</span><span class="p">,</span> <span class="n">quad_form</span><span class="o">.</span><span class="n">item</span><span class="p">())</span>    <span class="c1"># 一个数</span>
+</code></pre></div>
+
+<p>这个 <code>xᵀ A x</code> 是深度学习里<strong>出镜率最高的形状之一</strong>：MSE 损失、L2 正则、协方差矩阵、
+甚至注意力里的 <code>Q·Kᵀ</code>（每个词向量两两相乘），骨子里都是"二次"的影子。</p>
+<p><strong>先看清这三条曲线，再往下走——</strong> 跑一下第一个可视化脚本：</p>
+<div class="highlight"><pre><span></span><code>python<span class="w"> </span>from_equation_to_matrix_visualization.py
+</code></pre></div>
+
+<blockquote>
+<p>四个子图对应这篇文章的四站：
+- <strong>①</strong> 一次（直线）、二次（抛物线/碗）、三次（躺着的 S）画在一起，
+  你会<strong>亲眼看到"次数越高，曲线能弯的道数越多"</strong>：一次 0 个弯，二次 1 个弯，三次 2 个弯（含一个拐点）。
+- <strong>②</strong> 把 <code>x²-4x+5</code> 配方成 <code>(x-2)²+1</code>，黑点标出碗底 <code>(2,1)</code>——<strong>这就是 loss 最小值的几何原型</strong>。
+- <strong>③</strong> 把三次曲线和 sigmoid / tanh 叠在一起，它们都有"拐点"、都呈 S 形（第 6 节细讲）。
+- <strong>④</strong> 一个 3D 的碗，就是二次型 <code>xᵀ A x</code>，也就是深度学习里那个 loss 地形——碗底就是最优权重。</p>
+</blockquote>
+<p>判别式 <code>b²-4ac</code> 也别小看，它回答的是一个深刻的问题：<strong>这条抛物线到底碰不碰得到 x 轴（有没有解）？</strong></p>
+<div class="highlight"><pre><span></span><code><span class="kn">import</span><span class="w"> </span><span class="nn">torch</span>
+<span class="k">for</span> <span class="n">c</span> <span class="ow">in</span> <span class="p">[</span><span class="mf">4.0</span><span class="p">,</span> <span class="mf">4.0</span><span class="p">,</span> <span class="mf">6.0</span><span class="p">]:</span>               <span class="c1"># 固定 a=1,b=-4，改 c</span>
+    <span class="n">disc</span> <span class="o">=</span> <span class="p">(</span><span class="o">-</span><span class="mf">4.0</span><span class="p">)</span> <span class="o">**</span> <span class="mi">2</span> <span class="o">-</span> <span class="mi">4</span> <span class="o">*</span> <span class="mf">1.0</span> <span class="o">*</span> <span class="n">c</span>
+    <span class="nb">print</span><span class="p">(</span><span class="sa">f</span><span class="s2">&quot;c=</span><span class="si">{</span><span class="n">c</span><span class="si">}</span><span class="s2">: 判别式=</span><span class="si">{</span><span class="n">disc</span><span class="si">:</span><span class="s2">+.1f</span><span class="si">}</span><span class="s2"> -&gt;&quot;</span><span class="p">,</span>
+          <span class="s2">&quot;两个根&quot;</span> <span class="k">if</span> <span class="n">disc</span> <span class="o">&gt;</span> <span class="mi">0</span> <span class="k">else</span> <span class="p">(</span><span class="s2">&quot;一个根&quot;</span> <span class="k">if</span> <span class="n">disc</span> <span class="o">==</span> <span class="mi">0</span> <span class="k">else</span> <span class="s2">&quot;无实根(碰不到x轴)&quot;</span><span class="p">))</span>
+</code></pre></div>
+
+<p>"方程有没有解"这件事，在二次还能用一个判别式说清楚。<strong>但越往高次走，"有没有解、能不能用公式解出来"就越来越难——
+这正是把人类推向矩阵、推向迭代法的那只手。</strong> 先解决"多个方程"，再解决"高次方程"。</p>
+<hr />
+<h2 id="3-第三站从一个方程到一堆方程-线性代数真正的出生证明">3. 第三站：从"一个方程"到"一堆方程" —— 线性代数真正的出生证明</h2>
+<p>现实里，未知数往往不止一个。两个未知数、两个方程：</p>
+<div class="highlight"><pre><span></span><code>2x +  y = 5
+ x + 3y = 10
+</code></pre></div>
+
+<p>初中教你"消元法"：把一个方程乘个系数，加到另一个上，消掉一个未知数。
+但当方程有几十、几百个时，人脑消元就崩了。于是数学家做了一件事：<strong>把系数单独拎出来，排成一个方块——这就是矩阵。</strong></p>
+<div class="highlight"><pre><span></span><code><span class="kn">import</span><span class="w"> </span><span class="nn">torch</span>
+
+<span class="n">A</span> <span class="o">=</span> <span class="n">torch</span><span class="o">.</span><span class="n">tensor</span><span class="p">([[</span><span class="mf">2.0</span><span class="p">,</span> <span class="mf">1.0</span><span class="p">],</span>          <span class="c1"># 系数排成方块 = 矩阵</span>
+                  <span class="p">[</span><span class="mf">1.0</span><span class="p">,</span> <span class="mf">3.0</span><span class="p">]])</span>
+<span class="n">b</span> <span class="o">=</span> <span class="n">torch</span><span class="o">.</span><span class="n">tensor</span><span class="p">([</span><span class="mf">5.0</span><span class="p">,</span> <span class="mf">10.0</span><span class="p">])</span>          <span class="c1"># 右边的常数排成一列 = 向量</span>
+
+<span class="n">xy</span> <span class="o">=</span> <span class="n">torch</span><span class="o">.</span><span class="n">linalg</span><span class="o">.</span><span class="n">solve</span><span class="p">(</span><span class="n">A</span><span class="p">,</span> <span class="n">b</span><span class="p">)</span>          <span class="c1"># 一行解出整个方程组</span>
+<span class="nb">print</span><span class="p">(</span><span class="s2">&quot;x, y =&quot;</span><span class="p">,</span> <span class="n">xy</span><span class="p">)</span>                    <span class="c1"># [1., 3.]</span>
+</code></pre></div>
+
+<h3 id="行列式比矩阵更早出生的那个概念">行列式：比矩阵更早出生的那个概念</h3>
+<p>有意思的是，<strong>行列式（determinant）比矩阵出现得还早。</strong> 17 世纪末，
+日本的<strong>关孝和（1683）</strong>和德国的<strong>莱布尼茨（1693）</strong>几乎同时、独立地发现：
+解线性方程组时，反复出现一个由系数交叉相乘、相减得到的数。1750 年<strong>克莱姆（Cramer）</strong>
+把它整理成著名的<strong>克莱姆法则</strong>——用行列式直接写出方程组的解：</p>
+<div class="highlight"><pre><span></span><code><span class="kn">import</span><span class="w"> </span><span class="nn">torch</span>
+
+<span class="n">A</span> <span class="o">=</span> <span class="n">torch</span><span class="o">.</span><span class="n">tensor</span><span class="p">([[</span><span class="mf">2.0</span><span class="p">,</span> <span class="mf">1.0</span><span class="p">],</span>
+                  <span class="p">[</span><span class="mf">1.0</span><span class="p">,</span> <span class="mf">3.0</span><span class="p">]])</span>
+<span class="n">b</span> <span class="o">=</span> <span class="n">torch</span><span class="o">.</span><span class="n">tensor</span><span class="p">([</span><span class="mf">5.0</span><span class="p">,</span> <span class="mf">10.0</span><span class="p">])</span>
+
+<span class="n">D</span>  <span class="o">=</span> <span class="n">torch</span><span class="o">.</span><span class="n">det</span><span class="p">(</span><span class="n">A</span><span class="p">)</span>                                   <span class="c1"># 系数行列式</span>
+<span class="n">Dx</span> <span class="o">=</span> <span class="n">torch</span><span class="o">.</span><span class="n">det</span><span class="p">(</span><span class="n">torch</span><span class="o">.</span><span class="n">tensor</span><span class="p">([[</span><span class="mf">5.0</span><span class="p">,</span> <span class="mf">1.0</span><span class="p">],</span> <span class="p">[</span><span class="mf">10.0</span><span class="p">,</span> <span class="mf">3.0</span><span class="p">]]))</span>   <span class="c1"># 把第1列换成 b</span>
+<span class="n">Dy</span> <span class="o">=</span> <span class="n">torch</span><span class="o">.</span><span class="n">det</span><span class="p">(</span><span class="n">torch</span><span class="o">.</span><span class="n">tensor</span><span class="p">([[</span><span class="mf">2.0</span><span class="p">,</span> <span class="mf">5.0</span><span class="p">],</span> <span class="p">[</span><span class="mf">1.0</span><span class="p">,</span> <span class="mf">10.0</span><span class="p">]]))</span>   <span class="c1"># 把第2列换成 b</span>
+
+<span class="nb">print</span><span class="p">(</span><span class="s2">&quot;克莱姆法则:&quot;</span><span class="p">,</span> <span class="p">(</span><span class="n">Dx</span> <span class="o">/</span> <span class="n">D</span><span class="p">)</span><span class="o">.</span><span class="n">item</span><span class="p">(),</span> <span class="p">(</span><span class="n">Dy</span> <span class="o">/</span> <span class="n">D</span><span class="p">)</span><span class="o">.</span><span class="n">item</span><span class="p">())</span>   <span class="c1"># 1.0  3.0</span>
+<span class="nb">print</span><span class="p">(</span><span class="s2">&quot;和 solve 一致:&quot;</span><span class="p">,</span> <span class="n">torch</span><span class="o">.</span><span class="n">linalg</span><span class="o">.</span><span class="n">solve</span><span class="p">(</span><span class="n">A</span><span class="p">,</span> <span class="n">b</span><span class="p">))</span>         <span class="c1"># [1., 3.]</span>
+</code></pre></div>
+
+<p>克莱姆法则里那个分母 <code>D = det(A)</code> 藏着一个要命的问题：<strong>如果 <code>det(A) = 0</code>，就除以 0 了——方程组没有唯一解。</strong>
+几何上，<code>det = 0</code> 意味着两条直线<strong>平行或重合</strong>：</p>
+<div class="highlight"><pre><span></span><code><span class="kn">import</span><span class="w"> </span><span class="nn">torch</span>
+
+<span class="n">A</span> <span class="o">=</span> <span class="n">torch</span><span class="o">.</span><span class="n">tensor</span><span class="p">([[</span><span class="mf">1.0</span><span class="p">,</span> <span class="mf">2.0</span><span class="p">],</span>
+                  <span class="p">[</span><span class="mf">2.0</span><span class="p">,</span> <span class="mf">4.0</span><span class="p">]])</span>         <span class="c1"># 第二行正好是第一行的 2 倍</span>
+<span class="nb">print</span><span class="p">(</span><span class="s2">&quot;行列式:&quot;</span><span class="p">,</span> <span class="n">torch</span><span class="o">.</span><span class="n">det</span><span class="p">(</span><span class="n">A</span><span class="p">)</span><span class="o">.</span><span class="n">item</span><span class="p">())</span>   <span class="c1"># 0.0 —— 两个方程其实是同一条线，解不唯一</span>
+</code></pre></div>
+
+<blockquote>
+<p>这正是上一篇讲的"<code>det = 0</code> = 把空间拍扁、信息丢失、不可逆"的代数来源。
+<strong>行列式最初不是为了算面积，而是为了回答"这个方程组到底有没有唯一解"。</strong></p>
+</blockquote>
+<h3 id="矩阵这个词1850-年才出现">矩阵这个词，1850 年才出现</h3>
+<p>真正把"矩阵"当成一个<strong>能加减乘、有自己代数的对象</strong>来研究的，是 19 世纪的
+<strong>西尔维斯特（Sylvester，1850 年造出 "matrix" 这个词）</strong>和<strong>凯莱（Cayley，1858 年建立矩阵代数）</strong>。
+在此之前，矩阵只是"方程组系数的速记表"。凯莱让它升级成了<strong>一台能作用在向量上的机器</strong>——
+也就是上一篇反复说的"矩阵就是映射"。而高斯（Gauss）在做天文测量时打磨出的<strong>高斯消元法</strong>，
+至今仍是 <code>torch.linalg.solve</code> 内部在做的事。</p>
+<p><strong>到这里，线性代数的核心零件——方程组、消元、行列式、矩阵——全部因为"要同时解一堆一次方程"而诞生。</strong>
+而这堆零件，正是 <code>nn.Linear</code> 的本体：</p>
+<div class="highlight"><pre><span></span><code><span class="kn">import</span><span class="w"> </span><span class="nn">torch</span>
+<span class="kn">import</span><span class="w"> </span><span class="nn">torch.nn</span><span class="w"> </span><span class="k">as</span><span class="w"> </span><span class="nn">nn</span>
+
+<span class="n">layer</span> <span class="o">=</span> <span class="n">nn</span><span class="o">.</span><span class="n">Linear</span><span class="p">(</span><span class="mi">3</span><span class="p">,</span> <span class="mi">4</span><span class="p">)</span>
+<span class="n">x</span> <span class="o">=</span> <span class="n">torch</span><span class="o">.</span><span class="n">randn</span><span class="p">(</span><span class="mi">2</span><span class="p">,</span> <span class="mi">3</span><span class="p">)</span>
+<span class="c1"># 前向传播 layer(x) 干的就是 &quot;Ax+b&quot;：一次解出 4 个一次方程的值</span>
+<span class="nb">print</span><span class="p">(</span><span class="n">torch</span><span class="o">.</span><span class="n">allclose</span><span class="p">(</span><span class="n">layer</span><span class="p">(</span><span class="n">x</span><span class="p">),</span> <span class="n">x</span> <span class="o">@</span> <span class="n">layer</span><span class="o">.</span><span class="n">weight</span><span class="o">.</span><span class="n">t</span><span class="p">()</span> <span class="o">+</span> <span class="n">layer</span><span class="o">.</span><span class="n">bias</span><span class="p">))</span>   <span class="c1"># True</span>
+</code></pre></div>
+
+<blockquote>
+<p>每过一个 <code>nn.Linear</code>，就是让数据穿过一组 <code>Ax + b</code>。一个 GPT 里有成百上千个这样的矩阵，
+它们全是第三站这套"解一堆一次方程"工具的直系后代。</p>
+</blockquote>
+<hr />
+<h2 id="插一句所以线性代数到底线性在哪">🤔 插一句：所以"线性代数"到底"线性"在哪？</h2>
+<p>很多人学完线代都没想过这个名字。<strong>"线性"就是"一次"</strong>——line（直线）。
+线性代数研究的，全是<strong>一次</strong>的东西：一次方程、一次方程组、一次变换（矩阵映射）。它有两条铁律：</p>
+<div class="highlight"><pre><span></span><code><span class="kn">import</span><span class="w"> </span><span class="nn">torch</span>
+<span class="n">M</span> <span class="o">=</span> <span class="n">torch</span><span class="o">.</span><span class="n">tensor</span><span class="p">([[</span><span class="mf">2.0</span><span class="p">,</span> <span class="mf">1.0</span><span class="p">],</span> <span class="p">[</span><span class="mf">0.0</span><span class="p">,</span> <span class="mf">3.0</span><span class="p">]])</span>
+<span class="n">u</span><span class="p">,</span> <span class="n">v</span> <span class="o">=</span> <span class="n">torch</span><span class="o">.</span><span class="n">tensor</span><span class="p">([</span><span class="mf">1.0</span><span class="p">,</span> <span class="mf">0.0</span><span class="p">]),</span> <span class="n">torch</span><span class="o">.</span><span class="n">tensor</span><span class="p">([</span><span class="mf">0.0</span><span class="p">,</span> <span class="mf">1.0</span><span class="p">])</span>
+
+<span class="c1"># 铁律一：可加性   M(u+v) = M u + M v</span>
+<span class="nb">print</span><span class="p">(</span><span class="n">torch</span><span class="o">.</span><span class="n">allclose</span><span class="p">(</span><span class="n">M</span> <span class="o">@</span> <span class="p">(</span><span class="n">u</span> <span class="o">+</span> <span class="n">v</span><span class="p">),</span> <span class="n">M</span> <span class="o">@</span> <span class="n">u</span> <span class="o">+</span> <span class="n">M</span> <span class="o">@</span> <span class="n">v</span><span class="p">))</span>      <span class="c1"># True</span>
+<span class="c1"># 铁律二：齐次性   M(3u) = 3 (M u)</span>
+<span class="nb">print</span><span class="p">(</span><span class="n">torch</span><span class="o">.</span><span class="n">allclose</span><span class="p">(</span><span class="n">M</span> <span class="o">@</span> <span class="p">(</span><span class="mi">3</span> <span class="o">*</span> <span class="n">u</span><span class="p">),</span> <span class="mi">3</span> <span class="o">*</span> <span class="p">(</span><span class="n">M</span> <span class="o">@</span> <span class="n">u</span><span class="p">)))</span>         <span class="c1"># True</span>
+</code></pre></div>
+
+<p>满足这两条的，才叫"线性"。<strong>而真实世界几乎没有纯线性的东西</strong>——
+所以大模型必须在一堆线性层（矩阵）中间，插进<strong>非线性</strong>的激活函数（第 6 站）。
+线性代数提供"骨架"，非线性提供"弯度"。这就是为什么这篇文章既要讲矩阵，也要讲二次、三次曲线。</p>
+<hr />
+<h2 id="4-第四站高次方程的滑铁卢-没有求根公式只能一步步逼近">4. 第四站：高次方程的滑铁卢 —— 没有求根公式，只能"一步步逼近"</h2>
+<p>现在回到图里那句最关键的话：</p>
+<blockquote>
+<p><strong>"矩阵的历史。高次方程没有求根公式，才引生出来。"</strong></p>
+</blockquote>
+<p>这句话点到了数学史上最震撼的一个转折，我们把它讲透。</p>
+<p>二次有求根公式（古巴比伦人就会配方）。那三次、四次呢？</p>
+<ul>
+<li><strong>三次方程</strong>：16 世纪意大利人 del Ferro、Tartaglia，最后由<strong>卡尔达诺（Cardano，《大术》1545）</strong>公布了求根公式。</li>
+<li><strong>四次方程</strong>：卡尔达诺的学生<strong>费拉里（Ferrari）</strong>也解出来了，有公式。</li>
+</ul>
+<p>于是所有人都相信：五次、六次……一定也有公式，只是还没找到。<strong>整整找了快 300 年。</strong></p>
+<p>直到 1824 年，挪威天才<strong>阿贝尔（Abel）</strong>证明了一件让人头皮发麻的事，几年后<strong>伽罗瓦（Galois）</strong>
+用全新的"群论"给出了彻底的解释：</p>
+<blockquote>
+<p><strong>五次及以上的一般方程，不存在用加减乘除和开根号写出来的求根公式（阿贝尔-鲁菲尼定理）。</strong></p>
+</blockquote>
+<p>注意：不是"还没找到"，而是<strong>数学上证明了"永远找不到"</strong>。用代码感受一下这种"解不出公式"的方程：</p>
+<div class="highlight"><pre><span></span><code><span class="kn">import</span><span class="w"> </span><span class="nn">numpy</span><span class="w"> </span><span class="k">as</span><span class="w"> </span><span class="nn">np</span>
+
+<span class="c1"># x⁵ - x - 1 = 0，一个没有根式解的五次方程</span>
+<span class="n">coeffs</span> <span class="o">=</span> <span class="p">[</span><span class="mi">1</span><span class="p">,</span> <span class="mi">0</span><span class="p">,</span> <span class="mi">0</span><span class="p">,</span> <span class="mi">0</span><span class="p">,</span> <span class="o">-</span><span class="mi">1</span><span class="p">,</span> <span class="o">-</span><span class="mi">1</span><span class="p">]</span>          <span class="c1"># x⁵ + 0x⁴ + 0x³ + 0x² - x - 1</span>
+<span class="n">roots</span> <span class="o">=</span> <span class="n">np</span><span class="o">.</span><span class="n">roots</span><span class="p">(</span><span class="n">coeffs</span><span class="p">)</span>               <span class="c1"># 注意：numpy 不是&quot;套公式&quot;，是数值算出来的</span>
+<span class="nb">print</span><span class="p">(</span><span class="s2">&quot;数值求出的根:</span><span class="se">\n</span><span class="s2">&quot;</span><span class="p">,</span> <span class="n">roots</span><span class="p">)</span>
+<span class="c1"># 你拿不到一个像 (-b±√…)/2a 那样的封闭表达式，只能得到一串近似小数</span>
+</code></pre></div>
+
+<p><strong>没有公式，怎么办？答案就一个字：逼近。</strong> 不去求那个不存在的公式，而是从一个猜测出发，
+一步步往真正的根靠近。最经典的就是<strong>牛顿法</strong>——用切线和 x 轴的交点当作下一个更好的猜测：</p>
+<div class="highlight"><pre><span></span><code><span class="kn">import</span><span class="w"> </span><span class="nn">torch</span>
+
+<span class="k">def</span><span class="w"> </span><span class="nf">p</span><span class="p">(</span><span class="n">x</span><span class="p">):</span>  <span class="k">return</span> <span class="n">x</span> <span class="o">**</span> <span class="mi">5</span> <span class="o">-</span> <span class="n">x</span> <span class="o">-</span> <span class="mi">1</span>       <span class="c1"># 没有求根公式的五次方程</span>
+<span class="k">def</span><span class="w"> </span><span class="nf">dp</span><span class="p">(</span><span class="n">x</span><span class="p">):</span> <span class="k">return</span> <span class="mi">5</span> <span class="o">*</span> <span class="n">x</span> <span class="o">**</span> <span class="mi">4</span> <span class="o">-</span> <span class="mi">1</span>       <span class="c1"># 它的导数（切线斜率）</span>
+
+<span class="n">x</span> <span class="o">=</span> <span class="n">torch</span><span class="o">.</span><span class="n">tensor</span><span class="p">(</span><span class="mf">1.5</span><span class="p">)</span>                  <span class="c1"># 随便一个初始猜测</span>
+<span class="k">for</span> <span class="n">step</span> <span class="ow">in</span> <span class="nb">range</span><span class="p">(</span><span class="mi">6</span><span class="p">):</span>
+    <span class="n">x</span> <span class="o">=</span> <span class="n">x</span> <span class="o">-</span> <span class="n">p</span><span class="p">(</span><span class="n">x</span><span class="p">)</span> <span class="o">/</span> <span class="n">dp</span><span class="p">(</span><span class="n">x</span><span class="p">)</span>               <span class="c1"># 沿切线挪到 x 轴交点 = 下一个猜测</span>
+    <span class="nb">print</span><span class="p">(</span><span class="sa">f</span><span class="s2">&quot;第</span><span class="si">{</span><span class="n">step</span><span class="o">+</span><span class="mi">1</span><span class="si">}</span><span class="s2">步: x=</span><span class="si">{</span><span class="n">x</span><span class="o">.</span><span class="n">item</span><span class="p">()</span><span class="si">:</span><span class="s2">.6f</span><span class="si">}</span><span class="s2">  误差=</span><span class="si">{</span><span class="n">p</span><span class="p">(</span><span class="n">x</span><span class="p">)</span><span class="o">.</span><span class="n">item</span><span class="p">()</span><span class="si">:</span><span class="s2">+.2e</span><span class="si">}</span><span class="s2">&quot;</span><span class="p">)</span>
+<span class="c1"># x 飞快收敛到 ≈1.1673，误差趋近 0 —— 公式没有，逼近照样到达</span>
+</code></pre></div>
+
+<p><strong>请记住这个"不求公式、只求逼近"的思想——它就是深度学习训练的全部哲学。</strong>
+神经网络也没有"一个公式解出最优权重"，它干的事和牛顿法一模一样：从随机权重出发，
+看一眼坡度（梯度），往下挪一小步，再挪一小步：</p>
+<div class="highlight"><pre><span></span><code><span class="kn">import</span><span class="w"> </span><span class="nn">torch</span>
+
+<span class="k">def</span><span class="w"> </span><span class="nf">loss</span><span class="p">(</span><span class="n">w</span><span class="p">):</span>  <span class="k">return</span> <span class="p">(</span><span class="n">w</span> <span class="o">-</span> <span class="mf">2.0</span><span class="p">)</span> <span class="o">**</span> <span class="mi">2</span> <span class="o">+</span> <span class="mf">1.0</span>     <span class="c1"># 碗形 loss，最优在 w=2</span>
+<span class="k">def</span><span class="w"> </span><span class="nf">grad</span><span class="p">(</span><span class="n">w</span><span class="p">):</span>  <span class="k">return</span> <span class="mi">2</span> <span class="o">*</span> <span class="p">(</span><span class="n">w</span> <span class="o">-</span> <span class="mf">2.0</span><span class="p">)</span>            <span class="c1"># 坡度</span>
+
+<span class="n">w</span><span class="p">,</span> <span class="n">lr</span> <span class="o">=</span> <span class="n">torch</span><span class="o">.</span><span class="n">tensor</span><span class="p">(</span><span class="o">-</span><span class="mf">3.0</span><span class="p">),</span> <span class="mf">0.2</span>
+<span class="k">for</span> <span class="n">step</span> <span class="ow">in</span> <span class="nb">range</span><span class="p">(</span><span class="mi">6</span><span class="p">):</span>
+    <span class="n">w</span> <span class="o">=</span> <span class="n">w</span> <span class="o">-</span> <span class="n">lr</span> <span class="o">*</span> <span class="n">grad</span><span class="p">(</span><span class="n">w</span><span class="p">)</span>                      <span class="c1"># optimizer.step() 的本体</span>
+    <span class="nb">print</span><span class="p">(</span><span class="sa">f</span><span class="s2">&quot;第</span><span class="si">{</span><span class="n">step</span><span class="o">+</span><span class="mi">1</span><span class="si">}</span><span class="s2">步: w=</span><span class="si">{</span><span class="n">w</span><span class="o">.</span><span class="n">item</span><span class="p">()</span><span class="si">:</span><span class="s2">.4f</span><span class="si">}</span><span class="s2">  loss=</span><span class="si">{</span><span class="n">loss</span><span class="p">(</span><span class="n">w</span><span class="p">)</span><span class="o">.</span><span class="n">item</span><span class="p">()</span><span class="si">:</span><span class="s2">.4f</span><span class="si">}</span><span class="s2">&quot;</span><span class="p">)</span>
+<span class="c1"># w 一步步从 -3 爬向 2 —— 和牛顿法逼近根，是同一个动作</span>
+</code></pre></div>
+
+<p><strong>跑第二个可视化脚本，把"逼近"这件事并排看清楚：</strong></p>
+<div class="highlight"><pre><span></span><code>python<span class="w"> </span>no_formula_so_iterate_visualization.py
+</code></pre></div>
+
+<blockquote>
+<p>左右两幅图同步播放，讲的是<strong>同一个思想的两副面孔</strong>：
+- <strong>左</strong>：五次方程 <code>x⁵-x-1=0</code> 没有求根公式。红点从初始猜测出发，每一步沿<strong>切线</strong>滑到 x 轴交点，
+  一步步逼近真正的根——你能看见切线一次次"指向"答案。
+- <strong>右</strong>：碗形 loss 上的梯度下降。红点从远处沿坡一步步滚向碗底（最优权重）。
+- <strong>两边是同构的</strong>：左边"没有求根公式 → 沿切线迭代"，右边"没有最优权重公式 → 沿梯度迭代"。
+  <strong>这就是大模型训练为什么是一个 <code>for</code> 循环，而不是一行公式。</strong></p>
+<p>历史的另一条岔路：伽罗瓦为解释"五次为何无公式"而发明的<strong>群论</strong>，
+后来长成了整个<strong>抽象代数</strong>，也是现代密码学、物理对称性的根基。一个"解不出的方程"，开出两朵花：
+一朵是<strong>迭代逼近</strong>（数值分析 → 梯度下降），一朵是<strong>群论</strong>（抽象代数）。</p>
+</blockquote>
+<hr />
+<h2 id="5-第五站高次方程-矩阵-特征值-两条历史线在这里合流">5. 第五站：高次方程 × 矩阵 = 特征值 —— 两条历史线在这里合流</h2>
+<p>第三站（矩阵）和第四站（高次方程无解）看似是两条独立的线。但它们会在一个点上<strong>狠狠撞在一起</strong>——特征值。</p>
+<p>上一篇讲过，特征向量是"矩阵映射里方向不变、只被拉伸的那几根轴"，拉伸倍数就是特征值 λ。
+怎么求 λ？教科书给的方程是：</p>
+<div class="highlight"><pre><span></span><code>det(A − λI) = 0
+</code></pre></div>
+
+<p>对一个 <code>n × n</code> 的矩阵，把这个行列式展开，会得到一个<strong>关于 λ 的 n 次多项式</strong>（叫特征多项式）。
+<strong>也就是说：求 n 阶矩阵的特征值 = 解一个 n 次方程。</strong> 用代码看它俩是一回事：</p>
+<div class="highlight"><pre><span></span><code><span class="kn">import</span><span class="w"> </span><span class="nn">numpy</span><span class="w"> </span><span class="k">as</span><span class="w"> </span><span class="nn">np</span>
+
+<span class="n">A</span> <span class="o">=</span> <span class="n">np</span><span class="o">.</span><span class="n">array</span><span class="p">([[</span><span class="mf">2.0</span><span class="p">,</span> <span class="mf">1.0</span><span class="p">],</span>
+              <span class="p">[</span><span class="mf">1.0</span><span class="p">,</span> <span class="mf">2.0</span><span class="p">]])</span>
+<span class="c1"># 特征多项式 det(A-λI) = λ² - 4λ + 3 = 0，它的根就是特征值</span>
+<span class="n">char_poly</span> <span class="o">=</span> <span class="n">np</span><span class="o">.</span><span class="n">poly</span><span class="p">(</span><span class="n">A</span><span class="p">)</span>                 <span class="c1"># [1, -4, 3] 即 λ²-4λ+3</span>
+<span class="nb">print</span><span class="p">(</span><span class="s2">&quot;特征多项式系数:&quot;</span><span class="p">,</span> <span class="n">char_poly</span><span class="p">)</span>
+<span class="nb">print</span><span class="p">(</span><span class="s2">&quot;解这个二次方程得特征值:&quot;</span><span class="p">,</span> <span class="n">np</span><span class="o">.</span><span class="n">roots</span><span class="p">(</span><span class="n">char_poly</span><span class="p">))</span>   <span class="c1"># [3., 1.]</span>
+<span class="nb">print</span><span class="p">(</span><span class="s2">&quot;直接求特征值:&quot;</span><span class="p">,</span> <span class="n">np</span><span class="o">.</span><span class="n">linalg</span><span class="o">.</span><span class="n">eigvals</span><span class="p">(</span><span class="n">A</span><span class="p">))</span>            <span class="c1"># [3., 1.] 一致</span>
+</code></pre></div>
+
+<p>现在把第四站的炸弹接上：<strong>如果矩阵是 5×5 或更大，特征多项式就是 5 次或更高次——根据阿贝尔-鲁菲尼定理，它没有求根公式！</strong></p>
+<div class="highlight"><pre><span></span><code><span class="kn">import</span><span class="w"> </span><span class="nn">numpy</span><span class="w"> </span><span class="k">as</span><span class="w"> </span><span class="nn">np</span>
+
+<span class="n">np</span><span class="o">.</span><span class="n">random</span><span class="o">.</span><span class="n">seed</span><span class="p">(</span><span class="mi">0</span><span class="p">)</span>
+<span class="n">A</span> <span class="o">=</span> <span class="n">np</span><span class="o">.</span><span class="n">random</span><span class="o">.</span><span class="n">randn</span><span class="p">(</span><span class="mi">6</span><span class="p">,</span> <span class="mi">6</span><span class="p">)</span>
+<span class="n">A</span> <span class="o">=</span> <span class="n">A</span> <span class="o">+</span> <span class="n">A</span><span class="o">.</span><span class="n">T</span>                            <span class="c1"># 6×6 对称矩阵</span>
+<span class="n">vals</span> <span class="o">=</span> <span class="n">np</span><span class="o">.</span><span class="n">linalg</span><span class="o">.</span><span class="n">eigvals</span><span class="p">(</span><span class="n">A</span><span class="p">)</span>
+<span class="nb">print</span><span class="p">(</span><span class="s2">&quot;6 阶矩阵的特征值（只能数值迭代算出来）:</span><span class="se">\n</span><span class="s2">&quot;</span><span class="p">,</span> <span class="n">np</span><span class="o">.</span><span class="n">sort</span><span class="p">(</span><span class="n">vals</span><span class="p">))</span>
+<span class="c1"># np.linalg.eigvals 内部用的是 QR 迭代算法，不是套公式 —— 因为根本没有公式可套</span>
+</code></pre></div>
+
+<p>这件事的分量怎么强调都不过分：</p>
+<blockquote>
+<p><strong><code>torch.linalg.eig</code>、<code>np.linalg.eigvals</code> 这些函数，内部不可能是"套一个公式"，
+而必然是"一步步迭代逼近"（QR 算法、幂迭代等）。原因就是第四站那条定理：
+5 次以上的方程没有求根公式。</strong> 矩阵越大，越只能靠迭代。</p>
+</blockquote>
+<p>这也从根上解释了大模型为什么长这样：</p>
+<ul>
+<li>大模型的权重，本质是在解一个巨大的、<strong>高度非线性</strong>的优化问题。</li>
+<li>非线性方程组比"高次方程"还难，<strong>更加没有求根公式</strong>。</li>
+<li>所以唯一的出路，就是第四站那个古老的智慧：<strong>从一个猜测出发，一步步逼近</strong>——这就是梯度下降、就是 <code>optimizer.step()</code>、就是训练。</li>
+</ul>
+<p><strong>图里那句"高次方程没有求根公式，才引生出矩阵"，更精确的版本是：</strong>
+<strong>"高次方程无解"逼出了'迭代逼近'这套方法论，而矩阵的特征值问题又把矩阵和高次方程焊死在一起——
+最后这套'没有公式就迭代'的智慧，成了整个深度学习训练的灵魂。</strong></p>
+<hr />
+<h2 id="6-第六站曲线的次数-模型的弯度-从-x²x³-到激活函数">6. 第六站：曲线的"次数"= 模型的"弯度" —— 从 x²、x³ 到激活函数</h2>
+<p>回到图里最有画面感的一句：</p>
+<blockquote>
+<p><strong>"二次 x² 是曲线，三次 x³ 是 softmax 的躺形状。"</strong></p>
+</blockquote>
+<p>这句话的直觉非常准。我们把它讲准确。<strong>方程的次数，决定了曲线能"弯"几道：</strong></p>
+<div class="highlight"><pre><span></span><code><span class="kn">import</span><span class="w"> </span><span class="nn">torch</span>
+
+<span class="n">x</span> <span class="o">=</span> <span class="n">torch</span><span class="o">.</span><span class="n">linspace</span><span class="p">(</span><span class="o">-</span><span class="mi">2</span><span class="p">,</span> <span class="mi">2</span><span class="p">,</span> <span class="mi">5</span><span class="p">)</span>
+<span class="nb">print</span><span class="p">(</span><span class="s2">&quot;一次 x   :&quot;</span><span class="p">,</span> <span class="p">(</span><span class="mf">1.0</span> <span class="o">*</span> <span class="n">x</span><span class="p">)</span><span class="o">.</span><span class="n">tolist</span><span class="p">())</span>     <span class="c1"># 直的，0 个弯</span>
+<span class="nb">print</span><span class="p">(</span><span class="s2">&quot;二次 x²  :&quot;</span><span class="p">,</span> <span class="p">(</span><span class="n">x</span> <span class="o">**</span> <span class="mi">2</span><span class="p">)</span><span class="o">.</span><span class="n">tolist</span><span class="p">())</span>      <span class="c1"># 1 个弯（一口碗）</span>
+<span class="nb">print</span><span class="p">(</span><span class="s2">&quot;三次 x³  :&quot;</span><span class="p">,</span> <span class="p">(</span><span class="n">x</span> <span class="o">**</span> <span class="mi">3</span><span class="p">)</span><span class="o">.</span><span class="n">tolist</span><span class="p">())</span>      <span class="c1"># 2 个弯，中间有个&#39;拐点&#39;，呈躺着的 S</span>
+</code></pre></div>
+
+<ul>
+<li><strong>一次</strong>：直线，弯度为 0。</li>
+<li><strong>二次 x²</strong>：一口碗（抛物线），有 1 个弯——这是 loss 的形状。</li>
+<li><strong>三次 x³</strong>：有一个<strong>拐点（inflection point）</strong>，曲线先朝下凹、过原点后朝上凸，
+  整体是一条<strong>躺着的 S</strong>。这个 S 形，正是 <code>sigmoid</code> / <code>tanh</code> 的形状直觉，而 <code>softmax</code> 是它的多维推广。</li>
+</ul>
+<p>为什么大模型不直接用 <code>x³</code> 当激活函数，而要用 <code>sigmoid</code>/<code>tanh</code>/<code>softmax</code>？
+因为<strong>高次多项式虽然能弯，但脾气太暴</strong>——稍微往两边走一点就冲到天上去（数值爆炸），还会剧烈震荡。
+而 sigmoid/tanh 是"被驯服过的 S"：两头平滑地压在 <code>[0,1]</code> 或 <code>[-1,1]</code> 里，温柔可控：</p>
+<div class="highlight"><pre><span></span><code><span class="kn">import</span><span class="w"> </span><span class="nn">torch</span>
+
+<span class="n">x</span> <span class="o">=</span> <span class="n">torch</span><span class="o">.</span><span class="n">linspace</span><span class="p">(</span><span class="o">-</span><span class="mi">4</span><span class="p">,</span> <span class="mi">4</span><span class="p">,</span> <span class="mi">5</span><span class="p">)</span>
+<span class="nb">print</span><span class="p">(</span><span class="s2">&quot;三次 x³ （两头爆炸）:&quot;</span><span class="p">,</span> <span class="p">(</span><span class="n">x</span> <span class="o">**</span> <span class="mi">3</span><span class="p">)</span><span class="o">.</span><span class="n">tolist</span><span class="p">())</span>          <span class="c1"># [-64, -8, 0, 8, 64]</span>
+<span class="nb">print</span><span class="p">(</span><span class="s2">&quot;tanh   （两头压平）:&quot;</span><span class="p">,</span> <span class="n">torch</span><span class="o">.</span><span class="n">tanh</span><span class="p">(</span><span class="n">x</span><span class="p">)</span><span class="o">.</span><span class="n">round</span><span class="p">(</span><span class="n">decimals</span><span class="o">=</span><span class="mi">3</span><span class="p">)</span><span class="o">.</span><span class="n">tolist</span><span class="p">())</span>
+<span class="nb">print</span><span class="p">(</span><span class="s2">&quot;sigmoid（两头压平）:&quot;</span><span class="p">,</span> <span class="n">torch</span><span class="o">.</span><span class="n">sigmoid</span><span class="p">(</span><span class="n">x</span><span class="p">)</span><span class="o">.</span><span class="n">round</span><span class="p">(</span><span class="n">decimals</span><span class="o">=</span><span class="mi">3</span><span class="p">)</span><span class="o">.</span><span class="n">tolist</span><span class="p">())</span>
+</code></pre></div>
+
+<p>第一个可视化脚本的<strong>子图 ③</strong> 把三者画在一起：三次曲线、sigmoid、tanh 都有那个"拐点"、都呈 S 形，
+区别只在于 sigmoid/tanh 把两端温柔地压平了。<strong>所以你朋友说"三次是 softmax 的躺形状"——直觉完全对：
+激活函数就是被驯服、被压平两端的高次曲线。</strong></p>
+<p>这也接上了上一篇和《<a href="./from_linear_to_nonlinear.md">从线性到非线性</a>》的核心结论：</p>
+<blockquote>
+<p>纯线性（一次）的层叠多少层还是直线（第三站那两条铁律保证的）。
+要让模型"弯"，必须插入非线性。而最朴素的"弯"，就是二次、三次这些高次曲线给的灵感——
+工程上选了 sigmoid/tanh/ReLU 这些好用的版本，但思想源头，是"次数越高越能弯"。</p>
+</blockquote>
+<h3 id="61-为什么非要能弯的函数因为一个弯是积木弯弯能拼出任意曲线">6.1 为什么非要"能弯的函数"？因为一个弯是积木，弯+弯能拼出任意曲线</h3>
+<p>光说"要弯"还不够，得说清<strong>怎么用弯拼出复杂曲线</strong>。先看清一件事：<strong>一个 sigmoid / tanh / ReLU，就是"一个弯"。</strong></p>
+<div class="highlight"><pre><span></span><code><span class="kn">import</span><span class="w"> </span><span class="nn">torch</span>
+
+<span class="n">x</span> <span class="o">=</span> <span class="n">torch</span><span class="o">.</span><span class="n">linspace</span><span class="p">(</span><span class="o">-</span><span class="mi">4</span><span class="p">,</span> <span class="mi">4</span><span class="p">,</span> <span class="mi">9</span><span class="p">)</span>
+<span class="nb">print</span><span class="p">(</span><span class="s2">&quot;一个 tanh = 一道拐弯:&quot;</span><span class="p">,</span> <span class="n">torch</span><span class="o">.</span><span class="n">tanh</span><span class="p">(</span><span class="n">x</span><span class="p">)</span><span class="o">.</span><span class="n">round</span><span class="p">(</span><span class="n">decimals</span><span class="o">=</span><span class="mi">2</span><span class="p">)</span><span class="o">.</span><span class="n">tolist</span><span class="p">())</span>
+<span class="nb">print</span><span class="p">(</span><span class="s2">&quot;一个 ReLU = 一个折点:&quot;</span><span class="p">,</span> <span class="n">torch</span><span class="o">.</span><span class="n">relu</span><span class="p">(</span><span class="n">x</span><span class="p">)</span><span class="o">.</span><span class="n">tolist</span><span class="p">())</span>   <span class="c1"># 在 0 处折一下</span>
+</code></pre></div>
+
+<p>单独一个弯，啥复杂曲线都拟合不了。<strong>但关键在于：每个弯可以被"平移、缩放、翻转"</strong>——
+<code>a · tanh(w·x + b)</code> 里，<code>w</code> 控制弯多急、<code>b</code> 控制弯在哪、<code>a</code> 控制弯多高/朝哪。
+把许多个<strong>位置不同、高矮不同、朝向不同</strong>的弯加起来，就能拼出任意形状。手动叠两个弯，先拼出一个"鼓包"：</p>
+<div class="highlight"><pre><span></span><code><span class="kn">import</span><span class="w"> </span><span class="nn">torch</span>
+
+<span class="n">x</span> <span class="o">=</span> <span class="n">torch</span><span class="o">.</span><span class="n">linspace</span><span class="p">(</span><span class="o">-</span><span class="mi">5</span><span class="p">,</span> <span class="mi">5</span><span class="p">,</span> <span class="mi">11</span><span class="p">)</span>
+<span class="c1"># 一个朝上的弯 + 一个朝下的弯，错开位置叠加 = 一个局部鼓包</span>
+<span class="n">bump</span> <span class="o">=</span> <span class="n">torch</span><span class="o">.</span><span class="n">tanh</span><span class="p">(</span><span class="n">x</span> <span class="o">+</span> <span class="mi">2</span><span class="p">)</span> <span class="o">-</span> <span class="n">torch</span><span class="o">.</span><span class="n">tanh</span><span class="p">(</span><span class="n">x</span> <span class="o">-</span> <span class="mi">2</span><span class="p">)</span>
+<span class="nb">print</span><span class="p">(</span><span class="s2">&quot;两个弯叠出一个鼓包:&quot;</span><span class="p">,</span> <span class="n">bump</span><span class="o">.</span><span class="n">round</span><span class="p">(</span><span class="n">decimals</span><span class="o">=</span><span class="mi">2</span><span class="p">)</span><span class="o">.</span><span class="n">tolist</span><span class="p">())</span>
+<span class="c1"># 一个鼓包就是一块&quot;局部砖头&quot;，砖头摆够多，任意曲线都能砌出来</span>
+</code></pre></div>
+
+<p>这就是<strong>通用逼近定理（Universal Approximation）</strong> 的全部直觉：
+<strong>线性层（第一/三站的 <code>Wx+b</code>）负责决定"每个弯放在哪、多急、多高"，激活函数负责"真的弯下去"，
+再把一堆弯加权求和，就能逼近任何曲线。</strong> 跑第三个可视化脚本，亲眼看弯怎么拼成曲线：</p>
+<div class="highlight"><pre><span></span><code>python<span class="w"> </span>why_we_need_bends_visualization.py
+</code></pre></div>
+
+<blockquote>
+<ul>
+<li><strong>上图</strong>：一个训练好的小网络（<code>Linear→tanh→Linear</code>）里，10 个隐藏神经元各自贡献"一个弯"——
+  你会看到 10 条位置、高矮、朝向都不同的 tanh 曲线。</li>
+<li><strong>下图</strong>：把这 10 个弯<strong>加权求和</strong>，蓝线精准贴合一条又扭又绕的目标曲线 <code>sin(2x)+0.5sin(5x)</code>；
+  作为对照，红色虚线是"纯线性（一次）的最佳拟合"——<strong>一根直线，一道弯都弯不出来，彻底躺平。</strong></li>
+</ul>
+<p>这张图就是"为什么必须有 sigmoid/tanh/ReLU"最直接的回答：<strong>没有弯，模型就只是第一站那根直线。</strong></p>
+</blockquote>
+<p>用代码把"弯的叠加"写成最小训练循环，10 个弯就能拟合一条扭曲的曲线：</p>
+<div class="highlight"><pre><span></span><code><span class="kn">import</span><span class="w"> </span><span class="nn">torch</span>
+<span class="kn">import</span><span class="w"> </span><span class="nn">torch.nn</span><span class="w"> </span><span class="k">as</span><span class="w"> </span><span class="nn">nn</span>
+
+<span class="n">x</span> <span class="o">=</span> <span class="n">torch</span><span class="o">.</span><span class="n">linspace</span><span class="p">(</span><span class="o">-</span><span class="mi">3</span><span class="p">,</span> <span class="mi">3</span><span class="p">,</span> <span class="mi">200</span><span class="p">)</span><span class="o">.</span><span class="n">unsqueeze</span><span class="p">(</span><span class="mi">1</span><span class="p">)</span>
+<span class="n">y</span> <span class="o">=</span> <span class="n">torch</span><span class="o">.</span><span class="n">sin</span><span class="p">(</span><span class="mi">2</span> <span class="o">*</span> <span class="n">x</span><span class="p">)</span> <span class="o">+</span> <span class="mf">0.5</span> <span class="o">*</span> <span class="n">torch</span><span class="o">.</span><span class="n">sin</span><span class="p">(</span><span class="mi">5</span> <span class="o">*</span> <span class="n">x</span><span class="p">)</span>        <span class="c1"># 又扭又绕的目标</span>
+
+<span class="n">net</span> <span class="o">=</span> <span class="n">nn</span><span class="o">.</span><span class="n">Sequential</span><span class="p">(</span><span class="n">nn</span><span class="o">.</span><span class="n">Linear</span><span class="p">(</span><span class="mi">1</span><span class="p">,</span> <span class="mi">10</span><span class="p">),</span> <span class="n">nn</span><span class="o">.</span><span class="n">Tanh</span><span class="p">(),</span> <span class="n">nn</span><span class="o">.</span><span class="n">Linear</span><span class="p">(</span><span class="mi">10</span><span class="p">,</span> <span class="mi">1</span><span class="p">))</span>  <span class="c1"># 10 个弯</span>
+<span class="n">opt</span> <span class="o">=</span> <span class="n">torch</span><span class="o">.</span><span class="n">optim</span><span class="o">.</span><span class="n">Adam</span><span class="p">(</span><span class="n">net</span><span class="o">.</span><span class="n">parameters</span><span class="p">(),</span> <span class="n">lr</span><span class="o">=</span><span class="mf">0.02</span><span class="p">)</span>
+<span class="k">for</span> <span class="n">_</span> <span class="ow">in</span> <span class="nb">range</span><span class="p">(</span><span class="mi">3000</span><span class="p">):</span>
+    <span class="n">loss</span> <span class="o">=</span> <span class="p">((</span><span class="n">net</span><span class="p">(</span><span class="n">x</span><span class="p">)</span> <span class="o">-</span> <span class="n">y</span><span class="p">)</span> <span class="o">**</span> <span class="mi">2</span><span class="p">)</span><span class="o">.</span><span class="n">mean</span><span class="p">()</span>
+    <span class="n">opt</span><span class="o">.</span><span class="n">zero_grad</span><span class="p">();</span> <span class="n">loss</span><span class="o">.</span><span class="n">backward</span><span class="p">();</span> <span class="n">opt</span><span class="o">.</span><span class="n">step</span><span class="p">()</span>
+<span class="nb">print</span><span class="p">(</span><span class="s2">&quot;10 个弯加权求和后的 loss:&quot;</span><span class="p">,</span> <span class="nb">round</span><span class="p">(</span><span class="n">loss</span><span class="o">.</span><span class="n">item</span><span class="p">(),</span> <span class="mi">4</span><span class="p">))</span>   <span class="c1"># ≈ 0.001，拟合得很好</span>
+</code></pre></div>
+
+<h3 id="62-复合函数-网络的深度弯之上再弯">6.2 "复合函数"= 网络的深度：弯之上再弯</h3>
+<p>上面是"一层很多弯"（宽）。还有一条路是<strong>"复合多次"（深）</strong>——把弯过的结果再喂进下一层去弯：</p>
+<div class="highlight"><pre><span></span><code><span class="kn">import</span><span class="w"> </span><span class="nn">torch</span>
+<span class="kn">import</span><span class="w"> </span><span class="nn">torch.nn</span><span class="w"> </span><span class="k">as</span><span class="w"> </span><span class="nn">nn</span>
+
+<span class="c1"># 复合：f3( 弯 f2( 弯 f1(x) ) )，每层在上一层已经弯过的基础上再弯一次</span>
+<span class="n">deep</span> <span class="o">=</span> <span class="n">nn</span><span class="o">.</span><span class="n">Sequential</span><span class="p">(</span>
+    <span class="n">nn</span><span class="o">.</span><span class="n">Linear</span><span class="p">(</span><span class="mi">1</span><span class="p">,</span> <span class="mi">8</span><span class="p">),</span> <span class="n">nn</span><span class="o">.</span><span class="n">Tanh</span><span class="p">(),</span>      <span class="c1"># 第一次弯</span>
+    <span class="n">nn</span><span class="o">.</span><span class="n">Linear</span><span class="p">(</span><span class="mi">8</span><span class="p">,</span> <span class="mi">8</span><span class="p">),</span> <span class="n">nn</span><span class="o">.</span><span class="n">Tanh</span><span class="p">(),</span>      <span class="c1"># 在已弯的基础上再弯</span>
+    <span class="n">nn</span><span class="o">.</span><span class="n">Linear</span><span class="p">(</span><span class="mi">8</span><span class="p">,</span> <span class="mi">1</span><span class="p">),</span>                 <span class="c1"># 求和输出</span>
+<span class="p">)</span>
+<span class="n">x</span> <span class="o">=</span> <span class="n">torch</span><span class="o">.</span><span class="n">tensor</span><span class="p">([[</span><span class="mf">1.5</span><span class="p">]])</span>
+<span class="nb">print</span><span class="p">(</span><span class="s2">&quot;复合函数 f∘g∘h 的输出:&quot;</span><span class="p">,</span> <span class="n">deep</span><span class="p">(</span><span class="n">x</span><span class="p">)</span><span class="o">.</span><span class="n">item</span><span class="p">())</span>
+</code></pre></div>
+
+<p>数学上这就是<strong>复合函数</strong> <code>f(g(h(x)))</code>：高中学过的"内层函数 → 外层函数"，
+在神经网络里就是"一层叠一层"。<strong>浅而宽</strong>（一层很多弯）和<strong>深而窄</strong>（多层复合）都能逼近复杂函数，
+但<strong>深的复合更省参数、更能表达"弯里套弯"的层次结构</strong>——这正是"深度"学习里"深度"二字的由来。</p>
+<blockquote>
+<p>一句话收束第六站：<strong>二次、三次告诉我们"次数越高越能弯"；
+而神经网络换了个更聪明的办法——不用一个高次多项式，而是把无数个"温柔的小弯"（sigmoid/tanh/ReLU）
+加起来（宽）、叠起来（深），照样能弯出任意复杂的曲线，还不会像高次多项式那样数值爆炸。</strong></p>
+</blockquote>
+<hr />
+<h2 id="7-第七站数列递推与通项-一步步往前推其实就是矩阵幂">7. 第七站：数列、递推与通项 —— "一步步往前推"，其实就是矩阵幂</h2>
+<p>前六站讲的都是"函数"（给个 x 算个 y）。但还有一类东西从小学就缠着我们：<strong>数列</strong>——
+<code>1, 1, 2, 3, 5, 8, …</code> 这种一个接一个的数。它和线性代数、和大模型的关系，深得吓人。</p>
+<p>数列有两种写法，对应两种世界观：</p>
+<ul>
+<li><strong>通项公式</strong>：<code>a(n) = 直接用 n 算出来</code>。例如等差数列 <code>a(n) = a1 + (n-1)d</code>，一步到位（像第一站的"直接解"）。</li>
+<li><strong>递推公式</strong>：<code>a(n) = 用前面几项算出来</code>。例如斐波那契 <code>f(n) = f(n-1) + f(n-2)</code>，必须一步步往前推（像第四站的"迭代"）。</li>
+</ul>
+<div class="highlight"><pre><span></span><code><span class="c1"># 斐波那契：递推公式，一步步往前推</span>
+<span class="n">f</span> <span class="o">=</span> <span class="p">[</span><span class="mi">1</span><span class="p">,</span> <span class="mi">1</span><span class="p">]</span>
+<span class="k">for</span> <span class="n">n</span> <span class="ow">in</span> <span class="nb">range</span><span class="p">(</span><span class="mi">2</span><span class="p">,</span> <span class="mi">10</span><span class="p">):</span>
+    <span class="n">f</span><span class="o">.</span><span class="n">append</span><span class="p">(</span><span class="n">f</span><span class="p">[</span><span class="n">n</span> <span class="o">-</span> <span class="mi">1</span><span class="p">]</span> <span class="o">+</span> <span class="n">f</span><span class="p">[</span><span class="n">n</span> <span class="o">-</span> <span class="mi">2</span><span class="p">])</span>     <span class="c1"># 每一项 = 前两项之和</span>
+<span class="nb">print</span><span class="p">(</span><span class="s2">&quot;递推算出的数列:&quot;</span><span class="p">,</span> <span class="n">f</span><span class="p">)</span>             <span class="c1"># [1, 1, 2, 3, 5, 8, 13, 21, 34, 55]</span>
+</code></pre></div>
+
+<h3 id="71-递推-矩阵幂把往前推一步打包成一次矩阵乘法">7.1 递推 = 矩阵幂：把"往前推一步"打包成一次矩阵乘法</h3>
+<p>这里出现整篇文章最漂亮的一次"代数→线性代数"穿越。<strong>一个线性递推，可以原样写成一次矩阵乘法</strong>——
+把"当前状态"装进一个向量，"往前推一步"就是"乘一个矩阵"：</p>
+<div class="highlight"><pre><span></span><code><span class="kn">import</span><span class="w"> </span><span class="nn">torch</span>
+
+<span class="c1"># 状态向量 [f(n), f(n-1)]，往前推一步 = 乘这个&quot;转移矩阵&quot;</span>
+<span class="n">M</span> <span class="o">=</span> <span class="n">torch</span><span class="o">.</span><span class="n">tensor</span><span class="p">([[</span><span class="mf">1.0</span><span class="p">,</span> <span class="mf">1.0</span><span class="p">],</span>     <span class="c1"># 新的 f(n+1) = 1·f(n) + 1·f(n-1)</span>
+                  <span class="p">[</span><span class="mf">1.0</span><span class="p">,</span> <span class="mf">0.0</span><span class="p">]])</span>    <span class="c1"># 新的 f(n)   = 1·f(n) + 0·f(n-1)</span>
+
+<span class="n">s</span> <span class="o">=</span> <span class="n">torch</span><span class="o">.</span><span class="n">tensor</span><span class="p">([</span><span class="mf">1.0</span><span class="p">,</span> <span class="mf">1.0</span><span class="p">])</span>      <span class="c1"># 初始 [f(1), f(0)]</span>
+<span class="k">for</span> <span class="n">_</span> <span class="ow">in</span> <span class="nb">range</span><span class="p">(</span><span class="mi">8</span><span class="p">):</span>
+    <span class="n">s</span> <span class="o">=</span> <span class="n">M</span> <span class="o">@</span> <span class="n">s</span>                     <span class="c1"># 往前推一步 = 一次矩阵乘法</span>
+<span class="nb">print</span><span class="p">(</span><span class="s2">&quot;用矩阵推出的:&quot;</span><span class="p">,</span> <span class="n">s</span><span class="o">.</span><span class="n">tolist</span><span class="p">())</span>  <span class="c1"># [55., 34.] —— 和上面递推完全一致</span>
+</code></pre></div>
+
+<p>于是"推 n 步"就等于"矩阵的 n 次幂"——<strong>递推公式 = 矩阵幂 <code>Mⁿ</code></strong>：</p>
+<div class="highlight"><pre><span></span><code><span class="kn">import</span><span class="w"> </span><span class="nn">torch</span>
+
+<span class="n">M</span> <span class="o">=</span> <span class="n">torch</span><span class="o">.</span><span class="n">tensor</span><span class="p">([[</span><span class="mf">1.0</span><span class="p">,</span> <span class="mf">1.0</span><span class="p">],</span> <span class="p">[</span><span class="mf">1.0</span><span class="p">,</span> <span class="mf">0.0</span><span class="p">]])</span>
+<span class="n">Mn</span> <span class="o">=</span> <span class="n">torch</span><span class="o">.</span><span class="n">linalg</span><span class="o">.</span><span class="n">matrix_power</span><span class="p">(</span><span class="n">M</span><span class="p">,</span> <span class="mi">9</span><span class="p">)</span>   <span class="c1"># M 的 9 次方</span>
+<span class="n">s</span> <span class="o">=</span> <span class="n">Mn</span> <span class="o">@</span> <span class="n">torch</span><span class="o">.</span><span class="n">tensor</span><span class="p">([</span><span class="mf">1.0</span><span class="p">,</span> <span class="mf">1.0</span><span class="p">])</span>
+<span class="nb">print</span><span class="p">(</span><span class="s2">&quot;一步到位 Mⁿ:&quot;</span><span class="p">,</span> <span class="n">s</span><span class="o">.</span><span class="n">tolist</span><span class="p">())</span>       <span class="c1"># 同样推到斐波那契后面的项</span>
+</code></pre></div>
+
+<h3 id="72-从递推回到通项公式靠的正是第五站的特征值">7.2 从递推回到通项公式：靠的正是第五站的特征值</h3>
+<p>那"递推公式"能不能变回"通项公式"（一步算出第 n 项，不用循环）？能——<strong>而钥匙就是第五站的特征值。</strong>
+把转移矩阵 <code>M</code> 对角化（求特征值），就能把 <code>Mⁿ</code> 写成"特征值的 n 次方"，从而得到闭式通项：</p>
+<div class="highlight"><pre><span></span><code><span class="kn">import</span><span class="w"> </span><span class="nn">torch</span>
+
+<span class="n">M</span> <span class="o">=</span> <span class="n">torch</span><span class="o">.</span><span class="n">tensor</span><span class="p">([[</span><span class="mf">1.0</span><span class="p">,</span> <span class="mf">1.0</span><span class="p">],</span> <span class="p">[</span><span class="mf">1.0</span><span class="p">,</span> <span class="mf">0.0</span><span class="p">]])</span>
+<span class="n">vals</span> <span class="o">=</span> <span class="n">torch</span><span class="o">.</span><span class="n">linalg</span><span class="o">.</span><span class="n">eigvalsh</span><span class="p">(</span><span class="n">M</span><span class="p">)</span>
+<span class="nb">print</span><span class="p">(</span><span class="s2">&quot;转移矩阵的特征值:&quot;</span><span class="p">,</span> <span class="n">vals</span><span class="o">.</span><span class="n">tolist</span><span class="p">())</span>   <span class="c1"># [-0.618, 1.618]</span>
+<span class="c1"># 1.618 正是黄金比例 φ = (1+√5)/2 ！</span>
+</code></pre></div>
+
+<p>那个 <code>1.618</code> 正是<strong>黄金比例 φ</strong>。斐波那契的通项公式（比内公式 Binet）<code>f(n) = (φⁿ - ψⁿ)/√5</code>，
+里面的 <code>φ</code>、<code>ψ</code> 就是这两个特征值。而 <code>φ</code> 满足的方程 <code>x² = x + 1</code>，正是这个递推的<strong>特征方程</strong>——
+<strong>它和第五站矩阵的特征多项式 <code>det(M-λI)=0</code> 是同一个东西。</strong></p>
+<blockquote>
+<p>两条历史线在这里又一次合流：<strong>数列的"特征方程"</strong> 和 <strong>矩阵的"特征多项式"</strong> 本就是一回事。
+这也意味着：<strong>如果递推依赖前 5 项以上，特征方程就是 5 次以上——根据第四站的阿贝尔-鲁菲尼定理，
+它的通项公式可能根本写不出来，只能老老实实一步步递推（迭代）。</strong> 数列也逃不过那条定理。</p>
+</blockquote>
+<h3 id="73-多项式求和另一种闭式-vs-累加">7.3 多项式求和：另一种"闭式 vs 累加"</h3>
+<p>你小学就背过 <code>1+2+…+n = n(n+1)/2</code>。这就是<strong>"累加（一步步加）"被压缩成了"闭式公式（一步算出）"</strong>——
+和"递推 → 通项"是同一种愿望。验证一下：</p>
+<div class="highlight"><pre><span></span><code><span class="kn">import</span><span class="w"> </span><span class="nn">torch</span>
+
+<span class="n">n</span> <span class="o">=</span> <span class="mi">100</span>
+<span class="n">loop_sum</span> <span class="o">=</span> <span class="nb">sum</span><span class="p">(</span><span class="nb">range</span><span class="p">(</span><span class="mi">1</span><span class="p">,</span> <span class="n">n</span> <span class="o">+</span> <span class="mi">1</span><span class="p">))</span>        <span class="c1"># 一步步累加</span>
+<span class="n">formula</span>  <span class="o">=</span> <span class="n">n</span> <span class="o">*</span> <span class="p">(</span><span class="n">n</span> <span class="o">+</span> <span class="mi">1</span><span class="p">)</span> <span class="o">//</span> <span class="mi">2</span>            <span class="c1"># 闭式公式，一步算出</span>
+<span class="nb">print</span><span class="p">(</span><span class="n">loop_sum</span><span class="p">,</span> <span class="n">formula</span><span class="p">)</span>               <span class="c1"># 5050  5050 —— 一致</span>
+
+<span class="c1"># 平方和也有闭式：1²+2²+…+n² = n(n+1)(2n+1)/6</span>
+<span class="nb">print</span><span class="p">(</span><span class="nb">sum</span><span class="p">(</span><span class="n">i</span><span class="o">*</span><span class="n">i</span> <span class="k">for</span> <span class="n">i</span> <span class="ow">in</span> <span class="nb">range</span><span class="p">(</span><span class="mi">1</span><span class="p">,</span> <span class="n">n</span><span class="o">+</span><span class="mi">1</span><span class="p">)),</span> <span class="n">n</span><span class="o">*</span><span class="p">(</span><span class="n">n</span><span class="o">+</span><span class="mi">1</span><span class="p">)</span><span class="o">*</span><span class="p">(</span><span class="mi">2</span><span class="o">*</span><span class="n">n</span><span class="o">+</span><span class="mi">1</span><span class="p">)</span><span class="o">//</span><span class="mi">6</span><span class="p">)</span>   <span class="c1"># 一致</span>
+</code></pre></div>
+
+<p><strong>能压成闭式公式的，是少数幸运儿（低次、规整）；大多数复杂的累加/递推，压不出公式，只能迭代。</strong>
+这又一次呼应了全文主线：<strong>有公式是例外，没公式靠迭代才是常态。</strong></p>
+<h3 id="74-递推-rnn大模型处理序列的老祖宗">7.4 递推 = RNN：大模型处理序列的老祖宗</h3>
+<p>最后把数列接到大模型上。<strong>"用前面的项推下一项"——这不就是语言模型在干的事吗？</strong>
+给定前面的词，预测下一个词。最早的序列模型 RNN，状态更新公式几乎和斐波那契的矩阵递推一模一样：</p>
+<div class="highlight"><pre><span></span><code><span class="kn">import</span><span class="w"> </span><span class="nn">torch</span>
+<span class="kn">import</span><span class="w"> </span><span class="nn">torch.nn</span><span class="w"> </span><span class="k">as</span><span class="w"> </span><span class="nn">nn</span>
+
+<span class="c1"># RNN：h(t) = tanh(W·h(t-1) + U·x(t))，一个带&quot;弯&quot;的递推（第六站的非线性 + 第七站的递推）</span>
+<span class="n">rnn</span> <span class="o">=</span> <span class="n">nn</span><span class="o">.</span><span class="n">RNNCell</span><span class="p">(</span><span class="n">input_size</span><span class="o">=</span><span class="mi">4</span><span class="p">,</span> <span class="n">hidden_size</span><span class="o">=</span><span class="mi">8</span><span class="p">)</span>
+<span class="n">h</span> <span class="o">=</span> <span class="n">torch</span><span class="o">.</span><span class="n">zeros</span><span class="p">(</span><span class="mi">8</span><span class="p">)</span>                      <span class="c1"># 初始状态</span>
+<span class="n">seq</span> <span class="o">=</span> <span class="n">torch</span><span class="o">.</span><span class="n">randn</span><span class="p">(</span><span class="mi">5</span><span class="p">,</span> <span class="mi">4</span><span class="p">)</span>                 <span class="c1"># 一个长度 5 的序列</span>
+<span class="k">for</span> <span class="n">t</span> <span class="ow">in</span> <span class="nb">range</span><span class="p">(</span><span class="mi">5</span><span class="p">):</span>
+    <span class="n">h</span> <span class="o">=</span> <span class="n">rnn</span><span class="p">(</span><span class="n">seq</span><span class="p">[</span><span class="n">t</span><span class="p">],</span> <span class="n">h</span><span class="p">)</span>                  <span class="c1"># 每读一个词，往前推一步（= 数列的递推）</span>
+<span class="nb">print</span><span class="p">(</span><span class="s2">&quot;读完整个序列后的状态:&quot;</span><span class="p">,</span> <span class="n">h</span><span class="o">.</span><span class="n">shape</span><span class="p">)</span>    <span class="c1"># torch.Size([8])</span>
+</code></pre></div>
+
+<p>而第 7.2 节那个"特征值决定数列爆炸还是收敛"的结论，在这里有个有名的工程后果：
+<strong>如果递推矩阵的特征值 <code>|λ|&gt;1</code>，状态会随步数指数爆炸；<code>|λ|&lt;1</code> 则指数衰减到 0</strong>——
+这正是 RNN 训练里臭名昭著的<strong>梯度爆炸 / 梯度消失</strong>问题。后来的 LSTM、乃至 Transformer 用注意力
+<strong>一步直连所有历史</strong>（而非一步步递推），就是为了绕开这个"特征值次方"带来的灾难。</p>
+<blockquote>
+<p>一句话收束第七站：<strong>递推公式 = 矩阵幂，通项公式 = 对角化（特征值的次方）；
+数列的"特征方程"和矩阵的"特征多项式"是同一个东西；而"用前面推后面"这个最朴素的数列思想，
+正是 RNN、乃至整个序列大模型的老祖宗——连它的老毛病（梯度爆炸/消失）都是特征值次方写在脸上的。</strong></p>
+</blockquote>
+<hr />
+<h2 id="8-终点把整条历史缝进一段大模型的代码">8. 终点：把整条历史，缝进一段大模型的代码</h2>
+<p>现在把整条链全部接起来。下面是一段<strong>极简但完整</strong>的注意力前向传播——大模型最核心的一块。
+每一行都标注了它来自历史的哪一站：</p>
+<div class="highlight"><pre><span></span><code><span class="kn">import</span><span class="w"> </span><span class="nn">torch</span>
+<span class="kn">import</span><span class="w"> </span><span class="nn">torch.nn</span><span class="w"> </span><span class="k">as</span><span class="w"> </span><span class="nn">nn</span>
+<span class="kn">import</span><span class="w"> </span><span class="nn">torch.nn.functional</span><span class="w"> </span><span class="k">as</span><span class="w"> </span><span class="nn">F</span>
+
+<span class="n">torch</span><span class="o">.</span><span class="n">manual_seed</span><span class="p">(</span><span class="mi">0</span><span class="p">)</span>
+<span class="n">tokens</span> <span class="o">=</span> <span class="n">torch</span><span class="o">.</span><span class="n">tensor</span><span class="p">([</span><span class="mi">3</span><span class="p">,</span> <span class="mi">7</span><span class="p">,</span> <span class="mi">1</span><span class="p">])</span>              <span class="c1"># 三个离散的词 id</span>
+
+<span class="c1"># ── 第一站之前：把离散符号变成连续向量（embedding，见上一篇&quot;离散变可导&quot;）</span>
+<span class="n">emb</span> <span class="o">=</span> <span class="n">nn</span><span class="o">.</span><span class="n">Embedding</span><span class="p">(</span><span class="n">num_embeddings</span><span class="o">=</span><span class="mi">100</span><span class="p">,</span> <span class="n">embedding_dim</span><span class="o">=</span><span class="mi">8</span><span class="p">)</span>
+<span class="n">x</span> <span class="o">=</span> <span class="n">emb</span><span class="p">(</span><span class="n">tokens</span><span class="p">)</span>                               <span class="c1"># (3, 8)</span>
+
+<span class="c1"># ── 第①③站：一次方程 / 矩阵映射 Ax+b，把词向量投影成 Q、K、V</span>
+<span class="n">Wq</span><span class="p">,</span> <span class="n">Wk</span><span class="p">,</span> <span class="n">Wv</span> <span class="o">=</span> <span class="n">nn</span><span class="o">.</span><span class="n">Linear</span><span class="p">(</span><span class="mi">8</span><span class="p">,</span> <span class="mi">8</span><span class="p">),</span> <span class="n">nn</span><span class="o">.</span><span class="n">Linear</span><span class="p">(</span><span class="mi">8</span><span class="p">,</span> <span class="mi">8</span><span class="p">),</span> <span class="n">nn</span><span class="o">.</span><span class="n">Linear</span><span class="p">(</span><span class="mi">8</span><span class="p">,</span> <span class="mi">8</span><span class="p">)</span>
+<span class="n">Q</span><span class="p">,</span> <span class="n">K</span><span class="p">,</span> <span class="n">V</span> <span class="o">=</span> <span class="n">Wq</span><span class="p">(</span><span class="n">x</span><span class="p">),</span> <span class="n">Wk</span><span class="p">(</span><span class="n">x</span><span class="p">),</span> <span class="n">Wv</span><span class="p">(</span><span class="n">x</span><span class="p">)</span>                 <span class="c1"># 每个都是一组 &quot;Ax+b&quot;（第三站）</span>
+
+<span class="c1"># ── 第②站：二次型 —— 每个词向量两两相乘，本质是 xᵀ(WqᵀWk)x 那类&quot;二次&quot;结构</span>
+<span class="n">scores</span> <span class="o">=</span> <span class="n">Q</span> <span class="o">@</span> <span class="n">K</span><span class="o">.</span><span class="n">t</span><span class="p">()</span>                            <span class="c1"># (3,3) 相关度矩阵，向量版的&quot;二次&quot;</span>
+
+<span class="c1"># ── 第⑥站：非线性曲线 —— softmax 是高次 S 形曲线的多维版，把分数压成概率</span>
+<span class="n">attn</span> <span class="o">=</span> <span class="n">F</span><span class="o">.</span><span class="n">softmax</span><span class="p">(</span><span class="n">scores</span><span class="p">,</span> <span class="n">dim</span><span class="o">=-</span><span class="mi">1</span><span class="p">)</span>              <span class="c1"># 两头压平、归一化（第六站的&quot;躺 S&quot;）</span>
+
+<span class="c1"># ── 又一次第③站：矩阵映射，按相关度加权求和</span>
+<span class="n">out</span> <span class="o">=</span> <span class="n">attn</span> <span class="o">@</span> <span class="n">V</span>                                <span class="c1"># (3, 8)</span>
+<span class="nb">print</span><span class="p">(</span><span class="s2">&quot;注意力输出形状:&quot;</span><span class="p">,</span> <span class="n">out</span><span class="o">.</span><span class="n">shape</span><span class="p">)</span>
+
+<span class="c1"># ── 第④⑤站：上面所有权重(Wq/Wk/Wv/emb)都没有&quot;求根公式&quot;可解，</span>
+<span class="c1">#    只能用梯度下降一步步逼近 —— 这正是 abel-ruffini 那条定理的精神后裔</span>
+<span class="n">loss</span> <span class="o">=</span> <span class="n">out</span><span class="o">.</span><span class="n">pow</span><span class="p">(</span><span class="mi">2</span><span class="p">)</span><span class="o">.</span><span class="n">mean</span><span class="p">()</span>                      <span class="c1"># 随便一个二次 loss（又是第二站的&quot;碗&quot;）</span>
+<span class="n">loss</span><span class="o">.</span><span class="n">backward</span><span class="p">()</span>                               <span class="c1"># 算坡度</span>
+<span class="nb">print</span><span class="p">(</span><span class="s2">&quot;emb 拿到的梯度形状:&quot;</span><span class="p">,</span> <span class="n">emb</span><span class="o">.</span><span class="n">weight</span><span class="o">.</span><span class="n">grad</span><span class="o">.</span><span class="n">shape</span><span class="p">)</span>   <span class="c1"># 准备沿坡挪一步（牛顿法的子孙）</span>
+</code></pre></div>
+
+<p><strong>这段几十行的代码，把整部代数史走了一遍：</strong>
+离散符号变向量 → 矩阵映射（<code>Ax+b</code>，第①③站）→ 向量两两相乘的二次结构（第②站）→
+softmax 这条躺 S 曲线（第⑥站）→ 最后用梯度下降迭代训练（因为没有求根公式，第④⑤站）。</p>
+<hr />
+<h2 id="9-把整条链缝起来">9. 把整条链缝起来</h2>
+<p>回到开头那句"买菜用得上求根公式吗"。现在可以正面回答了：</p>
+<table>
+<thead>
+<tr>
+<th>历史这一站</th>
+<th>当年解决的问题</th>
+<th>留下的工具</th>
+<th>今天在大模型里</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>一次方程</td>
+<td>一个未知数</td>
+<td>直接解 <code>x=-b/a</code></td>
+<td><code>nn.Linear</code>、线性回归（第 1 节）</td>
+</tr>
+<tr>
+<td>二次方程</td>
+<td>弯一下的曲线</td>
+<td>求根公式 / <strong>配方法</strong> → 二次型</td>
+<td>MSE、注意力分数、loss 碗（第 2、8 节）</td>
+</tr>
+<tr>
+<td>多元一次方程组</td>
+<td>一堆未知数</td>
+<td><strong>行列式 → 矩阵</strong></td>
+<td>权重矩阵、<code>Ax+b</code>（第 3 节）</td>
+</tr>
+<tr>
+<td>高次方程（≥5）</td>
+<td>解不出来了</td>
+<td><strong>承认没有公式 → 迭代逼近</strong></td>
+<td>梯度下降、<code>optimizer.step()</code>（第 4 节）</td>
+</tr>
+<tr>
+<td>特征方程</td>
+<td>矩阵的骨架方向</td>
+<td>特征值（前两条合流）</td>
+<td>PCA、谱、为什么只能迭代算（第 5 节）</td>
+</tr>
+<tr>
+<td>曲线的次数</td>
+<td>世界是弯的</td>
+<td>高次曲线 → 驯服成 S 形</td>
+<td>sigmoid/tanh/softmax 激活（第 6 节）</td>
+</tr>
+<tr>
+<td>弯的组合</td>
+<td>直线弯不动</td>
+<td>一堆"小弯"加权叠加/复合</td>
+<td>通用逼近、网络的宽与深（第 6.1、6.2 节）</td>
+</tr>
+<tr>
+<td>数列 / 递推</td>
+<td>一步步往前推</td>
+<td>递推=矩阵幂，通项=特征值</td>
+<td>RNN、序列模型、梯度爆炸/消失（第 7 节）</td>
+</tr>
+</tbody>
+</table>
+<p>三句话总结这篇文章：</p>
+<blockquote>
+<p><strong>代数史是一部"方程越来越解不动"的历史</strong>：一次一步解出，二次要套公式，多元要用矩阵，
+高次干脆没有公式（第 1–4 节）。</p>
+<p><strong>大模型站在这条链的最末端</strong>：它要解的优化问题比高次方程还难，没有任何"求根公式"，
+只能继承那个最古老的智慧——<strong>从一个猜测出发，沿着坡度一步步逼近</strong>（梯度下降，第 4、5 节）；
+而"把无数小弯叠起来逼近任意曲线"（第 6 节）、"用前面推后面"（第 7 节），是它另外两件看家本领。</p>
+<p><strong>而矩阵、二次型、激活函数、递推这些零件，全是被一个个"解不动的方程"逼出来的副产品</strong>——
+它们最后全都活在一段能跑起来的大模型代码里（第 8 节）。</p>
+</blockquote>
+<p>所以下次再有人说"求根公式买菜用不上"，你可以告诉他：
+<strong>买菜确实用不上，但正是"有些方程能有公式、有些方程没有公式"这个分界，
+催生了线性代数，催生了迭代逼近，最终催生了你手机里那个会聊天的大模型。</strong>
+把上面每段代码都跑一遍，再跑两个可视化脚本，你就把这条三百年的链，亲手走了一遍。</p>
+<div class="highlight"><pre><span></span><code>python<span class="w"> </span>from_equation_to_matrix_visualization.py<span class="w">   </span><span class="c1"># 看&quot;次数→弯度&quot;和 loss 碗</span>
+python<span class="w"> </span>no_formula_so_iterate_visualization.py<span class="w">     </span><span class="c1"># 看&quot;没有公式就迭代&quot; = 梯度下降</span>
+python<span class="w"> </span>why_we_need_bends_visualization.py<span class="w">         </span><span class="c1"># 看&quot;一堆小弯叠加&quot; = 拟合任意曲线</span>
+</code></pre></div>
+    </div>
+  </article>
+
+</main>
+
+<!-- Floating Ask-AI chat widget -->
+<button class="ai-fab" id="ai-fab" aria-label="Ask AI about this article" title="Ask AI about this article">
+  <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+    <path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"/>
+  </svg>
+  <span class="ai-fab-label">Ask AI</span>
+</button>
+
+<div class="ai-panel" id="ai-panel" role="dialog" aria-labelledby="ai-panel-title" aria-hidden="true">
+  <header class="ai-panel-head">
+    <div class="ai-panel-title-wrap">
+      <span class="ai-dot"></span>
+      <h3 id="ai-panel-title">Ask AI about this post</h3>
+    </div>
+    <div class="ai-panel-actions">
+      <button class="ai-icon-btn" id="ai-clear" title="Clear conversation" aria-label="Clear">
+        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><polyline points="3 6 5 6 21 6"/><path d="M19 6l-1 14a2 2 0 0 1-2 2H8a2 2 0 0 1-2-2L5 6"/><path d="M10 11v6M14 11v6"/><path d="M9 6V4a1 1 0 0 1 1-1h4a1 1 0 0 1 1 1v2"/></svg>
+      </button>
+      <button class="ai-icon-btn" id="ai-close" title="Minimize" aria-label="Minimize">
+        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><polyline points="6 9 12 15 18 9"/></svg>
+      </button>
+    </div>
+  </header>
+
+  <div class="ai-messages" id="ai-messages">
+    <div class="ai-empty" id="ai-empty">
+      <p class="ai-empty-title">On-device AI · Gemini Nano</p>
+      <p class="ai-empty-sub">Ask anything about this article. Runs in your browser — nothing leaves your device.</p>
+    </div>
+  </div>
+
+  <div class="ai-status" id="ai-status" hidden></div>
+
+  <form class="ai-composer" id="ai-form">
+    <textarea id="ai-input" rows="1" placeholder="Ask about this post…" autocomplete="off"></textarea>
+    <button type="submit" id="ai-send" class="ai-send" aria-label="Send" disabled>
+      <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><line x1="22" y1="2" x2="11" y2="13"/><polygon points="22 2 15 22 11 13 2 9 22 2"/></svg>
+    </button>
+  </form>
+</div>
+
+<script>
+(function () {
+  const POST_TITLE = "\u9ad8\u4e2d\u8001\u5e08\u8bf4\"\u4e70\u83dc\u7528\u5f97\u4e0a\u6c42\u6839\u516c\u5f0f\u5417\"\u2014\u2014\u53ef\u8fd9\u6761\u516c\u5f0f\uff0c\u662f\u6574\u4e2a\u5927\u6a21\u578b\u7684\u7956\u5b97";
+  const contentEl = document.querySelector('article .content');
+
+  const fab = document.getElementById('ai-fab');
+  const panel = document.getElementById('ai-panel');
+  const closeBtn = document.getElementById('ai-close');
+  const clearBtn = document.getElementById('ai-clear');
+  const msgsEl = document.getElementById('ai-messages');
+  const emptyEl = document.getElementById('ai-empty');
+  const statusEl = document.getElementById('ai-status');
+  const formEl = document.getElementById('ai-form');
+  const inputEl = document.getElementById('ai-input');
+  const sendBtn = document.getElementById('ai-send');
+
+  function articleText() {
+    if (!contentEl) return '';
+    return (contentEl.innerText || contentEl.textContent || '')
+      .replace(/[ \t]+\n/g, '\n')
+      .replace(/\n{3,}/g, '\n\n')
+      .trim();
+  }
+
+  function setStatus(msg, cls) {
+    if (!msg) { statusEl.hidden = true; statusEl.textContent = ''; statusEl.className = 'ai-status'; return; }
+    statusEl.hidden = false;
+    statusEl.textContent = msg;
+    statusEl.className = 'ai-status' + (cls ? ' ' + cls : '');
+  }
+
+  function hideEmpty() { if (emptyEl) emptyEl.style.display = 'none'; }
+
+  function appendBubble(role, text) {
+    hideEmpty();
+    const wrap = document.createElement('div');
+    wrap.className = 'ai-msg ai-msg-' + role;
+    const bubble = document.createElement('div');
+    bubble.className = 'ai-bubble';
+    bubble.textContent = text;
+    wrap.appendChild(bubble);
+    msgsEl.appendChild(wrap);
+    msgsEl.scrollTop = msgsEl.scrollHeight;
+    return bubble;
+  }
+
+  function appendTyping() {
+    hideEmpty();
+    const wrap = document.createElement('div');
+    wrap.className = 'ai-msg ai-msg-assistant ai-typing';
+    wrap.innerHTML = '<div class="ai-bubble"><span class="ai-dots"><i></i><i></i><i></i></span></div>';
+    msgsEl.appendChild(wrap);
+    msgsEl.scrollTop = msgsEl.scrollHeight;
+    return wrap;
+  }
+
+  function autoSize() {
+    inputEl.style.height = 'auto';
+    inputEl.style.height = Math.min(inputEl.scrollHeight, 140) + 'px';
+  }
+
+  function openPanel() {
+    panel.classList.add('open');
+    panel.setAttribute('aria-hidden', 'false');
+    fab.classList.add('hidden');
+    setTimeout(() => inputEl.focus(), 50);
+  }
+  function closePanel() {
+    panel.classList.remove('open');
+    panel.setAttribute('aria-hidden', 'true');
+    fab.classList.remove('hidden');
+  }
+
+  fab.addEventListener('click', openPanel);
+  closeBtn.addEventListener('click', closePanel);
+  document.addEventListener('keydown', e => {
+    if (e.key === 'Escape' && panel.classList.contains('open')) closePanel();
+  });
+
+  // ---- LanguageModel session ----
+  let session = null;
+  let creating = null;
+  let history = [];
+
+  function buildSystemPrompt() {
+    // Keep article context modest — Gemini Nano's input quota is small.
+    const article = articleText().slice(0, 4000);
+    return (
+      'You are a concise, helpful assistant answering questions about a blog post. ' +
+      'Use the article below as your primary source. If the answer is not in it, say so briefly and answer generally. ' +
+      'Reply in the same language as the user\'s question. Keep answers short unless asked for detail.\n\n' +
+      '=== ARTICLE TITLE ===\n' + POST_TITLE + '\n\n' +
+      '=== ARTICLE CONTENT ===\n' + article
+    );
+  }
+
+  async function ensureSession() {
+    if (session) return session;
+    if (creating) return creating;
+
+    if (!('LanguageModel' in self)) {
+      throw new Error(
+        'On-device AI not available. Use Chrome 138+ on desktop, or enable ' +
+        '"Prompt API for Gemini Nano" in chrome://flags.'
+      );
+    }
+
+    setStatus('Checking model…', 'info');
+    const status = await LanguageModel.availability();
+    if (status === 'unavailable') {
+      throw new Error('Model unavailable on this device.');
+    }
+
+    creating = (async () => {
+      // Only show download UI when the model isn't already there.
+      const willDownload = (status !== 'available');
+      if (willDownload) setStatus('Preparing model (first run downloads ~2GB)…', 'info');
+      else setStatus('Warming up…', 'info');
+
+      const s = await LanguageModel.create({
+        initialPrompts: [{ role: 'system', content: buildSystemPrompt() }],
+        monitor(m) {
+          m.addEventListener('downloadprogress', e => {
+            // Skip the spurious 0% event Chrome fires for cached models.
+            if (!willDownload && e.loaded === 0) return;
+            const pct = (e.loaded * 100).toFixed(1);
+            setStatus('Downloading model: ' + pct + '%', 'info');
+          });
+        }
+      });
+      session = s;
+      setStatus('');
+      return s;
+    })();
+
+    try { return await creating; }
+    finally { creating = null; }
+  }
+
+  async function ask(q) {
+    appendBubble('user', q);
+    history.push({ role: 'user', content: q });
+
+    sendBtn.disabled = true;
+    inputEl.disabled = true;
+    const typing = appendTyping();
+
+    let answerBubble = null;
+    let acc = '';
+    try {
+      const s = await ensureSession();
+      const stream = s.promptStreaming(q);
+      for await (const chunk of stream) {
+        if (!answerBubble) {
+          typing.remove();
+          const wrap = document.createElement('div');
+          wrap.className = 'ai-msg ai-msg-assistant';
+          answerBubble = document.createElement('div');
+          answerBubble.className = 'ai-bubble';
+          wrap.appendChild(answerBubble);
+          msgsEl.appendChild(wrap);
+        }
+        acc += chunk;
+        answerBubble.textContent = acc;
+        msgsEl.scrollTop = msgsEl.scrollHeight;
+      }
+      if (acc) history.push({ role: 'assistant', content: acc });
+      else { typing.remove(); appendBubble('assistant', '(no response)'); }
+    } catch (e) {
+      if (typing && typing.parentNode) typing.remove();
+      const err = document.createElement('div');
+      err.className = 'ai-msg ai-msg-error';
+      err.innerHTML = '<div class="ai-bubble">⚠ ' + (e && e.message ? e.message : String(e)) + '</div>';
+      msgsEl.appendChild(err);
+      msgsEl.scrollTop = msgsEl.scrollHeight;
+    } finally {
+      sendBtn.disabled = !inputEl.value.trim();
+      inputEl.disabled = false;
+      inputEl.focus();
+    }
+  }
+
+  formEl.addEventListener('submit', e => {
+    e.preventDefault();
+    const q = inputEl.value.trim();
+    if (!q) return;
+    inputEl.value = '';
+    autoSize();
+    sendBtn.disabled = true;
+    ask(q);
+  });
+
+  inputEl.addEventListener('input', () => {
+    autoSize();
+    sendBtn.disabled = !inputEl.value.trim();
+  });
+  inputEl.addEventListener('keydown', e => {
+    if (e.key === 'Enter' && !e.shiftKey) {
+      e.preventDefault();
+      formEl.requestSubmit();
+    }
+  });
+
+  clearBtn.addEventListener('click', () => {
+    msgsEl.innerHTML = '';
+    msgsEl.appendChild(emptyEl);
+    emptyEl.style.display = '';
+    history = [];
+    if (session && session.destroy) { try { session.destroy(); } catch (_) {} }
+    session = null;
+    setStatus('');
+  });
+
+  if (!('LanguageModel' in self)) {
+    fab.addEventListener('click', () => {
+      openPanel();
+      setStatus('On-device AI not detected. Use Chrome 138+ desktop, or enable "Prompt API for Gemini Nano" in chrome://flags.', 'bad');
+    }, { once: true });
+  }
+})();
+</script>
+
+<!-- Outline notes / comments — DataScript + IndexedDB -->
+<script src="https://github.com/tonsky/datascript/releases/download/1.7.8/datascript-1.7.8.min.js"></script>
+<script src="../notes.js?v=6"></script>
+<script src="../theme.js"></script>
+<script src="../wechat-copy.js?v=3"></script>
+
+</body>
+</html>
