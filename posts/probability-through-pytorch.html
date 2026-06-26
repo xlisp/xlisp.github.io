@@ -1,0 +1,1141 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>大学4年没讲明白的概率论，被一段 PyTorch 代码讲透了 · Steve Chan — xlisp</title>
+<meta name="description" content="本文配套的所有图都可以用 docs/images/prob/ 里的脚本复现。我们由浅入深：">
+<meta name="author" content="Steve Chan">
+<link rel="icon" type="image/jpeg" href="../icon.jpeg">
+<link rel="apple-touch-icon" href="../icon.jpeg">
+<meta property="og:type" content="article">
+<meta property="og:title" content="大学4年没讲明白的概率论，被一段 PyTorch 代码讲透了">
+<meta property="og:description" content="本文配套的所有图都可以用 docs/images/prob/ 里的脚本复现。我们由浅入深：">
+<meta property="og:image" content="../icon.jpeg">
+<meta property="og:site_name" content="Steve Chan — xlisp">
+<meta name="twitter:card" content="summary_large_image">
+<meta name="twitter:title" content="大学4年没讲明白的概率论，被一段 PyTorch 代码讲透了">
+<meta name="twitter:description" content="本文配套的所有图都可以用 docs/images/prob/ 里的脚本复现。我们由浅入深：">
+<meta name="twitter:image" content="../icon.jpeg">
+<link rel="stylesheet" href="../style.css?v=light1">
+<script>(function(){try{if(localStorage.getItem('theme')==='light')document.documentElement.setAttribute('data-theme','light');}catch(e){}})();</script>
+<!-- Math formula rendering via MathJax -->
+<script>
+window.MathJax = {
+  tex: {
+    // arithmatex emits \(...\) / \[...\] markup, so only these delimiters
+    // are needed; plain `$` is left alone (avoids currency false positives).
+    inlineMath: [['\\(', '\\)']],
+    displayMath: [['\\[', '\\]']],
+    processEscapes: true
+  },
+  svg: {
+    // Each formula gets its own self-contained <defs>, so the copy script can
+    // serialize one <svg> and rasterize it to a PNG for WeChat.
+    fontCache: 'local'
+  },
+  options: {
+    skipHtmlTags: ['script', 'noscript', 'style', 'textarea', 'pre', 'code'],
+    ignoreHtmlClass: 'highlight'
+  }
+};
+</script>
+<script src="https://cdn.jsdelivr.net/npm/mathjax@3/es5/tex-svg.js" async></script>
+</head>
+<body>
+<main class="wrap post">
+
+  <nav class="topnav">
+    <a href="../index.html">← home</a>
+  </nav>
+
+  <article>
+    <header class="post-header">
+      <h1>大学4年没讲明白的概率论，被一段 PyTorch 代码讲透了</h1>
+      <p class="meta">2026-06-27 · Steve Chan</p>
+    </header>
+
+    <div class="content">
+<blockquote>
+<p>大学里的概率论，大概是这样的：老师在黑板上写下一行公式，
+<span class="arithmatex">\(P(A\mid B)=\dfrac{P(AB)}{P(B)}\)</span>，然后开始证明，下课。
+四年下来，你会背贝叶斯、会算泊松、会做卷积，但你心里始终有个声音：
+<strong>"这玩意儿到底有什么用？"</strong></p>
+<p>直到有一天，你打开一个训练大模型的项目，发现整座 Transformer
+——从生成一个字，到强化学习自我提升——<strong>全是概率论</strong>。
+而且不是抽象的公式，是一行行能跑、能 debug、能可视化的 PyTorch 代码。</p>
+<p>这篇文章，我们就用本项目 <a href="../README.md">MathGPT</a> 的真实代码，
+把概率论从"考试科目"还原成"工程直觉"，再一路延伸到<strong>怎么 debug 大模型</strong>、
+<strong>怎么预测微信群消息量</strong>，以及<strong>生活中处处可用的概率思维</strong>。</p>
+</blockquote>
+<p>本文配套的所有图都可以用 <code>docs/images/prob/</code> 里的脚本复现。我们由浅入深：</p>
+<ul>
+<li><strong>第一部分·历史</strong>：概率论 400 年——从赌桌到大模型，它到底在解决什么问题</li>
+<li><strong>第二部分·分布</strong>：为什么偏偏是高斯分布唱主角？</li>
+<li><strong>第三部分·代码</strong>（核心七层，全程用本项目源码）：
+  1. softmax：把任意数字变成概率
+  2. temperature：同一个分布，不同的"自信程度"
+  3. top-k：砍掉概率分布的长尾
+  4. 交叉熵：损失函数其实就是"惊讶程度"
+  5. 条件概率 → 贝叶斯网络 → 概率图模型 → 因果推断：Transformer 站在阶梯的哪一级
+  6. 策略梯度：REINFORCE 用"期望"教模型自我提升</li>
+<li><strong>第四部分·落地</strong>：debug Transformer / 预测微信泊松流量 / <strong>用贝叶斯信念调试人生、突破难题</strong> / 生活中的概率思维</li>
+</ul>
+<hr />
+<h1 id="第一部分-历史概率论-400-年是怎么一步步走到大模型的">第一部分 · 历史：概率论 400 年是怎么一步步走到大模型的</h1>
+<p>要真正"讲明白"概率论，得先知道它每一步<strong>在解决什么现实问题</strong>。
+概率论不是一开始就长这样的，它是被一个个具体问题逼出来的。
+下面这条时间线，恰好也是一条"通往大模型"的路：</p>
+<p><img alt="概率论 400 年时间线" src="images/prob/fig8_history.png" /></p>
+<p><strong>① 1654，赌桌：古典概率（Pascal &amp; Fermat）。</strong>
+起点很接地气：两个赌徒中途散场，赌注怎么分才公平？
+Pascal 和 Fermat 通信解决了这个"分赌注问题"，定义了<strong>古典概率</strong>——
+等可能事件下，概率 = 有利结果数 / 总结果数。<strong>概率论生于赌博，不是生于课堂。</strong></p>
+<p><strong>② 1713，从一次到无穷：大数定律（Bernoulli）。</strong>
+雅各布·伯努利问：抛硬币次数越多，正面比例真的会趋近 1/2 吗？
+<strong>大数定律</strong>给了"频率→概率"的桥。这是第 6 节 RL 里 <code>pass@k</code> 评估、
+"采样足够多次取平均"之所以可靠的根基。</p>
+<p><strong>③ 1763，逆问题：贝叶斯定理（Bayes）。</strong>
+前面都在算"已知原因，求结果的概率"。Bayes 反过来问：
+<strong>"看到了结果，怎么反推原因的概率？"</strong>
+他原本想解决一个哲学问题：太阳天天升起，我们凭什么越来越相信它明天还会升起？
+答案就是 <span class="arithmatex">\(P(\text{原因}\mid\text{证据})\)</span>——<strong>每多一天观测，就把信念更新一次。</strong>
+这正是第 7.4 节"调试人生"里 Beta 后验做的事，也是"从数据中学习"最早的数学形式。</p>
+<p><strong>④ 1809，连续世界：正态分布登场（Gauss &amp; Laplace）。</strong>
+高斯不是凭空写下钟形曲线的——他是为了<strong>找回一颗丢失的小行星</strong>才逼出了它（详见第二部分的起源故事）。
+他研究天文观测误差，导出那条曲线并配上<strong>最小二乘法</strong>；拉普拉斯用<strong>中心极限定理</strong>给了它普适解释。
+从此<strong>连续、对称、误差类</strong>的随机量有了"默认分布"。为什么偏偏是它统治世界？下一部分专门回答。</p>
+<p><strong>④½ 1837，稀有事件：泊松分布（Poisson）。</strong>
+高斯管的是"连续的误差"，但还有一类问题它管不了：<strong>单位时间内，稀有又独立的事件发生几次？</strong>
+泊松从"大量审判中的误判次数"出发推导出泊松分布，后来被用来精确拟合
+"普鲁士军队每年被马踢死的人数"（第 7.2 节会展开这个经典例子）。
+<strong>它专治计数类问题——和高斯分工明确。</strong></p>
+<p><strong>⑤ 1906，给随机性装上"记忆"：马尔可夫链（Markov）。</strong>
+马尔可夫提出："下一个状态只依赖当前状态"。他当年是拿<strong>俄语文本里的字母转移</strong>做的实验——
+<strong>这是语言模型最早的祖先。</strong> n-gram、隐马尔可夫模型，一路到神经语言模型，
+本质都在估计"给定上文，下一个符号的概率"。第 5 节会看到 Transformer 正是它的现代化身。</p>
+<p><strong>⑥ 1933，地基浇筑：公理化（Kolmogorov）。</strong>
+在此之前概率论一直有点"民科"，靠直觉。柯尔莫哥洛夫用<strong>测度论</strong>把概率建立在三条公理上，
+概率论才成为严格的现代数学。今天你写的每一个 <code>softmax</code>、每一次期望，背后都站着这套公理。</p>
+<p><strong>⑦ 1948，信息即概率：信息论（Shannon）。</strong>
+香农用概率定义了<strong>信息熵</strong> <span class="arithmatex">\(H=-\sum p\log p\)</span>，以及<strong>交叉熵</strong>。
+这一步直接连到第 4 节——<strong>大模型的损失函数 <code>F.cross_entropy</code> 就是香农 1948 年的发明。</strong>
+训练模型"减少惊讶"，用的正是信息论的语言。</p>
+<p><strong>⑧ 1988，相关之上：贝叶斯网络与因果（Pearl）。</strong>
+珀尔用<strong>有向无环图（DAG）</strong>把一堆条件概率组织成贝叶斯网络，
+后来又开创<strong>因果推断</strong>，区分"相关"与"因果"。第 5 节会讲：
+<strong>今天的大模型恰恰卡在他这套阶梯的最底层。</strong></p>
+<p><strong>⑨ 2017 → 2022，集大成：Transformer 与 RLHF。</strong>
+Transformer 把"给定上文预测下一个 token 的条件概率"做到极致（第 5 节）；
+RLHF/RL 用策略梯度让模型对齐人类偏好（第 6 节）。
+<strong>ChatGPT 不是凭空出现的，它是这条 400 年概率长河的入海口。</strong></p>
+<blockquote>
+<p>🧭 <strong>一句话串联</strong>：赌桌（古典概率）→ 抛硬币（大数定律）→ 反推原因（贝叶斯）→
+误差曲线（高斯）→ 文本转移（马尔可夫）→ 公理化（柯尔莫哥洛夫）→ 惊讶度（香农熵）→
+因果图（珀尔）→ 下一个 token（Transformer）→ 自我提升（RL）。
+<strong>每一段，下面都有一段能跑的 PyTorch 代码与之对应。</strong></p>
+</blockquote>
+<hr />
+<h1 id="第二部分-为什么偏偏是高斯分布唱主角">第二部分 · 为什么偏偏是高斯分布唱主角？</h1>
+<p>学概率时一个常见困惑：分布那么多——均匀、泊松、指数、伯努利、幂律……
+<strong>为什么教科书和工程实践里，正态（高斯）分布的戏份远超其他？</strong>
+先讲它"为什么会被发明出来"的真实故事，再讲四个让它统治世界的理由。</p>
+<h3 id="起源故事高斯为了找回一颗丢失的小行星而发明了正态分布">起源故事：高斯为了"找回一颗丢失的小行星"而发明了正态分布</h3>
+<p>1801 年元旦，天文学家皮亚齐发现了矮行星<strong>谷神星 (Ceres)</strong>，但只观测了 40 天，
+它就转到太阳背后、<strong>丢了</strong>。全欧洲的天文学家都在问：它会从哪里重新出现？
+观测数据少且<strong>每一条都带误差</strong>，怎么从一堆有噪声的点里推断出真实轨道？</p>
+<p>24 岁的高斯这样反推：
+<strong>"如果对同一个量做多次带误差的测量，那么大家公认最靠谱的估计是'算术平均值'。
+那么，误差应该服从什么分布，才能让'算术平均'恰好成为最可能的真值？"</strong>
+他从这个要求倒推，<strong>唯一的答案就是那条钟形曲线</strong> <span class="arithmatex">\(e^{-x^2/2\sigma^2}\)</span>——正态分布。
+配上由此自然导出的<strong>最小二乘法</strong>，高斯算出了谷神星的轨道。
+当年年底，天文学家果然在他预测的位置<strong>重新找到了谷神星</strong>。一战成名。</p>
+<blockquote>
+<p>注意这个逻辑的方向：<strong>不是先有正态分布，再去拟合误差；
+而是先要求"平均值最优"，反推出误差必然是正态。</strong>
+这跟第 4 节"最小化交叉熵 = 最大似然"是同一种思维——
+<strong>从'什么估计最合理'出发，反推'背后是什么概率模型'。</strong> 这就是高斯的诞生。</p>
+</blockquote>
+<p>明白了它的来历，再看它统治世界的四个理由：</p>
+<h3 id="理由一中心极限定理大量微小因素之和必然是高斯">理由一：中心极限定理——"大量微小因素之和"必然是高斯</h3>
+<p>这是最深刻的理由。<strong>中心极限定理 (CLT)</strong>：无论原始变量服从什么分布，
+只要把足够多个<strong>独立</strong>随机量加起来（或取平均），结果的分布都会趋近正态。</p>
+<p><img alt="中心极限定理：任何分布求平均都趋于钟形" src="images/prob/fig9_clt.png" /></p>
+<p>上图三行用了三种完全不同的源分布（均匀、指数、伯努利），
+每行从左到右是"对 n 个样本取平均"：<strong>n=1 时奇形怪状，n=30 时全部收敛到同一条红色钟形曲线。</strong></p>
+<p>现实世界里，一个量往往是无数微小独立因素叠加的结果：
+身高（成千上万个基因 + 营养 + ……）、测量误差、股价波动、神经元输入之和……
+<strong>它们"天然就是高斯的"，不是人为假设，而是 CLT 的必然结论。</strong> 这就是高斯无处不在的根本原因。</p>
+<h3 id="理由二最大熵承认自己只知道均值和方差时最诚实的选择">理由二：最大熵——"承认自己只知道均值和方差"时最诚实的选择</h3>
+<p>信息论给了第二个理由（呼应第 7 节香农）：
+<strong>在只知道一个分布的均值和方差、其余一无所知的前提下，正态分布是熵最大的分布。</strong></p>
+<p>"熵最大"意味着"假设最少、最不自作主张"。
+所以当你对一个连续量只有"中心在哪、波动多大"的信息时，
+<strong>假设它是高斯，是最不引入额外偏见的选择。</strong> 这让高斯成为默认的、最保守的建模起点。</p>
+<h3 id="理由三数学上太好用自共轭线性封闭解析可解">理由三：数学上太好用——自共轭、线性封闭、解析可解</h3>
+<ul>
+<li>两个高斯相加还是高斯；高斯做线性变换还是高斯。</li>
+<li>高斯的<strong>共轭先验</strong>还是高斯——贝叶斯更新有闭式解，不用数值积分。</li>
+<li>只需<strong>均值 + 协方差</strong>两个量就完全确定，最优估计退化成熟悉的最小二乘（高斯 1809 的原配）。</li>
+</ul>
+<p>工程上，"能算出解析解"往往压倒一切，这让高斯成为算法设计的宠儿。</p>
+<h3 id="理由四在深度学习里高斯其实无处不在">理由四：在深度学习里，高斯其实无处不在</h3>
+<p>回到本项目这类大模型，高斯藏在很多地方：</p>
+<ul>
+<li><strong>权重初始化</strong>：Xavier / Kaiming 初始化都是从高斯（或其变体）采样，让信号方差逐层稳定。</li>
+<li><strong>梯度噪声</strong>：SGD 的小批量梯度噪声近似高斯（又是 CLT），这是理解优化的关键。</li>
+<li><strong>扩散模型</strong>：整个生成范式就是"逐步加高斯噪声再学着去噪"。</li>
+<li><strong>VAE / 隐变量</strong>：隐空间先验通常设为标准正态。</li>
+</ul>
+<blockquote>
+<p>⚠️ <strong>但要诚实：大模型的"输出"恰恰不是高斯！</strong>
+语言模型预测下一个 token，用的是<strong>离散的类别分布（categorical / 多项式分布）</strong>——
+也就是第 1 节的 <code>softmax</code>，而非高斯。词频还服从<strong>幂律/长尾</strong>（Zipf 定律），
+这也是第 3 节要用 <code>top-k</code> 砍长尾的原因。
+<strong>所以正确的认知是</strong>：高斯统治"连续、对称、多因素叠加"的世界（参数、噪声、误差），
+而离散选择的世界由 categorical 分布统治。<strong>选对分布，是概率建模的第一步功夫。</strong></p>
+<p>🔑 <strong>概率思维落地 #0</strong>：看到一个量，先问"它是怎么生成的？"
+是"很多小因素叠加"（→ 高斯）？是"单位时间随机计数"（→ 泊松，第 7 节）？
+还是"从有限选项里挑一个"（→ categorical，第 1 节）？
+<strong>建模选错分布，后面再精巧的计算都是错的。</strong></p>
+</blockquote>
+<hr />
+<h1 id="第三部分-代码七层拆透大模型里的概率论">第三部分 · 代码：七层拆透大模型里的概率论</h1>
+<h2 id="0-一个被忽略的真相神经网络的输出从来不是答案是分布">0. 一个被忽略的真相：神经网络的输出从来不是答案，是分布</h2>
+<p>先记住一句话，它是后面所有内容的地基：</p>
+<blockquote>
+<p><strong>语言模型每走一步，吐出来的不是"下一个字"，而是"整个词表上的一个概率分布"。</strong></p>
+</blockquote>
+<p>在本项目里，模型最后一层就是把隐藏向量投影成 <code>vocab_size</code> 个数（叫 <strong>logits</strong>）：</p>
+<div class="highlight"><pre><span></span><code><span class="c1"># nanochat/gpt.py  (forward)</span>
+<span class="n">logits</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">lm_head</span><span class="p">(</span><span class="n">x</span><span class="p">)</span>                     <span class="c1"># (B, T, vocab_size) 每个 token 一个分数</span>
+<span class="n">logits</span> <span class="o">=</span> <span class="n">logits</span><span class="p">[</span><span class="o">...</span><span class="p">,</span> <span class="p">:</span><span class="bp">self</span><span class="o">.</span><span class="n">config</span><span class="o">.</span><span class="n">vocab_size</span><span class="p">]</span>
+<span class="n">logits</span> <span class="o">=</span> <span class="n">logits</span><span class="o">.</span><span class="n">float</span><span class="p">()</span>
+<span class="n">softcap</span> <span class="o">=</span> <span class="mi">15</span>
+<span class="n">logits</span> <span class="o">=</span> <span class="n">softcap</span> <span class="o">*</span> <span class="n">torch</span><span class="o">.</span><span class="n">tanh</span><span class="p">(</span><span class="n">logits</span> <span class="o">/</span> <span class="n">softcap</span><span class="p">)</span>  <span class="c1"># 把 logits 平滑压到 [-15, 15]</span>
+</code></pre></div>
+
+<p>注意：这时候 <code>logits</code> 还只是一堆任意实数，可能是 <code>8.0, 6.5, -3.2, ...</code>。
+它<strong>不是概率</strong>——没有非负、不归一、加起来也不等于 1。</p>
+<p>把它变成概率，只需要一个函数：<strong>softmax</strong>。这就是第一层。</p>
+<hr />
+<h2 id="1-softmax把任意数字变成概率">1. softmax：把任意数字变成"概率"</h2>
+<p>概率分布必须满足两条：每一项 ≥ 0，所有项加起来 = 1。
+softmax 用一招同时搞定：先 <code>exp</code>（保证为正），再除以总和（保证归一）：</p>
+<div class="arithmatex">\[
+p_i = \frac{e^{z_i}}{\sum_j e^{z_j}}
+\]</div>
+<p>本项目里它就藏在采样函数里：</p>
+<div class="highlight"><pre><span></span><code><span class="c1"># nanochat/engine.py  sample_next_token()</span>
+<span class="n">probs</span>  <span class="o">=</span> <span class="n">F</span><span class="o">.</span><span class="n">softmax</span><span class="p">(</span><span class="n">vals</span><span class="p">,</span> <span class="n">dim</span><span class="o">=-</span><span class="mi">1</span><span class="p">)</span>                       <span class="c1"># logits -&gt; 概率分布</span>
+<span class="n">choice</span> <span class="o">=</span> <span class="n">torch</span><span class="o">.</span><span class="n">multinomial</span><span class="p">(</span><span class="n">probs</span><span class="p">,</span> <span class="n">num_samples</span><span class="o">=</span><span class="mi">1</span><span class="p">,</span> <span class="n">generator</span><span class="o">=</span><span class="n">rng</span><span class="p">)</span>  <span class="c1"># 按概率抽一个</span>
+</code></pre></div>
+
+<p>这两行就是大模型"写字"的核心：
+<strong>softmax 把分数变成概率，<code>multinomial</code> 按这个概率掷一次骰子。</strong></p>
+<p>大学里 softmax 通常只在"逻辑回归"那一节露个脸，老师不会告诉你：
+<strong>你每天用的 ChatGPT，每吐一个字，背后都在做一次 softmax + 掷骰子。</strong></p>
+<h3 id="11-为什么偏偏是-softmax而不是别的归一化">1.1 为什么偏偏是 softmax，而不是别的归一化？</h3>
+<p>一个自然的质疑：把一堆数变成"非负、和为 1"的方法多得是，<strong>为什么非得用 <code>exp</code>？</strong>
+直接 <code>z_i / Σz_j</code> 不行吗？把负数砍成 0 再归一不行吗？看一眼对比就明白了：</p>
+<p><img alt="为什么用 softmax 而不是别的" src="images/prob/fig12_softmax_why.png" /></p>
+<ul>
+<li><strong>argmax（直接选最大）</strong>：得到 one-hot，干脆利落，但它是<strong>阶梯函数、几乎处处导数为 0</strong>。
+  神经网络靠梯度学习，<strong>没有梯度就没法训练</strong>——这条死路直接出局。</li>
+<li><strong><code>clip(z,0)/Σ</code>（砍掉负数再归一）</strong>：logits 本来可以是任意实数，负数也携带信息
+  （"这个 token 很不可能"）。一刀砍成 0，<strong>信息丢了</strong>；而且 0 处有折角，<strong>梯度不光滑</strong>。</li>
+<li><strong>softmax（<code>exp</code> 再归一）</strong>：<code>exp</code> 把任意实数（含负数）平滑地映射到正数，
+  曲线处处可导、梯度漂亮，还独享一个杀手级性质——<strong>对数线性</strong>。</li>
+</ul>
+<p>那个"对数线性"才是 softmax 真正不可替代的原因：</p>
+<div class="arithmatex">\[
+\log p_i - \log p_j = z_i - z_j
+\]</div>
+<p><strong>两个选项的对数概率之差，恰好等于它们 logits 之差。</strong> 这意味着神经网络只要去线性地调整 logits，
+就能精确控制概率的比值（几率/odds）。配上交叉熵损失（第 4 节），
+<strong>梯度还会化简成一个极其干净的形式 <code>预测概率 − 真实标签</code></strong>——这是 softmax 能和反向传播完美配合的根本。</p>
+<h4 id="它的来历其实是-1870-年代物理学的玻尔兹曼分布">它的来历：其实是 1870 年代物理学的"玻尔兹曼分布"</h4>
+<p>softmax 不是深度学习发明的。它的本体是统计物理里的 <strong>玻尔兹曼/吉布斯分布</strong>：
+一个系统处于能量为 <span class="arithmatex">\(E_i\)</span> 的状态的概率正比于 <span class="arithmatex">\(e^{-E_i/kT}\)</span>。
+把"能量"换成"负 logit"、把 <span class="arithmatex">\(kT\)</span> 换成温度，就是一模一样的式子。</p>
+<p><strong>这正是第 2 节那个 <code>temperature</code> 名字的来历</strong>——它真的来自热力学的温度！
+高温时各状态概率拉平（系统混乱、随机），低温时集中到最低能量态（系统笃定、有序）。
+所以当你调大模型的 temperature 时，你其实在借用一个 150 年前的物理概念。
+而从信息论看（第二部分理由二），softmax 还是<strong>给定 logits 均值约束下熵最大的分布</strong>——
+物理、信息论、深度学习，在这里指向同一个 <code>exp</code>。</p>
+<blockquote>
+<p>🔑 <strong>概率思维落地 #1</strong>：softmax 不只是公式，它是"<strong>把直觉打分变成可比较的概率</strong>"的通用工具。
+你给三家公司 offer 打分 <code>8 / 6.5 / 5</code>？做个 softmax，你就知道"如果让你随机选，你有多大概率去第一家"。
+分差越大越笃定，分差越小越纠结——而这个"纠结程度"，下一节就能量化。</p>
+</blockquote>
+<hr />
+<h2 id="2-temperature同一个分布不同的自信程度">2. temperature：同一个分布，不同的"自信程度"</h2>
+<p>注意上面代码里有一行 <code>vals = vals / temperature</code>。这个 <code>temperature</code>（温度）
+是理解概率分布"形状"的最好教具。它不改变谁排第一，只改变<strong>分布有多尖</strong>：</p>
+<div class="highlight"><pre><span></span><code><span class="c1"># nanochat/engine.py</span>
+<span class="k">if</span> <span class="n">temperature</span> <span class="o">==</span> <span class="mf">0.0</span><span class="p">:</span>
+    <span class="k">return</span> <span class="n">torch</span><span class="o">.</span><span class="n">argmax</span><span class="p">(</span><span class="n">logits</span><span class="p">,</span> <span class="n">dim</span><span class="o">=-</span><span class="mi">1</span><span class="p">,</span> <span class="n">keepdim</span><span class="o">=</span><span class="kc">True</span><span class="p">)</span>  <span class="c1"># T=0：永远选最大，完全确定</span>
+<span class="o">...</span>
+<span class="n">vals</span>  <span class="o">=</span> <span class="n">vals</span> <span class="o">/</span> <span class="n">temperature</span>   <span class="c1"># T&lt;1 放大差距(更自信)，T&gt;1 抹平差距(更随机)</span>
+<span class="n">probs</span> <span class="o">=</span> <span class="n">F</span><span class="o">.</span><span class="n">softmax</span><span class="p">(</span><span class="n">vals</span><span class="p">,</span> <span class="n">dim</span><span class="o">=-</span><span class="mi">1</span><span class="p">)</span>
+</code></pre></div>
+
+<p>同样的 logits <code>[8.0, 6.5, 5.0, ...]</code>，在不同温度下变成完全不同的分布：</p>
+<p><img alt="temperature 对概率分布的影响" src="images/prob/fig1_temperature.png" /></p>
+<ul>
+<li><strong>T=0.3</strong>：几乎 100% 选 "72"，模型"斩钉截铁"。</li>
+<li><strong>T=1.0</strong>：第一名约 77%，但偶尔会选别的，有了"创造性"。</li>
+<li><strong>T=2.0</strong>：分布被抹平，第一名只剩 ~49%，模型开始"胡言乱语"。</li>
+</ul>
+<p>本项目推理默认 <code>temperature=0.6</code>（见 README 参数表）——
+<strong>比 1 略冷，保证数学题答案稳定，又不至于死板。</strong></p>
+<blockquote>
+<p>🔑 <strong>概率思维落地 #2</strong>：temperature 就是"<strong>我有多确定</strong>"的旋钮。
+做选择时，"高温"是头脑风暴（多探索几个方案），"低温"是拍板执行（选最优）。
+调试模型答非所问时，第一反应应该是：<strong>温度是不是太高了？</strong></p>
+</blockquote>
+<hr />
+<h2 id="3-top-k砍掉概率分布的长尾">3. top-k：砍掉概率分布的长尾</h2>
+<p>词表有三万多个 token，softmax 之后，绝大多数 token 都有一点点（非零的）概率。
+如果完全按这个分布抽样，偶尔会抽到一个排名第 8000、概率 0.0001 的"垃圾词"，
+答案就崩了。<strong>top-k 采样</strong>：只保留概率最高的 k 个，其余全部置零再重新归一化。</p>
+<div class="highlight"><pre><span></span><code><span class="c1"># nanochat/engine.py  sample_next_token()</span>
+<span class="k">if</span> <span class="n">top_k</span> <span class="ow">is</span> <span class="ow">not</span> <span class="kc">None</span> <span class="ow">and</span> <span class="n">top_k</span> <span class="o">&gt;</span> <span class="mi">0</span><span class="p">:</span>
+    <span class="n">k</span> <span class="o">=</span> <span class="nb">min</span><span class="p">(</span><span class="n">top_k</span><span class="p">,</span> <span class="n">logits</span><span class="o">.</span><span class="n">size</span><span class="p">(</span><span class="o">-</span><span class="mi">1</span><span class="p">))</span>
+    <span class="n">vals</span><span class="p">,</span> <span class="n">idx</span> <span class="o">=</span> <span class="n">torch</span><span class="o">.</span><span class="n">topk</span><span class="p">(</span><span class="n">logits</span><span class="p">,</span> <span class="n">k</span><span class="p">,</span> <span class="n">dim</span><span class="o">=-</span><span class="mi">1</span><span class="p">)</span>   <span class="c1"># 只留前 k 名</span>
+    <span class="n">vals</span>  <span class="o">=</span> <span class="n">vals</span> <span class="o">/</span> <span class="n">temperature</span>
+    <span class="n">probs</span> <span class="o">=</span> <span class="n">F</span><span class="o">.</span><span class="n">softmax</span><span class="p">(</span><span class="n">vals</span><span class="p">,</span> <span class="n">dim</span><span class="o">=-</span><span class="mi">1</span><span class="p">)</span>             <span class="c1"># 在这 k 个里重新分配 100% 概率</span>
+    <span class="n">choice</span> <span class="o">=</span> <span class="n">torch</span><span class="o">.</span><span class="n">multinomial</span><span class="p">(</span><span class="n">probs</span><span class="p">,</span> <span class="n">num_samples</span><span class="o">=</span><span class="mi">1</span><span class="p">,</span> <span class="n">generator</span><span class="o">=</span><span class="n">rng</span><span class="p">)</span>
+    <span class="k">return</span> <span class="n">idx</span><span class="o">.</span><span class="n">gather</span><span class="p">(</span><span class="mi">1</span><span class="p">,</span> <span class="n">choice</span><span class="p">)</span>
+</code></pre></div>
+
+<p><img alt="top-k 截断长尾" src="images/prob/fig2_topk.png" /></p>
+<p>左边是完整分布（长尾里全是噪声），右边是 <code>top-k=8</code> 之后：红线右边的尾巴被一刀切掉，
+概率质量重新集中到靠谱的候选上。本项目默认 <code>top_k=50</code>。</p>
+<blockquote>
+<p>🔑 <strong>概率思维落地 #3</strong>：top-k 是"<strong>只在靠谱的选项里随机</strong>"。
+选餐厅别在全城 5000 家里随机，先按评分取 top 10，再随便挑一家——
+既保留惊喜，又避免踩雷。这就是 top-k 的人生版。</p>
+</blockquote>
+<hr />
+<h2 id="4-交叉熵损失函数其实就是惊讶程度">4. 交叉熵：损失函数其实就是"惊讶程度"</h2>
+<p>前面讲的是"模型怎么用概率生成"。现在反过来问：<strong>模型怎么学？</strong></p>
+<p>预训练的目标只有一句话：<strong>让正确的下一个字，获得尽可能高的概率。</strong>
+怎么把"概率高不高"变成一个能优化的数字？答案是<strong>交叉熵 = 负对数似然</strong>：</p>
+<div class="arithmatex">\[
+\text{loss} = -\log p(\text{正确的下一个字})
+\]</div>
+<p>本项目里就是一行：</p>
+<div class="highlight"><pre><span></span><code><span class="c1"># nanochat/gpt.py  forward()</span>
+<span class="n">loss</span> <span class="o">=</span> <span class="n">F</span><span class="o">.</span><span class="n">cross_entropy</span><span class="p">(</span>
+    <span class="n">logits</span><span class="o">.</span><span class="n">view</span><span class="p">(</span><span class="o">-</span><span class="mi">1</span><span class="p">,</span> <span class="n">logits</span><span class="o">.</span><span class="n">size</span><span class="p">(</span><span class="o">-</span><span class="mi">1</span><span class="p">)),</span>
+    <span class="n">targets</span><span class="o">.</span><span class="n">view</span><span class="p">(</span><span class="o">-</span><span class="mi">1</span><span class="p">),</span>
+    <span class="n">ignore_index</span><span class="o">=-</span><span class="mi">1</span><span class="p">,</span>        <span class="c1"># -1 的位置不计损失（比如 prompt 部分）</span>
+    <span class="n">reduction</span><span class="o">=</span><span class="n">loss_reduction</span><span class="p">,</span>
+<span class="p">)</span>
+</code></pre></div>
+
+<p>为什么是 <code>-log(p)</code>？看这条曲线就懂了：</p>
+<p><img alt="交叉熵就是惊讶程度" src="images/prob/fig3_cross_entropy.png" /></p>
+<ul>
+<li>模型给正确答案 <code>p=0.9</code> → loss ≈ 0.1（"我早就知道"，几乎不惊讶，几乎不罚）</li>
+<li>给 <code>p=0.5</code> → loss ≈ 0.69（"半信半疑"）</li>
+<li>给 <code>p=0.02</code> → loss ≈ 3.9（"竟然是这个？！"，巨大的惊讶，巨大的惩罚）</li>
+</ul>
+<p><strong>训练，就是不断减少模型对真实世界的"惊讶程度"。</strong>
+这就是为什么交叉熵也叫"困惑度"（perplexity）的来源——困惑越少，模型越懂世界。</p>
+<p>大学里"最大似然估计 (MLE)"和"交叉熵"是两章分开讲的，
+你可能从没意识到：<strong>最小化交叉熵 ≡ 最大化似然 ≡ 让训练数据在模型眼里最不意外。</strong>
+三个名字，一件事。</p>
+<h3 id="易混淆澄清交叉熵-vs-交叉验证名字像思想毫不相干">易混淆澄清：交叉熵 vs 交叉验证——名字像，思想毫不相干</h3>
+<p>很多人被这两个词坑过：中文都带"交叉"、英文都带"cross"，<strong>但它们是两个完全不同维度的东西。</strong>
+一句话分清：<strong>交叉熵是个"损失函数"（衡量预测分布有多偏离真实分布），
+交叉验证是套"评估流程"（衡量模型在没见过的数据上能不能扛得住）。</strong>
+一个在训练<strong>内部</strong>算每一步误差，一个在训练<strong>外部</strong>包一层来估计泛化能力。</p>
+<table>
+<thead>
+<tr>
+<th>维度</th>
+<th>交叉熵 Cross-Entropy</th>
+<th>交叉验证 Cross-Validation</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>出身</td>
+<td><strong>信息论</strong>（Shannon 1948，源自玻尔兹曼熵）</td>
+<td><strong>统计方法论</strong>（Stone &amp; Geisser 1974）</td>
+</tr>
+<tr>
+<td>本体</td>
+<td>一个<strong>数</strong>：<span class="arithmatex">\(H(p,q)=-\sum p\log q\)</span></td>
+<td>一套<strong>实验协议</strong>：切分数据、轮流留出</td>
+</tr>
+<tr>
+<td>"交叉"指什么</td>
+<td><strong>两个分布</strong>交叉：真实分布 <span class="arithmatex">\(p\)</span> × 模型分布 <span class="arithmatex">\(q\)</span></td>
+<td><strong>数据子集</strong>交叉：训练集 ↔ 验证集 轮换 (cross-over)</td>
+</tr>
+<tr>
+<td>作用层级</td>
+<td>训练<strong>内部</strong>，逐样本的优化目标</td>
+<td>训练<strong>外部</strong>，把整个训练过程包起来评估</td>
+</tr>
+<tr>
+<td>解决什么</td>
+<td>"这次预测错得多离谱？"</td>
+<td>"是真学会了，还是只背了训练集？（过拟合）"</td>
+</tr>
+<tr>
+<td>本项目对应</td>
+<td><code>gpt.py</code> 的 <code>F.cross_entropy</code>（损失）</td>
+<td><code>train_rl.py</code> 的 train/test 切分 + <code>val_task</code> 上的 <code>pass@k</code></td>
+</tr>
+</tbody>
+</table>
+<p>两个"交叉"指的根本不是一回事：</p>
+<ul>
+<li><strong>交叉熵的"交叉"</strong>＝拿一个分布去度量另一个分布。你用模型以为的 <span class="arithmatex">\(q\)</span> 去编码真实的 <span class="arithmatex">\(p\)</span>，
+  多付的编码代价就是交叉熵；它和 KL 散度同源：<span class="arithmatex">\(H(p,q)=H(p)+D_{KL}(p\,\|\,q)\)</span>。<strong>交叉的是"真实 vs 预测"两个分布。</strong></li>
+<li><strong>交叉验证的"交叉"</strong>＝数据角色轮流互换 (crossover)。把数据切成 k 折，每份<strong>轮流</strong>当一次验证集、其余当训练集。<strong>交叉的是"训练 vs 验证"两批数据。</strong></li>
+</ul>
+<p><strong>它俩正交，还经常一起用</strong>：用交叉熵当损失去训练（往哪走），同时用交叉验证挑超参、判断是否过拟合（走得对不对）。</p>
+<blockquote>
+<p>⚠️ 补一个现实细节：<strong>大模型几乎不用严格的 k 折交叉验证</strong>——重训 k 遍太贵，退化成<strong>单次留出验证 (holdout)</strong>：
+固定切 train / val / test。本项目正是如此——GSM8K 用 <code>train</code> 训练、<code>test</code> 评估 <code>pass@k</code>，这是交叉验证思想最朴素的版本。</p>
+<p>🔑 <strong>概率思维落地 #4</strong>：用"惊讶程度"评估你的判断质量。
+你预测某事 90% 会发生，结果没发生 → 你应该非常惊讶，并大幅修正认知（大 loss）。
+你说 50% → 无论结果如何都别太得意（中等 loss）。
+<strong>一个好的预测者，是长期"惊讶总量"最小的人。</strong> 这正是 cross-entropy 在做的事。</p>
+</blockquote>
+<hr />
+<h2 id="5-条件概率-贝叶斯网络-因果推断transformer-站在阶梯哪一级">5. 条件概率 → 贝叶斯网络 → 因果推断：Transformer 站在阶梯哪一级</h2>
+<p>现在我们触到了那张被反复念叨、却从没真正"用过"的公式：<strong>条件概率 <span class="arithmatex">\(P(A\mid B)\)</span>。</strong>
+这一节会从它出发，一路爬到贝叶斯网络、再到因果推断——
+并回答一个尖锐的问题：<strong>为什么再大的大模型，也会一本正经地胡说八道？</strong></p>
+<p>大学里它是个抽奖、摸球的玩具。但在大模型里，它是<strong>全部</strong>。
+一句话的概率，被链式法则拆成一连串条件概率的乘积：</p>
+<div class="arithmatex">\[
+P(w_1 w_2 \cdots w_n) = \prod_{t=1}^{n} P(w_t \mid w_1, \dots, w_{t-1})
+\]</div>
+<p><img alt="自回归就是条件概率链" src="images/prob/fig4_conditional.png" /></p>
+<p>模型每一步算的，就是 <strong>"给定前面所有字，下一个字是什么"</strong> 的条件分布。
+在代码里，这个"给定前面所有字"是靠 <strong>KV Cache</strong> 实现的——
+它把"历史"（条件 <span class="arithmatex">\(B\)</span>）缓存下来，新 token 只需在这个条件下计算：</p>
+<div class="highlight"><pre><span></span><code><span class="c1"># nanochat/engine.py  generate()</span>
+<span class="c1"># 把已经算过的 K/V（也就是&quot;条件&quot;，前文上下文）缓存起来</span>
+<span class="n">logits</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">model</span><span class="o">.</span><span class="n">forward</span><span class="p">(</span><span class="n">ids</span><span class="p">,</span> <span class="n">kv_cache</span><span class="o">=</span><span class="n">kv_cache_decode</span><span class="p">)[:,</span> <span class="o">-</span><span class="mi">1</span><span class="p">,</span> <span class="p">:]</span>
+<span class="c1"># 在&quot;给定前文&quot;的条件下，对下一个 token 采样</span>
+<span class="n">next_ids</span> <span class="o">=</span> <span class="n">sample_next_token</span><span class="p">(</span><span class="n">logits</span><span class="p">,</span> <span class="n">rng</span><span class="p">,</span> <span class="n">temperature</span><span class="p">,</span> <span class="n">top_k</span><span class="p">)</span>
+</code></pre></div>
+
+<p><code>[:, -1, :]</code> 这个切片很关键：我们只取<strong>最后一个位置</strong>的 logits，
+因为我们要的就是 <span class="arithmatex">\(P(\text{next}\mid \text{前面全部})\)</span>。</p>
+<p><strong>这就是"GPT"里的 G（Generative）和 P（Pre-trained）背后的概率内核。</strong>
+你大学里背的链式法则 <span class="arithmatex">\(P(ABC)=P(A)P(B\mid A)P(C\mid AB)\)</span>，
+正是 ChatGPT 写出每一句话的方式。</p>
+<h3 id="条件概率还藏在工具调用里">条件概率，还藏在工具调用里</h3>
+<p>本项目的模型会算数学题时调用计算器，这本身就是一个<strong>条件概率的状态机</strong>：
+当模型采样出 <code>&lt;|python_start|&gt;</code>，后续 token 的分布就被"条件化"到了写表达式的模式：</p>
+<div class="highlight"><pre><span></span><code><span class="c1"># nanochat/engine.py  generate()  —— 工具调用状态机</span>
+<span class="k">if</span> <span class="n">next_token</span> <span class="o">==</span> <span class="n">python_start</span><span class="p">:</span>
+    <span class="n">state</span><span class="o">.</span><span class="n">in_python_block</span> <span class="o">=</span> <span class="kc">True</span>            <span class="c1"># 进入&quot;写代码&quot;的条件</span>
+<span class="k">elif</span> <span class="n">next_token</span> <span class="o">==</span> <span class="n">python_end</span> <span class="ow">and</span> <span class="n">state</span><span class="o">.</span><span class="n">in_python_block</span><span class="p">:</span>
+    <span class="n">expr</span>   <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">tokenizer</span><span class="o">.</span><span class="n">decode</span><span class="p">(</span><span class="n">state</span><span class="o">.</span><span class="n">python_expr_tokens</span><span class="p">)</span>
+    <span class="n">result</span> <span class="o">=</span> <span class="n">use_calculator</span><span class="p">(</span><span class="n">expr</span><span class="p">)</span>           <span class="c1"># 算出真实结果</span>
+    <span class="k">if</span> <span class="n">result</span> <span class="ow">is</span> <span class="ow">not</span> <span class="kc">None</span><span class="p">:</span>
+        <span class="n">state</span><span class="o">.</span><span class="n">forced_tokens</span><span class="o">.</span><span class="n">append</span><span class="p">(</span><span class="n">output_start</span><span class="p">)</span>
+        <span class="n">state</span><span class="o">.</span><span class="n">forced_tokens</span><span class="o">.</span><span class="n">extend</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">tokenizer</span><span class="o">.</span><span class="n">encode</span><span class="p">(</span><span class="nb">str</span><span class="p">(</span><span class="n">result</span><span class="p">)))</span>
+        <span class="n">state</span><span class="o">.</span><span class="n">forced_tokens</span><span class="o">.</span><span class="n">append</span><span class="p">(</span><span class="n">output_end</span><span class="p">)</span>  <span class="c1"># 强制把结果&quot;喂&quot;回上下文</span>
+</code></pre></div>
+
+<p>被 <code>use_calculator</code> 算出的真实结果会作为<strong>新的条件</strong>注入上下文，
+后面所有 token 都在"已知 12×6=72"的条件下生成——
+<strong>这就是检索增强 (RAG)、工具调用的概率本质：不断给条件概率添加新的、可靠的条件。</strong></p>
+<h3 id="51-往上一层贝叶斯网络把一堆条件概率组织成一张图">5.1 往上一层：贝叶斯网络——把"一堆条件概率"组织成一张图</h3>
+<p>链式法则 <span class="arithmatex">\(P(w_1\cdots w_n)=\prod_t P(w_t\mid w_{&lt;t})\)</span> 有个麻烦：
+<strong>条件越来越长，联合分布的参数量是指数爆炸的。</strong> 如果什么都依赖什么，根本算不动。</p>
+<p>珀尔 1988 年的解法是<strong>贝叶斯网络</strong>：用一张<strong>有向无环图 (DAG)</strong> 画出"谁直接依赖谁"，
+<strong>没有连线就代表条件独立</strong>，于是巨大的联合分布被分解成一串"小条件概率"的乘积。</p>
+<p><img alt="贝叶斯网络与因果阶梯" src="images/prob/fig10_causal.png" /></p>
+<p>左图是经典例子：季节影响"是否开洒水器"和"是否下雨"，两者又共同决定"草地是否湿"。
+原本要描述 4 个变量的联合分布，借助这张图只需几个局部条件概率：</p>
+<div class="arithmatex">\[
+P(S, Sp, R, W) = P(S)\,P(Sp\mid S)\,P(R\mid S)\,P(W\mid Sp, R)
+\]</div>
+<p><strong>这正是 Transformer 在做的事的"显式版本"：</strong>
+注意力机制可以看作模型在<strong>自动学习</strong> token 之间"谁依赖谁"的稀疏图结构——
+贝叶斯网络是人手画依赖图，Transformer 是用数据把这张图学出来。两者同源。</p>
+<p>贝叶斯网络也让"贝叶斯定理"真正活了起来：观测到"草地湿了"，
+可以<strong>反向推断</strong>"多半是下雨了还是开了洒水器"——这就是 <span class="arithmatex">\(P(\text{原因}\mid\text{证据})\)</span>，
+诊断、归因、推理，全靠它。</p>
+<h3 id="52-再往上因果推断为什么相关喂不出因果">5.2 再往上：因果推断——为什么"相关"喂不出"因果"</h3>
+<p>但贝叶斯网络（以及 Transformer）有个天花板。珀尔提出了著名的<strong>因果阶梯</strong>（上图右）：</p>
+<table>
+<thead>
+<tr>
+<th>层级</th>
+<th>问的问题</th>
+<th>数学</th>
+<th>谁在这一层</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>① 关联</td>
+<td>"看到 X，Y 的概率？"</td>
+<td><span class="arithmatex">\(P(Y\mid X)\)</span></td>
+<td><strong>大模型停在这里</strong></td>
+</tr>
+<tr>
+<td>② 干预</td>
+<td>"我<strong>强行</strong>改变 X，Y 会怎样？"</td>
+<td><span class="arithmatex">\(P(Y\mid do(X))\)</span></td>
+<td>A/B 实验、RLHF</td>
+</tr>
+<tr>
+<td>③ 反事实</td>
+<td>"如果当初没那样，结果会不同吗？"</td>
+<td><span class="arithmatex">\(P(Y_x\mid X',Y')\)</span></td>
+<td>人类的反思、追责</td>
+</tr>
+</tbody>
+</table>
+<p>关键在第①和第②层的鸿沟。经典例子："冰淇淋销量"和"溺水人数"高度<strong>相关</strong>——
+但不是冰淇淋导致溺水，而是"夏天"这个共同原因。
+<strong>只看 <span class="arithmatex">\(P(Y\mid X)\)</span> 的模型会学到这种伪相关，而 <span class="arithmatex">\(P(Y\mid do(X))\)</span>（真去禁售冰淇淋）才能区分真假因果。</strong></p>
+<blockquote>
+<p>🧨 <strong>这解释了大模型为什么会"幻觉"</strong>：Transformer 训练目标 <span class="arithmatex">\(P(\text{next}\mid\text{context})\)</span>
+纯粹是第①层的<strong>关联</strong>。它学的是"这些词经常一起出现"，<strong>而非"谁导致谁"</strong>。
+所以它能流畅地把常见搭配缝在一起，却可能缝出一个事实上错误、因果上荒谬的句子。
+<strong>大模型的"一本正经胡说八道"，本质是停留在因果阶梯最底层的必然代价。</strong></p>
+</blockquote>
+<p>那本项目的 RL（第 6 节）是什么？<strong>它正是往第②层"干预"爬的一小步：</strong>
+不再被动模仿语料，而是<strong>主动采样、真去验证答案对错、再据此调整概率</strong>——
+这已经带有"干预并观察后果"的因果味道。这也是为什么 RLHF/RL 对"让模型更可靠"如此关键。</p>
+<h3 id="53-概率图模型-pgm贝叶斯网络只是这张大地图的一角">5.3 概率图模型 (PGM)：贝叶斯网络只是这张大地图的一角</h3>
+<p>退一步看全景：<strong>贝叶斯网络属于一个更大的家族——概率图模型 (Probabilistic Graphical Models)。</strong>
+一句话定义：<strong>用"图"来表示一堆随机变量之间的依赖关系，从而把庞大的联合分布拆成可计算的小块。</strong>
+按"图怎么画"，它分成几支，而本文前面出现的概念几乎都能在这张地图上找到坐标：</p>
+<table>
+<thead>
+<tr>
+<th>概率图模型</th>
+<th>图的形式</th>
+<th>表示什么</th>
+<th>本文/本项目里的对应</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>贝叶斯网络</td>
+<td>有向无环图</td>
+<td>因果/生成方向的条件依赖</td>
+<td>5.1 节、注意力学到的依赖</td>
+</tr>
+<tr>
+<td>马尔可夫随机场 / CRF</td>
+<td>无向图</td>
+<td>对称的相互影响（无方向）</td>
+<td>图像分割、序列标注</td>
+</tr>
+<tr>
+<td>马尔可夫链 / HMM</td>
+<td>链式展开</td>
+<td>时序：下一状态依赖当前</td>
+<td>历史第⑤步，n-gram 语言模型</td>
+</tr>
+<tr>
+<td><strong>Transformer</strong></td>
+<td>学出来的动态全连接图</td>
+<td>每个 token 对其他 token 的注意力权重</td>
+<td><strong>本项目 <code>gpt.py</code> 的注意力</strong></td>
+</tr>
+</tbody>
+</table>
+<p>所以"GPT 是什么"可以有个更本质的回答：
+<strong>它是一个把依赖图从'人手画'升级为'用数据自动学'的概率图模型。</strong>
+马尔可夫链假设"只看前一个词"（一阶依赖），n-gram 看前 n 个，
+而 Transformer 的注意力<strong>让每个位置自己决定该依赖前文的哪些词、依赖多重</strong>——
+这张图不再是固定的，而是随输入动态生成的。这就是它碾压前辈的根本原因。</p>
+<blockquote>
+<p>概率图模型给了我们一副统一的眼镜：<strong>马尔可夫链、HMM、贝叶斯网络、CRF、乃至 Transformer，
+都是"在图上做概率推断"。</strong> 你大学里割裂学的这些章节，其实是同一棵树上的不同枝杈。</p>
+<p>🔑 <strong>概率思维落地 #5（这条最值钱）</strong>：条件概率是"<strong>新信息如何改变你的判断</strong>"。
+- "这个项目能成吗？" → 无条件，瞎猜。
+- "已知团队做过三个同类项目、且拿到了头部客户，这个项目能成吗？" → 条件概率，靠谱多了。</p>
+<p>生活里每一条新信息，都是在给你的判断"加一个条件"。
+学会问 <strong>"在已知 X 的条件下"</strong>，你就掌握了概率论里唯一真正改变命运的那个公式。</p>
+<p>🪜 <strong>再往上一层（因果阶梯）</strong>：别停在"A 和 B 总一起出现"（关联）。
+多问一句"如果我<strong>真去改变 A</strong>，B 会变吗？"（干预），以及"当初要是没做 A，结果会不同吗？"（反事实）。
+"努力和成功相关" ≠ "努力导致成功"——分清这两者，你就比只会拟合相关性的大模型站高了两级。</p>
+</blockquote>
+<hr />
+<h2 id="6-策略梯度用期望教模型自我提升">6. 策略梯度：用"期望"教模型自我提升</h2>
+<p>最后一层，也是本项目的灵魂：<strong>强化学习 (RL)</strong>。这里概率论从"描述世界"升级为"改变世界"。</p>
+<p>预训练让模型学会"像人一样说话"，但说得对不对，没人管。
+RL 阶段，我们让模型<strong>对同一道数学题采样多个答案，对的奖励 1，错的奖励 0</strong>，
+然后调整概率分布：<strong>让"答对的路径"概率上升，"答错的路径"概率下降。</strong></p>
+<div class="highlight"><pre><span></span><code><span class="c1"># scripts/train_rl.py  get_batch()</span>
+<span class="c1"># 1) 对同一道题采样 num_samples 个答案（每个都是一次随机游走）</span>
+<span class="n">seqs_batch</span><span class="p">,</span> <span class="n">_</span> <span class="o">=</span> <span class="n">engine</span><span class="o">.</span><span class="n">generate_batch</span><span class="p">(</span><span class="n">tokens</span><span class="p">,</span> <span class="n">num_samples</span><span class="o">=</span><span class="n">args</span><span class="o">.</span><span class="n">device_batch_size</span><span class="p">,</span>
+                                       <span class="n">temperature</span><span class="o">=</span><span class="n">args</span><span class="o">.</span><span class="n">temperature</span><span class="p">,</span> <span class="n">top_k</span><span class="o">=</span><span class="n">args</span><span class="o">.</span><span class="n">top_k</span><span class="p">,</span> <span class="o">...</span><span class="p">)</span>
+<span class="c1"># 2) 给每个答案打分：对=1.0, 错=0.0</span>
+<span class="n">rewards</span> <span class="o">=</span> <span class="p">[</span><span class="n">train_task</span><span class="o">.</span><span class="n">reward</span><span class="p">(</span><span class="n">conversation</span><span class="p">,</span> <span class="n">tokenizer</span><span class="o">.</span><span class="n">decode</span><span class="p">(</span><span class="n">s</span><span class="p">[</span><span class="n">prefix_length</span><span class="p">:]))</span>
+           <span class="k">for</span> <span class="n">s</span> <span class="ow">in</span> <span class="n">generated_seqs</span><span class="p">]</span>
+<span class="c1"># 3) 优势 = 奖励 - 平均奖励（这一步是 REINFORCE 的精髓）</span>
+<span class="n">rewards</span>    <span class="o">=</span> <span class="n">torch</span><span class="o">.</span><span class="n">tensor</span><span class="p">(</span><span class="n">rewards</span><span class="p">,</span> <span class="n">dtype</span><span class="o">=</span><span class="n">torch</span><span class="o">.</span><span class="n">float</span><span class="p">,</span> <span class="n">device</span><span class="o">=</span><span class="n">device</span><span class="p">)</span>
+<span class="n">advantages</span> <span class="o">=</span> <span class="n">rewards</span> <span class="o">-</span> <span class="n">rewards</span><span class="o">.</span><span class="n">mean</span><span class="p">()</span>
+</code></pre></div>
+
+<p>为什么要减去平均值 <code>rewards.mean()</code>？这就是大学里<strong>期望 <span class="arithmatex">\(E[X]\)</span></strong> 真正的用武之地：</p>
+<p><img alt="REINFORCE 的优势函数" src="images/prob/fig5_advantage.png" /></p>
+<p>把平均奖励当作"基准线 (baseline)"，<strong>比平均好的答案优势为正（往上推），比平均差的为负（往下压）</strong>。
+这正是"相对于期望的偏离"——你大学里学的方差、期望，在这里变成了"教模型变聪明"的方向盘。</p>
+<p>更新的目标函数，就是大学概率论里那个 <span class="arithmatex">\(E[f(X)]\)</span> 的策略梯度版：</p>
+<div class="highlight"><pre><span></span><code><span class="c1"># scripts/train_rl.py  训练循环</span>
+<span class="c1"># 策略梯度目标：最大化 E[logp * advantage]</span>
+<span class="n">logp</span>   <span class="o">=</span> <span class="o">-</span><span class="n">model</span><span class="p">(</span><span class="n">inputs</span><span class="p">,</span> <span class="n">targets</span><span class="p">,</span> <span class="n">loss_reduction</span><span class="o">=</span><span class="s1">&#39;none&#39;</span><span class="p">)</span><span class="o">.</span><span class="n">view_as</span><span class="p">(</span><span class="n">inputs</span><span class="p">)</span>  <span class="c1"># 每个 token 的对数概率</span>
+<span class="n">pg_obj</span> <span class="o">=</span> <span class="p">(</span><span class="n">logp</span> <span class="o">*</span> <span class="n">advantages</span><span class="o">.</span><span class="n">unsqueeze</span><span class="p">(</span><span class="o">-</span><span class="mi">1</span><span class="p">))</span><span class="o">.</span><span class="n">sum</span><span class="p">()</span>
+<span class="n">loss</span>   <span class="o">=</span> <span class="o">-</span><span class="n">pg_obj</span>
+<span class="n">loss</span><span class="o">.</span><span class="n">backward</span><span class="p">()</span>
+</code></pre></div>
+
+<p>一行 <code>logp * advantage</code> 就讲完了 REINFORCE：</p>
+<blockquote>
+<p><strong>正确答案里的每个字，提高它的概率；错误答案里的每个字，降低它的概率；
+提高/降低的力度，正比于这个答案比平均"好/坏"多少。</strong></p>
+</blockquote>
+<p>这是一个干净的 REINFORCE 实现（见 <a href="../README.md#rl-训练原理">README 的 RL 原理</a>），
+无 KL 正则、无 PPO clipping。整个"大模型对齐"的魔法，剥到底层，
+就是大学概率论里的<strong>期望、采样、对数似然</strong>这三件套。</p>
+<blockquote>
+<p>🔑 <strong>概率思维落地 #6</strong>：期望思维 = "<strong>不看单次结果，看长期平均</strong>"。
+一次决策的好坏别用单次结果判断（你可能只是运气好/坏），
+要问"这个策略重复 1000 次，期望收益是正还是负？"。
+减 baseline 的智慧是：<strong>别和绝对值较劲，和'平均水平'比</strong>——这才是进步的方向。</p>
+</blockquote>
+<hr />
+<h2 id="7-落地三连debug-大模型-预测微信流量-生活概率思维">7. 落地三连：debug 大模型 / 预测微信流量 / 生活概率思维</h2>
+<blockquote>
+<p>学概率，"<strong>用到生活中形成映射反应，才不会被忘掉</strong>"。下面把上面六层接回真实世界。</p>
+</blockquote>
+<h3 id="71-如何-debug-一个-transformer把概率画出来">7.1 如何 debug 一个 Transformer：把概率画出来</h3>
+<p>模型答错了，怎么 debug？传统程序你能打断点看变量，但 Transformer 是概率机器，
+<strong>最有效的调试手段是把"概率分布"可视化出来。</strong> 几个实战招式：</p>
+<p><strong>① 画 per-token 熵 (entropy)，找到模型"心虚"的地方。</strong>
+熵 <span class="arithmatex">\(H=-\sum p\log p\)</span> 衡量分布有多"散"。熵高 = 模型很不确定（容易出错的决策点）；
+熵≈0 = 模型很笃定（或是被强制注入的工具结果）。</p>
+<p><img alt="用逐 token 熵调试 Transformer" src="images/prob/fig7_entropy.png" /></p>
+<div class="highlight"><pre><span></span><code><span class="c1"># 调试片段：在 engine.generate 的采样处加几行，记录每步分布的熵</span>
+<span class="kn">import</span><span class="w"> </span><span class="nn">torch.nn.functional</span><span class="w"> </span><span class="k">as</span><span class="w"> </span><span class="nn">F</span>
+<span class="n">probs</span>   <span class="o">=</span> <span class="n">F</span><span class="o">.</span><span class="n">softmax</span><span class="p">(</span><span class="n">logits</span> <span class="o">/</span> <span class="n">temperature</span><span class="p">,</span> <span class="n">dim</span><span class="o">=-</span><span class="mi">1</span><span class="p">)</span>
+<span class="n">entropy</span> <span class="o">=</span> <span class="o">-</span><span class="p">(</span><span class="n">probs</span> <span class="o">*</span> <span class="n">probs</span><span class="o">.</span><span class="n">clamp_min</span><span class="p">(</span><span class="mf">1e-9</span><span class="p">)</span><span class="o">.</span><span class="n">log</span><span class="p">())</span><span class="o">.</span><span class="n">sum</span><span class="p">(</span><span class="o">-</span><span class="mi">1</span><span class="p">)</span>   <span class="c1"># 每个 token 的熵</span>
+<span class="c1"># 把 entropy 存下来画成上面那张图：尖峰处就是模型&quot;拿不准&quot;的关键决策点</span>
+</code></pre></div>
+
+<p>熵的尖峰，往往就是模型推理链断裂、答案开始跑偏的地方——<strong>先去看那里。</strong></p>
+<p><strong>② 对比 temperature 扫描。</strong> 答案不稳定？把 <code>temperature</code> 从 0 扫到 1.5，
+看答案在什么温度下开始崩——崩得早说明模型对这道题本就没把握（见第 2 节）。</p>
+<p><strong>③ 看 top-k 候选词。</strong> 把每步的 <code>torch.topk(logits, 5)</code> 打印出来，
+如果正确答案根本不在前 5，说明问题在<strong>模型能力/训练</strong>，而不是采样策略。</p>
+<p><strong>④ 用 pass@k 量化"运气成分"。</strong> 本项目评估时正是这么做的：</p>
+<div class="highlight"><pre><span></span><code><span class="c1"># scripts/train_rl.py  —— pass@k：采样 k 次，至少对一次的比例</span>
+<span class="k">for</span> <span class="n">k</span> <span class="ow">in</span> <span class="nb">range</span><span class="p">(</span><span class="mi">1</span><span class="p">,</span> <span class="n">args</span><span class="o">.</span><span class="n">device_batch_size</span> <span class="o">+</span> <span class="mi">1</span><span class="p">):</span>
+    <span class="n">passk</span><span class="p">[</span><span class="n">k</span><span class="o">-</span><span class="mi">1</span><span class="p">]</span> <span class="o">=</span> <span class="nb">sum</span><span class="p">(</span><span class="nb">any</span><span class="p">(</span><span class="n">o</span><span class="p">[</span><span class="s2">&quot;is_correct&quot;</span><span class="p">]</span> <span class="k">for</span> <span class="n">o</span> <span class="ow">in</span> <span class="n">r</span><span class="p">[</span><span class="s2">&quot;outcomes&quot;</span><span class="p">][:</span><span class="n">k</span><span class="p">])</span> <span class="k">for</span> <span class="n">r</span> <span class="ow">in</span> <span class="n">records</span><span class="p">)</span>
+</code></pre></div>
+
+<p><code>pass@1</code> 低但 <code>pass@8</code> 高 → 模型其实"会做"，只是采样没采到（调采样/RL 能救）；
+<code>pass@8</code> 也低 → 模型是真不会（得加训练数据/调模型）。<strong>这是一条极其重要的诊断分界线。</strong></p>
+<h3 id="72-预测微信群流量泊松分布">7.2 预测微信群流量：泊松分布</h3>
+<blockquote>
+<p>"预测微信流量泊松分布"——这是把概率论用回生活最漂亮的例子。</p>
+</blockquote>
+<p><strong>泊松分布</strong>专门描述"单位时间内，独立随机事件发生的次数"：
+群消息数、客服来电数、网站请求数、地铁站到人数……都近似泊松。</p>
+<h4 id="泊松为什么会来它是二项分布的稀有极限">泊松为什么会来？——它是"二项分布的稀有极限"</h4>
+<p>要理解泊松"为什么长这样"，得知道它从哪来。抛 <span class="arithmatex">\(n\)</span> 次硬币、每次正面概率 <span class="arithmatex">\(p\)</span>，
+正面次数服从<strong>二项分布</strong>。但很多真实问题是：<strong><span class="arithmatex">\(n\)</span> 极大、<span class="arithmatex">\(p\)</span> 极小，而平均次数 <span class="arithmatex">\(\lambda=np\)</span> 不大。</strong>
+比如"这一小时内会来几条消息"——可以看成"这一小时被切成无数个极短瞬间 (<span class="arithmatex">\(n\to\infty\)</span>)，
+每个瞬间来消息的概率极小 (<span class="arithmatex">\(p\to 0\)</span>)"。对二项分布取这个极限，
+公式里那个看着突兀的 <span class="arithmatex">\(e^{-\lambda}\)</span> 和 <span class="arithmatex">\(k!\)</span> 就<strong>自然浮现</strong>出来：</p>
+<div class="arithmatex">\[
+P(X=k) = \binom{n}{k}p^k(1-p)^{n-k} \;\xrightarrow[\,n\to\infty,\ np=\lambda\,]{}\; \frac{\lambda^k e^{-\lambda}}{k!}
+\]</div>
+<p>所以泊松又叫<strong>"稀有事件定律 (law of rare events)"</strong>——
+它就是为"大量机会、每次都极不可能、但偶尔发生"这类问题量身定做的。</p>
+<h4 id="最经典的例子普鲁士军队被马踢死的人数">最经典的例子：普鲁士军队"被马踢死"的人数</h4>
+<p>1898 年，统计学家 Bortkiewicz 拿了一份奇特的数据：
+普鲁士 14 个骑兵军、20 年间、每个军每年<strong>被战马踢死的士兵数</strong>（共 280 个"军-年"）。
+被马踢死，正是典型的"稀有 + 独立"事件。他用泊松分布去拟合，结果好得惊人：</p>
+<p><img alt="泊松的经典验证：普鲁士马踢死亡数" src="images/prob/fig13_poisson_horsekick.png" /></p>
+<p>蓝色是真实记录，橙色是 <span class="arithmatex">\(\lambda=0.70\)</span>（就等于样本均值）的泊松预测——几乎完全重合。
+<strong>一个为赌博和审判推导出来的公式，精准预言了战马踢死士兵的人数。</strong>
+这就是为什么泊松分布让人着迷：完全不相干的稀有事件，背后是同一个数学骨架。</p>
+<div class="arithmatex">\[
+P(X=k) = \frac{\lambda^k e^{-\lambda}}{k!}
+\]</div>
+<p><span class="arithmatex">\(\lambda\)</span> 是"平均每小时几条消息"。下图是不同活跃度的群的消息分布：</p>
+<p><img alt="微信群消息的泊松分布" src="images/prob/fig6_poisson.png" /></p>
+<p>这就是"<strong>概率编程</strong>"最朴素的样子——几行代码就能拟合并预测：</p>
+<div class="highlight"><pre><span></span><code><span class="kn">import</span><span class="w"> </span><span class="nn">numpy</span><span class="w"> </span><span class="k">as</span><span class="w"> </span><span class="nn">np</span>
+<span class="kn">from</span><span class="w"> </span><span class="nn">scipy</span><span class="w"> </span><span class="kn">import</span> <span class="n">stats</span>
+
+<span class="c1"># 过去 7 天，每小时的微信群消息数（你的真实数据）</span>
+<span class="n">counts</span> <span class="o">=</span> <span class="n">np</span><span class="o">.</span><span class="n">array</span><span class="p">([</span><span class="mi">3</span><span class="p">,</span> <span class="mi">5</span><span class="p">,</span> <span class="mi">2</span><span class="p">,</span> <span class="mi">8</span><span class="p">,</span> <span class="mi">6</span><span class="p">,</span> <span class="mi">4</span><span class="p">,</span> <span class="mi">7</span><span class="p">,</span> <span class="mi">5</span><span class="p">,</span> <span class="mi">9</span><span class="p">,</span> <span class="mi">1</span><span class="p">,</span> <span class="mi">4</span><span class="p">,</span> <span class="mi">6</span><span class="p">,</span> <span class="o">...</span><span class="p">])</span>
+
+<span class="n">lam</span> <span class="o">=</span> <span class="n">counts</span><span class="o">.</span><span class="n">mean</span><span class="p">()</span>                       <span class="c1"># 最大似然估计：λ̂ 就是样本均值</span>
+<span class="nb">print</span><span class="p">(</span><span class="sa">f</span><span class="s2">&quot;平均每小时 </span><span class="si">{</span><span class="n">lam</span><span class="si">:</span><span class="s2">.1f</span><span class="si">}</span><span class="s2"> 条&quot;</span><span class="p">)</span>
+
+<span class="c1"># 预测：下一个小时消息数 ≥ 10 的概率（该不该开免打扰？）</span>
+<span class="n">p_busy</span> <span class="o">=</span> <span class="mi">1</span> <span class="o">-</span> <span class="n">stats</span><span class="o">.</span><span class="n">poisson</span><span class="o">.</span><span class="n">cdf</span><span class="p">(</span><span class="mi">9</span><span class="p">,</span> <span class="n">lam</span><span class="p">)</span>
+<span class="nb">print</span><span class="p">(</span><span class="sa">f</span><span class="s2">&quot;下一小时爆群(≥10条)的概率：</span><span class="si">{</span><span class="n">p_busy</span><span class="si">:</span><span class="s2">.1%</span><span class="si">}</span><span class="s2">&quot;</span><span class="p">)</span>
+</code></pre></div>
+
+<p>注意 <code>lam = counts.mean()</code>——<strong>泊松的 λ 的最大似然估计就是样本均值</strong>，
+和第 4 节"交叉熵 ≡ 最大似然"是同一套思想。概率论的内核，到处都在复用。</p>
+<p>更进一步，用概率编程框架（如 PyMC）还能做<strong>贝叶斯估计</strong>，
+不仅给出 λ 的点估计，还给出"我对这个 λ 有多确定"的整条后验分布——
+这又回到了第 5 节的条件概率：<strong>用观测数据，把先验更新成后验。</strong></p>
+<h3 id="73-生活中处处的概率思维">7.3 生活中处处的概率思维</h3>
+<p>把这篇文章的六层，翻译成日常决策的反射动作：</p>
+<table>
+<thead>
+<tr>
+<th>概率概念</th>
+<th>代码里</th>
+<th>生活里的"映射反应"</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>高斯 / CLT</td>
+<td>权重初始化、梯度噪声</td>
+<td>"很多小因素叠加"的量默认钟形：身高、误差、波动</td>
+</tr>
+<tr>
+<td>softmax</td>
+<td>logits → 概率</td>
+<td>把模糊的"打分/好感"变成可比较的概率</td>
+</tr>
+<tr>
+<td>temperature</td>
+<td>控制分布尖锐度</td>
+<td>探索期调高温（多试），执行期调低温（拍板）</td>
+</tr>
+<tr>
+<td>top-k</td>
+<td>砍掉长尾</td>
+<td>只在靠谱的少数选项里随机，别在全集里碰运气</td>
+</tr>
+<tr>
+<td>交叉熵 / 似然</td>
+<td><code>-log(p)</code></td>
+<td>做长期"惊讶最小"的预测者，错了就大幅修正</td>
+</tr>
+<tr>
+<td><strong>条件概率 / 贝叶斯</strong></td>
+<td>KV Cache / 工具调用</td>
+<td>永远问"在已知 X 的条件下"，让新证据更新判断</td>
+</tr>
+<tr>
+<td>贝叶斯网络 / PGM</td>
+<td>注意力的依赖结构</td>
+<td>画清"谁直接影响谁"，别把链条上的远亲当直接原因</td>
+</tr>
+<tr>
+<td><strong>因果阶梯</strong></td>
+<td>RL 的"采样—验证—调整"</td>
+<td>区分相关 / 干预 / 反事实："真去改 A，B 会变吗？"</td>
+</tr>
+<tr>
+<td><strong>贝叶斯信念 (Beta)</strong></td>
+<td>RL 多 rollout 采样</td>
+<td>把"我相信 A 能成"量化成后验，按结果更新、按信念下注</td>
+</tr>
+<tr>
+<td>探索 vs 利用</td>
+<td>temperature / top-k</td>
+<td>突破难题：信念高的多试，也留一点随机探索黑马</td>
+</tr>
+<tr>
+<td>期望 / 优势</td>
+<td><code>reward - mean</code></td>
+<td>看长期期望而非单次结果，和平均水平比</td>
+</tr>
+<tr>
+<td>泊松</td>
+<td><code>λ = mean</code></td>
+<td>预测"单位时间内随机事件次数"：排队、消息、故障</td>
+</tr>
+</tbody>
+</table>
+<blockquote>
+<p>"<strong>条件概率就很有用</strong>"——这句大白话其实是整个概率论里最实用的一句。
+贝叶斯定理 <span class="arithmatex">\(P(A\mid B)=\dfrac{P(B\mid A)P(A)}{P(B)}\)</span> 不是用来考试的，
+它是你每次"看到新证据、更新旧看法"时，大脑本该执行的运算。
+医生看到化验单更新诊断、投资人看到财报更新估值、你看到对方已读不回更新心情——
+<strong>全是条件概率。</strong></p>
+</blockquote>
+<h3 id="74-用贝叶斯信念调试人生程序员的-jim0-jim1-jimn">7.4 用贝叶斯信念调试人生：程序员的 <code>jim0 → jim1 → … → jimn</code></h3>
+<p>贝叶斯信念网络听起来很学术，但每个程序员<strong>每天都在用它</strong>，只是没意识到。
+想想你死磕一个难 bug 的过程：</p>
+<blockquote>
+<p>你有一个能跑的基线版本 <code>jim0</code>（committed，✓）。
+你相信"方向 A 能解决问题"，<strong>相信度大概 0.6</strong>，于是基于 jim0 改出 <code>jim1</code> 去试。
+失败。你<strong>没有放弃</strong>，因为信念还没崩，又改出 <code>jim2</code>——又失败。
+两次失败后，你对方向 A 的信念从 0.6 掉到了 0.35，<strong>于是 <code>git reset</code> 退回 jim0</strong>，
+转去试方向 B。<code>jim1'</code> 也失败，但 <code>jim2'</code> 出现了转机，信念升到 0.55，
+顺着改出 <code>jim3</code>——<strong>突破了。</strong></p>
+</blockquote>
+<p>这整个过程，就是一棵<strong>贝叶斯搜索树</strong>：</p>
+<p><img alt="把调试当成贝叶斯信念搜索" src="images/prob/fig11_belief.png" /></p>
+<p><strong>左图</strong>是版本树：每个节点是一次尝试，绿色成功、红色失败、虚线是回滚 (rollback)。
+<strong>右图</strong>回答了那个最关键的问题——"你相信 A 方向能成功，相信度到底是多少？"
+答案可以被精确量化：把"方向 A 的成功率"建模成一个 <strong>Beta 分布</strong>（贝叶斯里描述"概率的概率"的标准工具）：</p>
+<ul>
+<li>一开始什么都不知道 → 先验 <code>Beta(1,1)</code>，平的，相信度均值 0.5；</li>
+<li>失败 3 次 → 后验 <code>Beta(1,4)</code>，整条曲线塌向 0，<strong>相信度均值跌到 0.2</strong>（该撤了）；</li>
+<li>成功 4 次失败 1 次 → 后验 <code>Beta(5,2)</code>，曲线涌向右侧，<strong>相信度均值升到 0.71</strong>（该加注）。</li>
+</ul>
+<div class="highlight"><pre><span></span><code><span class="c1"># 把&quot;对某个方向的信念&quot;写成几行概率编程</span>
+<span class="kn">from</span><span class="w"> </span><span class="nn">scipy.stats</span><span class="w"> </span><span class="kn">import</span> <span class="n">beta</span>
+<span class="n">alpha</span><span class="p">,</span> <span class="n">beta_</span> <span class="o">=</span> <span class="mi">1</span><span class="p">,</span> <span class="mi">1</span>                      <span class="c1"># 先验：毫无信息</span>
+<span class="k">for</span> <span class="n">outcome</span> <span class="ow">in</span> <span class="n">attempts</span><span class="p">:</span>                 <span class="c1"># 每次尝试的结果</span>
+    <span class="k">if</span> <span class="n">outcome</span> <span class="o">==</span> <span class="s2">&quot;success&quot;</span><span class="p">:</span> <span class="n">alpha</span> <span class="o">+=</span> <span class="mi">1</span>  <span class="c1"># 成功 -&gt; 信念右移</span>
+    <span class="k">else</span><span class="p">:</span>                    <span class="n">beta_</span> <span class="o">+=</span> <span class="mi">1</span>  <span class="c1"># 失败 -&gt; 信念左移</span>
+<span class="n">belief</span> <span class="o">=</span> <span class="n">alpha</span> <span class="o">/</span> <span class="p">(</span><span class="n">alpha</span> <span class="o">+</span> <span class="n">beta_</span><span class="p">)</span>         <span class="c1"># 当前对&quot;这个方向能成&quot;的相信度</span>
+<span class="c1"># 决策：belief 跌破阈值就 rollback 换方向，够高就 all-in</span>
+</code></pre></div>
+
+<p>这正是第 6 节 RL 里 <code>advantage = reward - mean</code> 的人生版——
+<strong>用结果不断更新信念，把注意力（和时间）重新分配到信念更高的分支上。</strong></p>
+<h4 id="那么怎么才能突破一个很难的问题">那么，怎么才能突破一个很难的问题？</h4>
+<p>难题之所以难，是因为<strong>没有任何一个方向的成功信念压倒性地高</strong>。
+概率思维给的不是"更努力"，而是一套<strong>探索 vs. 利用 (explore-exploit)</strong> 的策略：</p>
+<ol>
+<li><strong>维护多个方向的信念分布</strong>，而不是一条道走到黑（别把全部时间沉没到信念已塌的方向 A）。</li>
+<li><strong>按信念分配尝试次数</strong>（Thompson 采样的思想）：从每个方向的 Beta 分布里各抽一个样，
+   谁抽得高就试谁——<strong>信念高的多试，但信念低的也偶尔给机会</strong>，避免错杀黑马。
+   这跟第 2 节的 <code>temperature</code> 是同一个智慧：<strong>留一点随机探索，别过早收敛。</strong></li>
+<li><strong>每次失败都是一次贝叶斯更新，不是白费</strong>：它在帮你把某些方向的后验压低，
+   等价于"缩小搜索空间"。爱迪生那句"我没失败，只是找到了一万种行不通的方法"，
+   翻译成概率语言就是：<strong>他在对一万个方向做贝叶斯剪枝。</strong></li>
+<li><strong>保留可回滚的 <code>jim0</code></strong>：committed 的基线让你敢于大胆探索高风险分支——
+   失败了 <code>git reset</code> 就行。<strong>有退路，才敢下注。</strong></li>
+</ol>
+<blockquote>
+<p>🔑 <strong>概率思维落地 #7（突破难题）</strong>：把"我卡住了"重述为"我的信念分布还很平"。
+然后做三件事：<strong>①量化每个方向的相信度（Beta 后验）；②按信念分配尝试、保留少量随机探索；
+③每次失败都更新信念、剪掉死方向、退回基线再出发。</strong>
+这不是鸡汤，这是 RL、是 MCTS、是 A/B 实验、也是这个 MathGPT 项目采样多条 rollout 的同一套数学。</p>
+</blockquote>
+<hr />
+<h2 id="结语概率思维概率编程">结语：概率思维，概率编程</h2>
+<p>回到开头那个问题——大学四年的概率论为什么没讲明白？</p>
+<p>因为它把概率教成了"<strong>计算</strong>"：摸球、抽签、求积分。
+它把 400 年的思想史压成几个孤立的公式，却没告诉你这条河流向哪里。
+而概率真正的样子是"<strong>建模与决策</strong>"：
+- <strong>选对分布</strong>来描述不确定的世界（高斯 / 泊松 / categorical——先问"这个量怎么生成的"）；
+- 用<strong>数据</strong>去拟合、更新这个分布（最大似然 / 贝叶斯 / 交叉熵）；
+- 在分布上做<strong>采样与决策</strong>（temperature / top-k / 期望最大化）；
+- 并且永远清醒：自己学到的是<strong>关联</strong>，还是<strong>因果</strong>（珀尔的阶梯）。</p>
+<p>这几步，就是这个 MathGPT 项目从预训练、到 SFT、到 RL 的全过程，
+也是从赌桌（Pascal）一路到 ChatGPT 的 400 年概率史的全过程，
+更是你做每一个理性决策的全过程。<strong>历史、代码、人生，是同一条线。</strong></p>
+<blockquote>
+<p><strong>概率思维，是把"我觉得"换成"有多大概率"；</strong>
+<strong>概率编程，是把这个判断写成几行能跑、能验证、能 debug 的代码。</strong></p>
+</blockquote>
+<p>当你能在一段 PyTorch 里同时看见 softmax、条件概率、期望和最大似然，
+并且能把它们映射回"调温度、减 baseline、预测群消息"这些具体动作时——
+概率论才算真正长进了你的直觉里，<strong>再也忘不掉。</strong></p>
+<hr />
+<h3 id="附复现本文所有图">附：复现本文所有图</h3>
+<p>本文 13 张图均由 matplotlib 生成，逻辑与本项目代码一致
+（历史时间线 / 中心极限定理 / softmax / softmax 为什么用 exp / top-k / 交叉熵 / 条件概率链 /
+贝叶斯网络与因果阶梯 / 贝叶斯信念搜索树 / 优势函数 / 泊松 / 泊松马踢死亡数验证 / 熵）。
+配套脚本见 <code>docs/images/prob/</code> 下的 <code>make_figs.py</code> … <code>make_figs4.py</code>，核心数学就是上文每段贴出的那几行。</p>
+<h3 id="延伸阅读本项目内">延伸阅读（本项目内）</h3>
+<ul>
+<li><a href="../README.md">README.md</a> — MathGPT 总览与 RL 训练原理</li>
+<li><a href="RL_SFT_GRPO_INTRO.md">docs/RL_SFT_GRPO_INTRO.md</a> — SFT / GRPO / RL 的演进</li>
+<li><a href="SFT_TO_GRPO_NARRATIVE.md">docs/SFT_TO_GRPO_NARRATIVE.md</a> — 从 SFT 到 GRPO 的叙事</li>
+<li>关键源码：<code>nanochat/engine.py</code>（采样/工具调用）、<code>nanochat/gpt.py</code>（交叉熵）、<code>scripts/train_rl.py</code>（策略梯度）</li>
+</ul>
+    </div>
+  </article>
+
+</main>
+
+<!-- Floating Ask-AI chat widget -->
+<button class="ai-fab" id="ai-fab" aria-label="Ask AI about this article" title="Ask AI about this article">
+  <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+    <path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"/>
+  </svg>
+  <span class="ai-fab-label">Ask AI</span>
+</button>
+
+<div class="ai-panel" id="ai-panel" role="dialog" aria-labelledby="ai-panel-title" aria-hidden="true">
+  <header class="ai-panel-head">
+    <div class="ai-panel-title-wrap">
+      <span class="ai-dot"></span>
+      <h3 id="ai-panel-title">Ask AI about this post</h3>
+    </div>
+    <div class="ai-panel-actions">
+      <button class="ai-icon-btn" id="ai-clear" title="Clear conversation" aria-label="Clear">
+        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><polyline points="3 6 5 6 21 6"/><path d="M19 6l-1 14a2 2 0 0 1-2 2H8a2 2 0 0 1-2-2L5 6"/><path d="M10 11v6M14 11v6"/><path d="M9 6V4a1 1 0 0 1 1-1h4a1 1 0 0 1 1 1v2"/></svg>
+      </button>
+      <button class="ai-icon-btn" id="ai-close" title="Minimize" aria-label="Minimize">
+        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><polyline points="6 9 12 15 18 9"/></svg>
+      </button>
+    </div>
+  </header>
+
+  <div class="ai-messages" id="ai-messages">
+    <div class="ai-empty" id="ai-empty">
+      <p class="ai-empty-title">On-device AI · Gemini Nano</p>
+      <p class="ai-empty-sub">Ask anything about this article. Runs in your browser — nothing leaves your device.</p>
+    </div>
+  </div>
+
+  <div class="ai-status" id="ai-status" hidden></div>
+
+  <form class="ai-composer" id="ai-form">
+    <textarea id="ai-input" rows="1" placeholder="Ask about this post…" autocomplete="off"></textarea>
+    <button type="submit" id="ai-send" class="ai-send" aria-label="Send" disabled>
+      <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><line x1="22" y1="2" x2="11" y2="13"/><polygon points="22 2 15 22 11 13 2 9 22 2"/></svg>
+    </button>
+  </form>
+</div>
+
+<script>
+(function () {
+  const POST_TITLE = "\u5927\u5b664\u5e74\u6ca1\u8bb2\u660e\u767d\u7684\u6982\u7387\u8bba\uff0c\u88ab\u4e00\u6bb5 PyTorch \u4ee3\u7801\u8bb2\u900f\u4e86";
+  const contentEl = document.querySelector('article .content');
+
+  const fab = document.getElementById('ai-fab');
+  const panel = document.getElementById('ai-panel');
+  const closeBtn = document.getElementById('ai-close');
+  const clearBtn = document.getElementById('ai-clear');
+  const msgsEl = document.getElementById('ai-messages');
+  const emptyEl = document.getElementById('ai-empty');
+  const statusEl = document.getElementById('ai-status');
+  const formEl = document.getElementById('ai-form');
+  const inputEl = document.getElementById('ai-input');
+  const sendBtn = document.getElementById('ai-send');
+
+  function articleText() {
+    if (!contentEl) return '';
+    return (contentEl.innerText || contentEl.textContent || '')
+      .replace(/[ \t]+\n/g, '\n')
+      .replace(/\n{3,}/g, '\n\n')
+      .trim();
+  }
+
+  function setStatus(msg, cls) {
+    if (!msg) { statusEl.hidden = true; statusEl.textContent = ''; statusEl.className = 'ai-status'; return; }
+    statusEl.hidden = false;
+    statusEl.textContent = msg;
+    statusEl.className = 'ai-status' + (cls ? ' ' + cls : '');
+  }
+
+  function hideEmpty() { if (emptyEl) emptyEl.style.display = 'none'; }
+
+  function appendBubble(role, text) {
+    hideEmpty();
+    const wrap = document.createElement('div');
+    wrap.className = 'ai-msg ai-msg-' + role;
+    const bubble = document.createElement('div');
+    bubble.className = 'ai-bubble';
+    bubble.textContent = text;
+    wrap.appendChild(bubble);
+    msgsEl.appendChild(wrap);
+    msgsEl.scrollTop = msgsEl.scrollHeight;
+    return bubble;
+  }
+
+  function appendTyping() {
+    hideEmpty();
+    const wrap = document.createElement('div');
+    wrap.className = 'ai-msg ai-msg-assistant ai-typing';
+    wrap.innerHTML = '<div class="ai-bubble"><span class="ai-dots"><i></i><i></i><i></i></span></div>';
+    msgsEl.appendChild(wrap);
+    msgsEl.scrollTop = msgsEl.scrollHeight;
+    return wrap;
+  }
+
+  function autoSize() {
+    inputEl.style.height = 'auto';
+    inputEl.style.height = Math.min(inputEl.scrollHeight, 140) + 'px';
+  }
+
+  function openPanel() {
+    panel.classList.add('open');
+    panel.setAttribute('aria-hidden', 'false');
+    fab.classList.add('hidden');
+    setTimeout(() => inputEl.focus(), 50);
+  }
+  function closePanel() {
+    panel.classList.remove('open');
+    panel.setAttribute('aria-hidden', 'true');
+    fab.classList.remove('hidden');
+  }
+
+  fab.addEventListener('click', openPanel);
+  closeBtn.addEventListener('click', closePanel);
+  document.addEventListener('keydown', e => {
+    if (e.key === 'Escape' && panel.classList.contains('open')) closePanel();
+  });
+
+  // ---- LanguageModel session ----
+  let session = null;
+  let creating = null;
+  let history = [];
+
+  function buildSystemPrompt() {
+    // Keep article context modest — Gemini Nano's input quota is small.
+    const article = articleText().slice(0, 4000);
+    return (
+      'You are a concise, helpful assistant answering questions about a blog post. ' +
+      'Use the article below as your primary source. If the answer is not in it, say so briefly and answer generally. ' +
+      'Reply in the same language as the user\'s question. Keep answers short unless asked for detail.\n\n' +
+      '=== ARTICLE TITLE ===\n' + POST_TITLE + '\n\n' +
+      '=== ARTICLE CONTENT ===\n' + article
+    );
+  }
+
+  async function ensureSession() {
+    if (session) return session;
+    if (creating) return creating;
+
+    if (!('LanguageModel' in self)) {
+      throw new Error(
+        'On-device AI not available. Use Chrome 138+ on desktop, or enable ' +
+        '"Prompt API for Gemini Nano" in chrome://flags.'
+      );
+    }
+
+    setStatus('Checking model…', 'info');
+    const status = await LanguageModel.availability();
+    if (status === 'unavailable') {
+      throw new Error('Model unavailable on this device.');
+    }
+
+    creating = (async () => {
+      // Only show download UI when the model isn't already there.
+      const willDownload = (status !== 'available');
+      if (willDownload) setStatus('Preparing model (first run downloads ~2GB)…', 'info');
+      else setStatus('Warming up…', 'info');
+
+      const s = await LanguageModel.create({
+        initialPrompts: [{ role: 'system', content: buildSystemPrompt() }],
+        monitor(m) {
+          m.addEventListener('downloadprogress', e => {
+            // Skip the spurious 0% event Chrome fires for cached models.
+            if (!willDownload && e.loaded === 0) return;
+            const pct = (e.loaded * 100).toFixed(1);
+            setStatus('Downloading model: ' + pct + '%', 'info');
+          });
+        }
+      });
+      session = s;
+      setStatus('');
+      return s;
+    })();
+
+    try { return await creating; }
+    finally { creating = null; }
+  }
+
+  async function ask(q) {
+    appendBubble('user', q);
+    history.push({ role: 'user', content: q });
+
+    sendBtn.disabled = true;
+    inputEl.disabled = true;
+    const typing = appendTyping();
+
+    let answerBubble = null;
+    let acc = '';
+    try {
+      const s = await ensureSession();
+      const stream = s.promptStreaming(q);
+      for await (const chunk of stream) {
+        if (!answerBubble) {
+          typing.remove();
+          const wrap = document.createElement('div');
+          wrap.className = 'ai-msg ai-msg-assistant';
+          answerBubble = document.createElement('div');
+          answerBubble.className = 'ai-bubble';
+          wrap.appendChild(answerBubble);
+          msgsEl.appendChild(wrap);
+        }
+        acc += chunk;
+        answerBubble.textContent = acc;
+        msgsEl.scrollTop = msgsEl.scrollHeight;
+      }
+      if (acc) history.push({ role: 'assistant', content: acc });
+      else { typing.remove(); appendBubble('assistant', '(no response)'); }
+    } catch (e) {
+      if (typing && typing.parentNode) typing.remove();
+      const err = document.createElement('div');
+      err.className = 'ai-msg ai-msg-error';
+      err.innerHTML = '<div class="ai-bubble">⚠ ' + (e && e.message ? e.message : String(e)) + '</div>';
+      msgsEl.appendChild(err);
+      msgsEl.scrollTop = msgsEl.scrollHeight;
+    } finally {
+      sendBtn.disabled = !inputEl.value.trim();
+      inputEl.disabled = false;
+      inputEl.focus();
+    }
+  }
+
+  formEl.addEventListener('submit', e => {
+    e.preventDefault();
+    const q = inputEl.value.trim();
+    if (!q) return;
+    inputEl.value = '';
+    autoSize();
+    sendBtn.disabled = true;
+    ask(q);
+  });
+
+  inputEl.addEventListener('input', () => {
+    autoSize();
+    sendBtn.disabled = !inputEl.value.trim();
+  });
+  inputEl.addEventListener('keydown', e => {
+    if (e.key === 'Enter' && !e.shiftKey) {
+      e.preventDefault();
+      formEl.requestSubmit();
+    }
+  });
+
+  clearBtn.addEventListener('click', () => {
+    msgsEl.innerHTML = '';
+    msgsEl.appendChild(emptyEl);
+    emptyEl.style.display = '';
+    history = [];
+    if (session && session.destroy) { try { session.destroy(); } catch (_) {} }
+    session = null;
+    setStatus('');
+  });
+
+  if (!('LanguageModel' in self)) {
+    fab.addEventListener('click', () => {
+      openPanel();
+      setStatus('On-device AI not detected. Use Chrome 138+ desktop, or enable "Prompt API for Gemini Nano" in chrome://flags.', 'bad');
+    }, { once: true });
+  }
+})();
+</script>
+
+<!-- Outline notes / comments — DataScript + IndexedDB -->
+<script src="https://github.com/tonsky/datascript/releases/download/1.7.8/datascript-1.7.8.min.js"></script>
+<script src="../notes.js?v=6"></script>
+<script src="../theme.js"></script>
+<script src="../wechat-copy.js?v=3"></script>
+
+</body>
+</html>
