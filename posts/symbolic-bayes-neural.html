@@ -3,18 +3,18 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width,initial-scale=1">
-<title>符号主义、贝叶斯网络、深度学习：三种 AI 范式的对比学习 · Steve Chan — xlisp</title>
+<title>Mythos、Fable 5 的背后，其实是一条 70 年没人讲透的 AI 主线 · Steve Chan — xlisp</title>
 <meta name="description" content="1. 三个范式的一句话总结">
 <meta name="author" content="Steve Chan">
 <link rel="icon" type="image/jpeg" href="../icon.jpeg">
 <link rel="apple-touch-icon" href="../icon.jpeg">
 <meta property="og:type" content="article">
-<meta property="og:title" content="符号主义、贝叶斯网络、深度学习：三种 AI 范式的对比学习">
+<meta property="og:title" content="Mythos、Fable 5 的背后，其实是一条 70 年没人讲透的 AI 主线">
 <meta property="og:description" content="1. 三个范式的一句话总结">
 <meta property="og:image" content="../icon.jpeg">
 <meta property="og:site_name" content="Steve Chan — xlisp">
 <meta name="twitter:card" content="summary_large_image">
-<meta name="twitter:title" content="符号主义、贝叶斯网络、深度学习：三种 AI 范式的对比学习">
+<meta name="twitter:title" content="Mythos、Fable 5 的背后，其实是一条 70 年没人讲透的 AI 主线">
 <meta name="twitter:description" content="1. 三个范式的一句话总结">
 <meta name="twitter:image" content="../icon.jpeg">
 <link rel="stylesheet" href="../style.css?v=light1">
@@ -51,16 +51,17 @@ window.MathJax = {
 
   <article>
     <header class="post-header">
-      <h1>符号主义、贝叶斯网络、深度学习：三种 AI 范式的对比学习</h1>
+      <h1>Mythos、Fable 5 的背后，其实是一条 70 年没人讲透的 AI 主线</h1>
       <p class="meta">2026-06-28 · Steve Chan</p>
     </header>
 
     <div class="content">
 <blockquote>
+<p>为什么专家系统失败、贝叶斯网络沉寂，而 Transformer 最终走向 Mythos？从 AI 三大范式到自递归训练，一篇文章把这条历史主线完整串起来。</p>
 <p>一个非常自然的直觉是这样的：<strong>"GPT 不就是把一堆自然语言数据当成可执行的符号代码，然后在这些海量规则下做回答吗？"</strong></p>
 <p>这个类比有 70% 是对的，30% 错得很关键。要把这 30% 讲清楚，需要把符号主义 AI、贝叶斯网络、深度学习放在同一张桌子上对照——它们三者<strong>都在解同一个问题</strong> <span class="arithmatex">\(P(y \mid x)\)</span>，只是参数化方式根本不同。本文从这个共同问题出发，把三种范式的相同点、差异、各自擅长的边界，一条条钉到 <code>model.py</code> / <code>tokenizer.py</code> 的具体行号上。</p>
 <p>读完这篇，你会知道为什么"训练数据 = 可执行符号代码"是一个<strong>有用的近似</strong>，但<strong>不能当结论</strong>——以及为什么贝叶斯网络是介于两者之间的"半符号半概率"中间态。</p>
-<p>本文 2026 年的增补版还埋了一条<strong>暗线</strong>:当三种范式表里"谁写"这一列一路走到尽头——<strong>连训练过程本身都开始由模型来写</strong>(自递归训练 / recursive self-improvement),以及当"压缩即智能"被重新形式化为"<strong>模型学到的不是数据本身,而是为了压缩数据而不得不构造的那个复杂程序</strong>"(epiplexity,arXiv 2601.03220)——这两件 2026 年的最新进展会告诉你:从 GPT-2 到 Claude Mythos / Fable 5 的演化不是偶然,而是这条主线的<strong>逻辑终点</strong>。这条暗线在每一节里若隐若现,最后在 <a href="#12-2026-前沿自递归训练与-epiplexity历史必然如何走向-mythos--fable-5">§12</a> 收束。</p>
+<p>本文还埋了一条<strong>暗线</strong>:当三种范式表里"谁写"这一列一路走到尽头——<strong>连训练过程本身都开始由模型来写</strong>(自递归训练 / recursive self-improvement),以及当"压缩即智能"被重新形式化为"<strong>模型学到的不是数据本身,而是为了压缩数据而不得不构造的那个复杂程序</strong>"(epiplexity,arXiv 2601.03220)——这两件 2026 年的最新进展会告诉你:从 GPT-2 到 Claude Mythos / Fable 5 的演化不是偶然,而是这条主线的<strong>逻辑终点</strong>。这条暗线在每一节里若隐若现,最后在 <a href="#12-2026-前沿自递归训练与-epiplexity历史必然如何走向-mythos--fable-5">§12</a> 收束。</p>
 </blockquote>
 <hr />
 <h2 id="目录">目录</h2>
@@ -77,7 +78,7 @@ window.MathJax = {
 <li><a href="#10-函数式编程视角神经网络是-fgh-的世界">函数式编程视角：神经网络是 f∘g∘h∘... 的世界</a></li>
 <li><a href="#11-神经-符号混合现代系统都不是纯种">神经-符号混合：现代系统都不是纯种</a></li>
 <li><a href="#12-2026-前沿自递归训练与-epiplexity历史必然如何走向-mythos--fable-5">2026 前沿：自递归训练与 Epiplexity——历史必然如何走向 Mythos / Fable 5</a></li>
-<li><a href="#13-给用户原问题的最终回答">给用户原问题的最终回答</a></li>
+<li><a href="#13-疑惑解答">疑惑解答</a></li>
 </ol>
 <hr />
 <h2 id="1-三个范式的一句话总结">1. 三个范式的一句话总结</h2>
@@ -278,7 +279,7 @@ P(WetGrass | Rain, Sprinkler) = ...   # 4 项的 CPT
 <p><strong>模型学到的不是数据本身,而是为了"压缩"数据而不得不构建的那个复杂的"程序"。这就是智能的本质。</strong></p>
 </blockquote>
 <p>这句话在 2026 年有了严格的信息论靠山——arXiv 2601.03220 <em>From Entropy to Epiplexity</em> (Finzi、Qiu、Jiang、Izmailov、Kolter、Wilson)。它指出经典信息论(Shannon 熵、Kolmogorov 复杂度)都假设<strong>算力无限</strong>的观察者,因此抓不到"对一个<strong>算力有限</strong>的学习器而言,数据里真正可学的结构有多少"。论文用 <strong>epiplexity</strong> 来量化这部分"可学结构",并把它和数据里那段不可压缩的随机噪声(time-bounded entropy)分开。</p>
-<p>为什么这对理解权重至关重要,留到 <a href="#122-epiplexity数据里真正可学的不是熵是结构">§12.2</a> 展开。这里先记住一个结论:<strong><code>F.cross_entropy</code> 这个 loss 表面是在拟合分布,实质是在逼模型把数据里的 epiplexity(可学的程序结构)榨进权重,而对随机噪声部分则学不动也不该学。</strong> 泛化能力,正是"学到了程序、没死记噪声"的副产品。</p>
+<p>为什么这对理解权重至关重要,留到 <a href="#123-它凭什么不发散不是永动机两道闸">§12.3</a> 展开。这里先记住一个结论:<strong><code>F.cross_entropy</code> 这个 loss 表面是在拟合分布,实质是在逼模型把数据里的 epiplexity(可学的程序结构)榨进权重,而对随机噪声部分则学不动也不该学。</strong> 泛化能力,正是"学到了程序、没死记噪声"的副产品。</p>
 <hr />
 <h2 id="6-可解释性深度学习最大的软肋以及它现在进展到哪一步">6. 可解释性：深度学习最大的软肋,以及它现在进展到哪一步</h2>
 <p>"大模型是黑盒、不可解释" 是深度学习被诟病最多的一句话,从 Gary Marcus 到 Yann LeCun 早期言论、到 Bender 的 "stochastic parrots"、到欧盟 AI Act 把高风险场景的可解释性写进法规——这是一个<strong>技术问题、监管问题、信任问题三位一体</strong>的批评。</p>
@@ -1228,125 +1229,265 @@ n features in n dims     n features in d&lt;&lt;n dims
 <p><strong>未来 AI 不是某一派胜出，而是三派各自占据自己的层。</strong> 这也是 <a href="SYNTHETIC_DATA.md">docs/SYNTHETIC_DATA.md</a> 里讨论的"执行反馈是最诚实的 reward"——那个反馈天然是符号的（解释器要么报错要么不报错）。</p>
 <hr />
 <h2 id="12-2026-前沿自递归训练与-epiplexity历史必然如何走向-mythos-fable-5">12. 2026 前沿：自递归训练与 Epiplexity——历史必然如何走向 Mythos / Fable 5</h2>
-<p>前面 11 节铺了一条暗线:<strong>"谁写"这一列里,人类一步步退场</strong>。这一节把暗线收束,讲 2026 年两件把这条线推到逻辑终点的最新进展——一件是工程上的(<strong>自递归训练</strong>),一件是理论上的(<strong>epiplexity</strong>)。它们一个回答"模型怎么参与造自己的后继者",一个回答"这么造为什么不违反信息守恒",合起来解释<strong>为什么历史的必然走向会发展出 Mythos / Fable 5 这样的东西</strong>。</p>
-<h3 id="121-自递归训练模型开始写训练自己的代码">12.1 自递归训练:模型开始写"训练自己的代码"</h3>
-<p>回顾本文的三张表,"谁写"经历了三级跳:</p>
+<p>这一节不是"再补两个新名词"。它是把前面十一节早就铺好、却<strong>故意留着没接通的三根线</strong>接到一起:</p>
+<ul>
+<li><a href="#10-函数式编程视角神经网络是-fgh-的世界">§10.8</a> 讲了 λ-calculus、讲了 Prolog 是"函数的反向"(给输出找输入),但它<strong>漏掉了 λ-calculus 最核心的那一个原语</strong>——<strong>自指 (self-application):一个函数把自己当参数</strong>。这正是"自递归"里那个"<strong>自</strong>"。</li>
+<li><a href="#73-一个更精确的类比">§7.3</a> 把训练讲成"编译":数据是源码,SGD 是编译器,权重是产物。</li>
+<li><a href="#53-压缩的不是数据是为了压缩数据而构造的程序">§5.3</a> / epiplexity 讲了:这个编译产物是<strong>为了压缩数据而构造的程序</strong>。</li>
+</ul>
+<p>把这三根线拧成一股,只需要问一个问题:<strong>如果把"训练 = 编译"这支箭,掉头指向编译器自己,会怎样?</strong> ——答案就是自递归训练,而它的极限形态,就是 Mythos / Fable 5。下面分四步,外加一节验证:先讲清"自"到底自在哪(§12.1),再追到它的思想起源——Lisp 1958 年就埋下的递归与"代码即数据"两条基因(§12.2),接着讲它凭什么不发散、不违反信息守恒(§12.3),然后讲它为什么<strong>必然</strong>收敛到 Mythos / Fable 5 这种东西(§12.4);最后把镜头从"训练"拉到"agent",看同一副骨架如何在 Pi、loop engineering 这些 agent 设计里第三次显形(§12.5)。</p>
+<h3 id="121-自递归把训练这支箭掉头指向训练自己">12.1 "自"递归:把训练这支箭掉头指向训练自己</h3>
+<p>先看经典深度学习(也就是 CodeGPT 此刻的样子)。训练是一个函数,吃"训练代码 + 数据",吐一个模型:</p>
+<div class="highlight"><pre><span></span><code><span class="n">M_next</span> <span class="o">=</span> <span class="n">Train</span><span class="p">(</span><span class="n">code</span><span class="p">,</span> <span class="n">data</span><span class="p">)</span>     <span class="c1"># code = 人手写的 train.py / model.py / config, 是常量</span>
+</code></pre></div>
+
+<p><code>code</code> 在这里是<strong>人写死的常量</strong>——<code>train.py</code> 的余弦调度、<code>apply_fim_transform</code> 的 50% 概率、<code>config/*.py</code> 里的超参,全是人填的。这就是 §1 表里"架构/训练过程"那一格还写着"人"的原因。</p>
+<p>自递归训练只改一件事:<strong>让 <code>code</code> 不再是人写的常量,而是上一代模型自己算出来的</strong>。</p>
+<div class="highlight"><pre><span></span><code><span class="n">code_next</span> <span class="o">=</span> <span class="n">Improve_by</span><span class="p">(</span><span class="n">M</span><span class="p">,</span> <span class="n">code</span><span class="p">)</span>     <span class="c1"># 改进训练码这件事, 由模型 M 来做</span>
+<span class="n">M_next</span>    <span class="o">=</span> <span class="n">Train</span><span class="p">(</span><span class="n">code_next</span><span class="p">,</span> <span class="n">data</span><span class="p">)</span>  <span class="c1"># 再拿改进后的码去训练下一代</span>
+</code></pre></div>
+
+<p>把两行合并,<code>M_next</code> 就成了一个<strong>以"上一代自己"为输入的函数</strong>:</p>
+<div class="highlight"><pre><span></span><code><span class="n">M_next</span> <span class="o">=</span> <span class="n">F</span><span class="p">(</span><span class="n">M</span><span class="p">)</span>     <span class="c1"># F = &quot;用 M 改训练码, 再训练一遍&quot; —— 这是一个不动点迭代</span>
+</code></pre></div>
+
+<p><code>M_{n+1} = F(M_n)</code> 是教科书里的<strong>不动点迭代 (fixed-point iteration)</strong>。而"一个函数吃自己、吐一个改进版的自己",在 <a href="#10-函数式编程视角神经网络是-fgh-的世界">§10.8</a> 的 λ-calculus 语言里,就是那个被刻意留到现在才登场的原语——<strong>Y 组合子</strong>:</p>
+<div class="arithmatex">\[
+Y\,f = f\,(Y\,f)
+\]</div>
+<p>§10 讲遍了 <code>forward</code> 是函数组合 <code>f∘g∘h</code>、<code>backward</code> 是组合的 chain rule、<code>optimizer</code> 是函数空间上的高阶变换——唯独没碰<strong>自指</strong>。<strong>自递归训练就是 Y 组合子的物理实现</strong>:模型这个函数,被喂进了它自己。</p>
+<p>为什么是"<strong>自</strong>"而不只是"自动化 (auto)"?关键在一个本仓库就能看清的事实:<strong><code>train.py</code> 这段源码,本身就落在模型自己的输出分布里。</strong> 模型是在代码上训练的、会写代码,而它会写的代码里<strong>就包括训练它自己的那段</strong>。换句话说——</p>
+<blockquote>
+<p>这个函数 <code>F</code> 的<strong>定义域,包含了它自己的源代码</strong>。模型既是"被编译的程序",又是"写编译器的程序员"。这种"输出空间套住了自己的来源"的自我缠绕,才是"自"递归的字面含义,也是它和普通自动化调参的本质区别。</p>
+</blockquote>
+<p>落到本仓库,这个不动点循环的每个零件<strong>都已经在 CodeGPT 里了,只差把人换成模型</strong>:</p>
+<div class="highlight"><pre><span></span><code><span class="c1"># 当前 (经典): 人在循环外面手动迭代</span>
+<span class="k">for</span> <span class="n">trial</span> <span class="ow">in</span> <span class="n">human_ideas</span><span class="p">:</span>                     <span class="c1"># ← 人提改动</span>
+    <span class="n">code</span> <span class="o">=</span> <span class="n">edit</span><span class="p">(</span><span class="n">train_py</span><span class="p">,</span> <span class="n">config</span><span class="p">,</span> <span class="n">trial</span><span class="p">)</span>       <span class="c1">#   改 config/*.py 的 lr / loss / 架构</span>
+    <span class="n">M</span>    <span class="o">=</span> <span class="n">Train</span><span class="p">(</span><span class="n">code</span><span class="p">,</span> <span class="n">data</span><span class="p">)</span>                    <span class="c1">#   train.py 跑一次</span>
+    <span class="n">score</span> <span class="o">=</span> <span class="n">estimate_loss</span><span class="p">(</span><span class="n">M</span><span class="p">)</span>                    <span class="c1"># ← train.py 的 verifier, 不会撒谎</span>
+
+<span class="c1"># 自递归 (Mythos 形态): 把 human_ideas 换成 M 自己</span>
+<span class="k">for</span> <span class="n">_</span> <span class="ow">in</span> <span class="nb">range</span><span class="p">(</span><span class="n">generations</span><span class="p">):</span>
+    <span class="n">trial</span> <span class="o">=</span> <span class="n">M</span><span class="o">.</span><span class="n">propose</span><span class="p">(</span><span class="n">read</span><span class="p">(</span><span class="s2">&quot;train.py&quot;</span><span class="p">))</span>        <span class="c1"># ① 模型读自己的训练码, 提改动 (神经)</span>
+    <span class="k">if</span> <span class="ow">not</span> <span class="n">M</span><span class="o">.</span><span class="n">critique</span><span class="p">(</span><span class="n">trial</span><span class="p">):</span> <span class="k">continue</span>         <span class="c1"># ② 模型先自我否决一批 (神经+符号先验)</span>
+    <span class="n">code</span>  <span class="o">=</span> <span class="n">edit</span><span class="p">(</span><span class="n">train_py</span><span class="p">,</span> <span class="n">config</span><span class="p">,</span> <span class="n">trial</span><span class="p">)</span>
+    <span class="n">M_new</span> <span class="o">=</span> <span class="n">Train</span><span class="p">(</span><span class="n">code</span><span class="p">,</span> <span class="n">data</span><span class="p">,</span> <span class="n">budget</span><span class="o">=</span><span class="s2">&quot;small&quot;</span><span class="p">)</span>  <span class="c1"># ③ 沙箱里跑 ablation (微型训练)</span>
+    <span class="k">if</span> <span class="n">estimate_loss</span><span class="p">(</span><span class="n">M_new</span><span class="p">)</span> <span class="o">&lt;</span> <span class="n">estimate_loss</span><span class="p">(</span><span class="n">M</span><span class="p">):</span><span class="c1"># ④ 符号验证器裁判: 只有真变好才接受</span>
+        <span class="n">M</span> <span class="o">=</span> <span class="n">M_new</span>                              <span class="c1">#    —— 这一步是整个递归收敛的关键, 见 §12.3</span>
+</code></pre></div>
+
+<p>这四步正是 Anthropic 2026 年披露的循环(提议→评审→沙箱 ablation→结构化回报),但<strong>它不是新发明的范式,而是把 <a href="#11-神经-符号混合现代系统都不是纯种">§11</a> 的 verifier-based RL 的作用对象,从"解一道题"升格成"改训练自己的代码"</strong>。<code>configurator.py</code> 那条"config 不能引入新 key、只能覆盖已声明默认值"的规矩(CLAUDE.md 里写着),此刻成了<strong>给模型框定的安全提议空间</strong>——模型能拧旋钮,但拧不出仓库没准备好的接口。人,从 <code>for trial in human_ideas</code> 这个循环里被请了出去,只留在"审批/一键暂停"的闸门位。</p>
+<p>这就是为什么有那两个具体数字:Anthropic 合入生产库的代码 <strong>80%+ 由 Claude 撰写</strong>(2025 年 2 月还是低个位数);而内部那个"让训练代码跑更快"的基准,从 Claude Opus 4 的约 <strong>3×</strong>(2025 年 5 月)涨到 Mythos Preview 的约 <strong>52×</strong>(2026 年 4 月)。<strong>52× 不是模型更会答题了,是这个 <code>F</code> 迭代了几轮、模型把"训练它自己"的那段代码越改越快。</strong></p>
+<h3 id="122-这套自指不是新发明它是-lisp-1958-年就埋下的两条基因">12.2 这套"自指"不是新发明:它是 Lisp 1958 年就埋下的两条基因</h3>
+<p>上面那个 <code>M_{n+1}=F(M_n)</code>、那个"函数的定义域套住自己源码"的结构会让人觉得很新——其实它是 <strong>1958 年 Lisp 就埋下的两条基因</strong>,在 2026 年长成了 Mythos / Fable 5。<a href="#10-函数式编程视角神经网络是-fgh-的世界">§10.8</a> 的历史表里 McCarthy 的 Lisp 已经出过场("第一个让程序 = 数据"),这里把这颗种子<strong>接到自递归训练上</strong>。</p>
+<h4 id="基因一递归即定义一个系统可以用自己来定义自己">基因一:递归即定义——一个系统可以"用自己来定义自己"</h4>
+<p>Lisp 的奠基论文标题就把话挑明了——McCarthy 1960 <em>Recursive Functions of Symbolic Expressions and Their Computation by Machine</em>,"<strong>递归</strong>"二字写在门楣上。它最惊人的一手是 <strong>元循环求值器 (metacircular evaluator)</strong>:用 Lisp 写一个 <code>eval</code>,而这个 <code>eval</code> 能解释包括它自己在内的任何 Lisp 程序——<code>eval</code> 调 <code>apply</code>、<code>apply</code> 回头调 <code>eval</code>,<strong>语言用自己定义了自己</strong>。</p>
+<div class="highlight"><pre><span></span><code><span class="c1">;; 极简元循环求值器 —— 语言用自己定义自己</span>
+<span class="p">(</span><span class="nb">defun</span><span class="w"> </span><span class="nb">eval</span><span class="w"> </span><span class="p">(</span><span class="nb">exp</span><span class="w"> </span><span class="nv">env</span><span class="p">)</span>
+<span class="w">  </span><span class="p">(</span><span class="nb">cond</span><span class="w"> </span><span class="p">((</span><span class="nb">atom</span><span class="w"> </span><span class="nb">exp</span><span class="p">)</span><span class="w"> </span><span class="p">(</span><span class="nv">lookup</span><span class="w"> </span><span class="nb">exp</span><span class="w"> </span><span class="nv">env</span><span class="p">))</span>
+<span class="w">        </span><span class="p">((</span><span class="nb">eq</span><span class="w"> </span><span class="p">(</span><span class="nb">car</span><span class="w"> </span><span class="nb">exp</span><span class="p">)</span><span class="w"> </span><span class="ss">&#39;lambda</span><span class="p">)</span><span class="w"> </span><span class="p">(</span><span class="nv">make-closure</span><span class="w"> </span><span class="nb">exp</span><span class="w"> </span><span class="nv">env</span><span class="p">))</span>
+<span class="w">        </span><span class="p">(</span><span class="no">t</span><span class="w"> </span><span class="p">(</span><span class="nb">apply</span><span class="w"> </span><span class="p">(</span><span class="nb">eval</span><span class="w"> </span><span class="p">(</span><span class="nb">car</span><span class="w"> </span><span class="nb">exp</span><span class="p">)</span><span class="w"> </span><span class="nv">env</span><span class="p">)</span><span class="w">            </span><span class="c1">; eval 调自己</span>
+<span class="w">                  </span><span class="p">(</span><span class="nb">mapcar</span><span class="w"> </span><span class="p">(</span><span class="k">lambda</span><span class="w"> </span><span class="p">(</span><span class="nv">a</span><span class="p">)</span><span class="w"> </span><span class="p">(</span><span class="nb">eval</span><span class="w"> </span><span class="nv">a</span><span class="w"> </span><span class="nv">env</span><span class="p">))</span><span class="w"> </span><span class="c1">; 又调自己</span>
+<span class="w">                          </span><span class="p">(</span><span class="nb">cdr</span><span class="w"> </span><span class="nb">exp</span><span class="p">))))))</span>
+</code></pre></div>
+
+<p>这正是 <a href="#121-自递归把训练这支箭掉头指向训练自己">§12.1</a> 那个 <code>M_{n+1}=F(M_n)</code> 的<strong>思想原型</strong>:<code>eval</code> 能求值 <code>eval</code>,对应"模型能改进训练出模型自己的那段代码"。McCarthy 让递归在程序里成了一等公民(λ-calculus 的 Y 组合子做的是同一件事,见 <a href="#10-函数式编程视角神经网络是-fgh-的世界">§10.8</a>),<strong>自递归训练只是把递归的粒度从"函数调用自己"放大到"整个模型造出下一个自己"</strong>。McCarthy 1960 问的是"一个程序怎么用自己描述自己",Mythos 2026 问的是"一个模型怎么用自己训练下一个自己"——<strong>同一个递归直觉,隔了 68 年和好几个数量级的尺度</strong>。</p>
+<h4 id="基因二代码即数据数据即代码自我修改的前提">基因二:代码即数据,数据即代码——自我修改的前提</h4>
+<p>Lisp 的第二条基因是 <strong>同像性 (homoiconicity)</strong>:<code>(+ 1 2)</code> 既是一段<strong>程序</strong>,又是一个三元素的<strong>列表</strong>——代码和数据是同一种结构 (S-表达式)。于是程序能像处理数据一样去<strong>构造、检查、改写、执行另一段程序,包括它自己</strong>(<code>quote</code> 把代码当惰性数据,<code>eval</code> 再把它跑起来;宏就是在编译期改写代码的程序)。</p>
+<p><strong>这条基因,正是"模型能改训练自己的代码"在逻辑上成立的根本前提</strong>——而 LLM 把它推到了<strong>字面的极致</strong>:除了权重,<strong>一切都是同一种物质——token 序列</strong>。</p>
+<div class="highlight"><pre><span></span><code><span class="c1"># 在本仓库里, 这条基因就明明白白摆在 data 契约里 (见 CLAUDE.md):</span>
+<span class="c1">#   data/&lt;dataset&gt;/train.bin —— 一条扁平的 uint16 token 流</span>
+<span class="c1">#   Python 源码、英文散文、FIM 模板, 全部压成同一种 uint16</span>
+<span class="c1"># 训练模型的 train.py 是 token; 模型吐出来的也是 token —— 同质!</span>
+</code></pre></div>
+
+<p><a href="#121-自递归把训练这支箭掉头指向训练自己">§12.1</a> 说"<code>F</code> 的定义域包含它自己的源码"——<strong>那句话的学名就是 homoiconicity</strong>。在符号 AI 里代码和数据泾渭分明(<code>if-else</code> 是代码、事实库是数据);在 LLM 里<strong>根本没有这条类型边界</strong>:<code>train.py</code> 是模型读过的训练数据,也是模型能写出的代码,<strong>是同一串 token</strong>。这就是为什么自递归训练<strong>不需要任何额外机制</strong>——模型的输出空间天然就套住了它自己的来源,正如 Lisp 程序天然能操作 Lisp 程序。本仓库的 <code>apply_fim_transform</code>(<a href="#74-更深一层编译产物本身是一段程序而且编译能凭空造信息">§7.4</a>)把代码 token 当数据随意重排,就是"代码即数据"最朴素的现场演示。</p>
+<p>而 Lisp 的 <strong><code>quote</code> / <code>eval</code> 边界</strong>,在自递归训练里<strong>原样重生为 <a href="#123-它凭什么不发散不是永动机两道闸">§12.3</a> 的"提议 / 验证"闸</strong>:模型提议的改动是 <code>quote</code> 状态的<strong>惰性文本</strong>,直到 ablation 把它 <code>eval</code>(真跑一遍训练)、验证器量出 loss——<strong><code>quote</code> 对应"提议",<code>eval</code> 对应"沙箱执行 + 裁判"</strong>。</p>
+<h4 id="但要诚实标出基因突变的地方">但要诚实标出"基因突变"的地方</h4>
+<p>Lisp 的"代码即数据"是<strong>精确、离散、无损、符号</strong>的:<code>eval</code> 跑出的结果板上钉钉。LLM 的同像性是<strong>统计、连续、有损</strong>的:模型没有一个干净的 <code>eval</code>,它只有 <code>P(下一个 token)</code>——它"提议"的训练改动可能是错的、是幻觉。<strong>那个干净的 <code>eval</code> 去哪了?——被外置成了验证器</strong>(真跑 <code>train.py</code>、量 val loss,见 <a href="#123-它凭什么不发散不是永动机两道闸">§12.3</a> 闸一)。所以 Mythos 不是纯 Lisp,而是 <strong>"Lisp 的两条基因长在统计基底上,再把符号的 <code>eval</code> 当裁判焊回来"</strong>——这恰好又是本文反复讲的神经-符号三明治(§9.4、<a href="#11-神经-符号混合现代系统都不是纯种">§11</a>)。</p>
+<h4 id="这些基因是否都在-mythos-fable-5-身上逐条对一遍">这些基因是否都在 Mythos / Fable 5 身上?——逐条对一遍</h4>
 <table>
 <thead>
 <tr>
-<th>阶段</th>
-<th>谁写规则</th>
-<th>谁写参数</th>
-<th>谁写<strong>架构 / 训练过程</strong></th>
+<th>Lisp 基因 (1958–60)</th>
+<th>当年形态</th>
+<th>Mythos / Fable 5 形态</th>
 </tr>
 </thead>
 <tbody>
 <tr>
-<td>符号 AI</td>
-<td>人</td>
-<td>——</td>
-<td>人</td>
+<td>递归即定义</td>
+<td><code>eval</code> 调 <code>eval</code>;Y 组合子</td>
+<td><code>M_{n+1}=F(M_n)</code> 自递归训练(§12.1)</td>
 </tr>
 <tr>
-<td>深度学习 (经典)</td>
-<td>梯度下降</td>
-<td>梯度下降</td>
-<td><strong>人</strong>(人写 <code>model.py</code> / <code>train.py</code>)</td>
+<td>元循环求值器</td>
+<td>用 Lisp 写的 Lisp 解释器</td>
+<td>模型读/改"训练出自己的那段代码"</td>
 </tr>
 <tr>
-<td>自递归训练 (2026)</td>
-<td>梯度下降</td>
-<td>梯度下降</td>
-<td><strong>模型自己提议,人做闸门</strong></td>
+<td>代码即数据</td>
+<td>S-表达式既是 list 又是程序</td>
+<td>一切皆 token:<code>train.py</code> 与模型输出同质</td>
+</tr>
+<tr>
+<td><code>quote</code> / <code>eval</code></td>
+<td>quote 惰性、eval 执行</td>
+<td>提议(惰性文本)/ ablation 验证(执行)(§12.3)</td>
+</tr>
+<tr>
+<td>宏 = 程序改写程序</td>
+<td>macro 在编译期重写代码</td>
+<td>模型重写 <code>config/*.py</code>、<code>train.py</code></td>
 </tr>
 </tbody>
 </table>
-<p>第三行是 2026 年真正的新东西。Anthropic 在 2026 年中披露:<strong>合入其生产代码库的代码,80%+ 由 Claude 撰写</strong>(对比 2025 年 2 月 Claude Code 刚发布时的"低个位数百分比")。更关键的是一个反复跑的内部基准——"让训练代码跑得更快":Claude Opus 4(2025 年 5 月)能把训练代码提速约 <strong>3×</strong>,到未发布的 <strong>Mythos Preview</strong>(2026 年 4 月)这个数字变成约 <strong>52×</strong>。<strong>模型在优化训练它自己的那套代码。</strong></p>
-<p>它的循环结构,正好是本文三种范式的一次合体:</p>
-<div class="highlight"><pre><span></span><code>┌─ ① 提议 (神经) ──────────────────────────────┐
-│  前沿模型当&quot;研究员&quot;, 对训练栈提改动:           │
-│  调数据配比 / 换 loss 函数 / 改架构超参         │   ← 神经直觉
-├─ ② 评审 (神经+符号) ─────────────────────────┤
-│  另一实例(或专门版本)对提议做 critique,         │   ← 符号规则 + 历史先验
-│  用历史实验和原则把不靠谱的候选筛掉             │
-├─ ③ 消融验证 (符号验证器) ────────────────────┤
-│  自动化 &quot;ablation&quot; —— 跑微型训练, 量化影响,     │   ← verifier 是裁判
-│  不动主分支(沙箱)                              │
-├─ ④ 结构化回报 (符号) ────────────────────────┤
-│  结果转成机器可读格式, 喂回 ①, 闭环            │   ← 数据契约
-└──────────────────────────────────────────────┘
-</code></pre></div>
-
-<p>注意这个循环和 <a href="#11-神经-符号混合现代系统都不是纯种">§11</a> 的 verifier-based RL 是同一个骨架,只是<strong>作用对象从"解题"升级成了"改训练代码"</strong>:神经做候选(提议改动),符号做裁判(ablation 的 val loss 是诚实的、不可作弊的 reward)。这也正是 <a href="SYNTHETIC_DATA.md">docs/SYNTHETIC_DATA.md</a> 那句"执行反馈是最诚实的 reward"在训练<strong>元层面</strong>的复现——只不过这次被验证的不是一段生成代码,而是一次训练配置。</p>
-<p><strong>在 CodeGPT 的代码里,这个循环的每个零件其实都已存在,只差自动化:</strong></p>
-<div class="highlight"><pre><span></span><code><span class="c1"># 模型提议的&quot;改动&quot;,落到本仓库就是这些可调旋钮:</span>
-<span class="c1"># config/train_codegpt_small.py 里的 loss / lr / 架构超参</span>
-<span class="c1"># train.py 里的 get_lr() 余弦调度、apply_fim_transform 的 50% 概率</span>
-<span class="c1"># 一次 ablation = 一次:</span>
-<span class="n">python</span> <span class="n">train</span><span class="o">.</span><span class="n">py</span> <span class="n">config</span><span class="o">/</span><span class="n">train_codegpt_small</span><span class="o">.</span><span class="n">py</span> <span class="o">--</span><span class="n">max_iters</span><span class="o">=</span><span class="mi">2000</span> <span class="o">--</span><span class="n">learning_rate</span><span class="o">=...</span>
-<span class="c1"># val loss(train.py 的 estimate_loss())就是那个不可作弊的 verifier</span>
-</code></pre></div>
-
-<p><code>configurator.py</code> 的设计("config 文件不能引入新 key,只能覆盖脚本已声明的默认值",见 CLAUDE.md)在这里有了新意义:它<strong>框定了一个安全的提议空间</strong>——模型能调旋钮,但不能凭空发明仓库没准备好的接口。自递归训练在工业界做的,就是给这个"提议→ablation→回报"的循环<strong>装上自动驾驶</strong>,把人从循环里挪到"审批闸门"的位置(Anthropic 同时呼吁保留"一键暂停前沿研发"的能力,正是因为人退到了闸门位)。</p>
-<h3 id="122-epiplexity数据里真正可学的不是熵是结构">12.2 Epiplexity:数据里真正可学的不是熵,是结构</h3>
-<p>自递归训练有个绕不过去的理论质疑:<strong>模型用自己的计算造数据、再喂自己训练,这不是"自己拽自己头发离地"吗?信息从哪来?</strong></p>
-<p>这正是 arXiv 2601.03220 <em>From Entropy to Epiplexity: Rethinking Information for Computationally Bounded Intelligence</em>(Finzi、Qiu、Jiang、Izmailov、Kolter、Wilson)要回答的问题。它的核心是指出经典信息论的三个"悖论"在机器学习里全部失效,<strong>因为它们都假设观察者算力无限</strong>:</p>
+<p>五条基因,Mythos / Fable 5 <strong>一条不缺</strong>——只是每条都从"精确符号版"变异成了"统计连续版 + 符号验证器兜底"。<strong>所以"为什么历史必然走向 Mythos"还藏着一个更古老的答案:因为 1958 年 McCarthy 给 AI 选定的那门语言,骨子里就是"能自我求值、能自我改写"的——递归与同像性这两条基因一旦写进 AI 的 DNA,"模型训练模型"就只是它们在足够算力下的自然显形。</strong> 自递归训练不是背叛了符号主义的老传统,而是<strong>把 Lisp 最核心的两个念头,用神经网络重新实现了一遍</strong>。</p>
+<h3 id="123-它凭什么不发散不是永动机两道闸">12.3 它凭什么不发散、不是永动机——两道闸</h3>
+<p>不动点迭代 <code>M_{n+1}=F(M_n)</code> 有两种失败方式,自递归训练分别用一道"闸"挡住,而这两道闸恰好就是本文反复讲的<strong>符号</strong>与<strong>压缩</strong>两件事。</p>
+<p><strong>闸一(防发散):符号验证器让 <code>F</code> 单调。</strong> 一个乱来的 <code>Improve</code> 完全可能把模型越改越差、甚至发散。挡住它的,是上面代码第 ④ 步那个 <code>if estimate_loss(M_new) &lt; estimate_loss(M)</code>——<strong>只有真的把 val loss 降下来的改动才被接受,否则丢弃</strong>。这一步在数学上把任意的 <code>F</code> 变成了<strong>单调算子</strong>:序列 <code>loss(M_n)</code> 只降不升,于是迭代必然收敛(下有界 + 单调)。</p>
+<p>而"提议一个改动、再用一个判据筛掉不满足的"——<strong>这正是 <a href="#3-符号主义-ai人写规则机器搜索">§3</a> 的符号搜索、<a href="#10-函数式编程视角神经网络是-fgh-的世界">§10.8</a> 的"逻辑式 = 反向函数"在元层面的重演</strong>:Prolog 给定目标、回溯搜索满足它的输入;自递归训练给定"val loss 要更低"这个目标、让神经网络提候选、符号验证器做回溯式的接受/拒绝。<strong>神经负责"大胆地猜",符号负责"诚实地筛"</strong>——<a href="#11-神经-符号混合现代系统都不是纯种">§11</a> 那句"执行反馈是最诚实的 reward",在这里管的不再是一段生成代码,而是一次训练配置本身。</p>
+<p><strong>闸二(防永动机):epiplexity 给了天花板。</strong> 第二种质疑更尖锐:<strong>模型用自己的算力造数据、改训练、再训自己,这不是"拽着自己头发离地"吗?信息从哪来?</strong> 这正是 arXiv 2601.03220 <em>From Entropy to Epiplexity</em>(Finzi、Qiu、Jiang、Izmailov、Kolter、Wilson)回答的问题。它指出经典信息论的三条铁律,<strong>在"算力有限"的真实学习器身上全部失效</strong>:</p>
 <table>
 <thead>
 <tr>
-<th>经典信息论说</th>
+<th>经典信息论(假设算力无限)</th>
 <th>对算力有限的学习器,实际是</th>
 </tr>
 </thead>
 <tbody>
 <tr>
 <td>确定性变换不增加信息</td>
-<td><strong>会</strong>——重排/变换能让深藏的结构变得可学(见 <a href="#74-更深一层编译产物本身是一段程序而且编译能凭空造信息">§7.4</a> 的 FIM 实例)</td>
+<td><strong>会增加</strong>——重排/变换能让"深藏到算不动"的结构浮上来变可学(见 <a href="#74-更深一层编译产物本身是一段程序而且编译能凭空造信息">§7.4</a> 的 FIM 实例)</td>
 </tr>
 <tr>
 <td>信息与数据顺序无关</td>
 <td><strong>有关</strong>——课程学习、数据重排显著改变可学量</td>
 </tr>
 <tr>
-<td>似然建模只是在匹配分布</td>
+<td>似然建模只是匹配分布</td>
 <td><strong>不止</strong>——它能逼出比数据生成过程<strong>更复杂的程序</strong></td>
 </tr>
 </tbody>
 </table>
-<p>为此论文提出 <strong>epiplexity</strong>:<strong>一个算力有限的观察者,能从数据里真正学到的"结构性内容",并把它和数据里那段不可压缩的随机噪声(time-bounded entropy)显式分开。</strong> 一句话:</p>
+<p>为此论文提出 <strong>epiplexity</strong>:<strong>一个算力有限的观察者,真正能从数据里学到的"结构性内容";它把这部分和数据里那段不可压缩的随机噪声 (time-bounded entropy) 显式分开。</strong></p>
 <blockquote>
-<p><strong>Kolmogorov 复杂度问"最短的程序有多长";epiplexity 问"在有限算力下,你够得着的最短程序有多长"——后者才是训练真正在优化的东西。</strong></p>
+<p><strong>Kolmogorov 复杂度问"最短的程序有多长"(算力无限);epiplexity 问"在有限算力下你够得着的最短程序有多长"——后者才是 <code>F.cross_entropy</code> 真正在优化的东西。</strong></p>
 </blockquote>
-<p>这把本文 <a href="#53-压缩的不是数据是为了压缩数据而构造的程序">§5.3</a> 那句"模型学的是为了压缩数据而构造的程序"钉成了可度量的量:<strong>训练 = 把数据的 epiplexity(可学的程序结构)榨进权重;泛化 = 榨到了程序、没死记噪声;过拟合 = 反过来,把 time-bounded entropy 也背了下来。</strong> 论文给出估计 epiplexity 的实操方法,并显示它<strong>和下游任务表现正相关</strong>——于是它还能反过来指导<strong>选数据</strong>(挑 epiplexity 高的语料),这恰好是 §12.1 循环里①"调数据配比"那一步的理论依据。</p>
-<p>而"似然建模能逼出比数据更复杂的程序"这一条,正是自递归训练<strong>不是永动机</strong>的原因:模型用计算把数据里<strong>够不着的结构</strong>翻出来、变成够得着的,信息不是凭空来的,是<strong>从"算不动"里被计算解放出来</strong>的。这也是为什么 §7.4 的 FIM 重排、合成数据、self-play,在 epiplexity 框架下全都合法。</p>
-<h3 id="123-为什么历史必然走向-mythos-fable-5">12.3 为什么历史必然走向 Mythos / Fable 5</h3>
-<p>现在把两件事接起来,回答标题里的问题。</p>
-<p>把本文的主线竖着读,是一条<strong>单调的退场曲线</strong>:</p>
-<div class="highlight"><pre><span></span><code>人写规则           人写架构、数据写参数        模型提议架构+训练、人只把闸门
-(符号 AI)    →    (经典深度学习 / CodeGPT)  →   (自递归训练 / Mythos / Fable 5)
-1956—1980s            2012—2025                     2026—
-└─ 知识获取瓶颈        └─ 数据获取/算力瓶颈          └─ 瓶颈变成&quot;我们还跟得上吗&quot;
+<p>这把 <a href="#53-压缩的不是数据是为了压缩数据而构造的程序">§5.3</a> "模型学的是为了压缩数据而构造的程序"钉成了<strong>可度量、有上界</strong>的量。于是"永动机"的疑问有了干净的答案:<strong>自递归的每一轮,不是凭空造信息,而是用算力把数据里"本来就在、但上一代算力够不着"的 epiplexity 兑现出来</strong>——和 <a href="#74-更深一层编译产物本身是一段程序而且编译能凭空造信息">§7.4</a> 里 FIM 那个"确定性重排却创造了可学信号"是同一回事,只是从"重排 token"放大成了"重排整个训练流程"。</p>
+<p>两道闸合起来,就说清了这个不动点的性质:<strong>它收敛(闸一保证单调),但收敛到的不是无穷,而是"当前算力下能够得着的最短程序"(闸二给的天花板)。</strong> 这也顺手解释了为什么<strong>还需要不断加算力</strong>:算力一涨,epiplexity 的天花板抬高,<code>F</code> 的不动点跟着上移,于是<strong>下一代模型还有的可学</strong>——这就是代际跃迁的引擎。</p>
+<h3 id="124-为什么历史必然收敛到-mythos-fable-5">12.4 为什么"历史必然"收敛到 Mythos / Fable 5</h3>
+<p>现在两道闸都装好了,可以正面回答标题:为什么历史<strong>必然</strong>走到 Mythos / Fable 5,而不是停在 GPT-2 / CodeGPT 这种"人手调参"的形态?</p>
+<p>把全文主线竖着读,是一条<strong>人类逐步退出"谁写"这一列的曲线</strong>——而 §12.3 那两道闸,正好是推着这条曲线往右走、且<strong>不可逆</strong>的两只手:</p>
+<div class="highlight"><pre><span></span><code>谁写&quot;训练过程&quot;?     人写规则      人写架构/数据写参数     模型提议+符号验证/人只把闸门
+                    符号 AI    →   经典深度学习/CodeGPT  →   自递归训练 / Mythos / Fable 5
+                    1956–80s        2012–2025                 2026–
+推右边的力 ①(能力):                epiplexity 天花板每代抬高 → 模型自己成了够格的&quot;训练研究员&quot;
+推右边的力 ②(机制):                符号验证器让&quot;模型改模型&quot;从危险变可控 → 敢把人移出循环
+不可逆的原因:                       一旦 F 的单代增益 &gt; 人手调参的增益, 留着人就是留着瓶颈
 </code></pre></div>
 
-<p>这条曲线不是谁的偏好,而是<strong>两股力量的合力,必然把人挤出循环</strong>:</p>
-<ol>
-<li>
-<p><strong>能力侧(epiplexity 给的下界在抬升)</strong>:每一代模型把更多 epiplexity 榨进权重,于是它<strong>自己</strong>就成了"读得懂训练代码、提得出有效改动"的研究员。当一个模型在"让训练更快"上做到 52×,继续让人来手调超参,在经济上和速度上都讲不通了——人成了循环里最慢的那一环。</p>
-</li>
-<li>
-<p><strong>机制侧(verifier 让自动化变安全)</strong>:自递归训练敢放手,是因为有 <a href="#11-神经-符号混合现代系统都不是纯种">§11</a> 的<strong>符号验证器兜底</strong>——ablation 的 val loss 不会撒谎。神经负责"大胆提议",符号负责"诚实裁判",这套神经-符号分工让"模型改模型"从危险变成可控。</p>
-</li>
-</ol>
-<p>所以 <strong>Mythos / Fable 5 不是某次灵感的产物,而是这条退场曲线走到"模型参与设计后继者"那一段的必然命名</strong>。它们是本文三种范式的最终合体形态:</p>
 <ul>
-<li><strong>神经</strong>——核心仍是 <code>forward</code> 那串可微变换,负责直觉、提议、生成(§5、§10);</li>
-<li><strong>概率</strong>——<code>softmax</code>/采样仍是输出层,负责在候选里探索(§9.2);</li>
-<li><strong>符号</strong>——verifier、ablation、<code>configurator.py</code> 式的安全接口、"一键暂停"闸门,负责裁判与约束(§3、§11)。</li>
+<li><strong>力 ①(能力侧):epiplexity 的天花板每代在抬。</strong> 每一代把更多 epiplexity 榨进权重(§12.3 闸二),模型自己就越来越够格当那个"读得懂 <code>train.py</code>、提得出有效改动"的研究员。当一个模型能把训练提速 52×,还坚持让人来手填 <code>learning_rate</code>,在速度和成本上都讲不通——<strong>人成了 <code>F</code> 这个循环里最慢的一环</strong>。</li>
+<li><strong>力 ②(机制侧):符号验证器让自动化变安全。</strong> 敢把人移出循环,前提是闸一那个诚实裁判(§12.3):ablation 的 val loss 不会撒谎,所以"模型改模型"不会失控滑走。<strong>没有这道符号闸,自递归只是危险;有了它,自递归才成了工程。</strong></li>
 </ul>
-<p>换句话说,<strong>整个 2026 的 AI 不是"神经赢了符号",而是把符号从"写规则的人手里"搬到了"验证神经的裁判席上"</strong>。Mythos / Fable 5 把这套循环自动化到了连"造下一代模型"都纳入其中——这就是本文开头那条暗线的终点:<strong>当"谁写"一路写到"模型写训练模型自己的代码",AI 的历史就从"人教机器"翻篇成了"机器在人设的闸门内教机器"。</strong></p>
-<p>CodeGPT 这个小仓库,恰好是这条曲线的<strong>起点切片</strong>:<code>train.py</code> 的每个超参还都是人手填的。但循环的全部零件——可调的提议空间(<code>configurator.py</code>)、诚实的验证器(<code>estimate_loss</code> 的 val loss)、确定性变换造信息(<code>apply_fim_transform</code>)——都已就位。从 CodeGPT 到 Mythos,缺的不是新原理,<strong>只是把人从那个 <code>for step in range(max_iters)</code> 循环外面的"调参"位置,换成模型自己</strong>。</p>
+<p>这两只手一旦同时到位,曲线右移就<strong>不可逆</strong>了:只要"模型提议改动带来的单代增益" 超过 "人手调参的增益",继续把人留在循环里,<strong>留着的就纯是瓶颈</strong>。经济、速度、竞争三重压力会把所有前沿实验室都推向同一个方向——<strong>这就是"历史必然"四个字的全部含义:它不是预言,是两道闸 + 三重压力下唯一稳定的均衡。</strong></p>
+<p>而 <strong>Mythos / Fable 5,就是这条不动点轨迹上、<code>F</code> 已经迭代到"上一代模型实质性地参与设计了这一代"那个阶段的命名航标。</strong> "Mythos 背后是什么"的答案,不是某次灵感,而是上面那个 <code>for _ in range(generations)</code> 循环的累积增益跨过了一个阈值——<strong>模型贡献的改动开始压过人贡献的改动</strong>(80% 代码、52× 提速,就是这个阈值被跨过的两个读数)。它们不是新范式,而是本文三种老范式在自指循环里的<strong>最终合体</strong>:</p>
+<ul>
+<li><strong>神经</strong>——<code>forward</code> 那串可微变换,负责"大胆地猜"(提议改动、生成数据);§5、§10。</li>
+<li><strong>概率</strong>——<code>softmax</code>/采样,负责在候选改动之间<strong>探索</strong>而非死板地取最优;§9.2。</li>
+<li><strong>符号</strong>——verifier、ablation、<code>configurator.py</code> 式的安全接口、"一键暂停"闸门,负责"诚实地筛"与约束;§3、§11。</li>
+</ul>
+<blockquote>
+<p>所以 2026 的 AI <strong>不是"神经打败了符号"</strong>,而是<strong>把符号从"人写规则的手里",搬到了"裁判神经提议的席位上"</strong>。自递归训练把这套"神经猜、符号筛、概率探索"的循环,一路自动化到连"造下一代模型"本身都纳了进来。这就是开篇那条暗线的终点:<strong>当"谁写"一路写到"模型写训练自己的代码",AI 史就从"人教机器"翻篇成了"机器在人设的闸门内教机器"。</strong></p>
+</blockquote>
+<p><strong>CodeGPT 正是这条曲线的起点切片。</strong> 它的 <code>train.py</code> 每个超参还是人手填的——但 §12.1 那个不动点循环的零件<strong>它全有了</strong>:可调又受约束的提议空间 (<code>configurator.py</code>)、诚实的验证器 (<code>estimate_loss</code> 的 val loss)、"确定性变换造可学信息"的活样本 (<code>apply_fim_transform</code>)。从 CodeGPT 到 Mythos,中间<strong>缺的不是任何新原理</strong>,只缺一件事——<strong>把 <code>for trial in human_ideas</code> 里的 <code>human_ideas</code>,换成模型自己。</strong> 一旦换上,Y 组合子开始转动,剩下的就是 §12.3 那两道闸保证它<strong>既转得起来、又不飞出去</strong>。</p>
+<h3 id="125-把镜头从训练拉到agent同一副骨架的第三次显形">12.5 把镜头从"训练"拉到"agent":同一副骨架的第三次显形</h3>
+<p>前面四节讲的都是"训练在自己写自己"。现在退一步看一个更大的事实:<strong>那副 Lisp 骨架——原子化组合 + 递归不动点 + 代码即数据 + 验证器闸门——正在 agent 设计里独立地、又一次长出来。</strong> 这就是为什么"优秀的系统越来越朝着原子化、朝着 Lisp 递归定义的形式收敛"不是审美偏好,而是<strong>收敛</strong>:同一副骨架,本文已经见过它两次显形——<code>forward</code> 的函数组合(<a href="#10-函数式编程视角神经网络是-fgh-的世界">§10</a>)、自递归训练的代际不动点(<a href="#121-自递归把训练这支箭掉头指向训练自己">§12.1</a>)——agent 是它的<strong>第三次显形</strong>,只是把舞台从"权重空间"换到了"运行时"。</p>
+<p><strong>① 原子化 = §10 那条组合律的回归。</strong> 看 2026 年口碑最好的 agent harness——earendil-works 的 <strong>Pi (<code>pi-mono</code>)</strong>:它不是"一个带一堆 config flag 的大应用",而是<strong>五个各司其职、层层叠起来的小包</strong>,信条是"<strong>do one thing well, make it composable, let developers build the rest</strong>";每个扩展是一个自包含模块,挂到 agent 生命周期上。<code>Atomic Agents</code> 框架同理——用<strong>可复用的原子组件</strong>拼系统。Pi 更关键的一手是:<strong>把 agent loop、message stream、tool execution、state 全部暴露成可组合的 API</strong>——也就是<strong>把"循环"本身做成了一等的可组合值</strong>。这跟 Lisp 把函数/代码做成一等公民、跟 <a href="#10-函数式编程视角神经网络是-fgh-的世界">§10.3</a> 的 transducer"把变换从数据里解耦"、跟 <a href="#10-函数式编程视角神经网络是-fgh-的世界">§10.10</a> 说的"组合是 AI 永恒的骨架",是<strong>同一条原则的第 N 次复读</strong>:原子工具是字母表,agent 是字母表上的组合。</p>
+<p><strong>② agent loop = 不动点迭代(递归本身)。</strong> agentic loop 的奠基模式是 <strong>ReAct</strong>:reason → act(调工具)→ observe → 再 reason……直到目标达成。把它写成一行,就是:</p>
+<div class="highlight"><pre><span></span><code><span class="c1"># agent loop 的本质 —— 和 §12.1 的 M_{n+1}=F(M_n) 是同一个形状</span>
+<span class="n">state</span> <span class="o">=</span> <span class="n">initial</span>
+<span class="k">while</span> <span class="ow">not</span> <span class="n">goal</span><span class="p">(</span><span class="n">state</span><span class="p">):</span>          <span class="c1"># 终止判据 = 验证器(见下文 ③)</span>
+    <span class="n">thought</span> <span class="o">=</span> <span class="n">model</span><span class="p">(</span><span class="n">state</span><span class="p">)</span>      <span class="c1"># reason  (神经: 大胆地猜)</span>
+    <span class="n">obs</span>     <span class="o">=</span> <span class="n">execute</span><span class="p">(</span><span class="n">thought</span><span class="p">)</span>  <span class="c1"># act     (符号: 真跑工具)</span>
+    <span class="n">state</span>   <span class="o">=</span> <span class="n">update</span><span class="p">(</span><span class="n">state</span><span class="p">,</span> <span class="n">obs</span><span class="p">)</span><span class="c1"># observe (fold 进状态)</span>
+</code></pre></div>
+
+<p>这正是 <a href="#10-函数式编程视角神经网络是-fgh-的世界">§10.1</a> 那个 <code>for block in self.transformer.h: x = block(x)</code> 的 <strong>fold/reduce</strong>,只不过被 fold 的不再是 12 个 Block,而是 agent <strong>自己产出的、长度未定的"动作-观察"流</strong>;也正是 <a href="#121-自递归把训练这支箭掉头指向训练自己">§12.1</a> 那个 <code>M_{n+1}=F(M_n)</code> 的不动点,只不过尺度从"代际"缩到了"一个任务之内"。<strong>本仓库其实已经有这个循环的胚胎</strong>——<code>model.py</code> 的 <code>generate()</code>:吐一个 token → 接回输入 → 再吐,直到撞上 <code>stop_tokens</code>。<strong><code>generate()</code> 就是最小的 agent loop,而 <code>stop_tokens</code> 就是最小的终止判据</strong>(§9.1 早就点过它是"符号"的)。</p>
+<p><strong>③ loop engineering = 给这个递归装上 §12.3 的两道闸——而且是被独立地重新发现的。</strong> 2026 年的共识是一句话:"<strong>真正拉开 agent 差距的往往不是底层模型,而是那个 loop</strong>"(loop engineering)。而怎样设计这个 loop?业界给的清单是:<strong>清晰可验证的目标 + 迭代上限 + token 预算 + 无进展检测</strong>。把这份清单和 <a href="#123-它凭什么不发散不是永动机两道闸">§12.3</a> 那两道闸并排放——<strong>逐项对得上</strong>:</p>
+<table>
+<thead>
+<tr>
+<th>loop engineering 的术语</th>
+<th>本文 §12.3 的闸</th>
+<th>作用</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>可验证的目标 / no-progress 检测</td>
+<td><strong>闸一:符号验证器(单调过滤)</strong></td>
+<td>防发散——只朝目标走,停在原地就退出</td>
+</tr>
+<tr>
+<td>迭代上限 / token 预算</td>
+<td><strong>闸二:有限算力的天花板</strong></td>
+<td>防永动机——算力有界,够不着就收敛</td>
+</tr>
+</tbody>
+</table>
+<p>这不是巧合,是<strong>同一个控制论结构在两个领域被各自撞见</strong>:任何"让系统自己一圈圈跑、还要它别飞出去"的设计,<strong>最后都必然长出"符号判据 + 算力上界"这两道闸</strong>。自递归训练在"代际"尺度上需要它们,agent loop 在"任务内"尺度上同样需要它们——<strong>这就是你说的"从 agent 发展角度看也是一致的"那个一致性的硬核</strong>。</p>
+<p><strong>④ 代码即数据,在 agent 里也原样复现。</strong> agent 把动作以<strong>文本/代码(tool call)</strong>的形式吐出来,再由 harness 执行——这就是 <a href="#122-这套自指不是新发明它是-lisp-1958-年就埋下的两条基因">§12.2</a> 基因二"代码即数据"的现场:<strong>模型提议的 tool call 是 <code>quote</code> 态的惰性文本,<code>execute()</code> 才是 <code>eval</code></strong>。而 Pi 的 <strong>subagent</strong>、Claude Code 的子 agent——<strong>一个 agent 派生另一个 agent</strong>——就是 §12.2 基因一(自指 / 元循环求值器)在运行时的化身:<strong><code>eval</code> 调 <code>eval</code>,搬到 agent 层就是"agent 派 agent"</strong>。所以未来 agent 的方向(更原子、更能递归地派生子 agent、更讲究 loop engineering)不是三件新事,<strong>是 Lisp 那两条老基因在 agent 这一层的同时显形</strong>。</p>
+<p>把三次显形并到一张表上,这一节的主张就一目了然:</p>
+<table>
+<thead>
+<tr>
+<th>Lisp 基因</th>
+<th>forward(§10)</th>
+<th>自递归训练(§12.1)</th>
+<th>agent / loop engineering(§12.5)</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>原子化 + 组合</td>
+<td><code>nn.ModuleList</code> 串 Block</td>
+<td>可调旋钮的提议空间</td>
+<td>Pi 的五个可组合包 / atomic tools</td>
+</tr>
+<tr>
+<td>递归 / 不动点</td>
+<td><code>for block: x=block(x)</code> (fold)</td>
+<td><code>M_{n+1}=F(M_n)</code></td>
+<td><code>while not goal: state=step(state)</code> (ReAct)</td>
+</tr>
+<tr>
+<td>代码即数据</td>
+<td>token 流不分代码/数据</td>
+<td><code>train.py</code> 与输出同质</td>
+<td>tool call 是文本,<code>execute</code> 才 eval</td>
+</tr>
+<tr>
+<td>自指</td>
+<td>——</td>
+<td>模型改训练自己的代码</td>
+<td>agent 派生子 agent</td>
+</tr>
+<tr>
+<td>验证器闸门</td>
+<td><code>stop_tokens</code></td>
+<td>ablation 的 val loss</td>
+<td>可验证目标 + 迭代/token 上限</td>
+</tr>
+</tbody>
+</table>
+<blockquote>
+<p><strong>结论:模型、训练、agent 这三层,正在收敛到同一副骨架——而那副骨架,就是 McCarthy 1958 年给 AI 选的那门语言的骨架(递归 + 同像性 + 组合)。</strong> "优秀系统越来越原子化、越来越像 Lisp 递归定义",不是因为大家都读了 SICP,而是因为<strong>在有限算力下、要用简单原语拼出开放行为、还得可控</strong>,这副骨架是唯一稳定的吸引子。Mythos / Fable 5 是这副骨架在"模型 + 训练"上的显形;Pi 这类 harness 加上 loop engineering,是它在"agent 运行时"上的显形。<strong>两者是同一件事在不同时间尺度上的样子</strong>——这正是本文从第 1 节到第 12 节那条暗线,在 agent 时代写下的最自然的续集。</p>
+</blockquote>
 <hr />
-<h2 id="13-给用户原问题的最终回答">13. 给用户原问题的最终回答</h2>
+<h2 id="13-疑惑解答">13. 疑惑解答</h2>
 <p>回到一开始的问题——<strong>"GPT 是不是把训练数据当成一堆可执行的符号代码来执行？"</strong></p>
 <p>答案分三层：</p>
 <p><strong>第一层（直觉是对的）</strong>：</p>
@@ -1423,7 +1564,7 @@ n features in n dims     n features in d&lt;&lt;n dims
 
 <script>
 (function () {
-  const POST_TITLE = "\u7b26\u53f7\u4e3b\u4e49\u3001\u8d1d\u53f6\u65af\u7f51\u7edc\u3001\u6df1\u5ea6\u5b66\u4e60\uff1a\u4e09\u79cd AI \u8303\u5f0f\u7684\u5bf9\u6bd4\u5b66\u4e60";
+  const POST_TITLE = "Mythos\u3001Fable 5 \u7684\u80cc\u540e\uff0c\u5176\u5b9e\u662f\u4e00\u6761 70 \u5e74\u6ca1\u4eba\u8bb2\u900f\u7684 AI \u4e3b\u7ebf";
   const contentEl = document.querySelector('article .content');
 
   const fab = document.getElementById('ai-fab');
