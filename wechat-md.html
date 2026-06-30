@@ -40,6 +40,18 @@
   .phone #preview-scroll { background: #ebedf0; padding: 16px 0; display: flex; justify-content: center; }
   .phone #preview { width: 375px; background: #fff; padding: 16px; border-radius: 12px; box-shadow: 0 2px 12px rgba(0,0,0,.08); }
   @media (max-width: 760px) { main { grid-template-columns: 1fr; height: auto; } textarea { min-height: 240px; } }
+  /* 代码图片导出弹窗 */
+  #modal { position: fixed; inset: 0; background: rgba(0,0,0,.5); display: none; z-index: 50; padding: 24px; overflow: auto; }
+  #modal.open { display: block; }
+  .modal-box { max-width: 900px; margin: 0 auto; background: #fff; border-radius: 10px; padding: 20px; }
+  .modal-box .head { display: flex; align-items: center; gap: 12px; margin-bottom: 16px; }
+  .modal-box .head h2 { font-size: 16px; margin: 0; }
+  .modal-box .head .tip { color: #86909c; font-size: 12px; }
+  .modal-box .head .x { margin-left: auto; }
+  .shot { margin: 16px 0; padding: 12px; border: 1px solid #eee; border-radius: 8px; }
+  .shot .bar { display: flex; align-items: center; gap: 10px; margin-bottom: 8px; }
+  .shot .bar b { font-size: 13px; }
+  .shot img { max-width: 100%; display: block; border-radius: 6px; }
 </style>
 </head>
 <body>
@@ -54,7 +66,8 @@
       <option value="atom-one-light">浅色 (atom-one-light)</option>
       <option value="monokai">深色 (monokai)</option>
     </select>
-    <button id="copy" class="primary">复制到公众号</button>
+    <button id="copy" class="primary">复制正文</button>
+    <button id="export">导出代码图片</button>
     <span id="status"></span>
   </div>
 </header>
@@ -68,6 +81,18 @@
     <div id="preview-scroll"><div id="preview"></div></div>
   </section>
 </main>
+
+<div id="modal">
+  <div class="modal-box">
+    <div class="head">
+      <h2>代码图片</h2>
+      <span class="tip">右键/长按保存，或点「下载」。再到公众号文章里用「图片」按钮上传到对应占位处。</span>
+      <button class="x" onclick="document.getElementById('modal').classList.remove('open')">关闭</button>
+    </div>
+    <div style="margin-bottom:12px;"><button id="dl-all" class="primary">下载全部</button></div>
+    <div id="shots"></div>
+  </div>
+</div>
 
 <script src="https://cdn.jsdelivr.net/npm/marked/marked.min.js"></script>
 <script src="https://cdn.jsdelivr.net/npm/@highlightjs/cdn-assets@11/highlight.min.js"></script>
@@ -147,27 +172,127 @@ function inlineStyles(root) {
   });
 }
 
-async function copyToWeChat() {
-  const html = preview.innerHTML;
-  const status = $('#status');
+function flash(t){ const s=$('#status'); s.textContent=t; setTimeout(()=>s.textContent='',2500); }
+
+// —— 复制正文：代码块换成居中占位提示，方便你在文章里对位上传图片 ——
+async function copyProse() {
+  const clone = preview.cloneNode(true);
+  clone.querySelectorAll('pre').forEach((pre, i) => {
+    const ph = document.createElement('p');
+    ph.style.cssText = 'margin:16px 0;padding:10px;text-align:center;color:#86909c;'
+      + 'background:#f7f8fa;border-radius:6px;font-size:14px;';
+    ph.textContent = `📷 在此处上传代码图片 ${i + 1}（code-${i + 1}.png）`;
+    pre.replaceWith(ph);
+  });
+  const html = clone.innerHTML;
   try {
-    await navigator.clipboard.write([
-      new ClipboardItem({
-        'text/html': new Blob([html], { type: 'text/html' }),
-        'text/plain': new Blob([preview.innerText], { type: 'text/plain' }),
-      })
-    ]);
-    flash('✓ 已复制');
+    await navigator.clipboard.write([new ClipboardItem({
+      'text/html': new Blob([html], { type: 'text/html' }),
+      'text/plain': new Blob([clone.innerText], { type: 'text/plain' }),
+    })]);
+    flash('✓ 正文已复制');
   } catch {
-    // 退路：选中预览节点用 execCommand 复制富文本
-    const range = document.createRange();
-    range.selectNodeContents(preview);
+    const tmp = document.createElement('div');
+    tmp.style.cssText = 'position:fixed;left:-9999px;'; tmp.innerHTML = html;
+    document.body.appendChild(tmp);
+    const range = document.createRange(); range.selectNodeContents(tmp);
     const sel = getSelection(); sel.removeAllRanges(); sel.addRange(range);
-    document.execCommand('copy'); sel.removeAllRanges();
-    flash('✓ 已复制');
+    document.execCommand('copy'); sel.removeAllRanges(); tmp.remove();
+    flash('✓ 正文已复制');
   }
-  function flash(t){ status.textContent = t; setTimeout(()=>status.textContent='', 2000); }
 }
+
+// —— 把一个高亮后的 <code> 拆成「行 → 片段(文本+颜色)」 ——
+function tokenize(codeEl, defColor) {
+  const lines = [[]];
+  (function walk(node, color) {
+    node.childNodes.forEach(n => {
+      if (n.nodeType === 3) {
+        const parts = n.nodeValue.split('\n');
+        parts.forEach((p, i) => {
+          if (i > 0) lines.push([]);
+          if (p) lines[lines.length - 1].push({ text: p, color });
+        });
+      } else if (n.nodeType === 1) {
+        walk(n, n.style.color || color);
+      }
+    });
+  })(codeEl, defColor);
+  return lines;
+}
+
+function roundRect(ctx, x, y, w, h, r) {
+  ctx.beginPath();
+  ctx.moveTo(x + r, y); ctx.arcTo(x + w, y, x + w, y + h, r);
+  ctx.arcTo(x + w, y + h, x, y + h, r); ctx.arcTo(x, y + h, x, y, r);
+  ctx.arcTo(x, y, x + w, y, r); ctx.closePath();
+}
+
+// —— 用 canvas 把代码块画成高清 PNG（带语法配色 + Mac 圆点）——
+function renderCodeImage(pre) {
+  const code = pre.querySelector('code');
+  const bg = pre.style.backgroundColor || '#282c34';
+  const defColor = code.style.color || '#abb2bf';
+  const lines = tokenize(code, defColor);
+  const s = 2;                                   // 2x 高清
+  const fs = 15 * s, lh = Math.round(fs * 1.6);
+  const font = `${fs}px Menlo, Consolas, "SF Mono", monospace`;
+  const padX = 20 * s, padTop = 46 * s, padBot = 22 * s;
+
+  const m = document.createElement('canvas').getContext('2d'); m.font = font;
+  let maxW = 0;
+  for (const line of lines) {
+    let w = 0; for (const seg of line) w += m.measureText(seg.text).width;
+    maxW = Math.max(maxW, w);
+  }
+  const W = Math.ceil(maxW + padX * 2);
+  const H = Math.ceil(lines.length * lh + padTop + padBot);
+
+  const cv = document.createElement('canvas'); cv.width = W; cv.height = H;
+  const ctx = cv.getContext('2d');
+  ctx.fillStyle = bg; roundRect(ctx, 0, 0, W, H, 12 * s); ctx.fill();
+  ['#ff5f56', '#ffbd2e', '#27c93f'].forEach((c, i) => {
+    ctx.fillStyle = c; ctx.beginPath();
+    ctx.arc(padX + 6 * s + i * 22 * s, 22 * s, 6 * s, 0, Math.PI * 2); ctx.fill();
+  });
+  ctx.font = font; ctx.textBaseline = 'top';
+  lines.forEach((line, li) => {
+    let x = padX; const y = padTop + li * lh;
+    for (const seg of line) {
+      ctx.fillStyle = seg.color || defColor;
+      ctx.fillText(seg.text, x, y);
+      x += ctx.measureText(seg.text).width;
+    }
+  });
+  return cv;
+}
+
+function exportImages() {
+  const pres = preview.querySelectorAll('pre');
+  const shots = $('#shots'); shots.innerHTML = '';
+  if (!pres.length) { flash('没有代码块'); return; }
+  pres.forEach((pre, i) => {
+    const cv = renderCodeImage(pre);
+    const url = cv.toDataURL('image/png');
+    const name = `code-${i + 1}.png`;
+    const item = document.createElement('div'); item.className = 'shot';
+    item.innerHTML = `<div class="bar"><b>代码图片 ${i + 1}</b>`
+      + `<a download="${name}" href="${url}"><button>下载 ${name}</button></a></div>`;
+    const img = document.createElement('img'); img.src = url; item.appendChild(img);
+    item.dataset.name = name; item.dataset.url = url;
+    shots.appendChild(item);
+  });
+  $('#modal').classList.add('open');
+}
+
+$('#dl-all').addEventListener('click', () => {
+  $('#shots').querySelectorAll('.shot').forEach((it, i) => {
+    setTimeout(() => {
+      const a = document.createElement('a');
+      a.href = it.dataset.url; a.download = it.dataset.name; a.click();
+    }, i * 300);
+  });
+});
 
 function setTheme(name) {
   $('#hljs-theme').href = `https://cdn.jsdelivr.net/npm/@highlightjs/cdn-assets@11/styles/${name}.min.css`;
@@ -176,7 +301,8 @@ function setTheme(name) {
 }
 
 src.addEventListener('input', render);
-$('#copy').addEventListener('click', copyToWeChat);
+$('#copy').addEventListener('click', copyProse);
+$('#export').addEventListener('click', exportImages);
 $('#theme').addEventListener('change', e => setTheme(e.target.value));
 $('#phone').addEventListener('change', e => document.body.classList.toggle('phone', e.target.checked));
 
