@@ -5,7 +5,7 @@
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <title>Markdown → 公众号（代码横向滚动）</title>
 <!-- 代码高亮主题：用于在预览中算出每个 token 的颜色，再转成行内样式 -->
-<link id="hljs-theme" rel="stylesheet" href="https://cdn.jsdelivr.net/npm/highlight.js@11/styles/atom-one-dark.min.css">
+<link id="hljs-theme" rel="stylesheet" href="https://cdn.jsdelivr.net/npm/@highlightjs/cdn-assets@11/styles/atom-one-dark.min.css">
 <style>
   :root { --gap: 12px; }
   * { box-sizing: border-box; }
@@ -70,7 +70,7 @@
 </main>
 
 <script src="https://cdn.jsdelivr.net/npm/marked/marked.min.js"></script>
-<script src="https://cdn.jsdelivr.net/npm/highlight.js@11/lib/common.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/@highlightjs/cdn-assets@11/highlight.min.js"></script>
 <script>
 const $ = s => document.querySelector(s);
 const src = $('#src'), preview = $('#preview');
@@ -96,17 +96,15 @@ const INLINE = {
   TD: 'border:1px solid #e5e6eb;padding:8px 12px;',
 };
 
-marked.setOptions({ breaks: true, gfm: true,
-  highlight: (code, lang) => {
-    try { return hljs.getLanguage(lang)
-      ? hljs.highlight(code, { language: lang }).value
-      : hljs.highlightAuto(code).value; }
-    catch { return code; }
-  }
-});
+marked.setOptions({ breaks: true, gfm: true });
 
 function render() {
   preview.innerHTML = marked.parse(src.value || '');
+  // 新版 marked 已移除 highlight 选项，这里手动高亮：
+  // highlightElement 会给 <code> 加上 .hljs 类（带浅色文字）并生成带色 token
+  preview.querySelectorAll('pre code').forEach(el => {
+    try { hljs.highlightElement(el); } catch {}
+  });
   inlineStyles(preview);
 }
 
@@ -172,7 +170,7 @@ async function copyToWeChat() {
 }
 
 function setTheme(name) {
-  $('#hljs-theme').href = `https://cdn.jsdelivr.net/npm/highlight.js@11/styles/${name}.min.css`;
+  $('#hljs-theme').href = `https://cdn.jsdelivr.net/npm/@highlightjs/cdn-assets@11/styles/${name}.min.css`;
   // 等主题 CSS 加载完再重渲染，确保取到正确颜色
   setTimeout(render, 200);
 }
