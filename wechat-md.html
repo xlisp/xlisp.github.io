@@ -57,7 +57,7 @@
 <body>
 <header>
   <h1>Markdown → 公众号</h1>
-  <span class="hint">代码块横向滚动 · 全行内样式 · 复制即粘贴</span>
+  <span class="hint">代码转图片内嵌 · 全行内样式 · 复制粘贴即可</span>
   <div class="toolbar">
     <label class="hint"><input type="checkbox" id="phone"> 模拟手机宽度</label>
     <select id="theme" title="代码配色">
@@ -85,8 +85,8 @@
       <option value="pink">文章底：淡粉</option>
       <option value="blue">文章底：浅蓝</option>
     </select>
-    <button id="copy" class="primary">复制正文</button>
-    <button id="export">导出代码图片</button>
+    <button id="copy" class="primary">复制全文（含代码图）</button>
+    <button id="export">单独导出图片</button>
     <span id="status"></span>
   </div>
 </header>
@@ -222,15 +222,15 @@ function inlineStyles(root) {
 
 function flash(t){ const s=$('#status'); s.textContent=t; setTimeout(()=>s.textContent='',2500); }
 
-// —— 复制正文：代码块换成居中占位提示，方便你在文章里对位上传图片 ——
+// —— 复制全文：代码块直接内嵌成 base64 图片，粘到公众号时微信会自动收图上传 ——
 async function copyProse() {
   const clone = source.cloneNode(true);
-  clone.querySelectorAll('pre').forEach((pre, i) => {
-    const ph = document.createElement('p');
-    ph.style.cssText = 'margin:16px 0;padding:10px;text-align:center;color:#86909c;'
-      + 'background:#f7f8fa;border-radius:6px;font-size:14px;';
-    ph.textContent = `📷 在此处上传代码图片 ${i + 1}（code-${i + 1}.png）`;
-    pre.replaceWith(ph);
+  clone.querySelectorAll('pre').forEach(pre => {
+    const cv = renderCodeImage(pre, $('#frame').value);
+    const img = document.createElement('img');
+    img.src = cv.toDataURL('image/png');   // base64 内嵌，粘贴时微信自动上传
+    img.style.cssText = 'max-width:100%;display:block;margin:16px auto;border-radius:8px;';
+    pre.replaceWith(img);
   });
   // 整篇包进带底色的 section（微信保留 section 行内背景）
   const pg = PAGES[$('#page').value];
