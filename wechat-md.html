@@ -1,0 +1,212 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Markdown → 公众号（代码横向滚动）</title>
+<!-- 代码高亮主题：用于在预览中算出每个 token 的颜色，再转成行内样式 -->
+<link id="hljs-theme" rel="stylesheet" href="https://cdn.jsdelivr.net/npm/highlight.js@11/styles/atom-one-dark.min.css">
+<style>
+  :root { --gap: 12px; }
+  * { box-sizing: border-box; }
+  body {
+    margin: 0; font: 14px/1.5 -apple-system, "PingFang SC", "Microsoft YaHei", sans-serif;
+    color: #222; background: #f5f6f7;
+  }
+  header {
+    padding: 12px 16px; background: #fff; border-bottom: 1px solid #e5e6eb;
+    display: flex; align-items: center; gap: 16px; flex-wrap: wrap;
+  }
+  header h1 { font-size: 15px; margin: 0; font-weight: 600; }
+  header .hint { color: #86909c; font-size: 12px; }
+  .toolbar { margin-left: auto; display: flex; align-items: center; gap: 10px; flex-wrap: wrap; }
+  select, button {
+    font: inherit; padding: 6px 12px; border-radius: 6px; border: 1px solid #d0d3d9;
+    background: #fff; cursor: pointer;
+  }
+  button.primary { background: #07c160; color: #fff; border-color: #07c160; font-weight: 600; }
+  button.primary:active { background: #06ad56; }
+  #status { font-size: 12px; color: #07c160; min-width: 60px; }
+  main { display: grid; grid-template-columns: 1fr 1fr; gap: var(--gap); padding: var(--gap); height: calc(100vh - 56px); }
+  .pane { background: #fff; border: 1px solid #e5e6eb; border-radius: 8px; overflow: hidden; display: flex; flex-direction: column; }
+  .pane > .label { padding: 6px 12px; font-size: 12px; color: #86909c; border-bottom: 1px solid #f0f1f3; background: #fafbfc; }
+  textarea {
+    flex: 1; border: 0; outline: 0; resize: none; padding: 16px;
+    font: 13px/1.6 "SF Mono", Menlo, Consolas, monospace; color: #333;
+  }
+  /* 预览区滚动容器，模拟手机宽度（375px）方便检查横向滚动效果 */
+  #preview-scroll { flex: 1; overflow: auto; padding: 16px; background: #fff; }
+  #preview { max-width: 100%; }
+  .phone #preview-scroll { background: #ebedf0; padding: 16px 0; display: flex; justify-content: center; }
+  .phone #preview { width: 375px; background: #fff; padding: 16px; border-radius: 12px; box-shadow: 0 2px 12px rgba(0,0,0,.08); }
+  @media (max-width: 760px) { main { grid-template-columns: 1fr; height: auto; } textarea { min-height: 240px; } }
+</style>
+</head>
+<body>
+<header>
+  <h1>Markdown → 公众号</h1>
+  <span class="hint">代码块横向滚动 · 全行内样式 · 复制即粘贴</span>
+  <div class="toolbar">
+    <label class="hint"><input type="checkbox" id="phone"> 模拟手机宽度</label>
+    <select id="theme">
+      <option value="atom-one-dark">深色 (atom-one-dark)</option>
+      <option value="github">浅色 (github)</option>
+      <option value="atom-one-light">浅色 (atom-one-light)</option>
+      <option value="monokai">深色 (monokai)</option>
+    </select>
+    <button id="copy" class="primary">复制到公众号</button>
+    <span id="status"></span>
+  </div>
+</header>
+<main>
+  <section class="pane">
+    <div class="label">Markdown 输入</div>
+    <textarea id="src" spellcheck="false"></textarea>
+  </section>
+  <section class="pane">
+    <div class="label">预览（复制的就是这个，已内联所有样式）</div>
+    <div id="preview-scroll"><div id="preview"></div></div>
+  </section>
+</main>
+
+<script src="https://cdn.jsdelivr.net/npm/marked/marked.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/highlight.js@11/lib/common.min.js"></script>
+<script>
+const $ = s => document.querySelector(s);
+const src = $('#src'), preview = $('#preview');
+
+// —— 行内样式表（class 会被微信删掉，只有 inline style 能存活）——
+const INLINE = {
+  H1: 'font-size:22px;font-weight:bold;margin:28px 0 16px;line-height:1.3;color:#1a1a1a;',
+  H2: 'font-size:19px;font-weight:bold;margin:24px 0 14px;line-height:1.3;color:#1a1a1a;border-left:4px solid #07c160;padding-left:10px;',
+  H3: 'font-size:17px;font-weight:bold;margin:20px 0 12px;line-height:1.3;color:#1a1a1a;',
+  H4: 'font-size:15px;font-weight:bold;margin:18px 0 10px;color:#1a1a1a;',
+  P:  'margin:14px 0;font-size:15px;line-height:1.8;color:#3f3f3f;letter-spacing:.3px;',
+  A:  'color:#576b95;text-decoration:none;',
+  STRONG: 'font-weight:bold;color:#1a1a1a;',
+  EM: 'font-style:italic;',
+  UL: 'margin:14px 0;padding-left:24px;',
+  OL: 'margin:14px 0;padding-left:24px;',
+  LI: 'margin:6px 0;font-size:15px;line-height:1.8;color:#3f3f3f;',
+  BLOCKQUOTE: 'margin:16px 0;padding:10px 16px;border-left:4px solid #dcdee0;background:#f7f8fa;color:#646566;',
+  HR: 'border:0;border-top:1px solid #e5e6eb;margin:24px 0;',
+  IMG: 'max-width:100%;border-radius:6px;display:block;margin:14px auto;',
+  TABLE: 'border-collapse:collapse;width:100%;margin:14px 0;font-size:14px;',
+  TH: 'border:1px solid #e5e6eb;padding:8px 12px;background:#fafbfc;font-weight:bold;',
+  TD: 'border:1px solid #e5e6eb;padding:8px 12px;',
+};
+
+marked.setOptions({ breaks: true, gfm: true,
+  highlight: (code, lang) => {
+    try { return hljs.getLanguage(lang)
+      ? hljs.highlight(code, { language: lang }).value
+      : hljs.highlightAuto(code).value; }
+    catch { return code; }
+  }
+});
+
+function render() {
+  preview.innerHTML = marked.parse(src.value || '');
+  inlineStyles(preview);
+}
+
+function inlineStyles(root) {
+  // 1) 普通块级/行内元素：套基础行内样式
+  root.querySelectorAll('*').forEach(el => {
+    const base = INLINE[el.tagName];
+    if (base) el.style.cssText = base + el.style.cssText;
+  });
+
+  // 2) 行内 code（不在 pre 里的）
+  root.querySelectorAll('code').forEach(code => {
+    if (code.closest('pre')) return;
+    code.style.cssText = 'background:#f3f4f6;color:#c0341d;padding:2px 6px;border-radius:4px;'
+      + 'font-size:13px;font-family:Menlo,Consolas,monospace;word-break:break-word;';
+  });
+
+  // 3) 代码块：关键——横向滚动，不换行
+  root.querySelectorAll('pre').forEach(pre => {
+    const themeBg = getComputedStyle(pre.querySelector('code') || pre).backgroundColor;
+    pre.style.cssText =
+      'overflow-x:auto;-webkit-overflow-scrolling:touch;' +   // 长行横向滚动
+      'background:' + (themeBg && themeBg !== 'rgba(0, 0, 0, 0)' ? themeBg : '#282c34') + ';' +
+      'border-radius:8px;padding:16px;margin:16px 0;' +
+      'font-size:13px;line-height:1.5;';
+    const code = pre.querySelector('code');
+    if (code) {
+      code.style.cssText =
+        'white-space:pre;' +                                  // pre 而非 pre-wrap = 不自动换行
+        'display:block;font-family:Menlo,Consolas,monospace;' +
+        'background:transparent;padding:0;color:' + getComputedStyle(code).color + ';';
+    }
+  });
+
+  // 4) 高亮 token：把主题算出的颜色固化成行内 color
+  root.querySelectorAll('pre code span').forEach(span => {
+    const c = getComputedStyle(span).color;
+    if (c) span.style.color = c;
+    span.removeAttribute('class');
+  });
+}
+
+async function copyToWeChat() {
+  const html = preview.innerHTML;
+  const status = $('#status');
+  try {
+    await navigator.clipboard.write([
+      new ClipboardItem({
+        'text/html': new Blob([html], { type: 'text/html' }),
+        'text/plain': new Blob([preview.innerText], { type: 'text/plain' }),
+      })
+    ]);
+    flash('✓ 已复制');
+  } catch {
+    // 退路：选中预览节点用 execCommand 复制富文本
+    const range = document.createRange();
+    range.selectNodeContents(preview);
+    const sel = getSelection(); sel.removeAllRanges(); sel.addRange(range);
+    document.execCommand('copy'); sel.removeAllRanges();
+    flash('✓ 已复制');
+  }
+  function flash(t){ status.textContent = t; setTimeout(()=>status.textContent='', 2000); }
+}
+
+function setTheme(name) {
+  $('#hljs-theme').href = `https://cdn.jsdelivr.net/npm/highlight.js@11/styles/${name}.min.css`;
+  // 等主题 CSS 加载完再重渲染，确保取到正确颜色
+  setTimeout(render, 200);
+}
+
+src.addEventListener('input', render);
+$('#copy').addEventListener('click', copyToWeChat);
+$('#theme').addEventListener('change', e => setTheme(e.target.value));
+$('#phone').addEventListener('change', e => document.body.classList.toggle('phone', e.target.checked));
+
+// 示例内容
+src.value = `# PyTorch 一行代码搞定线性代数
+
+平时**买菜**用不上求根公式，但写模型时少不了它。下面演示一个很长的代码行，看它在手机上如何横向滚动而不破坏排版：
+
+## 代码示例
+
+\`\`\`python
+import torch
+# 这是一行故意写得很长的代码，用来测试公众号手机端代码块是否能横向滚动而不是乱掉乱换行影响阅读体验
+x = torch.linspace(-10, 10, 1000).reshape(-1, 1)
+y = 3 * x ** 2 + 2 * x + 1 + torch.randn_like(x) * 5   # 加点噪声，模拟真实数据
+print(x.shape, y.shape)
+\`\`\`
+
+行内代码像这样：\`torch.linspace()\`，会自动适配。
+
+> 提示：手机端长代码行会横向滚动，缩进不会被破坏。
+
+- 列表项一
+- 列表项二
+- [链接示例](https://github.com)
+`;
+
+setTheme('atom-one-dark');
+</script>
+</body>
+</html>
