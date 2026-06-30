@@ -60,11 +60,30 @@
   <span class="hint">代码块横向滚动 · 全行内样式 · 复制即粘贴</span>
   <div class="toolbar">
     <label class="hint"><input type="checkbox" id="phone"> 模拟手机宽度</label>
-    <select id="theme">
+    <select id="theme" title="代码配色">
       <option value="atom-one-dark">深色 (atom-one-dark)</option>
       <option value="github">浅色 (github)</option>
       <option value="atom-one-light">浅色 (atom-one-light)</option>
       <option value="monokai">深色 (monokai)</option>
+    </select>
+    <select id="frame" title="代码图片底色">
+      <option value="cream">代码底：米白</option>
+      <option value="apricot">代码底：暖杏</option>
+      <option value="gray">代码底：浅灰</option>
+      <option value="mint">代码底：薄荷</option>
+      <option value="sky">代码底：蓝天渐变</option>
+      <option value="sunset">代码底：晚霞渐变</option>
+      <option value="ocean">代码底：深海渐变</option>
+      <option value="none">代码底：无</option>
+    </select>
+    <select id="page" title="整篇文章底色">
+      <option value="cream">文章底：米白</option>
+      <option value="none">文章底：白</option>
+      <option value="apricot">文章底：暖杏</option>
+      <option value="gray">文章底：浅灰</option>
+      <option value="mint">文章底：薄荷</option>
+      <option value="pink">文章底：淡粉</option>
+      <option value="blue">文章底：浅蓝</option>
     </select>
     <button id="copy" class="primary">复制正文</button>
     <button id="export">导出代码图片</button>
@@ -82,6 +101,9 @@
   </section>
 </main>
 
+<!-- 离屏「源」：渲染高亮+内联样式，用于算颜色/生成图片/复制正文（不直接展示） -->
+<div id="source" style="position:absolute;left:-99999px;top:0;width:760px;"></div>
+
 <div id="modal">
   <div class="modal-box">
     <div class="head">
@@ -98,7 +120,7 @@
 <script src="https://cdn.jsdelivr.net/npm/@highlightjs/cdn-assets@11/highlight.min.js"></script>
 <script>
 const $ = s => document.querySelector(s);
-const src = $('#src'), preview = $('#preview');
+const src = $('#src'), preview = $('#preview'), source = $('#source');
 
 // —— 行内样式表（class 会被微信删掉，只有 inline style 能存活）——
 const INLINE = {
@@ -124,13 +146,39 @@ const INLINE = {
 marked.setOptions({ breaks: true, gfm: true });
 
 function render() {
-  preview.innerHTML = marked.parse(src.value || '');
+  source.innerHTML = marked.parse(src.value || '');
   // 新版 marked 已移除 highlight 选项，这里手动高亮：
   // highlightElement 会给 <code> 加上 .hljs 类（带浅色文字）并生成带色 token
-  preview.querySelectorAll('pre code').forEach(el => {
+  source.querySelectorAll('pre code').forEach(el => {
     try { hljs.highlightElement(el); } catch {}
   });
-  inlineStyles(preview);
+  inlineStyles(source);
+  buildPreview();
+}
+
+// 整篇文章底色（纯色，渐变会被微信过滤）
+const PAGES = {
+  none: '', cream: '#f7f3ea', apricot: '#faf1de', gray: '#f0f2f5',
+  mint: '#eaf4ef', pink: '#fbeef0', blue: '#eef2fb',
+};
+const PAGE_PAD = '20px 16px';
+
+// 预览区 = 所见即所得：正文文字 + 代码块渲染成最终带底色的图片
+function buildPreview() {
+  const clone = source.cloneNode(true);
+  clone.querySelectorAll('pre').forEach(pre => {
+    const cv = renderCodeImage(pre, $('#frame').value);
+    const img = document.createElement('img');
+    img.src = cv.toDataURL('image/png');
+    img.style.cssText = 'max-width:100%;display:block;margin:16px auto;border-radius:8px;';
+    pre.replaceWith(img);
+  });
+  preview.innerHTML = '';
+  while (clone.firstChild) preview.appendChild(clone.firstChild);
+  // 文章底色应用到预览
+  const pg = PAGES[$('#page').value];
+  preview.style.background = pg || '';
+  preview.style.padding = pg ? PAGE_PAD : '';
 }
 
 function inlineStyles(root) {
@@ -176,7 +224,7 @@ function flash(t){ const s=$('#status'); s.textContent=t; setTimeout(()=>s.textC
 
 // —— 复制正文：代码块换成居中占位提示，方便你在文章里对位上传图片 ——
 async function copyProse() {
-  const clone = preview.cloneNode(true);
+  const clone = source.cloneNode(true);
   clone.querySelectorAll('pre').forEach((pre, i) => {
     const ph = document.createElement('p');
     ph.style.cssText = 'margin:16px 0;padding:10px;text-align:center;color:#86909c;'
@@ -184,7 +232,11 @@ async function copyProse() {
     ph.textContent = `📷 在此处上传代码图片 ${i + 1}（code-${i + 1}.png）`;
     pre.replaceWith(ph);
   });
-  const html = clone.innerHTML;
+  // 整篇包进带底色的 section（微信保留 section 行内背景）
+  const pg = PAGES[$('#page').value];
+  const html = pg
+    ? `<section style="background:${pg};padding:${PAGE_PAD};">${clone.innerHTML}</section>`
+    : clone.innerHTML;
   try {
     await navigator.clipboard.write([new ClipboardItem({
       'text/html': new Blob([html], { type: 'text/html' }),
@@ -228,8 +280,20 @@ function roundRect(ctx, x, y, w, h, r) {
   ctx.arcTo(x, y, x + w, y, r); ctx.closePath();
 }
 
-// —— 用 canvas 把代码块画成高清 PNG（带语法配色 + Mac 圆点）——
-function renderCodeImage(pre) {
+// —— 图片外层底色预设（字符串=纯色；数组=上→下渐变）——
+const FRAMES = {
+  none:    null,
+  cream:   '#f5efe3',
+  apricot: '#f8ecd2',
+  gray:    '#eaeef3',
+  mint:    '#e2f0e9',
+  sky:     ['#a1c4fd', '#c2e9fb'],
+  sunset:  ['#ffd3a5', '#fd9eb6'],
+  ocean:   ['#2b5876', '#4e4376'],
+};
+
+// —— 用 canvas 把代码块画成高清 PNG（外层底色 + 浮起的代码卡 + Mac 圆点）——
+function renderCodeImage(pre, frameKey) {
   const code = pre.querySelector('code');
   const bg = pre.style.backgroundColor || '#282c34';
   const defColor = code.style.color || '#abb2bf';
@@ -245,19 +309,42 @@ function renderCodeImage(pre) {
     let w = 0; for (const seg of line) w += m.measureText(seg.text).width;
     maxW = Math.max(maxW, w);
   }
-  const W = Math.ceil(maxW + padX * 2);
-  const H = Math.ceil(lines.length * lh + padTop + padBot);
+  const cardW = Math.ceil(maxW + padX * 2);
+  const cardH = Math.ceil(lines.length * lh + padTop + padBot);
+
+  const frame = FRAMES[frameKey];
+  const fp = frame ? 36 * s : 0;                 // 外层留白；无底色则贴边
+  const W = cardW + fp * 2, H = cardH + fp * 2;
 
   const cv = document.createElement('canvas'); cv.width = W; cv.height = H;
   const ctx = cv.getContext('2d');
-  ctx.fillStyle = bg; roundRect(ctx, 0, 0, W, H, 12 * s); ctx.fill();
+
+  // 外层底色
+  if (frame) {
+    if (Array.isArray(frame)) {
+      const g = ctx.createLinearGradient(0, 0, 0, H);
+      g.addColorStop(0, frame[0]); g.addColorStop(1, frame[1]);
+      ctx.fillStyle = g;
+    } else ctx.fillStyle = frame;
+    ctx.fillRect(0, 0, W, H);
+  }
+
+  // 代码卡（带阴影）
+  ctx.save();
+  if (frame) { ctx.shadowColor = 'rgba(0,0,0,.22)'; ctx.shadowBlur = 24 * s; ctx.shadowOffsetY = 8 * s; }
+  ctx.fillStyle = bg; roundRect(ctx, fp, fp, cardW, cardH, 12 * s); ctx.fill();
+  ctx.restore();
+
+  // Mac 圆点
   ['#ff5f56', '#ffbd2e', '#27c93f'].forEach((c, i) => {
     ctx.fillStyle = c; ctx.beginPath();
-    ctx.arc(padX + 6 * s + i * 22 * s, 22 * s, 6 * s, 0, Math.PI * 2); ctx.fill();
+    ctx.arc(fp + padX + 6 * s + i * 22 * s, fp + 22 * s, 6 * s, 0, Math.PI * 2); ctx.fill();
   });
+
+  // 代码文本
   ctx.font = font; ctx.textBaseline = 'top';
   lines.forEach((line, li) => {
-    let x = padX; const y = padTop + li * lh;
+    let x = fp + padX; const y = fp + padTop + li * lh;
     for (const seg of line) {
       ctx.fillStyle = seg.color || defColor;
       ctx.fillText(seg.text, x, y);
@@ -268,11 +355,12 @@ function renderCodeImage(pre) {
 }
 
 function exportImages() {
-  const pres = preview.querySelectorAll('pre');
+  const pres = source.querySelectorAll('pre');
   const shots = $('#shots'); shots.innerHTML = '';
   if (!pres.length) { flash('没有代码块'); return; }
+  const frameKey = $('#frame').value;
   pres.forEach((pre, i) => {
-    const cv = renderCodeImage(pre);
+    const cv = renderCodeImage(pre, frameKey);
     const url = cv.toDataURL('image/png');
     const name = `code-${i + 1}.png`;
     const item = document.createElement('div'); item.className = 'shot';
@@ -304,6 +392,11 @@ src.addEventListener('input', render);
 $('#copy').addEventListener('click', copyProse);
 $('#export').addEventListener('click', exportImages);
 $('#theme').addEventListener('change', e => setTheme(e.target.value));
+$('#frame').addEventListener('change', () => {
+  buildPreview();                                  // 预览实时更新
+  if ($('#modal').classList.contains('open')) exportImages();
+});
+$('#page').addEventListener('change', buildPreview);
 $('#phone').addEventListener('change', e => document.body.classList.toggle('phone', e.target.checked));
 
 // 示例内容
