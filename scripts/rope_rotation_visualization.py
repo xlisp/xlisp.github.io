@@ -57,12 +57,18 @@ q = np.array([0.8, 0.4])
 k = np.array([0.3, 0.9])
 THETA_C = 0.5
 rel = np.arange(-6, 7)
-for m, col in zip([0, 3, 6], ["#1f77b4", "#d62728", "#2ca02c"]):
+# 三条线数学上完全相等（点积只依赖相对距离），会严丝合缝地重叠。
+# 用「粗→细、实→虚」套画，才能肉眼看出是三条叠在一起，而不是只有一条。
+styles = [
+    dict(color="#1f77b4", lw=7.0, ls="-",  alpha=0.35),          # 底层：粗、半透明
+    dict(color="#d62728", lw=3.5, ls="-",  alpha=0.9),           # 中层
+    dict(color="#2ca02c", lw=1.5, ls="--", marker="o", ms=4),    # 顶层：细虚线+圆点
+]
+for m, st in zip([0, 3, 6], styles):
     # score(m, m+r) = (R(mθ)q)·(R((m+r)θ)k) = qᵀ R(rθ) k —— 只剩相对量 r
     scores = [rot(q, m * THETA_C) @ rot(k, (m + r) * THETA_C) for r in rel]
-    axC.plot(rel, scores, "-o", ms=3, color=col, alpha=0.75,
-             label=f"query 在绝对位置 {m}")
-axC.set_title("点积只取决于相对距离\n（三条线完全重合）")
+    axC.plot(rel, scores, label=f"query 在绝对位置 {m}", **st)
+axC.set_title("点积只取决于相对距离\n（三条线完全重合，粗蓝→红→细绿虚线层层叠）")
 axC.set_xlabel("相对距离 (n − m)")
 axC.set_ylabel("query · key 点积")
 axC.legend(fontsize=9)
