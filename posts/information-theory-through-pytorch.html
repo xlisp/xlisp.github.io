@@ -1,0 +1,703 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>大学4年没讲明白的信息论，被一段 PyTorch 代码讲透了 · Steve Chan — xlisp</title>
+<meta name="description" content="如果只能留一句话，那就是这句：">
+<meta name="author" content="Steve Chan">
+<link rel="icon" type="image/jpeg" href="../icon.jpeg">
+<link rel="apple-touch-icon" href="../icon.jpeg">
+<meta property="og:type" content="article">
+<meta property="og:title" content="大学4年没讲明白的信息论，被一段 PyTorch 代码讲透了">
+<meta property="og:description" content="如果只能留一句话，那就是这句：">
+<meta property="og:image" content="../icon.jpeg">
+<meta property="og:site_name" content="Steve Chan — xlisp">
+<meta name="twitter:card" content="summary_large_image">
+<meta name="twitter:title" content="大学4年没讲明白的信息论，被一段 PyTorch 代码讲透了">
+<meta name="twitter:description" content="如果只能留一句话，那就是这句：">
+<meta name="twitter:image" content="../icon.jpeg">
+<link rel="stylesheet" href="../style.css?v=light1">
+<script>(function(){try{if(localStorage.getItem('theme')==='light')document.documentElement.setAttribute('data-theme','light');}catch(e){}})();</script>
+<!-- Math formula rendering via MathJax -->
+<script>
+window.MathJax = {
+  tex: {
+    // arithmatex emits \(...\) / \[...\] markup, so only these delimiters
+    // are needed; plain `$` is left alone (avoids currency false positives).
+    inlineMath: [['\\(', '\\)']],
+    displayMath: [['\\[', '\\]']],
+    processEscapes: true
+  },
+  svg: {
+    // Each formula gets its own self-contained <defs>, so the copy script can
+    // serialize one <svg> and rasterize it to a PNG for WeChat.
+    fontCache: 'local'
+  },
+  options: {
+    skipHtmlTags: ['script', 'noscript', 'style', 'textarea', 'pre', 'code'],
+    ignoreHtmlClass: 'highlight'
+  }
+};
+</script>
+<script src="https://cdn.jsdelivr.net/npm/mathjax@3/es5/tex-svg.js" async></script>
+</head>
+<body>
+<main class="wrap post">
+
+  <nav class="topnav">
+    <a href="../index.html">← home</a>
+  </nav>
+
+  <article>
+    <header class="post-header">
+      <h1>大学4年没讲明白的信息论，被一段 PyTorch 代码讲透了</h1>
+      <p class="meta">2026-07-01 · Steve Chan</p>
+    </header>
+
+    <div class="content">
+<blockquote>
+<p>熵、交叉熵、KL 散度、互信息、香农第一定理……当年在《通信原理》或《信息论》课上背得死去活来，
+考完试只记得一个"熵越大越混乱"。
+因为老师把它讲成了"电报和信道的编码课"，没告诉你一个真相：</p>
+<p><strong>你现在训练的每一个大模型，损失函数就叫"交叉熵"（cross entropy）。信息论不是通信课，是深度学习的记分牌。</strong></p>
+<p>这篇文章不背一个公式、不证一个定理，全部用能跑起来的 PyTorch 代码，
+把信息论最核心的四个量——自信息、熵、交叉熵、KL 散度——一段一段"跑"给你看。
+并且顺手回答四个卡住无数人的灵魂拷问：</p>
+<ul>
+<li>大模型的损失函数为什么偏偏叫"交叉熵"？它和香农那个"熵"是一回事吗？</li>
+<li>KL 散度到底"散"的是什么？为什么它不是一种距离？</li>
+<li>评价语言模型的"困惑度（perplexity）"，凭什么能说明模型好坏？</li>
+<li>信息的单位是"比特"，那一个字、一次预测，到底值几个比特？</li>
+</ul>
+</blockquote>
+<hr />
+<h2 id="0-一句话主线">0. 一句话主线</h2>
+<p>如果只能留一句话，那就是这句：</p>
+<blockquote>
+<p><strong>信息 = 意外。越让你意外的事，信息量越大。而"熵"就是平均意外程度。</strong></p>
+</blockquote>
+<p>大模型训练的全部目标，用这句话翻译过来就是：<strong>逼自己对真实世界越来越"不意外"。</strong>
+它每看一句话，就赌下一个字是什么；赌错了（很意外）就狠狠罚一下，赌对了（不意外）就放过。
+这个"意外的罚分"，数学上就是交叉熵。</p>
+<div class="highlight"><pre><span></span><code><span class="kn">import</span><span class="w"> </span><span class="nn">torch</span>
+
+<span class="c1"># 一件事发生的概率 p，它的&quot;意外程度&quot;（信息量）= -log2(p)</span>
+<span class="n">p_sunrise</span> <span class="o">=</span> <span class="n">torch</span><span class="o">.</span><span class="n">tensor</span><span class="p">(</span><span class="mf">0.999</span><span class="p">)</span>   <span class="c1"># 太阳明天升起：几乎必然</span>
+<span class="n">p_coin</span>    <span class="o">=</span> <span class="n">torch</span><span class="o">.</span><span class="n">tensor</span><span class="p">(</span><span class="mf">0.5</span><span class="p">)</span>     <span class="c1"># 抛硬币正面：五五开</span>
+<span class="n">p_lottery</span> <span class="o">=</span> <span class="n">torch</span><span class="o">.</span><span class="n">tensor</span><span class="p">(</span><span class="mf">1e-6</span><span class="p">)</span>    <span class="c1"># 中头奖：极其罕见</span>
+
+<span class="nb">print</span><span class="p">(</span><span class="o">-</span><span class="n">torch</span><span class="o">.</span><span class="n">log2</span><span class="p">(</span><span class="n">p_sunrise</span><span class="p">))</span>     <span class="c1"># ≈ 0.0014 比特 —— 毫不意外，几乎没信息</span>
+<span class="nb">print</span><span class="p">(</span><span class="o">-</span><span class="n">torch</span><span class="o">.</span><span class="n">log2</span><span class="p">(</span><span class="n">p_coin</span><span class="p">))</span>        <span class="c1"># = 1.0 比特    —— 一次标准的&quot;意外&quot;</span>
+<span class="nb">print</span><span class="p">(</span><span class="o">-</span><span class="n">torch</span><span class="o">.</span><span class="n">log2</span><span class="p">(</span><span class="n">p_lottery</span><span class="p">))</span>     <span class="c1"># ≈ 19.9 比特   —— 巨大的意外，信息量爆表</span>
+</code></pre></div>
+
+<p>记住这个画面：<strong>概率越低 = 越意外 = 信息量越大。</strong> 下面所有概念都挂在它上面。</p>
+<hr />
+<h2 id="1-自信息一件事的信息量-它有多让你意外">1. 自信息：一件事的信息量 = 它有多让你意外</h2>
+<p>课本管它叫"自信息量 <span class="arithmatex">\(I(x) = -\log p(x)\)</span>"，一上来就是 log，把人劝退。
+其实它只回答一个问题：<strong>这件事发生，让你有多惊讶？</strong></p>
+<ul>
+<li>必然发生的事（p=1）：一点不惊讶，信息量 = 0。</li>
+<li>罕见的事（p 很小）：非常惊讶，信息量很大。</li>
+</ul>
+<p>为什么要取 <code>-log</code> 而不是别的？因为信息量得满足一条硬性质：<strong>两件独立的事一起发生，
+总信息量应该能"相加"。</strong> 而概率是相乘的（<code>p(A且B)=p(A)·p(B)</code>），
+<code>log</code> 正好能把"相乘"变成"相加"：</p>
+<div class="highlight"><pre><span></span><code><span class="kn">import</span><span class="w"> </span><span class="nn">torch</span>
+
+<span class="n">p_rain</span> <span class="o">=</span> <span class="n">torch</span><span class="o">.</span><span class="n">tensor</span><span class="p">(</span><span class="mf">0.25</span><span class="p">)</span>       <span class="c1"># 今天下雨</span>
+<span class="n">p_late</span> <span class="o">=</span> <span class="n">torch</span><span class="o">.</span><span class="n">tensor</span><span class="p">(</span><span class="mf">0.20</span><span class="p">)</span>       <span class="c1"># 你迟到（与下雨独立）</span>
+
+<span class="c1"># 两件事一起发生的信息量 = 各自信息量之和</span>
+<span class="n">i_both</span>  <span class="o">=</span> <span class="o">-</span><span class="n">torch</span><span class="o">.</span><span class="n">log2</span><span class="p">(</span><span class="n">p_rain</span> <span class="o">*</span> <span class="n">p_late</span><span class="p">)</span>
+<span class="n">i_sum</span>   <span class="o">=</span> <span class="o">-</span><span class="n">torch</span><span class="o">.</span><span class="n">log2</span><span class="p">(</span><span class="n">p_rain</span><span class="p">)</span> <span class="o">+</span> <span class="o">-</span><span class="n">torch</span><span class="o">.</span><span class="n">log2</span><span class="p">(</span><span class="n">p_late</span><span class="p">)</span>
+<span class="nb">print</span><span class="p">(</span><span class="n">torch</span><span class="o">.</span><span class="n">allclose</span><span class="p">(</span><span class="n">i_both</span><span class="p">,</span> <span class="n">i_sum</span><span class="p">))</span>   <span class="c1"># True —— log 把&quot;相乘的概率&quot;变成&quot;相加的信息&quot;</span>
+</code></pre></div>
+
+<p><strong>这就是 log 的全部理由：它让"意外"变得可以累加。</strong> 一个字、一句话、一整篇文章的信息量，
+才能一个字一个字地加起来。</p>
+<hr />
+<h2 id="2-熵一个分布的平均意外-它有多不确定">2. 熵：一个分布的"平均意外" = 它有多不确定</h2>
+<p>单个事件的意外是自信息；把一个分布里<strong>所有可能事件的意外，按概率加权平均</strong>，就是<strong>熵</strong>：</p>
+<div class="arithmatex">\[H(p) = -\sum_x p(x)\log p(x)\]</div>
+<p>别被公式吓到，它就是"意外的期望值"。一段代码看它的脾气——<strong>越均匀越不确定，熵越大；越确定，熵越小</strong>：</p>
+<div class="highlight"><pre><span></span><code><span class="kn">import</span><span class="w"> </span><span class="nn">torch</span>
+
+<span class="k">def</span><span class="w"> </span><span class="nf">entropy</span><span class="p">(</span><span class="n">p</span><span class="p">,</span> <span class="n">base</span><span class="o">=</span><span class="mi">2</span><span class="p">):</span>                       <span class="c1"># 熵 = 平均意外</span>
+    <span class="n">p</span> <span class="o">=</span> <span class="n">p</span><span class="p">[</span><span class="n">p</span> <span class="o">&gt;</span> <span class="mi">0</span><span class="p">]</span>                              <span class="c1"># 约定 0·log0 = 0，直接跳过</span>
+    <span class="k">return</span> <span class="o">-</span><span class="p">(</span><span class="n">p</span> <span class="o">*</span> <span class="n">torch</span><span class="o">.</span><span class="n">log</span><span class="p">(</span><span class="n">p</span><span class="p">)</span> <span class="o">/</span> <span class="n">torch</span><span class="o">.</span><span class="n">log</span><span class="p">(</span><span class="n">torch</span><span class="o">.</span><span class="n">tensor</span><span class="p">(</span><span class="nb">float</span><span class="p">(</span><span class="n">base</span><span class="p">))))</span><span class="o">.</span><span class="n">sum</span><span class="p">()</span>
+
+<span class="n">uniform</span>  <span class="o">=</span> <span class="n">torch</span><span class="o">.</span><span class="n">tensor</span><span class="p">([</span><span class="mf">0.25</span><span class="p">,</span> <span class="mf">0.25</span><span class="p">,</span> <span class="mf">0.25</span><span class="p">,</span> <span class="mf">0.25</span><span class="p">])</span>   <span class="c1"># 四选一，完全说不准</span>
+<span class="n">skewed</span>   <span class="o">=</span> <span class="n">torch</span><span class="o">.</span><span class="n">tensor</span><span class="p">([</span><span class="mf">0.97</span><span class="p">,</span> <span class="mf">0.01</span><span class="p">,</span> <span class="mf">0.01</span><span class="p">,</span> <span class="mf">0.01</span><span class="p">])</span>   <span class="c1"># 几乎肯定是第一个</span>
+<span class="n">certain</span>  <span class="o">=</span> <span class="n">torch</span><span class="o">.</span><span class="n">tensor</span><span class="p">([</span><span class="mf">1.0</span><span class="p">,</span>  <span class="mf">0.0</span><span class="p">,</span>  <span class="mf">0.0</span><span class="p">,</span>  <span class="mf">0.0</span><span class="p">])</span>    <span class="c1"># 板上钉钉</span>
+
+<span class="nb">print</span><span class="p">(</span><span class="n">entropy</span><span class="p">(</span><span class="n">uniform</span><span class="p">))</span>    <span class="c1"># 2.0 比特  —— 最乱，需要 2 个比特才能说清是哪个</span>
+<span class="nb">print</span><span class="p">(</span><span class="n">entropy</span><span class="p">(</span><span class="n">skewed</span><span class="p">))</span>     <span class="c1"># ≈ 0.24    —— 基本确定，几乎不需要信息</span>
+<span class="nb">print</span><span class="p">(</span><span class="n">entropy</span><span class="p">(</span><span class="n">certain</span><span class="p">))</span>    <span class="c1"># 0.0       —— 毫无悬念，零信息</span>
+</code></pre></div>
+
+<p><strong>熵是"不确定性"的精确度量。</strong> 四选一且完全均匀时，熵恰好是 2 比特——
+这正对应"用 2 个 0/1 比特（00/01/10/11）就能编码 4 个选项"。
+香农当年就是用这个，算出了"一条消息最少需要几个比特才能传完"。</p>
+<blockquote>
+<p>记住这个直觉：<strong>熵 = 这个分布让你平均要"惊讶"多少。</strong> 均匀分布最惊讶，one-hot 分布毫不惊讶。
+下一节的交叉熵，就是在这个基础上问："如果我<strong>猜错了</strong>这个分布，要多付多少代价？"</p>
+</blockquote>
+<hr />
+<h2 id="3-交叉熵用你以为的分布去描述真实的分布要多付多少代价">3. 交叉熵：用"你以为的分布"去描述"真实的分布"，要多付多少代价</h2>
+<p>这是全篇的主角，因为<strong>它就是你训练大模型时天天在最小化的那个 loss。</strong></p>
+<p>场景是这样的：真实世界按分布 <code>p</code> 出牌，但你的模型以为世界是分布 <code>q</code>。
+你<strong>拿错误的 <code>q</code> 去编码真实的 <code>p</code></strong>，会比用正确的 <code>p</code> 多花一些"意外代价"。这个总代价就是交叉熵：</p>
+<div class="arithmatex">\[H(p, q) = -\sum_x p(x)\log q(x)\]</div>
+<p>注意：<strong>权重用真实的 <code>p</code>，但意外程度 <code>-\log q</code> 用的是你以为的 <code>q</code>。</strong> 一段代码看它：</p>
+<div class="highlight"><pre><span></span><code><span class="kn">import</span><span class="w"> </span><span class="nn">torch</span>
+
+<span class="n">p</span> <span class="o">=</span> <span class="n">torch</span><span class="o">.</span><span class="n">tensor</span><span class="p">([</span><span class="mf">1.0</span><span class="p">,</span> <span class="mf">0.0</span><span class="p">,</span> <span class="mf">0.0</span><span class="p">])</span>            <span class="c1"># 真实：答案 100% 是第 0 类</span>
+<span class="n">q_good</span> <span class="o">=</span> <span class="n">torch</span><span class="o">.</span><span class="n">tensor</span><span class="p">([</span><span class="mf">0.7</span><span class="p">,</span> <span class="mf">0.2</span><span class="p">,</span> <span class="mf">0.1</span><span class="p">])</span>       <span class="c1"># 模型：70% 押对了</span>
+<span class="n">q_bad</span>  <span class="o">=</span> <span class="n">torch</span><span class="o">.</span><span class="n">tensor</span><span class="p">([</span><span class="mf">0.1</span><span class="p">,</span> <span class="mf">0.2</span><span class="p">,</span> <span class="mf">0.7</span><span class="p">])</span>       <span class="c1"># 模型：只给了正确答案 10% 的信心</span>
+
+<span class="k">def</span><span class="w"> </span><span class="nf">cross_entropy</span><span class="p">(</span><span class="n">p</span><span class="p">,</span> <span class="n">q</span><span class="p">):</span>
+    <span class="k">return</span> <span class="o">-</span><span class="p">(</span><span class="n">p</span> <span class="o">*</span> <span class="n">torch</span><span class="o">.</span><span class="n">log</span><span class="p">(</span><span class="n">q</span><span class="p">))</span><span class="o">.</span><span class="n">sum</span><span class="p">()</span>         <span class="c1"># 用 q 的意外，按 p 的权重加权</span>
+
+<span class="nb">print</span><span class="p">(</span><span class="n">cross_entropy</span><span class="p">(</span><span class="n">p</span><span class="p">,</span> <span class="n">q_good</span><span class="p">))</span>   <span class="c1"># ≈ 0.357  —— 猜得准，代价小</span>
+<span class="nb">print</span><span class="p">(</span><span class="n">cross_entropy</span><span class="p">(</span><span class="n">p</span><span class="p">,</span> <span class="n">q_bad</span><span class="p">))</span>    <span class="c1"># ≈ 2.303  —— 猜得离谱，代价大</span>
+</code></pre></div>
+
+<p>看清楚了吗？当真实答案是第 0 类（<code>p</code> 是 one-hot），交叉熵就退化成一句话：</p>
+<blockquote>
+<p><strong>交叉熵 = −log(模型给正确答案的概率)。</strong>
+模型对正确答案越自信（q 越接近 1），loss 越接近 0；越心虚（q 越接近 0），loss 越爆炸。</p>
+</blockquote>
+<p><strong>这就是训练的记分牌。</strong> 模型每预测一次，就按"它给正确答案打了几分信心"来罚分。
+罚分越少，说明它对世界越"不意外"——回到第 0 节那句主线。</p>
+<hr />
+<h2 id="4-kl-散度交叉熵里纯属你认知错误的那部分额外代价">4. KL 散度：交叉熵里，"纯属你认知错误"的那部分额外代价</h2>
+<p>交叉熵 <code>H(p,q)</code> 里其实混了两笔账：</p>
+<ol>
+<li>世界本身就有的不确定性（熵 <code>H(p)</code>，这部分谁也躲不掉）；</li>
+<li><strong>你因为认知错误（<code>q≠p</code>）而额外多付的代价</strong>。</li>
+</ol>
+<p>第二部分单独拎出来，就是 <strong>KL 散度</strong>：</p>
+<div class="arithmatex">\[D_{KL}(p\,\|\,q) = H(p,q) - H(p) = \sum_x p(x)\log\frac{p(x)}{q(x)}\]</div>
+<p>一行代码验证这个"减法关系"，并看它的两条铁律：<strong>永远 ≥ 0，且完全相等时才 = 0</strong>：</p>
+<div class="highlight"><pre><span></span><code><span class="kn">import</span><span class="w"> </span><span class="nn">torch</span>
+
+<span class="k">def</span><span class="w"> </span><span class="nf">entropy</span><span class="p">(</span><span class="n">p</span><span class="p">):</span>       <span class="n">p</span><span class="o">=</span><span class="n">p</span><span class="p">[</span><span class="n">p</span><span class="o">&gt;</span><span class="mi">0</span><span class="p">];</span> <span class="k">return</span> <span class="o">-</span><span class="p">(</span><span class="n">p</span><span class="o">*</span><span class="n">torch</span><span class="o">.</span><span class="n">log</span><span class="p">(</span><span class="n">p</span><span class="p">))</span><span class="o">.</span><span class="n">sum</span><span class="p">()</span>
+<span class="k">def</span><span class="w"> </span><span class="nf">cross_entropy</span><span class="p">(</span><span class="n">p</span><span class="p">,</span><span class="n">q</span><span class="p">):</span> <span class="k">return</span> <span class="o">-</span><span class="p">(</span><span class="n">p</span><span class="o">*</span><span class="n">torch</span><span class="o">.</span><span class="n">log</span><span class="p">(</span><span class="n">q</span><span class="p">))</span><span class="o">.</span><span class="n">sum</span><span class="p">()</span>
+<span class="k">def</span><span class="w"> </span><span class="nf">kl</span><span class="p">(</span><span class="n">p</span><span class="p">,</span><span class="n">q</span><span class="p">):</span>          <span class="n">m</span><span class="o">=</span><span class="n">p</span><span class="o">&gt;</span><span class="mi">0</span><span class="p">;</span>    <span class="k">return</span> <span class="p">(</span><span class="n">p</span><span class="p">[</span><span class="n">m</span><span class="p">]</span><span class="o">*</span><span class="n">torch</span><span class="o">.</span><span class="n">log</span><span class="p">(</span><span class="n">p</span><span class="p">[</span><span class="n">m</span><span class="p">]</span><span class="o">/</span><span class="n">q</span><span class="p">[</span><span class="n">m</span><span class="p">]))</span><span class="o">.</span><span class="n">sum</span><span class="p">()</span>
+
+<span class="n">p</span> <span class="o">=</span> <span class="n">torch</span><span class="o">.</span><span class="n">tensor</span><span class="p">([</span><span class="mf">0.5</span><span class="p">,</span> <span class="mf">0.3</span><span class="p">,</span> <span class="mf">0.2</span><span class="p">])</span>
+<span class="n">q</span> <span class="o">=</span> <span class="n">torch</span><span class="o">.</span><span class="n">tensor</span><span class="p">([</span><span class="mf">0.3</span><span class="p">,</span> <span class="mf">0.3</span><span class="p">,</span> <span class="mf">0.4</span><span class="p">])</span>
+
+<span class="nb">print</span><span class="p">(</span><span class="n">cross_entropy</span><span class="p">(</span><span class="n">p</span><span class="p">,</span> <span class="n">q</span><span class="p">)</span> <span class="o">-</span> <span class="n">entropy</span><span class="p">(</span><span class="n">p</span><span class="p">))</span>   <span class="c1"># 交叉熵 − 熵</span>
+<span class="nb">print</span><span class="p">(</span><span class="n">kl</span><span class="p">(</span><span class="n">p</span><span class="p">,</span> <span class="n">q</span><span class="p">))</span>                           <span class="c1"># 完全相等 —— KL 就是这块&quot;额外代价&quot;</span>
+<span class="nb">print</span><span class="p">(</span><span class="n">kl</span><span class="p">(</span><span class="n">p</span><span class="p">,</span> <span class="n">p</span><span class="p">))</span>                           <span class="c1"># 0.0 —— 认知完全正确，不多付一分钱</span>
+</code></pre></div>
+
+<p>KL 有一个反直觉但极其重要的性质：<strong>它不是距离，因为它不对称</strong>——
+<code>D(p‖q) ≠ D(q‖p)</code>。"把 p 错认成 q 的代价"和"把 q 错认成 p 的代价"根本不是一回事：</p>
+<div class="highlight"><pre><span></span><code><span class="kn">import</span><span class="w"> </span><span class="nn">torch</span>
+<span class="k">def</span><span class="w"> </span><span class="nf">kl</span><span class="p">(</span><span class="n">p</span><span class="p">,</span><span class="n">q</span><span class="p">):</span> <span class="n">m</span><span class="o">=</span><span class="n">p</span><span class="o">&gt;</span><span class="mi">0</span><span class="p">;</span> <span class="k">return</span> <span class="p">(</span><span class="n">p</span><span class="p">[</span><span class="n">m</span><span class="p">]</span><span class="o">*</span><span class="n">torch</span><span class="o">.</span><span class="n">log</span><span class="p">(</span><span class="n">p</span><span class="p">[</span><span class="n">m</span><span class="p">]</span><span class="o">/</span><span class="n">q</span><span class="p">[</span><span class="n">m</span><span class="p">]))</span><span class="o">.</span><span class="n">sum</span><span class="p">()</span>
+<span class="n">p</span> <span class="o">=</span> <span class="n">torch</span><span class="o">.</span><span class="n">tensor</span><span class="p">([</span><span class="mf">0.9</span><span class="p">,</span> <span class="mf">0.1</span><span class="p">])</span>
+<span class="n">q</span> <span class="o">=</span> <span class="n">torch</span><span class="o">.</span><span class="n">tensor</span><span class="p">([</span><span class="mf">0.5</span><span class="p">,</span> <span class="mf">0.5</span><span class="p">])</span>
+<span class="nb">print</span><span class="p">(</span><span class="n">kl</span><span class="p">(</span><span class="n">p</span><span class="p">,</span> <span class="n">q</span><span class="p">))</span>   <span class="c1"># ≈ 0.368</span>
+<span class="nb">print</span><span class="p">(</span><span class="n">kl</span><span class="p">(</span><span class="n">q</span><span class="p">,</span> <span class="n">p</span><span class="p">))</span>   <span class="c1"># ≈ 0.511 —— 方向反过来，值不一样！所以它不是&quot;距离&quot;</span>
+</code></pre></div>
+
+<blockquote>
+<p>一句话记住三者的关系：
+<strong>交叉熵 = 熵（世界固有的不确定性）+ KL 散度（你认知偏差的罚款）。</strong>
+训练时熵是常数（数据分布固定），所以<strong>最小化交叉熵，等价于最小化 KL 散度</strong>——
+也就是<strong>逼模型的分布 q 去贴近真实分布 p</strong>。这就是"学习"这件事的信息论定义。</p>
+</blockquote>
+<hr />
+<h2 id="疑惑点一分类问题的-loss为什么用交叉熵不用更直观的均方误差mse">🤔 疑惑点一：分类问题的 loss，为什么用交叉熵，不用更直观的均方误差（MSE）？</h2>
+<p><strong>因为在"预测一个概率分布"这件事上，交叉熵的梯度又干净又不饱和，而 MSE 会让模型学得极慢。</strong></p>
+<p>直觉上 MSE（预测概率和真实标签的平方差）好像也能用，但它有个致命毛病：
+当模型错得很离谱、但 softmax 已经饱和时，MSE 的梯度会趋近于 0——<strong>错得越狠，学得越慢</strong>，方向完全反了。
+交叉熵配 softmax 则相反：<strong>错得越狠，梯度越大，改得越猛。</strong> 用代码把这个梯度对比出来：</p>
+<div class="highlight"><pre><span></span><code><span class="kn">import</span><span class="w"> </span><span class="nn">torch</span>
+<span class="kn">import</span><span class="w"> </span><span class="nn">torch.nn.functional</span><span class="w"> </span><span class="k">as</span><span class="w"> </span><span class="nn">F</span>
+
+<span class="c1"># 模型极度自信但完全错了：把答案压在第 2 类，真实答案是第 0 类</span>
+<span class="n">logits</span> <span class="o">=</span> <span class="n">torch</span><span class="o">.</span><span class="n">tensor</span><span class="p">([[</span><span class="o">-</span><span class="mf">5.0</span><span class="p">,</span> <span class="mf">0.0</span><span class="p">,</span> <span class="mf">5.0</span><span class="p">]],</span> <span class="n">requires_grad</span><span class="o">=</span><span class="kc">True</span><span class="p">)</span>
+<span class="n">target</span> <span class="o">=</span> <span class="n">torch</span><span class="o">.</span><span class="n">tensor</span><span class="p">([</span><span class="mi">0</span><span class="p">])</span>
+
+<span class="n">ce</span> <span class="o">=</span> <span class="n">F</span><span class="o">.</span><span class="n">cross_entropy</span><span class="p">(</span><span class="n">logits</span><span class="p">,</span> <span class="n">target</span><span class="p">)</span>
+<span class="n">ce</span><span class="o">.</span><span class="n">backward</span><span class="p">()</span>
+<span class="nb">print</span><span class="p">(</span><span class="s2">&quot;交叉熵在&#39;自信地错&#39;时的梯度:&quot;</span><span class="p">,</span> <span class="n">logits</span><span class="o">.</span><span class="n">grad</span><span class="p">)</span>   <span class="c1"># 数值很大 —— 使劲往回拉</span>
+<span class="c1"># 输出类似 tensor([[-0.9933, 0.0066, 0.9867]])：对正确类是强负梯度，把它往上推</span>
+</code></pre></div>
+
+<p>交叉熵给正确类一个明显的负梯度（"给我把这个概率提上去！"），给错误类正梯度（"给我压下去！"），
+而且<strong>错得越自信，这个推力越大</strong>。这正是我们想要的老师：学生越是自信地犯错，越要重罚。</p>
+<hr />
+<h2 id="5-fcross_entropy-就是信息论本论信息论和深度学习的接头">5. F.cross_entropy 就是信息论本论（信息论和深度学习的接头）</h2>
+<p>现在把第 3 节手写的交叉熵，对接到你每天在用的 <code>torch.nn.functional.cross_entropy</code>。
+它其实只是把"<strong>softmax 变概率 + 取正确类的 −log</strong>"这两步打包了：</p>
+<div class="highlight"><pre><span></span><code><span class="kn">import</span><span class="w"> </span><span class="nn">torch</span>
+<span class="kn">import</span><span class="w"> </span><span class="nn">torch.nn.functional</span><span class="w"> </span><span class="k">as</span><span class="w"> </span><span class="nn">F</span>
+
+<span class="n">logits</span> <span class="o">=</span> <span class="n">torch</span><span class="o">.</span><span class="n">tensor</span><span class="p">([[</span><span class="mf">2.0</span><span class="p">,</span> <span class="mf">1.0</span><span class="p">,</span> <span class="mf">0.1</span><span class="p">]])</span>     <span class="c1"># 模型的原始输出（未归一化）</span>
+<span class="n">target</span> <span class="o">=</span> <span class="n">torch</span><span class="o">.</span><span class="n">tensor</span><span class="p">([</span><span class="mi">0</span><span class="p">])</span>                   <span class="c1"># 正确答案是第 0 类</span>
+
+<span class="c1"># PyTorch 一行搞定</span>
+<span class="n">loss_builtin</span> <span class="o">=</span> <span class="n">F</span><span class="o">.</span><span class="n">cross_entropy</span><span class="p">(</span><span class="n">logits</span><span class="p">,</span> <span class="n">target</span><span class="p">)</span>
+
+<span class="c1"># 手动还原它内部做的事：softmax -&gt; 取正确类 -&gt; 取 -log</span>
+<span class="n">q</span> <span class="o">=</span> <span class="n">torch</span><span class="o">.</span><span class="n">softmax</span><span class="p">(</span><span class="n">logits</span><span class="p">,</span> <span class="n">dim</span><span class="o">=-</span><span class="mi">1</span><span class="p">)</span>            <span class="c1"># 变成概率分布</span>
+<span class="n">loss_manual</span> <span class="o">=</span> <span class="o">-</span><span class="n">torch</span><span class="o">.</span><span class="n">log</span><span class="p">(</span><span class="n">q</span><span class="p">[</span><span class="mi">0</span><span class="p">,</span> <span class="n">target</span><span class="p">])</span>       <span class="c1"># = 第 3 节的 −log(正确类概率)</span>
+
+<span class="nb">print</span><span class="p">(</span><span class="n">loss_builtin</span><span class="p">)</span>                          <span class="c1"># ≈ 0.417</span>
+<span class="nb">print</span><span class="p">(</span><span class="n">loss_manual</span><span class="p">)</span>                           <span class="c1"># ≈ 0.417 —— 完全一样</span>
+<span class="nb">print</span><span class="p">(</span><span class="n">torch</span><span class="o">.</span><span class="n">allclose</span><span class="p">(</span><span class="n">loss_builtin</span><span class="p">,</span> <span class="n">loss_manual</span><span class="p">))</span>   <span class="c1"># True</span>
+</code></pre></div>
+
+<p><code>F.cross_entropy</code> 一点不神秘：<strong>它就是第 3 节那个 <code>-Σ p·log q</code>，只不过 <code>p</code> 是 one-hot 的正确标签，
+<code>q</code> 是 softmax 出来的模型分布。</strong> 那么语言模型训练是什么？就是把这件事<strong>在每个位置、对整个词表</strong>做一遍：</p>
+<div class="highlight"><pre><span></span><code><span class="kn">import</span><span class="w"> </span><span class="nn">torch</span>
+<span class="kn">import</span><span class="w"> </span><span class="nn">torch.nn.functional</span><span class="w"> </span><span class="k">as</span><span class="w"> </span><span class="nn">F</span>
+
+<span class="c1"># 模拟：一句话 5 个位置，词表大小 10000，模型给出每个位置的 logits</span>
+<span class="n">vocab</span> <span class="o">=</span> <span class="mi">10000</span>
+<span class="n">logits</span> <span class="o">=</span> <span class="n">torch</span><span class="o">.</span><span class="n">randn</span><span class="p">(</span><span class="mi">5</span><span class="p">,</span> <span class="n">vocab</span><span class="p">)</span>               <span class="c1"># 5 个位置，各自对 1 万个词打分</span>
+<span class="n">next_tokens</span> <span class="o">=</span> <span class="n">torch</span><span class="o">.</span><span class="n">randint</span><span class="p">(</span><span class="mi">0</span><span class="p">,</span> <span class="n">vocab</span><span class="p">,</span> <span class="p">(</span><span class="mi">5</span><span class="p">,))</span>  <span class="c1"># 每个位置真实的&quot;下一个字&quot;</span>
+
+<span class="n">loss</span> <span class="o">=</span> <span class="n">F</span><span class="o">.</span><span class="n">cross_entropy</span><span class="p">(</span><span class="n">logits</span><span class="p">,</span> <span class="n">next_tokens</span><span class="p">)</span>  <span class="c1"># 就是对 5 次预测求平均交叉熵</span>
+<span class="nb">print</span><span class="p">(</span><span class="s2">&quot;语言模型的训练 loss:&quot;</span><span class="p">,</span> <span class="n">loss</span><span class="o">.</span><span class="n">item</span><span class="p">())</span>      <span class="c1"># 一个数：模型对这句话有多&quot;意外&quot;</span>
+</code></pre></div>
+
+<blockquote>
+<p><strong>这就是 GPT 训练的全部信息论内核：</strong> 每读一个位置，模型对"下一个字"给出一个概率分布 <code>q</code>，
+真实的下一个字是 <code>p</code>（one-hot），loss 就是 <code>-log q[真实字]</code>。
+模型对真实文本越"不意外"，交叉熵越低——<strong>训练，就是把这个平均意外一路压下去。</strong> 呼应第 0 节主线，闭环了。</p>
+</blockquote>
+<hr />
+<h2 id="疑惑点二评价语言模型的困惑度-perplexity到底是什么">🤔 疑惑点二：评价语言模型的"困惑度 perplexity"，到底是什么？</h2>
+<p><strong>困惑度 = e 的交叉熵次方。它把"平均意外几比特"换算成了一个更好懂的数字："模型平均在几个词之间纠结。"</strong></p>
+<p>交叉熵是"平均每一步付多少意外代价"，但这个数（比如 2.3）不够直观。
+把它取指数，就得到一个有画面感的量：</p>
+<div class="highlight"><pre><span></span><code><span class="kn">import</span><span class="w"> </span><span class="nn">torch</span>
+<span class="kn">import</span><span class="w"> </span><span class="nn">torch.nn.functional</span><span class="w"> </span><span class="k">as</span><span class="w"> </span><span class="nn">F</span>
+
+<span class="n">logits</span> <span class="o">=</span> <span class="n">torch</span><span class="o">.</span><span class="n">randn</span><span class="p">(</span><span class="mi">20</span><span class="p">,</span> <span class="mi">100</span><span class="p">)</span>                <span class="c1"># 20 个位置，词表 100</span>
+<span class="n">targets</span> <span class="o">=</span> <span class="n">torch</span><span class="o">.</span><span class="n">randint</span><span class="p">(</span><span class="mi">0</span><span class="p">,</span> <span class="mi">100</span><span class="p">,</span> <span class="p">(</span><span class="mi">20</span><span class="p">,))</span>
+
+<span class="n">ce</span> <span class="o">=</span> <span class="n">F</span><span class="o">.</span><span class="n">cross_entropy</span><span class="p">(</span><span class="n">logits</span><span class="p">,</span> <span class="n">targets</span><span class="p">)</span>        <span class="c1"># 平均交叉熵（单位：nat）</span>
+<span class="n">perplexity</span> <span class="o">=</span> <span class="n">torch</span><span class="o">.</span><span class="n">exp</span><span class="p">(</span><span class="n">ce</span><span class="p">)</span>                   <span class="c1"># 困惑度 = e^交叉熵</span>
+<span class="nb">print</span><span class="p">(</span><span class="sa">f</span><span class="s2">&quot;交叉熵: </span><span class="si">{</span><span class="n">ce</span><span class="o">.</span><span class="n">item</span><span class="p">()</span><span class="si">:</span><span class="s2">.3f</span><span class="si">}</span><span class="s2">   困惑度: </span><span class="si">{</span><span class="n">perplexity</span><span class="o">.</span><span class="n">item</span><span class="p">()</span><span class="si">:</span><span class="s2">.1f</span><span class="si">}</span><span class="s2">&quot;</span><span class="p">)</span>
+</code></pre></div>
+
+<p><strong>困惑度的物理意义：模型在预测下一个词时，平均相当于在"这么多个等可能的词"之间猜。</strong></p>
+<ul>
+<li>困惑度 = 1：完美，每一步都笃定唯一答案，毫无困惑。</li>
+<li>困惑度 = 100（词表也是 100）：等于瞎猜，模型什么都没学到。</li>
+<li>GPT 级别的模型在真实语料上困惑度能压到个位数——意味着<strong>它平均只在几个候选词之间纠结</strong>，
+  这就是"语言能力"的量化。</li>
+</ul>
+<blockquote>
+<p>所以困惑度不是玄学：<strong>它就是交叉熵换了个更人话的单位。</strong> 交叉熵降，困惑度就降，
+两者盯的是同一件事——模型对真实语言有多"不意外"。</p>
+</blockquote>
+<hr />
+<h2 id="疑惑点三kl-散度在-rlhf-grpo-里到底扮演什么角色">🤔 疑惑点三：KL 散度在 RLHF / GRPO 里，到底扮演什么角色？</h2>
+<p><strong>它是一根"拴狗绳"：允许强化学习去优化奖励，但不许新模型偏离原模型太远，防止它为了骗高分而胡说八道。</strong></p>
+<p>你在做 GRPO / RLHF 时那一项 KL 正则，用信息论翻译过来就一句话：
+<strong>"想涨奖励可以，但你得和参考模型（reference model）说话方式差不多，别学歪了。"</strong>
+第 4 节说过 KL 衡量"两个分布差多远"，这里正好拿来当约束：</p>
+<div class="highlight"><pre><span></span><code><span class="kn">import</span><span class="w"> </span><span class="nn">torch</span>
+<span class="kn">import</span><span class="w"> </span><span class="nn">torch.nn.functional</span><span class="w"> </span><span class="k">as</span><span class="w"> </span><span class="nn">F</span>
+
+<span class="c1"># 同一句话、同一个位置：参考模型 vs 正在训练的策略模型，各自的下一词分布</span>
+<span class="n">ref_logits</span>    <span class="o">=</span> <span class="n">torch</span><span class="o">.</span><span class="n">tensor</span><span class="p">([[</span><span class="mf">2.0</span><span class="p">,</span> <span class="mf">1.0</span><span class="p">,</span> <span class="mf">0.5</span><span class="p">,</span> <span class="mf">0.1</span><span class="p">]])</span>   <span class="c1"># 冻住的参考模型</span>
+<span class="n">policy_logits</span> <span class="o">=</span> <span class="n">torch</span><span class="o">.</span><span class="n">tensor</span><span class="p">([[</span><span class="mf">2.2</span><span class="p">,</span> <span class="mf">0.9</span><span class="p">,</span> <span class="mf">0.4</span><span class="p">,</span> <span class="mf">0.2</span><span class="p">]])</span>   <span class="c1"># 正在被 RL 更新的模型</span>
+
+<span class="n">logp_policy</span> <span class="o">=</span> <span class="n">F</span><span class="o">.</span><span class="n">log_softmax</span><span class="p">(</span><span class="n">policy_logits</span><span class="p">,</span> <span class="n">dim</span><span class="o">=-</span><span class="mi">1</span><span class="p">)</span>
+<span class="n">logp_ref</span>    <span class="o">=</span> <span class="n">F</span><span class="o">.</span><span class="n">log_softmax</span><span class="p">(</span><span class="n">ref_logits</span><span class="p">,</span>    <span class="n">dim</span><span class="o">=-</span><span class="mi">1</span><span class="p">)</span>
+<span class="n">p_policy</span>    <span class="o">=</span> <span class="n">logp_policy</span><span class="o">.</span><span class="n">exp</span><span class="p">()</span>
+
+<span class="c1"># KL(policy ‖ ref) = Σ p_policy · (logp_policy − logp_ref)</span>
+<span class="n">kl</span> <span class="o">=</span> <span class="p">(</span><span class="n">p_policy</span> <span class="o">*</span> <span class="p">(</span><span class="n">logp_policy</span> <span class="o">-</span> <span class="n">logp_ref</span><span class="p">))</span><span class="o">.</span><span class="n">sum</span><span class="p">()</span>
+<span class="nb">print</span><span class="p">(</span><span class="s2">&quot;策略模型偏离参考模型的 KL:&quot;</span><span class="p">,</span> <span class="n">kl</span><span class="o">.</span><span class="n">item</span><span class="p">())</span>   <span class="c1"># 很小 —— 还在&quot;拴狗绳&quot;允许范围内</span>
+
+<span class="c1"># RL 的总目标 ≈ 最大化奖励 − β · KL（β 越大，绳越短，越不许乱跑）</span>
+<span class="n">reward</span> <span class="o">=</span> <span class="n">torch</span><span class="o">.</span><span class="n">tensor</span><span class="p">(</span><span class="mf">1.3</span><span class="p">)</span>
+<span class="n">beta</span> <span class="o">=</span> <span class="mf">0.1</span>
+<span class="n">objective</span> <span class="o">=</span> <span class="n">reward</span> <span class="o">-</span> <span class="n">beta</span> <span class="o">*</span> <span class="n">kl</span>
+<span class="nb">print</span><span class="p">(</span><span class="s2">&quot;带 KL 正则的优化目标:&quot;</span><span class="p">,</span> <span class="n">objective</span><span class="o">.</span><span class="n">item</span><span class="p">())</span>
+</code></pre></div>
+
+<blockquote>
+<p>没有这根 KL 绳，RL 会为了那点奖励分数把语言模型"训崩"（钻奖励模型的空子，输出乱码却拿高分）。
+KL 正则就是信息论在你 MathGPT 训练里的现实身份：<strong>用"分布别离太远"这个约束，稳住整个 RL 过程。</strong></p>
+</blockquote>
+<hr />
+<h2 id="动手亲眼看着-loss-下降-模型对数据越来越不意外">🎬 动手：亲眼看着 loss 下降 = 模型对数据"越来越不意外"</h2>
+<p>说了半天"训练就是压低平均意外"，不如把它跑一遍、看着交叉熵和困惑度一起往下掉。
+一个最小的分类任务，故意让模型从"瞎猜"开始：</p>
+<div class="highlight"><pre><span></span><code><span class="kn">import</span><span class="w"> </span><span class="nn">torch</span>
+<span class="kn">import</span><span class="w"> </span><span class="nn">torch.nn</span><span class="w"> </span><span class="k">as</span><span class="w"> </span><span class="nn">nn</span>
+<span class="kn">import</span><span class="w"> </span><span class="nn">torch.nn.functional</span><span class="w"> </span><span class="k">as</span><span class="w"> </span><span class="nn">F</span>
+
+<span class="n">torch</span><span class="o">.</span><span class="n">manual_seed</span><span class="p">(</span><span class="mi">0</span><span class="p">)</span>
+<span class="c1"># 造一批 3 类数据：每类围绕一个中心</span>
+<span class="n">centers</span> <span class="o">=</span> <span class="n">torch</span><span class="o">.</span><span class="n">tensor</span><span class="p">([[</span><span class="mf">2.0</span><span class="p">,</span> <span class="mf">2.0</span><span class="p">],</span> <span class="p">[</span><span class="o">-</span><span class="mf">2.0</span><span class="p">,</span> <span class="mf">2.0</span><span class="p">],</span> <span class="p">[</span><span class="mf">0.0</span><span class="p">,</span> <span class="o">-</span><span class="mf">2.0</span><span class="p">]])</span>
+<span class="n">X</span> <span class="o">=</span> <span class="n">torch</span><span class="o">.</span><span class="n">cat</span><span class="p">([</span><span class="n">c</span> <span class="o">+</span> <span class="n">torch</span><span class="o">.</span><span class="n">randn</span><span class="p">(</span><span class="mi">200</span><span class="p">,</span> <span class="mi">2</span><span class="p">)</span> <span class="o">*</span> <span class="mf">0.6</span> <span class="k">for</span> <span class="n">c</span> <span class="ow">in</span> <span class="n">centers</span><span class="p">])</span>
+<span class="n">y</span> <span class="o">=</span> <span class="n">torch</span><span class="o">.</span><span class="n">cat</span><span class="p">([</span><span class="n">torch</span><span class="o">.</span><span class="n">full</span><span class="p">((</span><span class="mi">200</span><span class="p">,),</span> <span class="n">i</span><span class="p">)</span> <span class="k">for</span> <span class="n">i</span> <span class="ow">in</span> <span class="nb">range</span><span class="p">(</span><span class="mi">3</span><span class="p">)])</span>
+
+<span class="n">model</span> <span class="o">=</span> <span class="n">nn</span><span class="o">.</span><span class="n">Sequential</span><span class="p">(</span><span class="n">nn</span><span class="o">.</span><span class="n">Linear</span><span class="p">(</span><span class="mi">2</span><span class="p">,</span> <span class="mi">32</span><span class="p">),</span> <span class="n">nn</span><span class="o">.</span><span class="n">ReLU</span><span class="p">(),</span> <span class="n">nn</span><span class="o">.</span><span class="n">Linear</span><span class="p">(</span><span class="mi">32</span><span class="p">,</span> <span class="mi">3</span><span class="p">))</span>
+<span class="n">opt</span> <span class="o">=</span> <span class="n">torch</span><span class="o">.</span><span class="n">optim</span><span class="o">.</span><span class="n">Adam</span><span class="p">(</span><span class="n">model</span><span class="o">.</span><span class="n">parameters</span><span class="p">(),</span> <span class="n">lr</span><span class="o">=</span><span class="mf">0.05</span><span class="p">)</span>
+
+<span class="k">for</span> <span class="n">step</span> <span class="ow">in</span> <span class="nb">range</span><span class="p">(</span><span class="mi">0</span><span class="p">,</span> <span class="mi">201</span><span class="p">):</span>
+    <span class="n">logits</span> <span class="o">=</span> <span class="n">model</span><span class="p">(</span><span class="n">X</span><span class="p">)</span>
+    <span class="n">loss</span> <span class="o">=</span> <span class="n">F</span><span class="o">.</span><span class="n">cross_entropy</span><span class="p">(</span><span class="n">logits</span><span class="p">,</span> <span class="n">y</span><span class="p">)</span>        <span class="c1"># 平均意外（交叉熵）</span>
+    <span class="n">ppl</span> <span class="o">=</span> <span class="n">torch</span><span class="o">.</span><span class="n">exp</span><span class="p">(</span><span class="n">loss</span><span class="p">)</span>                    <span class="c1"># 困惑度 = 平均在几类间纠结</span>
+    <span class="k">if</span> <span class="n">step</span> <span class="o">%</span> <span class="mi">40</span> <span class="o">==</span> <span class="mi">0</span><span class="p">:</span>
+        <span class="nb">print</span><span class="p">(</span><span class="sa">f</span><span class="s2">&quot;step </span><span class="si">{</span><span class="n">step</span><span class="si">:</span><span class="s2">3d</span><span class="si">}</span><span class="s2">  交叉熵=</span><span class="si">{</span><span class="n">loss</span><span class="o">.</span><span class="n">item</span><span class="p">()</span><span class="si">:</span><span class="s2">.3f</span><span class="si">}</span><span class="s2">  困惑度=</span><span class="si">{</span><span class="n">ppl</span><span class="o">.</span><span class="n">item</span><span class="p">()</span><span class="si">:</span><span class="s2">.2f</span><span class="si">}</span><span class="s2">&quot;</span><span class="p">)</span>
+    <span class="n">opt</span><span class="o">.</span><span class="n">zero_grad</span><span class="p">();</span> <span class="n">loss</span><span class="o">.</span><span class="n">backward</span><span class="p">();</span> <span class="n">opt</span><span class="o">.</span><span class="n">step</span><span class="p">()</span>
+<span class="c1"># 交叉熵从 ~1.1（≈ln3，等于瞎猜）一路掉到接近 0，困惑度从 ~3（三类瞎猜）掉到 ~1</span>
+</code></pre></div>
+
+<p>跑完你会看到一串数字：<strong>交叉熵从 <code>ln3 ≈ 1.10</code>（三类完全瞎猜的理论值）一路下滑，
+困惑度从约 3.0 掉到接近 1.0。</strong> 这两串数字，就是"模型对数据从满头问号到胸有成竹"的全过程。</p>
+<p>仓库里的动画脚本把它画成了双面板动图：</p>
+<div class="highlight"><pre><span></span><code>python<span class="w"> </span>cross_entropy_training_visualization.py
+</code></pre></div>
+
+<ul>
+<li><strong>左面板</strong>：三类数据点 + 模型学出的决策边界。边界从一片混沌，一帧帧清晰地把三坨点切开。</li>
+<li><strong>右面板</strong>：交叉熵（蓝）和困惑度（红）随训练步数同步下滑的曲线，一路奔向各自的下界（0 和 1）。</li>
+</ul>
+<p><strong>这就是"训练"最朴素的信息论真相</strong>：右面板那两条下滑的曲线，
+就是模型对世界的"平均意外"在被一步步压低——第 0 节那句"逼自己越来越不意外"，肉眼可见。</p>
+<hr />
+<h2 id="缝合把所有画面接起来">缝合：把所有画面接起来</h2>
+<p>回到开头，现在每个概念都有了画面和代码出处：</p>
+<table>
+<thead>
+<tr>
+<th>信息论概念</th>
+<th>课本怎么讲（抽象）</th>
+<th>这篇文章怎么看（画面）</th>
+<th>在深度学习里是什么</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><strong>自信息</strong> <code>-log p</code></td>
+<td>信息量公式</td>
+<td>一件事有多让你意外（第 1 节）</td>
+<td>单个 token 的预测代价</td>
+</tr>
+<tr>
+<td><strong>熵</strong> <code>H(p)</code></td>
+<td>平均信息量</td>
+<td>一个分布有多不确定（第 2 节）</td>
+<td>数据本身的"难度下界"</td>
+</tr>
+<tr>
+<td><strong>交叉熵</strong> <code>H(p,q)</code></td>
+<td>编码代价</td>
+<td>用错分布 q 描述真相 p 的代价（第 3 节）</td>
+<td><strong><code>F.cross_entropy</code>，训练 loss 本尊</strong></td>
+</tr>
+<tr>
+<td><strong>KL 散度</strong></td>
+<td>相对熵</td>
+<td>认知偏差的额外罚款，不对称（第 4 节）</td>
+<td>RLHF/GRPO 的 KL 正则（疑惑点三）</td>
+</tr>
+<tr>
+<td><strong>困惑度</strong></td>
+<td>—</td>
+<td>平均在几个词间纠结（疑惑点二）</td>
+<td>语言模型的评测指标</td>
+</tr>
+</tbody>
+</table>
+<p>三句话总结这篇文章：</p>
+<blockquote>
+<p><strong>信息论的灵魂是"意外"</strong>——概率越低越意外，信息量越大（第 0、1 节）；
+<strong>熵是平均意外，交叉熵是"用错分布"的平均意外</strong>，而它正是你训练大模型的 loss（第 2、3、5 节）；
+<strong>最小化交叉熵 = 最小化 KL 散度 = 逼模型分布贴近真实分布</strong>，这就是"学习"的信息论定义（第 4 节）。</p>
+</blockquote>
+<p>当年信息论没讲明白，不是因为它难，是因为没人告诉你：
+<strong>香农那套"熵"，最后全都活在一行 <code>F.cross_entropy</code> 里，是你每天都在最小化的东西。</strong>
+现在把上面每段代码跑一遍，比期末背十遍公式都管用。</p>
+    </div>
+  </article>
+
+</main>
+
+<!-- Floating Ask-AI chat widget -->
+<button class="ai-fab" id="ai-fab" aria-label="Ask AI about this article" title="Ask AI about this article">
+  <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+    <path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"/>
+  </svg>
+  <span class="ai-fab-label">Ask AI</span>
+</button>
+
+<div class="ai-panel" id="ai-panel" role="dialog" aria-labelledby="ai-panel-title" aria-hidden="true">
+  <header class="ai-panel-head">
+    <div class="ai-panel-title-wrap">
+      <span class="ai-dot"></span>
+      <h3 id="ai-panel-title">Ask AI about this post</h3>
+    </div>
+    <div class="ai-panel-actions">
+      <button class="ai-icon-btn" id="ai-clear" title="Clear conversation" aria-label="Clear">
+        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><polyline points="3 6 5 6 21 6"/><path d="M19 6l-1 14a2 2 0 0 1-2 2H8a2 2 0 0 1-2-2L5 6"/><path d="M10 11v6M14 11v6"/><path d="M9 6V4a1 1 0 0 1 1-1h4a1 1 0 0 1 1 1v2"/></svg>
+      </button>
+      <button class="ai-icon-btn" id="ai-close" title="Minimize" aria-label="Minimize">
+        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><polyline points="6 9 12 15 18 9"/></svg>
+      </button>
+    </div>
+  </header>
+
+  <div class="ai-messages" id="ai-messages">
+    <div class="ai-empty" id="ai-empty">
+      <p class="ai-empty-title">On-device AI · Gemini Nano</p>
+      <p class="ai-empty-sub">Ask anything about this article. Runs in your browser — nothing leaves your device.</p>
+    </div>
+  </div>
+
+  <div class="ai-status" id="ai-status" hidden></div>
+
+  <form class="ai-composer" id="ai-form">
+    <textarea id="ai-input" rows="1" placeholder="Ask about this post…" autocomplete="off"></textarea>
+    <button type="submit" id="ai-send" class="ai-send" aria-label="Send" disabled>
+      <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><line x1="22" y1="2" x2="11" y2="13"/><polygon points="22 2 15 22 11 13 2 9 22 2"/></svg>
+    </button>
+  </form>
+</div>
+
+<script>
+(function () {
+  const POST_TITLE = "\u5927\u5b664\u5e74\u6ca1\u8bb2\u660e\u767d\u7684\u4fe1\u606f\u8bba\uff0c\u88ab\u4e00\u6bb5 PyTorch \u4ee3\u7801\u8bb2\u900f\u4e86";
+  const contentEl = document.querySelector('article .content');
+
+  const fab = document.getElementById('ai-fab');
+  const panel = document.getElementById('ai-panel');
+  const closeBtn = document.getElementById('ai-close');
+  const clearBtn = document.getElementById('ai-clear');
+  const msgsEl = document.getElementById('ai-messages');
+  const emptyEl = document.getElementById('ai-empty');
+  const statusEl = document.getElementById('ai-status');
+  const formEl = document.getElementById('ai-form');
+  const inputEl = document.getElementById('ai-input');
+  const sendBtn = document.getElementById('ai-send');
+
+  function articleText() {
+    if (!contentEl) return '';
+    return (contentEl.innerText || contentEl.textContent || '')
+      .replace(/[ \t]+\n/g, '\n')
+      .replace(/\n{3,}/g, '\n\n')
+      .trim();
+  }
+
+  function setStatus(msg, cls) {
+    if (!msg) { statusEl.hidden = true; statusEl.textContent = ''; statusEl.className = 'ai-status'; return; }
+    statusEl.hidden = false;
+    statusEl.textContent = msg;
+    statusEl.className = 'ai-status' + (cls ? ' ' + cls : '');
+  }
+
+  function hideEmpty() { if (emptyEl) emptyEl.style.display = 'none'; }
+
+  function appendBubble(role, text) {
+    hideEmpty();
+    const wrap = document.createElement('div');
+    wrap.className = 'ai-msg ai-msg-' + role;
+    const bubble = document.createElement('div');
+    bubble.className = 'ai-bubble';
+    bubble.textContent = text;
+    wrap.appendChild(bubble);
+    msgsEl.appendChild(wrap);
+    msgsEl.scrollTop = msgsEl.scrollHeight;
+    return bubble;
+  }
+
+  function appendTyping() {
+    hideEmpty();
+    const wrap = document.createElement('div');
+    wrap.className = 'ai-msg ai-msg-assistant ai-typing';
+    wrap.innerHTML = '<div class="ai-bubble"><span class="ai-dots"><i></i><i></i><i></i></span></div>';
+    msgsEl.appendChild(wrap);
+    msgsEl.scrollTop = msgsEl.scrollHeight;
+    return wrap;
+  }
+
+  function autoSize() {
+    inputEl.style.height = 'auto';
+    inputEl.style.height = Math.min(inputEl.scrollHeight, 140) + 'px';
+  }
+
+  function openPanel() {
+    panel.classList.add('open');
+    panel.setAttribute('aria-hidden', 'false');
+    fab.classList.add('hidden');
+    setTimeout(() => inputEl.focus(), 50);
+  }
+  function closePanel() {
+    panel.classList.remove('open');
+    panel.setAttribute('aria-hidden', 'true');
+    fab.classList.remove('hidden');
+  }
+
+  fab.addEventListener('click', openPanel);
+  closeBtn.addEventListener('click', closePanel);
+  document.addEventListener('keydown', e => {
+    if (e.key === 'Escape' && panel.classList.contains('open')) closePanel();
+  });
+
+  // ---- LanguageModel session ----
+  let session = null;
+  let creating = null;
+  let history = [];
+
+  function buildSystemPrompt() {
+    // Keep article context modest — Gemini Nano's input quota is small.
+    const article = articleText().slice(0, 4000);
+    return (
+      'You are a concise, helpful assistant answering questions about a blog post. ' +
+      'Use the article below as your primary source. If the answer is not in it, say so briefly and answer generally. ' +
+      'Reply in the same language as the user\'s question. Keep answers short unless asked for detail.\n\n' +
+      '=== ARTICLE TITLE ===\n' + POST_TITLE + '\n\n' +
+      '=== ARTICLE CONTENT ===\n' + article
+    );
+  }
+
+  async function ensureSession() {
+    if (session) return session;
+    if (creating) return creating;
+
+    if (!('LanguageModel' in self)) {
+      throw new Error(
+        'On-device AI not available. Use Chrome 138+ on desktop, or enable ' +
+        '"Prompt API for Gemini Nano" in chrome://flags.'
+      );
+    }
+
+    setStatus('Checking model…', 'info');
+    const status = await LanguageModel.availability();
+    if (status === 'unavailable') {
+      throw new Error('Model unavailable on this device.');
+    }
+
+    creating = (async () => {
+      // Only show download UI when the model isn't already there.
+      const willDownload = (status !== 'available');
+      if (willDownload) setStatus('Preparing model (first run downloads ~2GB)…', 'info');
+      else setStatus('Warming up…', 'info');
+
+      const s = await LanguageModel.create({
+        initialPrompts: [{ role: 'system', content: buildSystemPrompt() }],
+        monitor(m) {
+          m.addEventListener('downloadprogress', e => {
+            // Skip the spurious 0% event Chrome fires for cached models.
+            if (!willDownload && e.loaded === 0) return;
+            const pct = (e.loaded * 100).toFixed(1);
+            setStatus('Downloading model: ' + pct + '%', 'info');
+          });
+        }
+      });
+      session = s;
+      setStatus('');
+      return s;
+    })();
+
+    try { return await creating; }
+    finally { creating = null; }
+  }
+
+  async function ask(q) {
+    appendBubble('user', q);
+    history.push({ role: 'user', content: q });
+
+    sendBtn.disabled = true;
+    inputEl.disabled = true;
+    const typing = appendTyping();
+
+    let answerBubble = null;
+    let acc = '';
+    try {
+      const s = await ensureSession();
+      const stream = s.promptStreaming(q);
+      for await (const chunk of stream) {
+        if (!answerBubble) {
+          typing.remove();
+          const wrap = document.createElement('div');
+          wrap.className = 'ai-msg ai-msg-assistant';
+          answerBubble = document.createElement('div');
+          answerBubble.className = 'ai-bubble';
+          wrap.appendChild(answerBubble);
+          msgsEl.appendChild(wrap);
+        }
+        acc += chunk;
+        answerBubble.textContent = acc;
+        msgsEl.scrollTop = msgsEl.scrollHeight;
+      }
+      if (acc) history.push({ role: 'assistant', content: acc });
+      else { typing.remove(); appendBubble('assistant', '(no response)'); }
+    } catch (e) {
+      if (typing && typing.parentNode) typing.remove();
+      const err = document.createElement('div');
+      err.className = 'ai-msg ai-msg-error';
+      err.innerHTML = '<div class="ai-bubble">⚠ ' + (e && e.message ? e.message : String(e)) + '</div>';
+      msgsEl.appendChild(err);
+      msgsEl.scrollTop = msgsEl.scrollHeight;
+    } finally {
+      sendBtn.disabled = !inputEl.value.trim();
+      inputEl.disabled = false;
+      inputEl.focus();
+    }
+  }
+
+  formEl.addEventListener('submit', e => {
+    e.preventDefault();
+    const q = inputEl.value.trim();
+    if (!q) return;
+    inputEl.value = '';
+    autoSize();
+    sendBtn.disabled = true;
+    ask(q);
+  });
+
+  inputEl.addEventListener('input', () => {
+    autoSize();
+    sendBtn.disabled = !inputEl.value.trim();
+  });
+  inputEl.addEventListener('keydown', e => {
+    if (e.key === 'Enter' && !e.shiftKey) {
+      e.preventDefault();
+      formEl.requestSubmit();
+    }
+  });
+
+  clearBtn.addEventListener('click', () => {
+    msgsEl.innerHTML = '';
+    msgsEl.appendChild(emptyEl);
+    emptyEl.style.display = '';
+    history = [];
+    if (session && session.destroy) { try { session.destroy(); } catch (_) {} }
+    session = null;
+    setStatus('');
+  });
+
+  if (!('LanguageModel' in self)) {
+    fab.addEventListener('click', () => {
+      openPanel();
+      setStatus('On-device AI not detected. Use Chrome 138+ desktop, or enable "Prompt API for Gemini Nano" in chrome://flags.', 'bad');
+    }, { once: true });
+  }
+})();
+</script>
+
+<!-- Outline notes / comments — DataScript + IndexedDB -->
+<script src="https://github.com/tonsky/datascript/releases/download/1.7.8/datascript-1.7.8.min.js"></script>
+<script src="../notes.js?v=6"></script>
+<script src="../theme.js"></script>
+<script src="../wechat-copy.js?v=3"></script>
+
+</body>
+</html>

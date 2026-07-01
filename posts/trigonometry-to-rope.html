@@ -1,0 +1,638 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>高中背了三年的 sin 和 cos，原来是大模型记住&quot;谁先谁后&quot;的秘密 · Steve Chan — xlisp</title>
+<meta name="description" content="如果只能留一句话，那就是这句：">
+<meta name="author" content="Steve Chan">
+<link rel="icon" type="image/jpeg" href="../icon.jpeg">
+<link rel="apple-touch-icon" href="../icon.jpeg">
+<meta property="og:type" content="article">
+<meta property="og:title" content="高中背了三年的 sin 和 cos，原来是大模型记住&quot;谁先谁后&quot;的秘密">
+<meta property="og:description" content="如果只能留一句话，那就是这句：">
+<meta property="og:image" content="../icon.jpeg">
+<meta property="og:site_name" content="Steve Chan — xlisp">
+<meta name="twitter:card" content="summary_large_image">
+<meta name="twitter:title" content="高中背了三年的 sin 和 cos，原来是大模型记住&quot;谁先谁后&quot;的秘密">
+<meta name="twitter:description" content="如果只能留一句话，那就是这句：">
+<meta name="twitter:image" content="../icon.jpeg">
+<link rel="stylesheet" href="../style.css?v=light1">
+<script>(function(){try{if(localStorage.getItem('theme')==='light')document.documentElement.setAttribute('data-theme','light');}catch(e){}})();</script>
+<!-- Math formula rendering via MathJax -->
+<script>
+window.MathJax = {
+  tex: {
+    // arithmatex emits \(...\) / \[...\] markup, so only these delimiters
+    // are needed; plain `$` is left alone (avoids currency false positives).
+    inlineMath: [['\\(', '\\)']],
+    displayMath: [['\\[', '\\]']],
+    processEscapes: true
+  },
+  svg: {
+    // Each formula gets its own self-contained <defs>, so the copy script can
+    // serialize one <svg> and rasterize it to a PNG for WeChat.
+    fontCache: 'local'
+  },
+  options: {
+    skipHtmlTags: ['script', 'noscript', 'style', 'textarea', 'pre', 'code'],
+    ignoreHtmlClass: 'highlight'
+  }
+};
+</script>
+<script src="https://cdn.jsdelivr.net/npm/mathjax@3/es5/tex-svg.js" async></script>
+</head>
+<body>
+<main class="wrap post">
+
+  <nav class="topnav">
+    <a href="../index.html">← home</a>
+  </nav>
+
+  <article>
+    <header class="post-header">
+      <h1>高中背了三年的 sin 和 cos，原来是大模型记住&quot;谁先谁后&quot;的秘密</h1>
+      <p class="meta">2026-07-01 · Steve Chan</p>
+    </header>
+
+    <div class="content">
+<blockquote>
+<p>正弦、余弦、正切、和角公式、正弦定理……高中背了三年，考完只记得"sin30° = 0.5"。
+因为老师只教你"查表算三角形"，没告诉你两件事：</p>
+<p><strong>第一，sin 和 cos 的灵魂根本不是三角形，是"旋转"。
+第二，今天每一个大模型（LLaMA、Qwen、GPT、DeepSeek）记住"哪个词在前、哪个词在后"，
+靠的正是给每个位置转一个角度——这套机制叫 RoPE（旋转位置编码）。</strong></p>
+<p>这篇文章不背一个公式、不证一个定理，全部用能跑起来的 PyTorch 代码，
+把三角函数最核心的"旋转"本质，一路接到大模型的 RoPE。
+并且顺手回答四个灵魂拷问：</p>
+<ul>
+<li>sin、cos 明明是算三角形的，怎么会和"位置""顺序"扯上关系？</li>
+<li>"给一个向量转一个角度"到底是什么意思？为什么要转？</li>
+<li>Transformer 不是号称"并行处理"吗，它究竟怎么知道哪个词在前、哪个在后？</li>
+<li>RoPE 公式里那些 <code>sin(pos / 10000^...)</code> 到底在干嘛？</li>
+</ul>
+</blockquote>
+<hr />
+<h2 id="0-一句话主线">0. 一句话主线</h2>
+<p>如果只能留一句话，那就是这句：</p>
+<blockquote>
+<p><strong>三角函数的灵魂是"旋转"。sin 和 cos，就是单位圆上一根转动的钟表指针的两个坐标（纵、横）。</strong></p>
+</blockquote>
+<p>一根指针从正右方（0°）开始转，转到角度 θ 时，它的指尖坐标正好是 <code>(cos θ, sin θ)</code>。
+所以"sin/cos"根本不是三角形的边长比，而是<strong>"转了 θ 角之后，落在了哪里"</strong>。
+大模型给第 m 个位置的词"转 m 个单位角度"，就能把"它排第几"这件事，悄悄编码进向量里。</p>
+<div class="highlight"><pre><span></span><code><span class="kn">import</span><span class="w"> </span><span class="nn">torch</span><span class="o">,</span><span class="w"> </span><span class="nn">math</span>
+
+<span class="c1"># 一根从正右方出发的单位指针，转动角度 theta 后的指尖坐标</span>
+<span class="k">for</span> <span class="n">deg</span> <span class="ow">in</span> <span class="p">[</span><span class="mi">0</span><span class="p">,</span> <span class="mi">30</span><span class="p">,</span> <span class="mi">90</span><span class="p">,</span> <span class="mi">180</span><span class="p">]:</span>
+    <span class="n">theta</span> <span class="o">=</span> <span class="n">math</span><span class="o">.</span><span class="n">radians</span><span class="p">(</span><span class="n">deg</span><span class="p">)</span>
+    <span class="n">tip</span> <span class="o">=</span> <span class="n">torch</span><span class="o">.</span><span class="n">tensor</span><span class="p">([</span><span class="n">math</span><span class="o">.</span><span class="n">cos</span><span class="p">(</span><span class="n">theta</span><span class="p">),</span> <span class="n">math</span><span class="o">.</span><span class="n">sin</span><span class="p">(</span><span class="n">theta</span><span class="p">)])</span>   <span class="c1"># (cos, sin) = 指尖位置</span>
+    <span class="nb">print</span><span class="p">(</span><span class="sa">f</span><span class="s2">&quot;转 </span><span class="si">{</span><span class="n">deg</span><span class="si">:</span><span class="s2">3d</span><span class="si">}</span><span class="s2">° -&gt; 指尖坐标 (cos, sin) = (</span><span class="si">{</span><span class="n">tip</span><span class="p">[</span><span class="mi">0</span><span class="p">]</span><span class="si">:</span><span class="s2">.2f</span><span class="si">}</span><span class="s2">, </span><span class="si">{</span><span class="n">tip</span><span class="p">[</span><span class="mi">1</span><span class="p">]</span><span class="si">:</span><span class="s2">.2f</span><span class="si">}</span><span class="s2">)&quot;</span><span class="p">)</span>
+<span class="c1"># 0°-&gt;(1,0)正右   30°-&gt;(0.87,0.5)   90°-&gt;(0,1)正上   180°-&gt;(-1,0)正左</span>
+</code></pre></div>
+
+<p>记住这个画面：<strong>cos 是指针的横坐标，sin 是纵坐标，它俩一起描述"转了多少"。</strong>
+下面所有东西都挂在这根转动的指针上。</p>
+<hr />
+<h2 id="1-sincos-不是三角形是单位圆上的钟表指针">1. sin、cos 不是三角形，是单位圆上的钟表指针</h2>
+<p>高中把 sin 定义成"对边比斜边"，把你锁死在一个直角三角形里。
+但真正有用的定义是<strong>单位圆</strong>：让一根长度为 1 的指针绕原点转，转到哪，<code>(cos, sin)</code> 就报出它在哪。
+这个视角一换，三角函数立刻从"算三角形"升级成"描述旋转"：</p>
+<div class="highlight"><pre><span></span><code><span class="kn">import</span><span class="w"> </span><span class="nn">torch</span>
+
+<span class="c1"># 让指针转一整圈，记录轨迹 —— 它画出的正是一个圆</span>
+<span class="n">angles</span> <span class="o">=</span> <span class="n">torch</span><span class="o">.</span><span class="n">linspace</span><span class="p">(</span><span class="mi">0</span><span class="p">,</span> <span class="mi">2</span> <span class="o">*</span> <span class="n">torch</span><span class="o">.</span><span class="n">pi</span><span class="p">,</span> <span class="mi">8</span><span class="p">)</span>
+<span class="n">tips</span> <span class="o">=</span> <span class="n">torch</span><span class="o">.</span><span class="n">stack</span><span class="p">([</span><span class="n">torch</span><span class="o">.</span><span class="n">cos</span><span class="p">(</span><span class="n">angles</span><span class="p">),</span> <span class="n">torch</span><span class="o">.</span><span class="n">sin</span><span class="p">(</span><span class="n">angles</span><span class="p">)],</span> <span class="n">dim</span><span class="o">=</span><span class="mi">1</span><span class="p">)</span>
+<span class="nb">print</span><span class="p">(</span><span class="n">tips</span><span class="o">.</span><span class="n">round</span><span class="p">(</span><span class="n">decimals</span><span class="o">=</span><span class="mi">2</span><span class="p">))</span>
+<span class="c1"># 每一行是指针转到某个角度时的落点，8 个点均匀铺在单位圆上</span>
+<span class="nb">print</span><span class="p">(</span><span class="s2">&quot;每个落点到原点的距离:&quot;</span><span class="p">,</span> <span class="n">tips</span><span class="o">.</span><span class="n">norm</span><span class="p">(</span><span class="n">dim</span><span class="o">=</span><span class="mi">1</span><span class="p">)</span><span class="o">.</span><span class="n">round</span><span class="p">(</span><span class="n">decimals</span><span class="o">=</span><span class="mi">2</span><span class="p">))</span>  <span class="c1"># 全是 1.0</span>
+</code></pre></div>
+
+<p>所有落点到原点的距离都是 1——它们<strong>严格躺在单位圆上</strong>。
+这就是 sin/cos 的真身：<strong>一台"角度 → 坐标"的翻译机</strong>。喂进去一个角度，吐出来圆上的一个位置。</p>
+<blockquote>
+<p>高中你被"对边斜边"框住了，其实只要记住：<strong>cos/sin = 转了 θ 角之后，指针尖在哪。</strong>
+有了这个，下一节的"旋转"就水到渠成。</p>
+</blockquote>
+<hr />
+<h2 id="2-旋转矩阵把任意一个向量转-θ-度">2. 旋转矩阵：把任意一个向量"转 θ 度"</h2>
+<p>指针能转，任意向量当然也能转。把一个向量转 θ 度，用的就是那个高中偷偷教过、却没说它多重要的<strong>旋转矩阵</strong>：</p>
+<div class="arithmatex">\[R(\theta) = \begin{bmatrix} \cos\theta &amp; -\sin\theta \\ \sin\theta &amp; \cos\theta \end{bmatrix}\]</div>
+<p>（如果你读过本系列《线性代数》那篇，这台"旋转机器"你已经见过。）代码转一个向量看看：</p>
+<div class="highlight"><pre><span></span><code><span class="kn">import</span><span class="w"> </span><span class="nn">torch</span><span class="o">,</span><span class="w"> </span><span class="nn">math</span>
+
+<span class="k">def</span><span class="w"> </span><span class="nf">rotation</span><span class="p">(</span><span class="n">theta</span><span class="p">):</span>                                  <span class="c1"># 造一台&quot;转 theta 度&quot;的机器</span>
+    <span class="n">c</span><span class="p">,</span> <span class="n">s</span> <span class="o">=</span> <span class="n">math</span><span class="o">.</span><span class="n">cos</span><span class="p">(</span><span class="n">theta</span><span class="p">),</span> <span class="n">math</span><span class="o">.</span><span class="n">sin</span><span class="p">(</span><span class="n">theta</span><span class="p">)</span>
+    <span class="k">return</span> <span class="n">torch</span><span class="o">.</span><span class="n">tensor</span><span class="p">([[</span><span class="n">c</span><span class="p">,</span> <span class="o">-</span><span class="n">s</span><span class="p">],</span>
+                         <span class="p">[</span><span class="n">s</span><span class="p">,</span>  <span class="n">c</span><span class="p">]])</span>
+
+<span class="n">v</span> <span class="o">=</span> <span class="n">torch</span><span class="o">.</span><span class="n">tensor</span><span class="p">([</span><span class="mf">1.0</span><span class="p">,</span> <span class="mf">0.0</span><span class="p">])</span>                          <span class="c1"># 指向正右的向量</span>
+<span class="n">R90</span> <span class="o">=</span> <span class="n">rotation</span><span class="p">(</span><span class="n">math</span><span class="o">.</span><span class="n">radians</span><span class="p">(</span><span class="mi">90</span><span class="p">))</span>
+<span class="nb">print</span><span class="p">(</span><span class="n">R90</span> <span class="o">@</span> <span class="n">v</span><span class="p">)</span>                                        <span class="c1"># tensor([0., 1.]) —— 被转到正上方</span>
+<span class="nb">print</span><span class="p">((</span><span class="n">R90</span> <span class="o">@</span> <span class="n">v</span><span class="p">)</span><span class="o">.</span><span class="n">norm</span><span class="p">())</span>                               <span class="c1"># 1.0 —— 长度不变，只改方向</span>
+</code></pre></div>
+
+<p><strong>旋转矩阵只改方向、不改长度。</strong> 这一点后面是关键：位置编码只能"标记位置"，
+绝不能把词向量本身的大小改掉，否则语义就毁了。旋转恰好满足这个要求——它温柔地只动方向。</p>
+<hr />
+<h2 id="3-旋转的黄金性质转-a-再转-b-转-ab">3. 旋转的黄金性质：转 a 再转 b = 转 (a+b)</h2>
+<p>这是整篇文章的枢纽，也是 RoPE 全部魔法的来源。三角函数的"和角公式"
+（<code>cos(a+b) = cos a cos b − sin a sin b</code> 那一坨，你一定背过），翻译成人话就一句：</p>
+<blockquote>
+<p><strong>先转 a 度，再转 b 度，等于一口气转 (a+b) 度。角度是可以直接相加的。</strong></p>
+</blockquote>
+<p>用代码验证这个"角度可加"性质——它看起来平平无奇，却是位置编码能work的根基：</p>
+<div class="highlight"><pre><span></span><code><span class="kn">import</span><span class="w"> </span><span class="nn">torch</span><span class="o">,</span><span class="w"> </span><span class="nn">math</span>
+
+<span class="k">def</span><span class="w"> </span><span class="nf">rotation</span><span class="p">(</span><span class="n">theta</span><span class="p">):</span>
+    <span class="n">c</span><span class="p">,</span> <span class="n">s</span> <span class="o">=</span> <span class="n">math</span><span class="o">.</span><span class="n">cos</span><span class="p">(</span><span class="n">theta</span><span class="p">),</span> <span class="n">math</span><span class="o">.</span><span class="n">sin</span><span class="p">(</span><span class="n">theta</span><span class="p">)</span>
+    <span class="k">return</span> <span class="n">torch</span><span class="o">.</span><span class="n">tensor</span><span class="p">([[</span><span class="n">c</span><span class="p">,</span> <span class="o">-</span><span class="n">s</span><span class="p">],</span> <span class="p">[</span><span class="n">s</span><span class="p">,</span> <span class="n">c</span><span class="p">]])</span>
+
+<span class="n">a</span><span class="p">,</span> <span class="n">b</span> <span class="o">=</span> <span class="n">math</span><span class="o">.</span><span class="n">radians</span><span class="p">(</span><span class="mi">25</span><span class="p">),</span> <span class="n">math</span><span class="o">.</span><span class="n">radians</span><span class="p">(</span><span class="mi">40</span><span class="p">)</span>
+<span class="n">left</span>  <span class="o">=</span> <span class="n">rotation</span><span class="p">(</span><span class="n">a</span><span class="p">)</span> <span class="o">@</span> <span class="n">rotation</span><span class="p">(</span><span class="n">b</span><span class="p">)</span>        <span class="c1"># 先转 b 再转 a</span>
+<span class="n">right</span> <span class="o">=</span> <span class="n">rotation</span><span class="p">(</span><span class="n">a</span> <span class="o">+</span> <span class="n">b</span><span class="p">)</span>                   <span class="c1"># 直接转 a+b</span>
+<span class="nb">print</span><span class="p">(</span><span class="n">torch</span><span class="o">.</span><span class="n">allclose</span><span class="p">(</span><span class="n">left</span><span class="p">,</span> <span class="n">right</span><span class="p">,</span> <span class="n">atol</span><span class="o">=</span><span class="mf">1e-6</span><span class="p">))</span>   <span class="c1"># True —— 转两次 = 转一次总和</span>
+</code></pre></div>
+
+<p><strong>角度可加</strong>，意味着"位置 5"就是"位置 3"再多转 2 步——<strong>位置之间的关系，变成了角度之间的减法。</strong>
+这正是我们想要的：一个能自然表达"谁比谁靠后多少"的机制。记住这句，第 5 节它会变成主角。</p>
+<hr />
+<h2 id="疑惑点一transformer-不是并行的吗它到底怎么知道词的先后顺序">🤔 疑惑点一：Transformer 不是"并行"的吗？它到底怎么知道词的先后顺序？</h2>
+<p><strong>默认情况下，它根本不知道——纯粹的自注意力是"集合运算"，把词序打乱，输出只会跟着一起打乱，模型察觉不到顺序。所以必须人工把位置信息"注入"进去。</strong></p>
+<p>这是最反直觉的一点。注意力机制里，每个词和所有词算相关度、再加权求和，
+这个过程<strong>对词的排列是"等变"的</strong>：你把输入的词换个顺序，输出也只是换同样的顺序，
+没有任何一步依赖"绝对位置"。用代码把这个"顺序失明"证出来：</p>
+<div class="highlight"><pre><span></span><code><span class="kn">import</span><span class="w"> </span><span class="nn">torch</span>
+<span class="kn">import</span><span class="w"> </span><span class="nn">torch.nn.functional</span><span class="w"> </span><span class="k">as</span><span class="w"> </span><span class="nn">F</span>
+
+<span class="k">def</span><span class="w"> </span><span class="nf">attention</span><span class="p">(</span><span class="n">X</span><span class="p">):</span>                          <span class="c1"># 最简自注意力，不含任何位置信息</span>
+    <span class="n">d</span> <span class="o">=</span> <span class="n">X</span><span class="o">.</span><span class="n">shape</span><span class="p">[</span><span class="o">-</span><span class="mi">1</span><span class="p">]</span>
+    <span class="n">scores</span> <span class="o">=</span> <span class="n">X</span> <span class="o">@</span> <span class="n">X</span><span class="o">.</span><span class="n">transpose</span><span class="p">(</span><span class="o">-</span><span class="mi">2</span><span class="p">,</span> <span class="o">-</span><span class="mi">1</span><span class="p">)</span> <span class="o">/</span> <span class="n">d</span> <span class="o">**</span> <span class="mf">0.5</span>
+    <span class="k">return</span> <span class="n">F</span><span class="o">.</span><span class="n">softmax</span><span class="p">(</span><span class="n">scores</span><span class="p">,</span> <span class="n">dim</span><span class="o">=-</span><span class="mi">1</span><span class="p">)</span> <span class="o">@</span> <span class="n">X</span>
+
+<span class="n">torch</span><span class="o">.</span><span class="n">manual_seed</span><span class="p">(</span><span class="mi">0</span><span class="p">)</span>
+<span class="n">X</span> <span class="o">=</span> <span class="n">torch</span><span class="o">.</span><span class="n">randn</span><span class="p">(</span><span class="mi">3</span><span class="p">,</span> <span class="mi">4</span><span class="p">)</span>                      <span class="c1"># 3 个词，每个 4 维</span>
+<span class="n">perm</span> <span class="o">=</span> <span class="n">torch</span><span class="o">.</span><span class="n">tensor</span><span class="p">([</span><span class="mi">2</span><span class="p">,</span> <span class="mi">0</span><span class="p">,</span> <span class="mi">1</span><span class="p">])</span>            <span class="c1"># 把词序打乱成 (第2, 第0, 第1)</span>
+
+<span class="n">out_then_perm</span> <span class="o">=</span> <span class="n">attention</span><span class="p">(</span><span class="n">X</span><span class="p">)[</span><span class="n">perm</span><span class="p">]</span>         <span class="c1"># 先算注意力，再打乱输出</span>
+<span class="n">perm_then_out</span> <span class="o">=</span> <span class="n">attention</span><span class="p">(</span><span class="n">X</span><span class="p">[</span><span class="n">perm</span><span class="p">])</span>         <span class="c1"># 先打乱输入，再算注意力</span>
+<span class="nb">print</span><span class="p">(</span><span class="n">torch</span><span class="o">.</span><span class="n">allclose</span><span class="p">(</span><span class="n">out_then_perm</span><span class="p">,</span> <span class="n">perm_then_out</span><span class="p">,</span> <span class="n">atol</span><span class="o">=</span><span class="mf">1e-6</span><span class="p">))</span>   <span class="c1"># True</span>
+</code></pre></div>
+
+<p>结果为 <code>True</code> 说明：<strong>打乱输入 = 打乱输出，注意力对"顺序"完全无感。</strong>
+"猫追狗"和"狗追猫"在纯注意力眼里，只是同一堆词的两种摆法，算出的关系一模一样。
+这显然不行——语言里顺序就是意义。所以我们必须<strong>主动给每个位置盖一个"第几号"的戳</strong>。
+RoPE 盖戳的方式，就是第 0~3 节那根转动的指针。</p>
+<hr />
+<h2 id="4-rope给第-m-个位置的向量转-m-个单位角度">4. RoPE：给第 m 个位置的向量，转 m 个单位角度</h2>
+<p>思路简单到令人发指：<strong>既然旋转能优雅地标记角度，那就让第 m 个位置的词向量，转 <code>m × θ</code> 度。</strong>
+位置 0 不转，位置 1 转 θ，位置 2 转 2θ……位置本身，就变成了"转了多少圈"。</p>
+<div class="highlight"><pre><span></span><code><span class="kn">import</span><span class="w"> </span><span class="nn">torch</span>
+
+<span class="k">def</span><span class="w"> </span><span class="nf">rope_2d</span><span class="p">(</span><span class="n">x</span><span class="p">,</span> <span class="n">pos</span><span class="p">,</span> <span class="n">theta</span><span class="o">=</span><span class="mf">1.0</span><span class="p">):</span>            <span class="c1"># 把 2 维向量 x 按它的位置 pos 旋转</span>
+    <span class="n">ang</span> <span class="o">=</span> <span class="n">pos</span> <span class="o">*</span> <span class="n">theta</span>                      <span class="c1"># 第 pos 个位置转 pos*theta 度</span>
+    <span class="n">c</span><span class="p">,</span> <span class="n">s</span> <span class="o">=</span> <span class="n">torch</span><span class="o">.</span><span class="n">cos</span><span class="p">(</span><span class="n">torch</span><span class="o">.</span><span class="n">tensor</span><span class="p">(</span><span class="n">ang</span><span class="p">)),</span> <span class="n">torch</span><span class="o">.</span><span class="n">sin</span><span class="p">(</span><span class="n">torch</span><span class="o">.</span><span class="n">tensor</span><span class="p">(</span><span class="n">ang</span><span class="p">))</span>
+    <span class="n">x0</span><span class="p">,</span> <span class="n">x1</span> <span class="o">=</span> <span class="n">x</span><span class="p">[</span><span class="o">...</span><span class="p">,</span> <span class="mi">0</span><span class="p">],</span> <span class="n">x</span><span class="p">[</span><span class="o">...</span><span class="p">,</span> <span class="mi">1</span><span class="p">]</span>
+    <span class="k">return</span> <span class="n">torch</span><span class="o">.</span><span class="n">stack</span><span class="p">([</span><span class="n">x0</span> <span class="o">*</span> <span class="n">c</span> <span class="o">-</span> <span class="n">x1</span> <span class="o">*</span> <span class="n">s</span><span class="p">,</span>   <span class="c1"># 旋转矩阵作用在 (x0, x1) 上</span>
+                        <span class="n">x0</span> <span class="o">*</span> <span class="n">s</span> <span class="o">+</span> <span class="n">x1</span> <span class="o">*</span> <span class="n">c</span><span class="p">],</span> <span class="n">dim</span><span class="o">=-</span><span class="mi">1</span><span class="p">)</span>
+
+<span class="n">word</span> <span class="o">=</span> <span class="n">torch</span><span class="o">.</span><span class="n">tensor</span><span class="p">([</span><span class="mf">1.0</span><span class="p">,</span> <span class="mf">0.5</span><span class="p">])</span>            <span class="c1"># 同一个词的向量</span>
+<span class="k">for</span> <span class="n">pos</span> <span class="ow">in</span> <span class="p">[</span><span class="mi">0</span><span class="p">,</span> <span class="mi">1</span><span class="p">,</span> <span class="mi">2</span><span class="p">,</span> <span class="mi">3</span><span class="p">]:</span>
+    <span class="nb">print</span><span class="p">(</span><span class="sa">f</span><span class="s2">&quot;位置 </span><span class="si">{</span><span class="n">pos</span><span class="si">}</span><span class="s2">: </span><span class="si">{</span><span class="n">rope_2d</span><span class="p">(</span><span class="n">word</span><span class="p">,</span><span class="w"> </span><span class="n">pos</span><span class="p">)</span><span class="o">.</span><span class="n">round</span><span class="p">(</span><span class="n">decimals</span><span class="o">=</span><span class="mi">3</span><span class="p">)</span><span class="si">}</span><span class="s2">&quot;</span><span class="p">)</span>
+<span class="c1"># 同一个词，放在不同位置，被转到了不同方向 —— 位置被&quot;转&quot;进了向量里</span>
+</code></pre></div>
+
+<p>同一个词向量 <code>[1.0, 0.5]</code>，放在位置 0、1、2、3，被转成了四个不同方向的向量。
+<strong>"它排第几"这个信息，现在藏在"它被转了多少角度"里。</strong> 位置编码完成，而且没动向量的长度（第 2 节的好处）。</p>
+<hr />
+<h2 id="5-为什么转角度这么妙两个词的相关度只取决于它们的相对距离">5. 为什么"转角度"这么妙：两个词的相关度，只取决于它们的相对距离</h2>
+<p>这是 RoPE 最漂亮的地方，也是它吊打老式位置编码的原因。注意力要算 <code>query · key</code>（第 1 节讲过，
+点积衡量两个向量多相关）。当 query 在位置 m、key 在位置 n，各自被 RoPE 旋转后，它们的点积会<strong>神奇地只依赖 <code>m − n</code>（相对距离），而与它们各自的绝对位置无关</strong>。</p>
+<p>回到第 3 节的"角度可加/可减"：<code>R(mθ)ᵀ R(nθ) = R((n−m)θ)</code>，所以旋转后的点积只剩下 <code>(n−m)</code> 这个相对量。空口无凭，代码验证——固定相对距离，绝对位置随便挪，点积纹丝不动：</p>
+<div class="highlight"><pre><span></span><code><span class="kn">import</span><span class="w"> </span><span class="nn">torch</span>
+
+<span class="k">def</span><span class="w"> </span><span class="nf">rope_2d</span><span class="p">(</span><span class="n">x</span><span class="p">,</span> <span class="n">pos</span><span class="p">,</span> <span class="n">theta</span><span class="o">=</span><span class="mf">0.5</span><span class="p">):</span>
+    <span class="n">ang</span> <span class="o">=</span> <span class="n">torch</span><span class="o">.</span><span class="n">tensor</span><span class="p">(</span><span class="n">pos</span> <span class="o">*</span> <span class="n">theta</span><span class="p">)</span>
+    <span class="n">c</span><span class="p">,</span> <span class="n">s</span> <span class="o">=</span> <span class="n">torch</span><span class="o">.</span><span class="n">cos</span><span class="p">(</span><span class="n">ang</span><span class="p">),</span> <span class="n">torch</span><span class="o">.</span><span class="n">sin</span><span class="p">(</span><span class="n">ang</span><span class="p">)</span>
+    <span class="n">x0</span><span class="p">,</span> <span class="n">x1</span> <span class="o">=</span> <span class="n">x</span><span class="p">[</span><span class="o">...</span><span class="p">,</span> <span class="mi">0</span><span class="p">],</span> <span class="n">x</span><span class="p">[</span><span class="o">...</span><span class="p">,</span> <span class="mi">1</span><span class="p">]</span>
+    <span class="k">return</span> <span class="n">torch</span><span class="o">.</span><span class="n">stack</span><span class="p">([</span><span class="n">x0</span> <span class="o">*</span> <span class="n">c</span> <span class="o">-</span> <span class="n">x1</span> <span class="o">*</span> <span class="n">s</span><span class="p">,</span> <span class="n">x0</span> <span class="o">*</span> <span class="n">s</span> <span class="o">+</span> <span class="n">x1</span> <span class="o">*</span> <span class="n">c</span><span class="p">],</span> <span class="n">dim</span><span class="o">=-</span><span class="mi">1</span><span class="p">)</span>
+
+<span class="n">torch</span><span class="o">.</span><span class="n">manual_seed</span><span class="p">(</span><span class="mi">0</span><span class="p">)</span>
+<span class="n">q</span> <span class="o">=</span> <span class="n">torch</span><span class="o">.</span><span class="n">randn</span><span class="p">(</span><span class="mi">2</span><span class="p">)</span>          <span class="c1"># 一个 query 向量</span>
+<span class="n">k</span> <span class="o">=</span> <span class="n">torch</span><span class="o">.</span><span class="n">randn</span><span class="p">(</span><span class="mi">2</span><span class="p">)</span>          <span class="c1"># 一个 key 向量</span>
+
+<span class="c1"># 三组 (m, n)，相对距离 n - m 都等于 3，但绝对位置完全不同</span>
+<span class="k">for</span> <span class="n">m</span><span class="p">,</span> <span class="n">n</span> <span class="ow">in</span> <span class="p">[(</span><span class="mi">0</span><span class="p">,</span> <span class="mi">3</span><span class="p">),</span> <span class="p">(</span><span class="mi">2</span><span class="p">,</span> <span class="mi">5</span><span class="p">),</span> <span class="p">(</span><span class="mi">10</span><span class="p">,</span> <span class="mi">13</span><span class="p">)]:</span>
+    <span class="n">score</span> <span class="o">=</span> <span class="n">torch</span><span class="o">.</span><span class="n">dot</span><span class="p">(</span><span class="n">rope_2d</span><span class="p">(</span><span class="n">q</span><span class="p">,</span> <span class="n">m</span><span class="p">),</span> <span class="n">rope_2d</span><span class="p">(</span><span class="n">k</span><span class="p">,</span> <span class="n">n</span><span class="p">))</span>
+    <span class="nb">print</span><span class="p">(</span><span class="sa">f</span><span class="s2">&quot;query@</span><span class="si">{</span><span class="n">m</span><span class="si">:</span><span class="s2">2d</span><span class="si">}</span><span class="s2">, key@</span><span class="si">{</span><span class="n">n</span><span class="si">:</span><span class="s2">2d</span><span class="si">}</span><span class="s2">  (相对距离=</span><span class="si">{</span><span class="n">n</span><span class="o">-</span><span class="n">m</span><span class="si">}</span><span class="s2">)  -&gt;  点积 = </span><span class="si">{</span><span class="n">score</span><span class="si">:</span><span class="s2">.4f</span><span class="si">}</span><span class="s2">&quot;</span><span class="p">)</span>
+<span class="c1"># 三行的点积完全相等 —— 只要相对距离一样，注意力分数就一样</span>
+</code></pre></div>
+
+<p>三行输出的点积<strong>一模一样</strong>。这意味着：<strong>RoPE 让模型天生理解"相对位置"</strong>——
+它不在乎你这句话从第几个字开始，只在乎"这个词离那个词隔了多远"。
+这正是语言的本质（"形容词修饰它后面的名词"是相对关系，和整句话在文档第几行无关）。
+老式的绝对位置编码做不到这一点，RoPE 靠一根转动的指针就做到了。</p>
+<hr />
+<h2 id="疑惑点二rope-公式里那一堆-100002id-是什么鬼">🤔 疑惑点二：RoPE 公式里那一堆 <code>10000^(2i/d)</code> 是什么鬼？</h2>
+<p><strong>那是给向量的不同维度配上"不同的转速"，像钟表的时针、分针、秒针——快针分辨相邻词，慢针记住远距离，组合起来就能覆盖从"隔壁"到"很远"的所有位置关系。</strong></p>
+<p>前面为了讲清楚，我们只转了一个 2 维向量、用了同一个转速 θ。真实的词向量有几百上千维，
+RoPE 把它们<strong>两两配对</strong>，每一对用<strong>不同的角速度</strong>去转：低维配对转得快，高维配对转得慢。</p>
+<div class="highlight"><pre><span></span><code><span class="kn">import</span><span class="w"> </span><span class="nn">torch</span>
+
+<span class="n">d</span> <span class="o">=</span> <span class="mi">8</span>                                       <span class="c1"># 向量维度（配成 4 对）</span>
+<span class="n">i</span> <span class="o">=</span> <span class="n">torch</span><span class="o">.</span><span class="n">arange</span><span class="p">(</span><span class="mi">0</span><span class="p">,</span> <span class="n">d</span> <span class="o">//</span> <span class="mi">2</span><span class="p">)</span><span class="o">.</span><span class="n">float</span><span class="p">()</span>
+<span class="n">theta</span> <span class="o">=</span> <span class="mi">10000</span> <span class="o">**</span> <span class="p">(</span><span class="o">-</span><span class="mi">2</span> <span class="o">*</span> <span class="n">i</span> <span class="o">/</span> <span class="n">d</span><span class="p">)</span>               <span class="c1"># 每一对的&quot;转速&quot;，从快到慢</span>
+<span class="nb">print</span><span class="p">(</span><span class="s2">&quot;四对维度各自的转速 theta:&quot;</span><span class="p">,</span> <span class="n">theta</span><span class="o">.</span><span class="n">round</span><span class="p">(</span><span class="n">decimals</span><span class="o">=</span><span class="mi">4</span><span class="p">))</span>
+<span class="c1"># tensor([1.0000, 0.1000, 0.0100, 0.0010]) —— 第一对转最快，最后一对转最慢</span>
+
+<span class="n">pos</span> <span class="o">=</span> <span class="mi">5</span>                                      <span class="c1"># 某个位置</span>
+<span class="n">angles</span> <span class="o">=</span> <span class="n">pos</span> <span class="o">*</span> <span class="n">theta</span>                         <span class="c1"># 该位置下，每一对各自要转的角度</span>
+<span class="nb">print</span><span class="p">(</span><span class="sa">f</span><span class="s2">&quot;位置 </span><span class="si">{</span><span class="n">pos</span><span class="si">}</span><span class="s2"> 时各对的旋转角度:&quot;</span><span class="p">,</span> <span class="n">angles</span><span class="o">.</span><span class="n">round</span><span class="p">(</span><span class="n">decimals</span><span class="o">=</span><span class="mi">4</span><span class="p">))</span>
+</code></pre></div>
+
+<p>为什么要多个转速？打个比方就懂了——<strong>这就是钟表的智慧</strong>：</p>
+<blockquote>
+<p>秒针转得飞快，用来分辨"1 秒 vs 2 秒"这种<strong>近距离</strong>差别；
+时针转得极慢，用来记录"3 点 vs 9 点"这种<strong>大跨度</strong>。
+只有一根针，要么分不清相邻、要么表示不了大范围。
+RoPE 给向量配上一整套"快慢不同的指针"，于是它<strong>既能分辨相邻词，又能记住隔了几十上百个词的远距离关系</strong>——用一组三角函数，把从近到远的所有位置尺度一网打尽。</p>
+</blockquote>
+<p>这就是那个吓人的 <code>10000^(2i/d)</code> 的全部含义：<strong>它只是在给每一对维度分配一个转速，凑齐一套时针分针秒针。</strong></p>
+<hr />
+<h2 id="动手一个最小-rope看位置如何转进注意力">🎬 动手：一个最小 RoPE，看位置如何"转"进注意力</h2>
+<p>把上面所有画面缝进一个能跑的最小 RoPE，作用在一串词上，然后看注意力分数如何随相对位置变化：</p>
+<div class="highlight"><pre><span></span><code><span class="kn">import</span><span class="w"> </span><span class="nn">torch</span>
+
+<span class="k">def</span><span class="w"> </span><span class="nf">build_rope</span><span class="p">(</span><span class="n">seq_len</span><span class="p">,</span> <span class="n">d</span><span class="p">,</span> <span class="n">base</span><span class="o">=</span><span class="mf">10000.0</span><span class="p">):</span>        <span class="c1"># 预先算好每个位置、每一对的 cos/sin</span>
+    <span class="n">i</span> <span class="o">=</span> <span class="n">torch</span><span class="o">.</span><span class="n">arange</span><span class="p">(</span><span class="mi">0</span><span class="p">,</span> <span class="n">d</span><span class="p">,</span> <span class="mi">2</span><span class="p">)</span><span class="o">.</span><span class="n">float</span><span class="p">()</span>
+    <span class="n">theta</span> <span class="o">=</span> <span class="n">base</span> <span class="o">**</span> <span class="p">(</span><span class="o">-</span><span class="n">i</span> <span class="o">/</span> <span class="n">d</span><span class="p">)</span>                      <span class="c1"># 每一对的转速</span>
+    <span class="n">pos</span> <span class="o">=</span> <span class="n">torch</span><span class="o">.</span><span class="n">arange</span><span class="p">(</span><span class="n">seq_len</span><span class="p">)</span><span class="o">.</span><span class="n">float</span><span class="p">()</span>
+    <span class="n">ang</span> <span class="o">=</span> <span class="n">torch</span><span class="o">.</span><span class="n">outer</span><span class="p">(</span><span class="n">pos</span><span class="p">,</span> <span class="n">theta</span><span class="p">)</span>                 <span class="c1"># (seq_len, d/2)：每个位置每对的角度</span>
+    <span class="k">return</span> <span class="n">torch</span><span class="o">.</span><span class="n">cos</span><span class="p">(</span><span class="n">ang</span><span class="p">),</span> <span class="n">torch</span><span class="o">.</span><span class="n">sin</span><span class="p">(</span><span class="n">ang</span><span class="p">)</span>
+
+<span class="k">def</span><span class="w"> </span><span class="nf">apply_rope</span><span class="p">(</span><span class="n">x</span><span class="p">,</span> <span class="n">cos</span><span class="p">,</span> <span class="n">sin</span><span class="p">):</span>                      <span class="c1"># 把 x 的每一对维度旋转对应角度</span>
+    <span class="n">x0</span><span class="p">,</span> <span class="n">x1</span> <span class="o">=</span> <span class="n">x</span><span class="p">[</span><span class="o">...</span><span class="p">,</span> <span class="mi">0</span><span class="p">::</span><span class="mi">2</span><span class="p">],</span> <span class="n">x</span><span class="p">[</span><span class="o">...</span><span class="p">,</span> <span class="mi">1</span><span class="p">::</span><span class="mi">2</span><span class="p">]</span>           <span class="c1"># 偶数维、奇数维配对</span>
+    <span class="n">out0</span> <span class="o">=</span> <span class="n">x0</span> <span class="o">*</span> <span class="n">cos</span> <span class="o">-</span> <span class="n">x1</span> <span class="o">*</span> <span class="n">sin</span>
+    <span class="n">out1</span> <span class="o">=</span> <span class="n">x0</span> <span class="o">*</span> <span class="n">sin</span> <span class="o">+</span> <span class="n">x1</span> <span class="o">*</span> <span class="n">cos</span>
+    <span class="k">return</span> <span class="n">torch</span><span class="o">.</span><span class="n">stack</span><span class="p">([</span><span class="n">out0</span><span class="p">,</span> <span class="n">out1</span><span class="p">],</span> <span class="n">dim</span><span class="o">=-</span><span class="mi">1</span><span class="p">)</span><span class="o">.</span><span class="n">flatten</span><span class="p">(</span><span class="o">-</span><span class="mi">2</span><span class="p">)</span>
+
+<span class="n">torch</span><span class="o">.</span><span class="n">manual_seed</span><span class="p">(</span><span class="mi">0</span><span class="p">)</span>
+<span class="n">seq_len</span><span class="p">,</span> <span class="n">d</span> <span class="o">=</span> <span class="mi">6</span><span class="p">,</span> <span class="mi">8</span>
+<span class="n">X</span> <span class="o">=</span> <span class="n">torch</span><span class="o">.</span><span class="n">randn</span><span class="p">(</span><span class="n">seq_len</span><span class="p">,</span> <span class="n">d</span><span class="p">)</span>                       <span class="c1"># 6 个词，每个 8 维</span>
+<span class="n">cos</span><span class="p">,</span> <span class="n">sin</span> <span class="o">=</span> <span class="n">build_rope</span><span class="p">(</span><span class="n">seq_len</span><span class="p">,</span> <span class="n">d</span><span class="p">)</span>
+<span class="n">Xr</span> <span class="o">=</span> <span class="n">apply_rope</span><span class="p">(</span><span class="n">X</span><span class="p">,</span> <span class="n">cos</span><span class="p">,</span> <span class="n">sin</span><span class="p">)</span>                      <span class="c1"># 注入位置信息后的词向量</span>
+
+<span class="n">scores</span> <span class="o">=</span> <span class="n">Xr</span> <span class="o">@</span> <span class="n">Xr</span><span class="o">.</span><span class="n">transpose</span><span class="p">(</span><span class="o">-</span><span class="mi">2</span><span class="p">,</span> <span class="o">-</span><span class="mi">1</span><span class="p">)</span> <span class="o">/</span> <span class="n">d</span> <span class="o">**</span> <span class="mf">0.5</span>     <span class="c1"># 加了位置的注意力相关度</span>
+<span class="nb">print</span><span class="p">(</span><span class="s2">&quot;第 0 个词对其余各词的注意力打分:&quot;</span><span class="p">)</span>
+<span class="nb">print</span><span class="p">(</span><span class="n">scores</span><span class="p">[</span><span class="mi">0</span><span class="p">]</span><span class="o">.</span><span class="n">round</span><span class="p">(</span><span class="n">decimals</span><span class="o">=</span><span class="mi">3</span><span class="p">))</span>                <span class="c1"># 现在这些分数&quot;知道&quot;了谁离谁多远</span>
+</code></pre></div>
+
+<p>和"疑惑点一"里那个顺序失明的注意力对比一下：<strong>现在 <code>scores</code> 里已经悄悄编码了相对位置</strong>，
+打乱词序结果就会变了——模型终于长出了"顺序感"。</p>
+<p>仓库里的动画脚本把这根"转动的指针"画了出来：</p>
+<div class="highlight"><pre><span></span><code>python<span class="w"> </span>rope_rotation_visualization.py
+</code></pre></div>
+
+<blockquote>
+<p>画面里，同一个词向量被放在位置 0、1、2、3……你会看到它像钟表指针一样，
+<strong>每往后挪一个位置，就多转一个固定的角度</strong>；而多频率那一版里，几对指针以不同转速同时旋转，
+快的负责相邻、慢的负责远方。最后一幅图把"点积只依赖相对距离"画成一条曲线——
+<strong>无论绝对位置怎么平移，曲线的形状纹丝不动。</strong></p>
+</blockquote>
+<hr />
+<h2 id="缝合把所有画面接起来">缝合：把所有画面接起来</h2>
+<p>回到开头，现在每个概念都有了画面和代码出处：</p>
+<table>
+<thead>
+<tr>
+<th>三角/旋转概念</th>
+<th>高中怎么讲（抽象）</th>
+<th>这篇文章怎么看（画面）</th>
+<th>在大模型里是什么</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><strong>sin / cos</strong></td>
+<td>对边、邻边比斜边</td>
+<td>单位圆指针的纵、横坐标（第 0、1 节）</td>
+<td>位置编码的原材料</td>
+</tr>
+<tr>
+<td><strong>旋转矩阵</strong></td>
+<td>一个数表</td>
+<td>把向量转 θ 度、只改方向（第 2 节）</td>
+<td>给词向量盖"位置戳"</td>
+</tr>
+<tr>
+<td><strong>和角公式</strong></td>
+<td><code>cos(a+b)=…</code> 一坨</td>
+<td>转 a 再转 b = 转 a+b（第 3 节）</td>
+<td>RoPE 能表达相对位置的根基</td>
+</tr>
+<tr>
+<td><strong>多个频率</strong></td>
+<td>—</td>
+<td>时针分针秒针，快慢配合（疑惑点二）</td>
+<td><code>10000^(2i/d)</code> 的各维转速</td>
+</tr>
+<tr>
+<td><strong>点积</strong></td>
+<td>—</td>
+<td>转完后只依赖相对距离（第 5 节）</td>
+<td>注意力天生懂"相对位置"</td>
+</tr>
+</tbody>
+</table>
+<p>三句话总结这篇文章：</p>
+<blockquote>
+<p><strong>三角函数的灵魂是"旋转"</strong>——sin/cos 是单位圆指针的坐标，不是三角形的边（第 0、1 节）；
+<strong>旋转能优雅地把"位置"编码成"角度"</strong>，而"角度可加"让位置关系变成相对减法（第 2、3、4 节）；
+<strong>于是 RoPE 让注意力天生理解"谁离谁多远"</strong>，这就是今天所有主流大模型记住词序的秘密（第 5 节、疑惑点二）。</p>
+</blockquote>
+<p>当年三角函数背得那么苦，不是因为它难，是因为没人告诉你：
+<strong>那根在单位圆上转啊转的 sin/cos 指针，最后转进了每一个大模型的注意力里，
+成了它记住"谁先谁后"的办法。</strong>
+现在把上面每段代码跑一遍，比高中刷十套三角卷子都值。</p>
+<hr />
+<blockquote>
+<p><strong>备注（选题/标题）：</strong> 这篇走的是"高中知识其实是 AI 基石"的钩子（和《求根公式》那篇同一路子）。
+若想并入"大学4年"主系列，标题可换成：
+《大学4年没让你真正搞懂的三角函数，被一段 RoPE 代码讲透了》。</p>
+</blockquote>
+    </div>
+  </article>
+
+</main>
+
+<!-- Floating Ask-AI chat widget -->
+<button class="ai-fab" id="ai-fab" aria-label="Ask AI about this article" title="Ask AI about this article">
+  <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+    <path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"/>
+  </svg>
+  <span class="ai-fab-label">Ask AI</span>
+</button>
+
+<div class="ai-panel" id="ai-panel" role="dialog" aria-labelledby="ai-panel-title" aria-hidden="true">
+  <header class="ai-panel-head">
+    <div class="ai-panel-title-wrap">
+      <span class="ai-dot"></span>
+      <h3 id="ai-panel-title">Ask AI about this post</h3>
+    </div>
+    <div class="ai-panel-actions">
+      <button class="ai-icon-btn" id="ai-clear" title="Clear conversation" aria-label="Clear">
+        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><polyline points="3 6 5 6 21 6"/><path d="M19 6l-1 14a2 2 0 0 1-2 2H8a2 2 0 0 1-2-2L5 6"/><path d="M10 11v6M14 11v6"/><path d="M9 6V4a1 1 0 0 1 1-1h4a1 1 0 0 1 1 1v2"/></svg>
+      </button>
+      <button class="ai-icon-btn" id="ai-close" title="Minimize" aria-label="Minimize">
+        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><polyline points="6 9 12 15 18 9"/></svg>
+      </button>
+    </div>
+  </header>
+
+  <div class="ai-messages" id="ai-messages">
+    <div class="ai-empty" id="ai-empty">
+      <p class="ai-empty-title">On-device AI · Gemini Nano</p>
+      <p class="ai-empty-sub">Ask anything about this article. Runs in your browser — nothing leaves your device.</p>
+    </div>
+  </div>
+
+  <div class="ai-status" id="ai-status" hidden></div>
+
+  <form class="ai-composer" id="ai-form">
+    <textarea id="ai-input" rows="1" placeholder="Ask about this post…" autocomplete="off"></textarea>
+    <button type="submit" id="ai-send" class="ai-send" aria-label="Send" disabled>
+      <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><line x1="22" y1="2" x2="11" y2="13"/><polygon points="22 2 15 22 11 13 2 9 22 2"/></svg>
+    </button>
+  </form>
+</div>
+
+<script>
+(function () {
+  const POST_TITLE = "\u9ad8\u4e2d\u80cc\u4e86\u4e09\u5e74\u7684 sin \u548c cos\uff0c\u539f\u6765\u662f\u5927\u6a21\u578b\u8bb0\u4f4f\"\u8c01\u5148\u8c01\u540e\"\u7684\u79d8\u5bc6";
+  const contentEl = document.querySelector('article .content');
+
+  const fab = document.getElementById('ai-fab');
+  const panel = document.getElementById('ai-panel');
+  const closeBtn = document.getElementById('ai-close');
+  const clearBtn = document.getElementById('ai-clear');
+  const msgsEl = document.getElementById('ai-messages');
+  const emptyEl = document.getElementById('ai-empty');
+  const statusEl = document.getElementById('ai-status');
+  const formEl = document.getElementById('ai-form');
+  const inputEl = document.getElementById('ai-input');
+  const sendBtn = document.getElementById('ai-send');
+
+  function articleText() {
+    if (!contentEl) return '';
+    return (contentEl.innerText || contentEl.textContent || '')
+      .replace(/[ \t]+\n/g, '\n')
+      .replace(/\n{3,}/g, '\n\n')
+      .trim();
+  }
+
+  function setStatus(msg, cls) {
+    if (!msg) { statusEl.hidden = true; statusEl.textContent = ''; statusEl.className = 'ai-status'; return; }
+    statusEl.hidden = false;
+    statusEl.textContent = msg;
+    statusEl.className = 'ai-status' + (cls ? ' ' + cls : '');
+  }
+
+  function hideEmpty() { if (emptyEl) emptyEl.style.display = 'none'; }
+
+  function appendBubble(role, text) {
+    hideEmpty();
+    const wrap = document.createElement('div');
+    wrap.className = 'ai-msg ai-msg-' + role;
+    const bubble = document.createElement('div');
+    bubble.className = 'ai-bubble';
+    bubble.textContent = text;
+    wrap.appendChild(bubble);
+    msgsEl.appendChild(wrap);
+    msgsEl.scrollTop = msgsEl.scrollHeight;
+    return bubble;
+  }
+
+  function appendTyping() {
+    hideEmpty();
+    const wrap = document.createElement('div');
+    wrap.className = 'ai-msg ai-msg-assistant ai-typing';
+    wrap.innerHTML = '<div class="ai-bubble"><span class="ai-dots"><i></i><i></i><i></i></span></div>';
+    msgsEl.appendChild(wrap);
+    msgsEl.scrollTop = msgsEl.scrollHeight;
+    return wrap;
+  }
+
+  function autoSize() {
+    inputEl.style.height = 'auto';
+    inputEl.style.height = Math.min(inputEl.scrollHeight, 140) + 'px';
+  }
+
+  function openPanel() {
+    panel.classList.add('open');
+    panel.setAttribute('aria-hidden', 'false');
+    fab.classList.add('hidden');
+    setTimeout(() => inputEl.focus(), 50);
+  }
+  function closePanel() {
+    panel.classList.remove('open');
+    panel.setAttribute('aria-hidden', 'true');
+    fab.classList.remove('hidden');
+  }
+
+  fab.addEventListener('click', openPanel);
+  closeBtn.addEventListener('click', closePanel);
+  document.addEventListener('keydown', e => {
+    if (e.key === 'Escape' && panel.classList.contains('open')) closePanel();
+  });
+
+  // ---- LanguageModel session ----
+  let session = null;
+  let creating = null;
+  let history = [];
+
+  function buildSystemPrompt() {
+    // Keep article context modest — Gemini Nano's input quota is small.
+    const article = articleText().slice(0, 4000);
+    return (
+      'You are a concise, helpful assistant answering questions about a blog post. ' +
+      'Use the article below as your primary source. If the answer is not in it, say so briefly and answer generally. ' +
+      'Reply in the same language as the user\'s question. Keep answers short unless asked for detail.\n\n' +
+      '=== ARTICLE TITLE ===\n' + POST_TITLE + '\n\n' +
+      '=== ARTICLE CONTENT ===\n' + article
+    );
+  }
+
+  async function ensureSession() {
+    if (session) return session;
+    if (creating) return creating;
+
+    if (!('LanguageModel' in self)) {
+      throw new Error(
+        'On-device AI not available. Use Chrome 138+ on desktop, or enable ' +
+        '"Prompt API for Gemini Nano" in chrome://flags.'
+      );
+    }
+
+    setStatus('Checking model…', 'info');
+    const status = await LanguageModel.availability();
+    if (status === 'unavailable') {
+      throw new Error('Model unavailable on this device.');
+    }
+
+    creating = (async () => {
+      // Only show download UI when the model isn't already there.
+      const willDownload = (status !== 'available');
+      if (willDownload) setStatus('Preparing model (first run downloads ~2GB)…', 'info');
+      else setStatus('Warming up…', 'info');
+
+      const s = await LanguageModel.create({
+        initialPrompts: [{ role: 'system', content: buildSystemPrompt() }],
+        monitor(m) {
+          m.addEventListener('downloadprogress', e => {
+            // Skip the spurious 0% event Chrome fires for cached models.
+            if (!willDownload && e.loaded === 0) return;
+            const pct = (e.loaded * 100).toFixed(1);
+            setStatus('Downloading model: ' + pct + '%', 'info');
+          });
+        }
+      });
+      session = s;
+      setStatus('');
+      return s;
+    })();
+
+    try { return await creating; }
+    finally { creating = null; }
+  }
+
+  async function ask(q) {
+    appendBubble('user', q);
+    history.push({ role: 'user', content: q });
+
+    sendBtn.disabled = true;
+    inputEl.disabled = true;
+    const typing = appendTyping();
+
+    let answerBubble = null;
+    let acc = '';
+    try {
+      const s = await ensureSession();
+      const stream = s.promptStreaming(q);
+      for await (const chunk of stream) {
+        if (!answerBubble) {
+          typing.remove();
+          const wrap = document.createElement('div');
+          wrap.className = 'ai-msg ai-msg-assistant';
+          answerBubble = document.createElement('div');
+          answerBubble.className = 'ai-bubble';
+          wrap.appendChild(answerBubble);
+          msgsEl.appendChild(wrap);
+        }
+        acc += chunk;
+        answerBubble.textContent = acc;
+        msgsEl.scrollTop = msgsEl.scrollHeight;
+      }
+      if (acc) history.push({ role: 'assistant', content: acc });
+      else { typing.remove(); appendBubble('assistant', '(no response)'); }
+    } catch (e) {
+      if (typing && typing.parentNode) typing.remove();
+      const err = document.createElement('div');
+      err.className = 'ai-msg ai-msg-error';
+      err.innerHTML = '<div class="ai-bubble">⚠ ' + (e && e.message ? e.message : String(e)) + '</div>';
+      msgsEl.appendChild(err);
+      msgsEl.scrollTop = msgsEl.scrollHeight;
+    } finally {
+      sendBtn.disabled = !inputEl.value.trim();
+      inputEl.disabled = false;
+      inputEl.focus();
+    }
+  }
+
+  formEl.addEventListener('submit', e => {
+    e.preventDefault();
+    const q = inputEl.value.trim();
+    if (!q) return;
+    inputEl.value = '';
+    autoSize();
+    sendBtn.disabled = true;
+    ask(q);
+  });
+
+  inputEl.addEventListener('input', () => {
+    autoSize();
+    sendBtn.disabled = !inputEl.value.trim();
+  });
+  inputEl.addEventListener('keydown', e => {
+    if (e.key === 'Enter' && !e.shiftKey) {
+      e.preventDefault();
+      formEl.requestSubmit();
+    }
+  });
+
+  clearBtn.addEventListener('click', () => {
+    msgsEl.innerHTML = '';
+    msgsEl.appendChild(emptyEl);
+    emptyEl.style.display = '';
+    history = [];
+    if (session && session.destroy) { try { session.destroy(); } catch (_) {} }
+    session = null;
+    setStatus('');
+  });
+
+  if (!('LanguageModel' in self)) {
+    fab.addEventListener('click', () => {
+      openPanel();
+      setStatus('On-device AI not detected. Use Chrome 138+ desktop, or enable "Prompt API for Gemini Nano" in chrome://flags.', 'bad');
+    }, { once: true });
+  }
+})();
+</script>
+
+<!-- Outline notes / comments — DataScript + IndexedDB -->
+<script src="https://github.com/tonsky/datascript/releases/download/1.7.8/datascript-1.7.8.min.js"></script>
+<script src="../notes.js?v=6"></script>
+<script src="../theme.js"></script>
+<script src="../wechat-copy.js?v=3"></script>
+
+</body>
+</html>
