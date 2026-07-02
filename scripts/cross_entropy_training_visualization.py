@@ -23,7 +23,8 @@ plt.rcParams["font.sans-serif"] = ["Arial Unicode MS", "PingFang SC", "Heiti SC"
 plt.rcParams["axes.unicode_minus"] = False
 
 SAVE_GIF = False
-STEPS = 200
+STEPS = 600
+SAMPLE_EVERY = 3      # 每几步记录一帧（帧数 = STEPS/SAMPLE_EVERY，约 200 帧）
 
 torch.manual_seed(0)
 np.random.seed(0)
@@ -34,7 +35,7 @@ X = torch.cat([c + torch.randn(200, 2) * 0.6 for c in centers])
 y = torch.cat([torch.full((200,), i, dtype=torch.long) for i in range(3)])
 
 model = nn.Sequential(nn.Linear(2, 32), nn.ReLU(), nn.Linear(32, 3))
-opt = torch.optim.Adam(model.parameters(), lr=0.05)
+opt = torch.optim.Adam(model.parameters(), lr=0.003)   # 学习率调很小，曲线下降非常平缓、录像更好看
 
 # --- 决策边界用的网格 ---
 pad = 1.0
@@ -50,7 +51,7 @@ for step in range(STEPS + 1):
     logits = model(X)
     loss = F.cross_entropy(logits, y)     # 平均交叉熵 = 平均意外
     ppl = torch.exp(loss)                 # 困惑度 = 在几类之间纠结
-    if step % 2 == 0:
+    if step % SAMPLE_EVERY == 0:
         with torch.no_grad():
             pred = model(mesh).argmax(1).reshape(gx.shape).numpy()
         frames.append((step, pred, loss.item(), ppl.item()))
@@ -101,7 +102,8 @@ def draw(idx):
     axR.grid(alpha=0.25)
 
 
-anim = FuncAnimation(fig, draw, frames=len(frames), interval=60, repeat=False)
+anim = FuncAnimation(fig, draw, frames=len(frames), interval=250,
+                     repeat=True, repeat_delay=1500)   # 放慢播放 + 循环重播
 plt.tight_layout()
 
 if SAVE_GIF:
