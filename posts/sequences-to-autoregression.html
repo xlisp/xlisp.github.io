@@ -1,0 +1,608 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>高中背了三年的数列，原来是 GPT 一个字一个字蹦出来的秘密 · Steve Chan — xlisp</title>
+<meta name="description" content="如果只能留一句话，那就是这句：">
+<meta name="author" content="Steve Chan">
+<link rel="icon" type="image/jpeg" href="../icon.jpeg">
+<link rel="apple-touch-icon" href="../icon.jpeg">
+<meta property="og:type" content="article">
+<meta property="og:title" content="高中背了三年的数列，原来是 GPT 一个字一个字蹦出来的秘密">
+<meta property="og:description" content="如果只能留一句话，那就是这句：">
+<meta property="og:image" content="../icon.jpeg">
+<meta property="og:site_name" content="Steve Chan — xlisp">
+<meta name="twitter:card" content="summary_large_image">
+<meta name="twitter:title" content="高中背了三年的数列，原来是 GPT 一个字一个字蹦出来的秘密">
+<meta name="twitter:description" content="如果只能留一句话，那就是这句：">
+<meta name="twitter:image" content="../icon.jpeg">
+<link rel="stylesheet" href="../style.css?v=light1">
+<script>(function(){try{if(localStorage.getItem('theme')==='light')document.documentElement.setAttribute('data-theme','light');}catch(e){}})();</script>
+<!-- Math formula rendering via MathJax -->
+<script>
+window.MathJax = {
+  tex: {
+    // arithmatex emits \(...\) / \[...\] markup, so only these delimiters
+    // are needed; plain `$` is left alone (avoids currency false positives).
+    inlineMath: [['\\(', '\\)']],
+    displayMath: [['\\[', '\\]']],
+    processEscapes: true
+  },
+  svg: {
+    // Each formula gets its own self-contained <defs>, so the copy script can
+    // serialize one <svg> and rasterize it to a PNG for WeChat.
+    fontCache: 'local'
+  },
+  options: {
+    skipHtmlTags: ['script', 'noscript', 'style', 'textarea', 'pre', 'code'],
+    ignoreHtmlClass: 'highlight'
+  }
+};
+</script>
+<script src="https://cdn.jsdelivr.net/npm/mathjax@3/es5/tex-svg.js" async></script>
+</head>
+<body>
+<main class="wrap post">
+
+  <nav class="topnav">
+    <a href="../index.html">← home</a>
+  </nav>
+
+  <article>
+    <header class="post-header">
+      <h1>高中背了三年的数列，原来是 GPT 一个字一个字蹦出来的秘密</h1>
+      <p class="meta">2026-07-03 · Steve Chan</p>
+    </header>
+
+    <div class="content">
+<blockquote>
+<p>等差、等比、递推公式、数列求和……高中刷了三年题，考完只记得几个求和公式。
+因为老师把数列讲成了"求第 n 项、求前 n 项和"的计算题，没告诉你一个真相：</p>
+<p><strong>数列的灵魂根本不是求和公式，是"递推"——用前面的项，算出后面的项。
+而今天 GPT 一个字一个字地写文章、RNN 记住上文、强化学习算回报、Adam 更新参数，
+全都是在"解数列"。你当年做烂的递推公式 <code>aₙ₊₁ = f(aₙ)</code>，就是大模型的生成方式本身。</strong></p>
+<p>这篇文章不背一个公式、不证一个定理，全部用能跑起来的 PyTorch 代码，
+把数列最核心的"递推"本质，一路接到大模型。并且顺手回答四个灵魂拷问：</p>
+<ul>
+<li>数列刷了三年，除了求和公式，到底还剩下什么真正有用的东西？</li>
+<li>GPT 看起来是"一口气"写完一段话的，它究竟怎么一个字一个字定下来的？</li>
+<li>为什么 RNN 记不住长句子的开头？这和数列有什么关系？</li>
+<li>强化学习里的"折扣回报"、Adam 里的"移动平均"，凭什么都是等比数列？</li>
+</ul>
+</blockquote>
+<hr />
+<h2 id="0-一句话主线">0. 一句话主线</h2>
+<p>如果只能留一句话，那就是这句：</p>
+<blockquote>
+<p><strong>数列 = 一个初始项 + 一条递推规则。给定开头，用"前面的项算后面的项"，一项一项往下推。</strong></p>
+</blockquote>
+<p>高中你被"求通项、求和"绑架了，其实数列的核心动作只有一个：<strong>递推</strong>。
+而 GPT 生成文字，就是把这个动作重复很多次——每一个新字，都由"前面所有字"算出来，再接回去，继续算下一个。
+<strong>它写的不是文章，是一个数列。</strong></p>
+<div class="highlight"><pre><span></span><code><span class="c1"># 数列的本质：一个初始项 + 一条&quot;用前一项算后一项&quot;的规则</span>
+<span class="n">a</span> <span class="o">=</span> <span class="p">[</span><span class="mf">1.0</span><span class="p">]</span>                          <span class="c1"># 初始项 a₁</span>
+<span class="k">for</span> <span class="n">_</span> <span class="ow">in</span> <span class="nb">range</span><span class="p">(</span><span class="mi">5</span><span class="p">):</span>
+    <span class="n">a</span><span class="o">.</span><span class="n">append</span><span class="p">(</span><span class="n">a</span><span class="p">[</span><span class="o">-</span><span class="mi">1</span><span class="p">]</span> <span class="o">+</span> <span class="mi">3</span><span class="p">)</span>            <span class="c1"># 递推规则：aₙ₊₁ = aₙ + 3（等差，公差 3）</span>
+<span class="nb">print</span><span class="p">(</span><span class="s2">&quot;等差数列:&quot;</span><span class="p">,</span> <span class="n">a</span><span class="p">)</span>              <span class="c1"># [1, 4, 7, 10, 13, 16]</span>
+
+<span class="n">g</span> <span class="o">=</span> <span class="p">[</span><span class="mf">1.0</span><span class="p">]</span>
+<span class="k">for</span> <span class="n">_</span> <span class="ow">in</span> <span class="nb">range</span><span class="p">(</span><span class="mi">5</span><span class="p">):</span>
+    <span class="n">g</span><span class="o">.</span><span class="n">append</span><span class="p">(</span><span class="n">g</span><span class="p">[</span><span class="o">-</span><span class="mi">1</span><span class="p">]</span> <span class="o">*</span> <span class="mi">2</span><span class="p">)</span>           <span class="c1"># 递推规则：gₙ₊₁ = gₙ × 2（等比，公比 2）</span>
+<span class="nb">print</span><span class="p">(</span><span class="s2">&quot;等比数列:&quot;</span><span class="p">,</span> <span class="n">g</span><span class="p">)</span>              <span class="c1"># [1, 2, 4, 8, 16, 32]</span>
+</code></pre></div>
+
+<p>看清楚这个循环的形状：<strong>拿最后一项，套一个规则 <code>f</code>，得到新一项，接回去。</strong>
+记住这个 <code>append</code> 循环——下面 GPT 的生成、RNN 的记忆，长得一模一样。</p>
+<hr />
+<h2 id="1-等差等比只是最简单的递推规则">1. 等差、等比，只是"最简单的递推规则"</h2>
+<p>高中把等差（每次 +d）和等比（每次 ×r）当两个孤立的公式背。
+但换到"递推"视角，它俩只是同一件事的两种规则：<strong>都是 <code>aₙ₊₁ = f(aₙ)</code>，只不过 <code>f</code> 一个是加、一个是乘。</strong></p>
+<div class="highlight"><pre><span></span><code><span class="k">def</span><span class="w"> </span><span class="nf">unfold</span><span class="p">(</span><span class="n">a0</span><span class="p">,</span> <span class="n">rule</span><span class="p">,</span> <span class="n">n</span><span class="p">):</span>           <span class="c1"># 给一个初始项和一条规则，展开成数列</span>
+    <span class="n">seq</span> <span class="o">=</span> <span class="p">[</span><span class="n">a0</span><span class="p">]</span>
+    <span class="k">for</span> <span class="n">_</span> <span class="ow">in</span> <span class="nb">range</span><span class="p">(</span><span class="n">n</span><span class="p">):</span>
+        <span class="n">seq</span><span class="o">.</span><span class="n">append</span><span class="p">(</span><span class="n">rule</span><span class="p">(</span><span class="n">seq</span><span class="p">[</span><span class="o">-</span><span class="mi">1</span><span class="p">]))</span>  <span class="c1"># 反复套用递推规则</span>
+    <span class="k">return</span> <span class="n">seq</span>
+
+<span class="nb">print</span><span class="p">(</span><span class="n">unfold</span><span class="p">(</span><span class="mf">1.0</span><span class="p">,</span> <span class="k">lambda</span> <span class="n">x</span><span class="p">:</span> <span class="n">x</span> <span class="o">+</span> <span class="mi">3</span><span class="p">,</span> <span class="mi">5</span><span class="p">))</span>   <span class="c1"># 等差：+3</span>
+<span class="nb">print</span><span class="p">(</span><span class="n">unfold</span><span class="p">(</span><span class="mf">1.0</span><span class="p">,</span> <span class="k">lambda</span> <span class="n">x</span><span class="p">:</span> <span class="n">x</span> <span class="o">*</span> <span class="mi">2</span><span class="p">,</span> <span class="mi">5</span><span class="p">))</span>   <span class="c1"># 等比：×2</span>
+<span class="nb">print</span><span class="p">(</span><span class="n">unfold</span><span class="p">(</span><span class="mf">2.0</span><span class="p">,</span> <span class="k">lambda</span> <span class="n">x</span><span class="p">:</span> <span class="n">x</span><span class="o">**</span><span class="mi">2</span><span class="p">,</span> <span class="mi">4</span><span class="p">))</span>    <span class="c1"># 换条规则：平方 —— 立刻得到一个全新数列</span>
+</code></pre></div>
+
+<p><code>unfold</code> 这个函数才是数列的真身：<strong>"初始项 + 规则"就能生成整条序列。</strong>
+规则可以是加、是乘、是平方、是任意函数——<strong>规则越复杂，能生成的数列就越丰富。</strong>
+把这条规则换成一个几亿参数的神经网络，你就得到了 GPT。</p>
+<hr />
+<h2 id="2-递推-自回归生成gpt-就是在一项一项地解数列">2. 递推 = 自回归生成：GPT 就是在一项一项地"解数列"</h2>
+<p>这是全篇的枢纽。GPT 生成文本的方式，教科书叫"自回归（autoregressive）"，
+翻译成高中话就是一句：<strong>它在解一个递推数列。</strong></p>
+<ul>
+<li><strong>初始项</strong>：你给的提示词（prompt）。</li>
+<li><strong>递推规则 <code>f</code></strong>：那个巨大的 Transformer——输入"前面所有的字"，输出"下一个字"。</li>
+<li><strong>展开</strong>：算出下一个字，接回序列末尾，再喂回去算下下个字……直到写完。</li>
+</ul>
+<p>和第 0 节那个 <code>append</code> 循环，是<strong>同一个形状</strong>：</p>
+<div class="highlight"><pre><span></span><code><span class="kn">import</span><span class="w"> </span><span class="nn">torch</span>
+<span class="kn">import</span><span class="w"> </span><span class="nn">torch.nn</span><span class="w"> </span><span class="k">as</span><span class="w"> </span><span class="nn">nn</span>
+
+<span class="n">torch</span><span class="o">.</span><span class="n">manual_seed</span><span class="p">(</span><span class="mi">0</span><span class="p">)</span>
+<span class="n">vocab</span><span class="p">,</span> <span class="n">dim</span> <span class="o">=</span> <span class="mi">20</span><span class="p">,</span> <span class="mi">16</span>
+<span class="n">embed</span> <span class="o">=</span> <span class="n">nn</span><span class="o">.</span><span class="n">Embedding</span><span class="p">(</span><span class="n">vocab</span><span class="p">,</span> <span class="n">dim</span><span class="p">)</span>   <span class="c1"># 把 token 变成向量</span>
+<span class="n">head</span> <span class="o">=</span> <span class="n">nn</span><span class="o">.</span><span class="n">Linear</span><span class="p">(</span><span class="n">dim</span><span class="p">,</span> <span class="n">vocab</span><span class="p">)</span>       <span class="c1"># 由&quot;状态&quot;预测下一个 token</span>
+
+<span class="n">seq</span> <span class="o">=</span> <span class="p">[</span><span class="mi">1</span><span class="p">]</span>                          <span class="c1"># 初始项：第一个 token（相当于 prompt）</span>
+<span class="k">for</span> <span class="n">_</span> <span class="ow">in</span> <span class="nb">range</span><span class="p">(</span><span class="mi">8</span><span class="p">):</span>                 <span class="c1"># 一项一项地&quot;解这个数列&quot;</span>
+    <span class="n">ctx</span> <span class="o">=</span> <span class="n">embed</span><span class="p">(</span><span class="n">torch</span><span class="o">.</span><span class="n">tensor</span><span class="p">(</span><span class="n">seq</span><span class="p">))</span><span class="o">.</span><span class="n">mean</span><span class="p">(</span><span class="mi">0</span><span class="p">)</span>   <span class="c1"># 用前面所有项，汇总出一个&quot;状态&quot;</span>
+    <span class="n">nxt</span> <span class="o">=</span> <span class="n">head</span><span class="p">(</span><span class="n">ctx</span><span class="p">)</span><span class="o">.</span><span class="n">argmax</span><span class="p">()</span><span class="o">.</span><span class="n">item</span><span class="p">()</span>          <span class="c1"># 递推规则 f：算出下一项</span>
+    <span class="n">seq</span><span class="o">.</span><span class="n">append</span><span class="p">(</span><span class="n">nxt</span><span class="p">)</span>                          <span class="c1"># 接回序列，继续递推</span>
+<span class="nb">print</span><span class="p">(</span><span class="s2">&quot;生成的 token 数列:&quot;</span><span class="p">,</span> <span class="n">seq</span><span class="p">)</span>
+<span class="c1"># （模型没训练，token 本身没意义——重点是这个循环的&quot;形状&quot;就是数列递推）</span>
+</code></pre></div>
+
+<p>看这个循环：<strong><code>seq</code> 就是数列，<code>embed+head</code> 就是递推规则 <code>f</code>，<code>append</code> 就是"推出下一项"。</strong>
+真实的 GPT 只是把 <code>f</code> 换成了一个几千亿参数、带注意力的庞然大物，
+但骨架分毫不差——<strong>它写的每一段话，都是一条 <code>aₙ₊₁ = f(a₁, a₂, …, aₙ)</code> 的递推数列。</strong></p>
+<blockquote>
+<p>所以"GPT 一口气写完一段话"是错觉。它和你高中一项一项算数列一样，
+<strong>一次只定一个字，定完接回去，再定下一个。</strong> 你在聊天框里看到的"流式输出"，
+就是这条数列被一项一项推出来的过程，肉眼可见。</p>
+</blockquote>
+<hr />
+<h2 id="3-rnn-的记忆就是一条状态数列">3. RNN 的记忆，就是一条"状态数列"</h2>
+<p>GPT 每步要回看全部历史；它的前辈 RNN 更纯粹——它把历史压进一个"状态 <code>h</code>"里，
+每读一个字，就用<strong>上一个状态</strong>算出<strong>下一个状态</strong>：<code>hₜ = f(hₜ₋₁, xₜ)</code>。
+这不多不少，就是一条<strong>以状态为项的递推数列</strong>：</p>
+<div class="highlight"><pre><span></span><code><span class="kn">import</span><span class="w"> </span><span class="nn">torch</span>
+
+<span class="n">torch</span><span class="o">.</span><span class="n">manual_seed</span><span class="p">(</span><span class="mi">0</span><span class="p">)</span>
+<span class="n">W</span> <span class="o">=</span> <span class="n">torch</span><span class="o">.</span><span class="n">randn</span><span class="p">(</span><span class="mi">4</span><span class="p">,</span> <span class="mi">4</span><span class="p">)</span> <span class="o">*</span> <span class="mf">0.5</span>        <span class="c1"># 状态 -&gt; 状态 的变换</span>
+<span class="n">U</span> <span class="o">=</span> <span class="n">torch</span><span class="o">.</span><span class="n">randn</span><span class="p">(</span><span class="mi">4</span><span class="p">,</span> <span class="mi">3</span><span class="p">)</span> <span class="o">*</span> <span class="mf">0.5</span>        <span class="c1"># 新输入 -&gt; 状态 的变换</span>
+
+<span class="n">h</span> <span class="o">=</span> <span class="n">torch</span><span class="o">.</span><span class="n">zeros</span><span class="p">(</span><span class="mi">4</span><span class="p">)</span>                 <span class="c1"># 初始项 h₀（空白记忆）</span>
+<span class="n">xs</span> <span class="o">=</span> <span class="n">torch</span><span class="o">.</span><span class="n">randn</span><span class="p">(</span><span class="mi">5</span><span class="p">,</span> <span class="mi">3</span><span class="p">)</span>             <span class="c1"># 5 个时间步的输入（一句话的 5 个字）</span>
+<span class="k">for</span> <span class="n">t</span><span class="p">,</span> <span class="n">x</span> <span class="ow">in</span> <span class="nb">enumerate</span><span class="p">(</span><span class="n">xs</span><span class="p">):</span>
+    <span class="n">h</span> <span class="o">=</span> <span class="n">torch</span><span class="o">.</span><span class="n">tanh</span><span class="p">(</span><span class="n">W</span> <span class="o">@</span> <span class="n">h</span> <span class="o">+</span> <span class="n">U</span> <span class="o">@</span> <span class="n">x</span><span class="p">)</span>  <span class="c1"># 递推公式：hₜ = f(hₜ₋₁, xₜ)</span>
+    <span class="nb">print</span><span class="p">(</span><span class="sa">f</span><span class="s2">&quot;h_</span><span class="si">{</span><span class="n">t</span><span class="o">+</span><span class="mi">1</span><span class="si">}</span><span class="s2"> =&quot;</span><span class="p">,</span> <span class="n">h</span><span class="o">.</span><span class="n">round</span><span class="p">(</span><span class="n">decimals</span><span class="o">=</span><span class="mi">2</span><span class="p">))</span>
+<span class="c1"># 每个状态都由上一个状态推出来 —— 一条不折不扣的递推数列</span>
+</code></pre></div>
+
+<p><strong>RNN 的"记忆"没有任何魔法：它就是一条状态数列 <code>h₁, h₂, h₃, …</code>，每一项由前一项递推而来。</strong>
+第 5 个状态里，理论上浓缩了前面 5 个字的全部信息。理论上——下一节我们就会看到它为什么会"忘"。</p>
+<hr />
+<h2 id="4-等比数列的-rⁿ为什么深层递推会梯度消失爆炸">4. 等比数列的 rⁿ：为什么深层递推会"梯度消失/爆炸"</h2>
+<p>高中等比数列有个刻进骨子里的结论：<strong>公比 <code>r</code> 的 n 次方 <code>rⁿ</code>，要么炸到无穷，要么缩到 0。</strong>
+<code>r &gt; 1</code> 时 <code>rⁿ → ∞</code>，<code>r &lt; 1</code> 时 <code>rⁿ → 0</code>，只有 <code>r = 1</code> 恰好不动。
+这个高中结论，正是 RNN 记不住长句子、深层网络难训练的<strong>数学死因</strong>。</p>
+<p>原因很简单：递推套了 n 层，训练时梯度要<strong>穿过这 n 层往回传</strong>，每穿一层就乘一个近似固定的因子 <code>r</code>，
+穿 n 层就乘了 <code>rⁿ</code>——<strong>一条等比数列</strong>。它的命运，高中早就替你算好了：</p>
+<div class="highlight"><pre><span></span><code><span class="k">for</span> <span class="n">r</span> <span class="ow">in</span> <span class="p">[</span><span class="mf">0.7</span><span class="p">,</span> <span class="mf">1.0</span><span class="p">,</span> <span class="mf">1.3</span><span class="p">]:</span>
+    <span class="n">grads</span> <span class="o">=</span> <span class="p">[</span><span class="n">r</span> <span class="o">**</span> <span class="n">n</span> <span class="k">for</span> <span class="n">n</span> <span class="ow">in</span> <span class="nb">range</span><span class="p">(</span><span class="mi">1</span><span class="p">,</span> <span class="mi">11</span><span class="p">)]</span>     <span class="c1"># 梯度沿时间回传：一条等比数列 rⁿ</span>
+    <span class="nb">print</span><span class="p">(</span><span class="sa">f</span><span class="s2">&quot;r=</span><span class="si">{</span><span class="n">r</span><span class="si">}</span><span class="s2">:  第1步 </span><span class="si">{</span><span class="n">grads</span><span class="p">[</span><span class="mi">0</span><span class="p">]</span><span class="si">:</span><span class="s2">.2f</span><span class="si">}</span><span class="s2">  -&gt;  第10步 </span><span class="si">{</span><span class="n">grads</span><span class="p">[</span><span class="o">-</span><span class="mi">1</span><span class="p">]</span><span class="si">:</span><span class="s2">.4f</span><span class="si">}</span><span class="s2">&quot;</span><span class="p">)</span>
+<span class="c1"># r=0.7 -&gt; 0.0282  梯度消失：早期的字对 loss 几乎没影响，模型学不到长依赖</span>
+<span class="c1"># r=1.0 -&gt; 1.0000  恰好守恒（可惜现实里几乎不可能正好等于 1）</span>
+<span class="c1"># r=1.3 -&gt; 13.79   梯度爆炸：数值失控，训练崩掉</span>
+</code></pre></div>
+
+<p><strong>RNN 记不住长句开头，就是因为 <code>r &lt; 1</code> 时 <code>rⁿ</code> 指数级衰减</strong>——传了十几步，开头那个字的梯度早就趋近 0 了。
+理解了这条等比数列，你就理解了深度学习里一大半的设计动机：</p>
+<blockquote>
+<p>LSTM 的"门"、残差连接（ResNet）里那条 <code>x + f(x)</code>，本质都是在<strong>想办法把这个公比 <code>r</code> 摁在 1 附近</strong>，
+让 <code>rⁿ</code> 别爆也别消。你上一篇讲 RNN 被淘汰的文章，数学根子就在这条等比数列上。</p>
+</blockquote>
+<hr />
+<h2 id="疑惑点一强化学习里的折扣回报凭什么是无穷等比数列">🤔 疑惑点一：强化学习里的"折扣回报"，凭什么是无穷等比数列？</h2>
+<p><strong>因为它就是高中那个"无穷等比数列求和"——只不过每一项前面乘的不是常数，而是奖励。折扣因子 γ 就是公比，<code>γ &lt; 1</code> 保证它收敛，正是高中那句"公比绝对值小于 1"。</strong></p>
+<p>你在做 GRPO / 强化学习时那个"折扣回报"<code>Gₜ = Σ γᵏ · rₜ₊ₖ</code>，看着吓人，其实是老朋友。
+高中学过：<code>|r| &lt; 1</code> 时，<code>1 + r + r² + r³ + … = 1/(1−r)</code>。RL 把每一项配上奖励，公比换成 <code>γ</code>：</p>
+<div class="highlight"><pre><span></span><code><span class="kn">import</span><span class="w"> </span><span class="nn">torch</span>
+
+<span class="n">gamma</span> <span class="o">=</span> <span class="mf">0.9</span>
+<span class="n">rewards</span> <span class="o">=</span> <span class="n">torch</span><span class="o">.</span><span class="n">ones</span><span class="p">(</span><span class="mi">100</span><span class="p">)</span>                      <span class="c1"># 假设每一步奖励都是 1</span>
+<span class="n">k</span> <span class="o">=</span> <span class="n">torch</span><span class="o">.</span><span class="n">arange</span><span class="p">(</span><span class="mi">100</span><span class="p">)</span><span class="o">.</span><span class="n">float</span><span class="p">()</span>
+
+<span class="n">G</span> <span class="o">=</span> <span class="p">(</span><span class="n">gamma</span> <span class="o">**</span> <span class="n">k</span> <span class="o">*</span> <span class="n">rewards</span><span class="p">)</span><span class="o">.</span><span class="n">sum</span><span class="p">()</span>               <span class="c1"># 折扣回报 = Σ γᵏ·rₖ，一条加权的等比数列</span>
+<span class="nb">print</span><span class="p">(</span><span class="s2">&quot;折扣回报 G =&quot;</span><span class="p">,</span> <span class="nb">round</span><span class="p">(</span><span class="n">G</span><span class="o">.</span><span class="n">item</span><span class="p">(),</span> <span class="mi">4</span><span class="p">))</span>       <span class="c1"># ≈ 10.0</span>
+<span class="nb">print</span><span class="p">(</span><span class="s2">&quot;高中公式 1/(1-γ) =&quot;</span><span class="p">,</span> <span class="mi">1</span> <span class="o">/</span> <span class="p">(</span><span class="mi">1</span> <span class="o">-</span> <span class="n">gamma</span><span class="p">))</span>    <span class="c1"># = 10.0 —— 完全一致</span>
+</code></pre></div>
+
+<p>当每步奖励都是 1，折扣回报正好收敛到高中的 <code>1/(1−γ) = 10</code>。<strong>一字不差。</strong></p>
+<blockquote>
+<p>为什么 RL 里 <code>γ</code> 必须小于 1？不是玄学，是<strong>收敛条件</strong>：<code>γ ≥ 1</code> 时这条等比数列发散到无穷，回报没法算。
+高中那句"公比绝对值小于 1 才能求无穷和"，就是强化学习能定义"回报"的前提。
+你 MathGPT 里的每一次 return 计算，背后都是这条无穷等比数列。</p>
+</blockquote>
+<hr />
+<h2 id="疑惑点二adam-里的移动平均为什么权重是等比数列">🤔 疑惑点二：Adam 里的"移动平均"，为什么权重是等比数列？</h2>
+<p><strong>因为"指数移动平均"展开来，就是一条等比数列在给历史梯度加权——越老的梯度，权重按 <code>βᵏ</code> 指数衰减。"指数"二字，指的正是等比。</strong></p>
+<p>动量、Adam 里都有一步 <code>m ← β·m + (1−β)·g</code>（用旧的平均和新梯度，滚出新的平均）。
+这本身是个递推（回到主线！）。而把它一层层展开，就露出了等比数列的真身：</p>
+<div class="highlight"><pre><span></span><code><span class="kn">import</span><span class="w"> </span><span class="nn">torch</span>
+
+<span class="n">beta</span> <span class="o">=</span> <span class="mf">0.9</span>
+<span class="n">grads</span> <span class="o">=</span> <span class="n">torch</span><span class="o">.</span><span class="n">tensor</span><span class="p">([</span><span class="mf">1.0</span><span class="p">,</span> <span class="mf">2.0</span><span class="p">,</span> <span class="mf">3.0</span><span class="p">,</span> <span class="mf">4.0</span><span class="p">,</span> <span class="mf">5.0</span><span class="p">])</span>   <span class="c1"># 从旧到新的 5 步梯度</span>
+
+<span class="n">m</span> <span class="o">=</span> <span class="mf">0.0</span>
+<span class="k">for</span> <span class="n">g</span> <span class="ow">in</span> <span class="n">grads</span><span class="p">:</span>
+    <span class="n">m</span> <span class="o">=</span> <span class="n">beta</span> <span class="o">*</span> <span class="n">m</span> <span class="o">+</span> <span class="p">(</span><span class="mi">1</span> <span class="o">-</span> <span class="n">beta</span><span class="p">)</span> <span class="o">*</span> <span class="n">g</span>          <span class="c1"># 指数移动平均：一个递推公式</span>
+
+<span class="c1"># 把递推展开，等价于给历史梯度按等比数列 βᵏ 加权</span>
+<span class="n">k</span> <span class="o">=</span> <span class="n">torch</span><span class="o">.</span><span class="n">arange</span><span class="p">(</span><span class="nb">len</span><span class="p">(</span><span class="n">grads</span><span class="p">)</span> <span class="o">-</span> <span class="mi">1</span><span class="p">,</span> <span class="o">-</span><span class="mi">1</span><span class="p">,</span> <span class="o">-</span><span class="mi">1</span><span class="p">)</span><span class="o">.</span><span class="n">float</span><span class="p">()</span>
+<span class="n">weights</span> <span class="o">=</span> <span class="p">(</span><span class="mi">1</span> <span class="o">-</span> <span class="n">beta</span><span class="p">)</span> <span class="o">*</span> <span class="n">beta</span> <span class="o">**</span> <span class="n">k</span>           <span class="c1"># 权重 = (1-β)·βᵏ，一条等比数列</span>
+<span class="nb">print</span><span class="p">(</span><span class="s2">&quot;递推算出的 EMA:&quot;</span><span class="p">,</span> <span class="nb">round</span><span class="p">(</span><span class="n">m</span><span class="p">,</span> <span class="mi">4</span><span class="p">))</span>                    <span class="c1"># 1.3144</span>
+<span class="nb">print</span><span class="p">(</span><span class="s2">&quot;等比加权求和 :&quot;</span><span class="p">,</span> <span class="nb">round</span><span class="p">((</span><span class="n">weights</span> <span class="o">*</span> <span class="n">grads</span><span class="p">)</span><span class="o">.</span><span class="n">sum</span><span class="p">()</span><span class="o">.</span><span class="n">item</span><span class="p">(),</span> <span class="mi">4</span><span class="p">))</span>  <span class="c1"># 1.3144 —— 相等</span>
+<span class="nb">print</span><span class="p">(</span><span class="s2">&quot;各步权重     :&quot;</span><span class="p">,</span> <span class="n">weights</span><span class="o">.</span><span class="n">round</span><span class="p">(</span><span class="n">decimals</span><span class="o">=</span><span class="mi">4</span><span class="p">))</span>       <span class="c1"># 越老的梯度权重越小</span>
+</code></pre></div>
+
+<p>两种算法结果完全相同：<strong>"指数移动平均"= 用等比数列 <code>βᵏ</code> 给历史梯度加权求和。</strong>
+<code>β = 0.9</code> 意味着每往前一步，权重就乘 0.9——十步前的梯度只剩 <code>0.9¹⁰ ≈ 0.35</code> 的分量。
+<strong>"越久远的梯度越不重要"，这个直觉被一条等比数列精确地量化了。</strong></p>
+<hr />
+<h2 id="动手把-gpt-的生成画成一条正在被解出来的数列">🎬 动手：把 GPT 的生成，画成一条正在被"解"出来的数列</h2>
+<p>把第 2 节的自回归循环展开，一步一步打印出来——你会亲眼看到"生成"就是"解数列"：</p>
+<div class="highlight"><pre><span></span><code><span class="kn">import</span><span class="w"> </span><span class="nn">torch</span>
+<span class="kn">import</span><span class="w"> </span><span class="nn">torch.nn</span><span class="w"> </span><span class="k">as</span><span class="w"> </span><span class="nn">nn</span>
+
+<span class="n">torch</span><span class="o">.</span><span class="n">manual_seed</span><span class="p">(</span><span class="mi">0</span><span class="p">)</span>
+<span class="n">vocab</span><span class="p">,</span> <span class="n">dim</span> <span class="o">=</span> <span class="mi">20</span><span class="p">,</span> <span class="mi">16</span>
+<span class="n">embed</span> <span class="o">=</span> <span class="n">nn</span><span class="o">.</span><span class="n">Embedding</span><span class="p">(</span><span class="n">vocab</span><span class="p">,</span> <span class="n">dim</span><span class="p">)</span>
+<span class="n">head</span> <span class="o">=</span> <span class="n">nn</span><span class="o">.</span><span class="n">Linear</span><span class="p">(</span><span class="n">dim</span><span class="p">,</span> <span class="n">vocab</span><span class="p">)</span>
+
+<span class="n">seq</span> <span class="o">=</span> <span class="p">[</span><span class="mi">1</span><span class="p">]</span>                                  <span class="c1"># 初始项（prompt）</span>
+<span class="nb">print</span><span class="p">(</span><span class="s2">&quot;初始项 a₁ =&quot;</span><span class="p">,</span> <span class="n">seq</span><span class="p">[</span><span class="mi">0</span><span class="p">])</span>
+<span class="k">for</span> <span class="n">step</span> <span class="ow">in</span> <span class="nb">range</span><span class="p">(</span><span class="mi">8</span><span class="p">):</span>
+    <span class="n">ctx</span> <span class="o">=</span> <span class="n">embed</span><span class="p">(</span><span class="n">torch</span><span class="o">.</span><span class="n">tensor</span><span class="p">(</span><span class="n">seq</span><span class="p">))</span><span class="o">.</span><span class="n">mean</span><span class="p">(</span><span class="mi">0</span><span class="p">)</span>         <span class="c1"># 汇总前面所有项 -&gt; 状态</span>
+    <span class="n">logits</span> <span class="o">=</span> <span class="n">head</span><span class="p">(</span><span class="n">ctx</span><span class="p">)</span>
+    <span class="n">nxt</span> <span class="o">=</span> <span class="n">logits</span><span class="o">.</span><span class="n">argmax</span><span class="p">()</span><span class="o">.</span><span class="n">item</span><span class="p">()</span>                   <span class="c1"># 递推规则 f -&gt; 下一项</span>
+    <span class="n">seq</span><span class="o">.</span><span class="n">append</span><span class="p">(</span><span class="n">nxt</span><span class="p">)</span>
+    <span class="nb">print</span><span class="p">(</span><span class="sa">f</span><span class="s2">&quot;第 </span><span class="si">{</span><span class="n">step</span><span class="o">+</span><span class="mi">1</span><span class="si">}</span><span class="s2"> 步：由前 </span><span class="si">{</span><span class="nb">len</span><span class="p">(</span><span class="n">seq</span><span class="p">)</span><span class="o">-</span><span class="mi">1</span><span class="si">}</span><span class="s2"> 项推出 a_</span><span class="si">{</span><span class="nb">len</span><span class="p">(</span><span class="n">seq</span><span class="p">)</span><span class="si">}</span><span class="s2"> = </span><span class="si">{</span><span class="n">nxt</span><span class="si">}</span><span class="s2">，&quot;</span>
+          <span class="sa">f</span><span class="s2">&quot;当前数列 = </span><span class="si">{</span><span class="n">seq</span><span class="si">}</span><span class="s2">&quot;</span><span class="p">)</span>
+<span class="c1"># 每一行都是&quot;用前面的项，推出后面的项&quot;—— 一条正在被解开的递推数列</span>
+</code></pre></div>
+
+<p>仓库里的动画脚本把这个过程做成了逐帧动图：</p>
+<div class="highlight"><pre><span></span><code>python<span class="w"> </span>sequence_recurrence_visualization.py
+</code></pre></div>
+
+<blockquote>
+<p>画面左边，一条数列一项一项地被"推"出来，每个新项都由前面的项经过规则 <code>f</code> 算出，用箭头连回去；
+右边同时演示第 4 节那条等比数列 <code>rⁿ</code>：拖动公比 <code>r</code>，看它在 <code>r&lt;1</code> 时如何塌向 0（梯度消失）、
+在 <code>r&gt;1</code> 时如何冲向天花板（梯度爆炸）、只有 <code>r=1</code> 时稳如水平线。
+<strong>一张图看懂：生成是递推，遗忘是等比。</strong></p>
+</blockquote>
+<hr />
+<h2 id="缝合把所有画面接起来">缝合：把所有画面接起来</h2>
+<p>回到开头，现在每个概念都有了画面和代码出处：</p>
+<table>
+<thead>
+<tr>
+<th>数列概念</th>
+<th>高中怎么讲</th>
+<th>这篇文章怎么看（画面）</th>
+<th>在大模型里是什么</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><strong>递推公式</strong> <code>aₙ₊₁=f(aₙ)</code></td>
+<td>求通项的手段</td>
+<td>用前一项算后一项的循环（第 0、1 节）</td>
+<td><strong>GPT 自回归生成的骨架</strong>（第 2 节）</td>
+</tr>
+<tr>
+<td><strong>状态递推</strong></td>
+<td>—</td>
+<td>用上一状态算下一状态（第 3 节）</td>
+<td>RNN 的"记忆"<code>hₜ=f(hₜ₋₁,xₜ)</code></td>
+</tr>
+<tr>
+<td><strong>等比数列</strong> <code>rⁿ</code></td>
+<td>求第 n 项、求和</td>
+<td>rⁿ 要么炸要么消（第 4 节）</td>
+<td>梯度消失/爆炸、残差连接的动机</td>
+</tr>
+<tr>
+<td><strong>无穷等比求和</strong> <code>1/(1−r)</code></td>
+<td><code>|r|&lt;1</code> 才收敛</td>
+<td>折扣回报的收敛（疑惑点一）</td>
+<td>RL 的 <code>Gₜ=Σγᵏrₖ</code>，γ 就是公比</td>
+</tr>
+<tr>
+<td><strong>递推 + 等比加权</strong></td>
+<td>—</td>
+<td>越老权重越小（疑惑点二）</td>
+<td>Adam/动量的指数移动平均</td>
+</tr>
+</tbody>
+</table>
+<p>三句话总结这篇文章：</p>
+<blockquote>
+<p><strong>数列的灵魂是"递推"</strong>——初始项 + 规则，一项一项往下推（第 0、1 节）；
+<strong>GPT 生成文字、RNN 记忆，都是在解这条递推数列</strong>，一次只定一个字/一个状态（第 2、3 节）；
+<strong>而等比数列 <code>rⁿ</code> 决定了递推的命运</strong>——它是梯度消失/爆炸的根源，也是 RL 折扣回报、Adam 移动平均的数学身份（第 4 节、疑惑点一二）。</p>
+</blockquote>
+<p>当年数列刷得那么苦，不是因为它难，是因为没人告诉你：
+<strong>你一项一项算出来的那条数列，就是今天 GPT 一个字一个字蹦出来的方式。</strong>
+现在把上面每段代码跑一遍，比高中刷十套数列卷子都值。</p>
+<hr />
+<blockquote>
+<p><strong>备注（选题/标题）：</strong> 这篇走的是"高中知识其实是 AI 基石"的钩子（和《求根公式》《sin/cos → RoPE》同一条正在当红的脉络，刻意避开已经跑疲的"大学4年…PyTorch"模板）。
+备选标题：
+《高中做烂了的递推数列，其实就是 GPT 写字的方式》 /
+《数列不是用来求和的：它是 GPT 一个字一个字生成的秘密》。</p>
+</blockquote>
+    </div>
+  </article>
+
+</main>
+
+<!-- Floating Ask-AI chat widget -->
+<button class="ai-fab" id="ai-fab" aria-label="Ask AI about this article" title="Ask AI about this article">
+  <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+    <path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"/>
+  </svg>
+  <span class="ai-fab-label">Ask AI</span>
+</button>
+
+<div class="ai-panel" id="ai-panel" role="dialog" aria-labelledby="ai-panel-title" aria-hidden="true">
+  <header class="ai-panel-head">
+    <div class="ai-panel-title-wrap">
+      <span class="ai-dot"></span>
+      <h3 id="ai-panel-title">Ask AI about this post</h3>
+    </div>
+    <div class="ai-panel-actions">
+      <button class="ai-icon-btn" id="ai-clear" title="Clear conversation" aria-label="Clear">
+        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><polyline points="3 6 5 6 21 6"/><path d="M19 6l-1 14a2 2 0 0 1-2 2H8a2 2 0 0 1-2-2L5 6"/><path d="M10 11v6M14 11v6"/><path d="M9 6V4a1 1 0 0 1 1-1h4a1 1 0 0 1 1 1v2"/></svg>
+      </button>
+      <button class="ai-icon-btn" id="ai-close" title="Minimize" aria-label="Minimize">
+        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><polyline points="6 9 12 15 18 9"/></svg>
+      </button>
+    </div>
+  </header>
+
+  <div class="ai-messages" id="ai-messages">
+    <div class="ai-empty" id="ai-empty">
+      <p class="ai-empty-title">On-device AI · Gemini Nano</p>
+      <p class="ai-empty-sub">Ask anything about this article. Runs in your browser — nothing leaves your device.</p>
+    </div>
+  </div>
+
+  <div class="ai-status" id="ai-status" hidden></div>
+
+  <form class="ai-composer" id="ai-form">
+    <textarea id="ai-input" rows="1" placeholder="Ask about this post…" autocomplete="off"></textarea>
+    <button type="submit" id="ai-send" class="ai-send" aria-label="Send" disabled>
+      <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><line x1="22" y1="2" x2="11" y2="13"/><polygon points="22 2 15 22 11 13 2 9 22 2"/></svg>
+    </button>
+  </form>
+</div>
+
+<script>
+(function () {
+  const POST_TITLE = "\u9ad8\u4e2d\u80cc\u4e86\u4e09\u5e74\u7684\u6570\u5217\uff0c\u539f\u6765\u662f GPT \u4e00\u4e2a\u5b57\u4e00\u4e2a\u5b57\u8e66\u51fa\u6765\u7684\u79d8\u5bc6";
+  const contentEl = document.querySelector('article .content');
+
+  const fab = document.getElementById('ai-fab');
+  const panel = document.getElementById('ai-panel');
+  const closeBtn = document.getElementById('ai-close');
+  const clearBtn = document.getElementById('ai-clear');
+  const msgsEl = document.getElementById('ai-messages');
+  const emptyEl = document.getElementById('ai-empty');
+  const statusEl = document.getElementById('ai-status');
+  const formEl = document.getElementById('ai-form');
+  const inputEl = document.getElementById('ai-input');
+  const sendBtn = document.getElementById('ai-send');
+
+  function articleText() {
+    if (!contentEl) return '';
+    return (contentEl.innerText || contentEl.textContent || '')
+      .replace(/[ \t]+\n/g, '\n')
+      .replace(/\n{3,}/g, '\n\n')
+      .trim();
+  }
+
+  function setStatus(msg, cls) {
+    if (!msg) { statusEl.hidden = true; statusEl.textContent = ''; statusEl.className = 'ai-status'; return; }
+    statusEl.hidden = false;
+    statusEl.textContent = msg;
+    statusEl.className = 'ai-status' + (cls ? ' ' + cls : '');
+  }
+
+  function hideEmpty() { if (emptyEl) emptyEl.style.display = 'none'; }
+
+  function appendBubble(role, text) {
+    hideEmpty();
+    const wrap = document.createElement('div');
+    wrap.className = 'ai-msg ai-msg-' + role;
+    const bubble = document.createElement('div');
+    bubble.className = 'ai-bubble';
+    bubble.textContent = text;
+    wrap.appendChild(bubble);
+    msgsEl.appendChild(wrap);
+    msgsEl.scrollTop = msgsEl.scrollHeight;
+    return bubble;
+  }
+
+  function appendTyping() {
+    hideEmpty();
+    const wrap = document.createElement('div');
+    wrap.className = 'ai-msg ai-msg-assistant ai-typing';
+    wrap.innerHTML = '<div class="ai-bubble"><span class="ai-dots"><i></i><i></i><i></i></span></div>';
+    msgsEl.appendChild(wrap);
+    msgsEl.scrollTop = msgsEl.scrollHeight;
+    return wrap;
+  }
+
+  function autoSize() {
+    inputEl.style.height = 'auto';
+    inputEl.style.height = Math.min(inputEl.scrollHeight, 140) + 'px';
+  }
+
+  function openPanel() {
+    panel.classList.add('open');
+    panel.setAttribute('aria-hidden', 'false');
+    fab.classList.add('hidden');
+    setTimeout(() => inputEl.focus(), 50);
+  }
+  function closePanel() {
+    panel.classList.remove('open');
+    panel.setAttribute('aria-hidden', 'true');
+    fab.classList.remove('hidden');
+  }
+
+  fab.addEventListener('click', openPanel);
+  closeBtn.addEventListener('click', closePanel);
+  document.addEventListener('keydown', e => {
+    if (e.key === 'Escape' && panel.classList.contains('open')) closePanel();
+  });
+
+  // ---- LanguageModel session ----
+  let session = null;
+  let creating = null;
+  let history = [];
+
+  function buildSystemPrompt() {
+    // Keep article context modest — Gemini Nano's input quota is small.
+    const article = articleText().slice(0, 4000);
+    return (
+      'You are a concise, helpful assistant answering questions about a blog post. ' +
+      'Use the article below as your primary source. If the answer is not in it, say so briefly and answer generally. ' +
+      'Reply in the same language as the user\'s question. Keep answers short unless asked for detail.\n\n' +
+      '=== ARTICLE TITLE ===\n' + POST_TITLE + '\n\n' +
+      '=== ARTICLE CONTENT ===\n' + article
+    );
+  }
+
+  async function ensureSession() {
+    if (session) return session;
+    if (creating) return creating;
+
+    if (!('LanguageModel' in self)) {
+      throw new Error(
+        'On-device AI not available. Use Chrome 138+ on desktop, or enable ' +
+        '"Prompt API for Gemini Nano" in chrome://flags.'
+      );
+    }
+
+    setStatus('Checking model…', 'info');
+    const status = await LanguageModel.availability();
+    if (status === 'unavailable') {
+      throw new Error('Model unavailable on this device.');
+    }
+
+    creating = (async () => {
+      // Only show download UI when the model isn't already there.
+      const willDownload = (status !== 'available');
+      if (willDownload) setStatus('Preparing model (first run downloads ~2GB)…', 'info');
+      else setStatus('Warming up…', 'info');
+
+      const s = await LanguageModel.create({
+        initialPrompts: [{ role: 'system', content: buildSystemPrompt() }],
+        monitor(m) {
+          m.addEventListener('downloadprogress', e => {
+            // Skip the spurious 0% event Chrome fires for cached models.
+            if (!willDownload && e.loaded === 0) return;
+            const pct = (e.loaded * 100).toFixed(1);
+            setStatus('Downloading model: ' + pct + '%', 'info');
+          });
+        }
+      });
+      session = s;
+      setStatus('');
+      return s;
+    })();
+
+    try { return await creating; }
+    finally { creating = null; }
+  }
+
+  async function ask(q) {
+    appendBubble('user', q);
+    history.push({ role: 'user', content: q });
+
+    sendBtn.disabled = true;
+    inputEl.disabled = true;
+    const typing = appendTyping();
+
+    let answerBubble = null;
+    let acc = '';
+    try {
+      const s = await ensureSession();
+      const stream = s.promptStreaming(q);
+      for await (const chunk of stream) {
+        if (!answerBubble) {
+          typing.remove();
+          const wrap = document.createElement('div');
+          wrap.className = 'ai-msg ai-msg-assistant';
+          answerBubble = document.createElement('div');
+          answerBubble.className = 'ai-bubble';
+          wrap.appendChild(answerBubble);
+          msgsEl.appendChild(wrap);
+        }
+        acc += chunk;
+        answerBubble.textContent = acc;
+        msgsEl.scrollTop = msgsEl.scrollHeight;
+      }
+      if (acc) history.push({ role: 'assistant', content: acc });
+      else { typing.remove(); appendBubble('assistant', '(no response)'); }
+    } catch (e) {
+      if (typing && typing.parentNode) typing.remove();
+      const err = document.createElement('div');
+      err.className = 'ai-msg ai-msg-error';
+      err.innerHTML = '<div class="ai-bubble">⚠ ' + (e && e.message ? e.message : String(e)) + '</div>';
+      msgsEl.appendChild(err);
+      msgsEl.scrollTop = msgsEl.scrollHeight;
+    } finally {
+      sendBtn.disabled = !inputEl.value.trim();
+      inputEl.disabled = false;
+      inputEl.focus();
+    }
+  }
+
+  formEl.addEventListener('submit', e => {
+    e.preventDefault();
+    const q = inputEl.value.trim();
+    if (!q) return;
+    inputEl.value = '';
+    autoSize();
+    sendBtn.disabled = true;
+    ask(q);
+  });
+
+  inputEl.addEventListener('input', () => {
+    autoSize();
+    sendBtn.disabled = !inputEl.value.trim();
+  });
+  inputEl.addEventListener('keydown', e => {
+    if (e.key === 'Enter' && !e.shiftKey) {
+      e.preventDefault();
+      formEl.requestSubmit();
+    }
+  });
+
+  clearBtn.addEventListener('click', () => {
+    msgsEl.innerHTML = '';
+    msgsEl.appendChild(emptyEl);
+    emptyEl.style.display = '';
+    history = [];
+    if (session && session.destroy) { try { session.destroy(); } catch (_) {} }
+    session = null;
+    setStatus('');
+  });
+
+  if (!('LanguageModel' in self)) {
+    fab.addEventListener('click', () => {
+      openPanel();
+      setStatus('On-device AI not detected. Use Chrome 138+ desktop, or enable "Prompt API for Gemini Nano" in chrome://flags.', 'bad');
+    }, { once: true });
+  }
+})();
+</script>
+
+<!-- Outline notes / comments — DataScript + IndexedDB -->
+<script src="https://github.com/tonsky/datascript/releases/download/1.7.8/datascript-1.7.8.min.js"></script>
+<script src="../notes.js?v=6"></script>
+<script src="../theme.js"></script>
+<script src="../wechat-copy.js?v=3"></script>
+
+</body>
+</html>
