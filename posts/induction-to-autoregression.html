@@ -1,0 +1,565 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>高中最容易被忽略的数学归纳法，其实就是大模型&quot;逐字生成&quot;的骨架 · Steve Chan — xlisp</title>
+<meta name="description" content="如果只能留一句话，那就是这句：">
+<meta name="author" content="Steve Chan">
+<link rel="icon" type="image/jpeg" href="../icon.jpeg">
+<link rel="apple-touch-icon" href="../icon.jpeg">
+<meta property="og:type" content="article">
+<meta property="og:title" content="高中最容易被忽略的数学归纳法，其实就是大模型&quot;逐字生成&quot;的骨架">
+<meta property="og:description" content="如果只能留一句话，那就是这句：">
+<meta property="og:image" content="../icon.jpeg">
+<meta property="og:site_name" content="Steve Chan — xlisp">
+<meta name="twitter:card" content="summary_large_image">
+<meta name="twitter:title" content="高中最容易被忽略的数学归纳法，其实就是大模型&quot;逐字生成&quot;的骨架">
+<meta name="twitter:description" content="如果只能留一句话，那就是这句：">
+<meta name="twitter:image" content="../icon.jpeg">
+<link rel="stylesheet" href="../style.css?v=light1">
+<script>(function(){try{if(localStorage.getItem('theme')==='light')document.documentElement.setAttribute('data-theme','light');}catch(e){}})();</script>
+<!-- Math formula rendering via MathJax -->
+<script>
+window.MathJax = {
+  tex: {
+    // arithmatex emits \(...\) / \[...\] markup, so only these delimiters
+    // are needed; plain `$` is left alone (avoids currency false positives).
+    inlineMath: [['\\(', '\\)']],
+    displayMath: [['\\[', '\\]']],
+    processEscapes: true
+  },
+  svg: {
+    // Each formula gets its own self-contained <defs>, so the copy script can
+    // serialize one <svg> and rasterize it to a PNG for WeChat.
+    fontCache: 'local'
+  },
+  options: {
+    skipHtmlTags: ['script', 'noscript', 'style', 'textarea', 'pre', 'code'],
+    ignoreHtmlClass: 'highlight'
+  }
+};
+</script>
+<script src="https://cdn.jsdelivr.net/npm/mathjax@3/es5/tex-svg.js" async></script>
+</head>
+<body>
+<main class="wrap post">
+
+  <nav class="topnav">
+    <a href="../index.html">← home</a>
+  </nav>
+
+  <article>
+    <header class="post-header">
+      <h1>高中最容易被忽略的数学归纳法，其实就是大模型&quot;逐字生成&quot;的骨架</h1>
+      <p class="meta">2026-07-05 · Steve Chan</p>
+    </header>
+
+    <div class="content">
+<blockquote>
+<p>数学归纳法、奠基、归纳假设、归纳步、"假设 n=k 成立，证明 n=k+1"……高中学的时候觉得是个"证明套路"，
+考完只记得"多米诺骨牌"这个比喻。
+因为老师只教你"用它证求和公式、证不等式"，没告诉你两件事：</p>
+<p><strong>第一，数学归纳法的灵魂不是"一种证明技巧"，是一台构造机器：只要定义好"起点"和"由前一步推出下一步的规则"，就能覆盖无限多的情形。
+第二，今天每一个大模型（LLaMA、Qwen、GPT、DeepSeek）逐字生成一句话的方式，
+结构上就是数学归纳法：把"第一个词"当奠基、把"由前文推出下一个词"当归纳步，一步步递推出整句话。</strong></p>
+<p>这篇文章不背一个公式、不做一道归纳证明，全部用能跑起来的 PyTorch 代码，
+把数学归纳法最核心的"奠基 + 归纳步"结构，一路接到大模型的自回归生成。
+并且顺手回答四个灵魂拷问：</p>
+<ul>
+<li>数学归纳法明明是"证明数列公式"用的，怎么会和大模型生成文字扯上关系？</li>
+<li>Transformer 号称"看全部前文"，这算普通归纳还是"强归纳"？两者差在哪？</li>
+<li>为什么大模型一步说错，后面常常越跑越歪、彻底崩掉？</li>
+<li>每生成一个词都要重看全部前文，不是慢死了吗？它是怎么偷懒的？</li>
+</ul>
+</blockquote>
+<hr />
+<h2 id="0-一句话主线">0. 一句话主线</h2>
+<p>如果只能留一句话，那就是这句：</p>
+<blockquote>
+<p><strong>数学归纳法 = 奠基（起点）+ 归纳步（由前一步推出下一步）。自回归生成用的正是这套结构。</strong></p>
+</blockquote>
+<p>给定"第一个词"（奠基），再反复用"由前文推出下一个词"的规则（归纳步），就能递推出任意长的句子——
+这跟你用归纳法"由第 k 项推第 k+1 项、从而覆盖所有 n"是同一件事。</p>
+<div class="highlight"><pre><span></span><code><span class="c1"># 数学归纳法 = 奠基 + 归纳步。用它&quot;构造&quot;一个数列：</span>
+<span class="k">def</span><span class="w"> </span><span class="nf">build_sequence</span><span class="p">(</span><span class="n">n</span><span class="p">):</span>
+    <span class="n">seq</span> <span class="o">=</span> <span class="p">[</span><span class="mi">1</span><span class="p">]</span>                        <span class="c1"># 奠基：第一项 = 1</span>
+    <span class="k">for</span> <span class="n">k</span> <span class="ow">in</span> <span class="nb">range</span><span class="p">(</span><span class="mi">1</span><span class="p">,</span> <span class="n">n</span><span class="p">):</span>            <span class="c1"># 归纳步：由前一项推出下一项</span>
+        <span class="n">seq</span><span class="o">.</span><span class="n">append</span><span class="p">(</span><span class="n">seq</span><span class="p">[</span><span class="o">-</span><span class="mi">1</span><span class="p">]</span> <span class="o">+</span> <span class="n">k</span> <span class="o">+</span> <span class="mi">1</span><span class="p">)</span>  <span class="c1"># 规则：a(k+1) = a(k) + (k+1)</span>
+    <span class="k">return</span> <span class="n">seq</span>
+
+<span class="nb">print</span><span class="p">(</span><span class="n">build_sequence</span><span class="p">(</span><span class="mi">6</span><span class="p">))</span>             <span class="c1"># [1, 3, 6, 10, 15, 21] —— 三角形数</span>
+<span class="c1"># 只定义了&quot;第一项&quot;和&quot;由前推后的规则&quot;，就生成了任意长的数列 —— 这就是归纳法的构造力</span>
+</code></pre></div>
+
+<p>记住这个画面：<strong>奠基放下第一块骨牌，归纳步保证"每一块都能推倒下一块"，于是整排骨牌必然全倒。</strong>
+下面所有东西都挂在"奠基 + 归纳步"这一个结构上。</p>
+<hr />
+<h2 id="1-数学归纳法的真身一台由前推后的构造机器">1. 数学归纳法的真身：一台"由前推后"的构造机器</h2>
+<p>高中把归纳法包装成"证明题专用工具"，让你以为它只能用来验证已知公式。
+但它的本质是<strong>构造</strong>：奠基定义起点，归纳步定义"如何从已有的推出下一个"，两者一凑，就覆盖了无限。
+自回归生成，就是把"数列的项"换成"句子的词"，其余结构原封不动：</p>
+<div class="highlight"><pre><span></span><code><span class="kn">import</span><span class="w"> </span><span class="nn">torch</span>
+<span class="kn">import</span><span class="w"> </span><span class="nn">torch.nn.functional</span><span class="w"> </span><span class="k">as</span><span class="w"> </span><span class="nn">F</span>
+
+<span class="n">torch</span><span class="o">.</span><span class="n">manual_seed</span><span class="p">(</span><span class="mi">0</span><span class="p">)</span>
+<span class="n">V</span> <span class="o">=</span> <span class="mi">6</span>
+<span class="n">W</span> <span class="o">=</span> <span class="n">torch</span><span class="o">.</span><span class="n">randn</span><span class="p">(</span><span class="n">V</span><span class="p">,</span> <span class="n">V</span><span class="p">)</span>                <span class="c1"># 玩具&quot;下一个词&quot;规则（由当前词给出下一个词的打分）</span>
+
+<span class="k">def</span><span class="w"> </span><span class="nf">generate</span><span class="p">(</span><span class="n">start</span><span class="p">,</span> <span class="n">n</span><span class="p">):</span>
+    <span class="n">seq</span> <span class="o">=</span> <span class="p">[</span><span class="n">start</span><span class="p">]</span>                    <span class="c1"># 奠基：第一个词</span>
+    <span class="k">for</span> <span class="n">_</span> <span class="ow">in</span> <span class="nb">range</span><span class="p">(</span><span class="n">n</span><span class="p">):</span>               <span class="c1"># 归纳步：由前文推出下一个词</span>
+        <span class="n">logits</span> <span class="o">=</span> <span class="n">W</span><span class="p">[</span><span class="n">seq</span><span class="p">[</span><span class="o">-</span><span class="mi">1</span><span class="p">]]</span>
+        <span class="n">seq</span><span class="o">.</span><span class="n">append</span><span class="p">(</span><span class="n">F</span><span class="o">.</span><span class="n">softmax</span><span class="p">(</span><span class="n">logits</span><span class="p">,</span> <span class="n">dim</span><span class="o">=-</span><span class="mi">1</span><span class="p">)</span><span class="o">.</span><span class="n">argmax</span><span class="p">()</span><span class="o">.</span><span class="n">item</span><span class="p">())</span>
+    <span class="k">return</span> <span class="n">seq</span>
+
+<span class="nb">print</span><span class="p">(</span><span class="s2">&quot;自回归生成:&quot;</span><span class="p">,</span> <span class="n">generate</span><span class="p">(</span><span class="mi">0</span><span class="p">,</span> <span class="mi">8</span><span class="p">))</span>
+<span class="c1"># 结构和上面的 build_sequence 一模一样：定义起点 + 由前推后的规则 = 生成任意长序列</span>
+</code></pre></div>
+
+<p>看这两段代码的骨架——<code>奠基一个起点</code> + <code>循环里由前一步推出下一步</code>——<strong>完全一致</strong>。
+大模型所谓的"自回归（autoregressive）"，翻译成高中语言就是："用数学归纳法的方式，一项一项地把句子递推出来。"</p>
+<hr />
+<h2 id="疑惑点一transformer看全部前文是普通归纳还是强归纳">🤔 疑惑点一：Transformer"看全部前文"，是普通归纳还是"强归纳"？</h2>
+<p><strong>是强归纳。普通归纳里，第 k+1 步只用到第 k 步的结论（P(k) ⟹ P(k+1)）；强归纳里，第 k+1 步可以用到前面所有步的结论（P(1)…P(k) 一起 ⟹ P(k+1)）。只看"上一个词"的模型（bigram、马尔可夫链）是普通归纳；而 Transformer 的注意力，预测下一个词时会回看前面的每一个词——这正是强归纳。这个区别，就是老式模型和 Transformer 在"记忆力"上的根本差距。</strong></p>
+<p>用代码把"普通归纳（只看上一个）"和"强归纳（看全部前文）"摆在一起：</p>
+<div class="highlight"><pre><span></span><code><span class="kn">import</span><span class="w"> </span><span class="nn">torch</span>
+<span class="kn">import</span><span class="w"> </span><span class="nn">torch.nn.functional</span><span class="w"> </span><span class="k">as</span><span class="w"> </span><span class="nn">F</span>
+
+<span class="n">torch</span><span class="o">.</span><span class="n">manual_seed</span><span class="p">(</span><span class="mi">0</span><span class="p">)</span>
+<span class="n">seq</span> <span class="o">=</span> <span class="n">torch</span><span class="o">.</span><span class="n">randn</span><span class="p">(</span><span class="mi">5</span><span class="p">,</span> <span class="mi">4</span><span class="p">)</span>                       <span class="c1"># 已生成的 5 个词向量</span>
+
+<span class="c1"># 普通归纳：预测下一个只看&quot;上一个词&quot;（bigram / 马尔可夫链）</span>
+<span class="n">last_only</span> <span class="o">=</span> <span class="n">seq</span><span class="p">[</span><span class="o">-</span><span class="mi">1</span><span class="p">]</span>
+
+<span class="c1"># 强归纳：预测下一个看&quot;前面全部&quot;（注意力对整段历史加权）</span>
+<span class="n">q</span> <span class="o">=</span> <span class="n">seq</span><span class="p">[</span><span class="o">-</span><span class="mi">1</span><span class="p">]</span>
+<span class="n">attn</span> <span class="o">=</span> <span class="n">F</span><span class="o">.</span><span class="n">softmax</span><span class="p">(</span><span class="n">seq</span> <span class="o">@</span> <span class="n">q</span> <span class="o">/</span> <span class="mi">4</span> <span class="o">**</span> <span class="mf">0.5</span><span class="p">,</span> <span class="n">dim</span><span class="o">=-</span><span class="mi">1</span><span class="p">)</span>  <span class="c1"># 对全部历史算注意力权重</span>
+<span class="n">all_context</span> <span class="o">=</span> <span class="n">attn</span> <span class="o">@</span> <span class="n">seq</span>                      <span class="c1"># 融合前文所有词</span>
+
+<span class="nb">print</span><span class="p">(</span><span class="s2">&quot;只看上一个词（普通归纳）:&quot;</span><span class="p">,</span> <span class="n">last_only</span><span class="o">.</span><span class="n">round</span><span class="p">(</span><span class="n">decimals</span><span class="o">=</span><span class="mi">2</span><span class="p">)</span><span class="o">.</span><span class="n">tolist</span><span class="p">())</span>
+<span class="nb">print</span><span class="p">(</span><span class="s2">&quot;看全部前文（强归纳）    :&quot;</span><span class="p">,</span> <span class="n">all_context</span><span class="o">.</span><span class="n">round</span><span class="p">(</span><span class="n">decimals</span><span class="o">=</span><span class="mi">2</span><span class="p">)</span><span class="o">.</span><span class="n">tolist</span><span class="p">())</span>
+<span class="c1"># Transformer 走的是强归纳：第 n+1 步依赖 P(1)…P(n) 全部，而不只是 P(n)</span>
+</code></pre></div>
+
+<p>普通归纳只攥着"上一个词"这一条信息，一旦需要"呼应很久之前说过的话"就无能为力；
+<strong>强归纳（注意力）每一步都回看全部前文，所以 Transformer 能记住段首的主语、几十个词前立下的设定。</strong>
+"看多远"这件事，本质就是"用普通归纳还是强归纳"。</p>
+<hr />
+<h2 id="2-归纳链一环断后面全歪这就是曝光偏差">2. 归纳链一环断，后面全歪：这就是"曝光偏差"</h2>
+<p>数学归纳法有个隐含的脆弱点：<strong>整条链依赖"每一步都对"。只要中间断了一环，"由前推后"的保证就失效，后面全部崩塌。</strong>
+大模型逐词生成时也一样——一步说错，这个错词又成了下一步的"前文"，误差会顺着归纳链滚雪球。用一个敏感数列演示：</p>
+<div class="highlight"><pre><span></span><code><span class="c1"># 逻辑斯蒂映射：一个对初值极度敏感的&quot;归纳步&quot;，用来放大&quot;一步之差&quot;</span>
+<span class="k">def</span><span class="w"> </span><span class="nf">logistic</span><span class="p">(</span><span class="n">x0</span><span class="p">,</span> <span class="n">n</span><span class="p">,</span> <span class="n">r</span><span class="o">=</span><span class="mf">3.9</span><span class="p">):</span>
+    <span class="n">xs</span> <span class="o">=</span> <span class="p">[</span><span class="n">x0</span><span class="p">]</span>
+    <span class="k">for</span> <span class="n">_</span> <span class="ow">in</span> <span class="nb">range</span><span class="p">(</span><span class="n">n</span><span class="p">):</span>
+        <span class="n">xs</span><span class="o">.</span><span class="n">append</span><span class="p">(</span><span class="n">r</span> <span class="o">*</span> <span class="n">xs</span><span class="p">[</span><span class="o">-</span><span class="mi">1</span><span class="p">]</span> <span class="o">*</span> <span class="p">(</span><span class="mi">1</span> <span class="o">-</span> <span class="n">xs</span><span class="p">[</span><span class="o">-</span><span class="mi">1</span><span class="p">]))</span>   <span class="c1"># 归纳步：由前一项推下一项</span>
+    <span class="k">return</span> <span class="n">xs</span>
+
+<span class="n">clean</span>  <span class="o">=</span> <span class="n">logistic</span><span class="p">(</span><span class="mf">0.400</span><span class="p">,</span> <span class="mi">16</span><span class="p">)</span>
+<span class="n">broken</span> <span class="o">=</span> <span class="n">logistic</span><span class="p">(</span><span class="mf">0.402</span><span class="p">,</span> <span class="mi">16</span><span class="p">)</span>                    <span class="c1"># 起点只差 0.002</span>
+
+<span class="k">for</span> <span class="n">i</span> <span class="ow">in</span> <span class="p">[</span><span class="mi">0</span><span class="p">,</span> <span class="mi">4</span><span class="p">,</span> <span class="mi">8</span><span class="p">,</span> <span class="mi">12</span><span class="p">,</span> <span class="mi">16</span><span class="p">]:</span>
+    <span class="nb">print</span><span class="p">(</span><span class="sa">f</span><span class="s2">&quot;第</span><span class="si">{</span><span class="n">i</span><span class="si">:</span><span class="s2">2d</span><span class="si">}</span><span class="s2">步  正常=</span><span class="si">{</span><span class="n">clean</span><span class="p">[</span><span class="n">i</span><span class="p">]</span><span class="si">:</span><span class="s2">.3f</span><span class="si">}</span><span class="s2">  出错后=</span><span class="si">{</span><span class="n">broken</span><span class="p">[</span><span class="n">i</span><span class="p">]</span><span class="si">:</span><span class="s2">.3f</span><span class="si">}</span><span class="s2">  偏差=</span><span class="si">{</span><span class="nb">abs</span><span class="p">(</span><span class="n">clean</span><span class="p">[</span><span class="n">i</span><span class="p">]</span><span class="o">-</span><span class="n">broken</span><span class="p">[</span><span class="n">i</span><span class="p">])</span><span class="si">:</span><span class="s2">.3f</span><span class="si">}</span><span class="s2">&quot;</span><span class="p">)</span>
+<span class="c1"># 起点仅差 0.002，十几步后偏差从 0.002 滚到 0.65 —— 一步错、归纳链断、后面全歪</span>
+</code></pre></div>
+
+<p>起点只差 <code>0.002</code>，到第 16 步偏差已从 <code>0.002</code> 滚到 <code>0.65</code>，两条序列面目全非。<strong>这就是大模型的"曝光偏差（exposure bias）"：
+训练时它每一步看到的都是正确前文，但真实生成时，一旦某步选错词，错误就成了后续归纳步的输入，
+沿着归纳链层层放大。</strong> 归纳法教给你的"每一步都必须成立"，在这里变成了大模型最头疼的失败模式之一。</p>
+<hr />
+<h2 id="疑惑点二每步都要重看全部前文不是慢死了吗它怎么偷懒的">🤔 疑惑点二：每步都要重看全部前文，不是慢死了吗？它怎么偷懒的？</h2>
+<p><strong>靠 KV-cache。强归纳每生成一个词都要回看前面所有词，如果每步都把全部前文从头重算一遍，长文本会慢得离谱。但归纳法有个天然的便利：前面那些步骤的结论（归纳假设）已经证过了，不用重证。KV-cache 就是把前文算过的中间结果（每个词的 Key、Value）缓存下来，新词来了只需补自己这一行，旧的直接复用。</strong></p>
+<p>用代码看"复用旧块"的等价性——这正是 KV-cache 省掉的重复计算：</p>
+<div class="highlight"><pre><span></span><code><span class="kn">import</span><span class="w"> </span><span class="nn">torch</span>
+
+<span class="n">torch</span><span class="o">.</span><span class="n">manual_seed</span><span class="p">(</span><span class="mi">0</span><span class="p">)</span>
+<span class="n">seq</span> <span class="o">=</span> <span class="n">torch</span><span class="o">.</span><span class="n">randn</span><span class="p">(</span><span class="mi">4</span><span class="p">,</span> <span class="mi">8</span><span class="p">)</span>              <span class="c1"># 已生成的 4 个词</span>
+<span class="n">new</span> <span class="o">=</span> <span class="n">torch</span><span class="o">.</span><span class="n">randn</span><span class="p">(</span><span class="mi">1</span><span class="p">,</span> <span class="mi">8</span><span class="p">)</span>             <span class="c1"># 新来的第 5 个词</span>
+
+<span class="n">full</span> <span class="o">=</span> <span class="n">torch</span><span class="o">.</span><span class="n">cat</span><span class="p">([</span><span class="n">seq</span><span class="p">,</span> <span class="n">new</span><span class="p">],</span> <span class="n">dim</span><span class="o">=</span><span class="mi">0</span><span class="p">)</span>
+<span class="n">recompute</span> <span class="o">=</span> <span class="n">full</span> <span class="o">@</span> <span class="n">full</span><span class="o">.</span><span class="n">T</span>           <span class="c1"># 不缓存：把 5 个词的全部两两关系重算一遍</span>
+
+<span class="n">cached_block</span> <span class="o">=</span> <span class="n">seq</span> <span class="o">@</span> <span class="n">seq</span><span class="o">.</span><span class="n">T</span>          <span class="c1"># 缓存：前 4 个词的关系上一轮就算过，直接复用</span>
+<span class="nb">print</span><span class="p">(</span><span class="s2">&quot;重算的旧块 == 缓存的旧块 ?&quot;</span><span class="p">,</span>
+      <span class="n">torch</span><span class="o">.</span><span class="n">allclose</span><span class="p">(</span><span class="n">recompute</span><span class="p">[:</span><span class="mi">4</span><span class="p">,</span> <span class="p">:</span><span class="mi">4</span><span class="p">],</span> <span class="n">cached_block</span><span class="p">))</span>   <span class="c1"># True</span>
+<span class="c1"># 前 n 项的&quot;归纳假设&quot;不必重证，缓存即可 —— 新词只需补自己这一行，这就是 KV-cache</span>
+</code></pre></div>
+
+<p><code>True</code> 说明：<strong>新词到来时，前文之间的关系一个字节都没变，重算纯属浪费。</strong>
+KV-cache 把"已经证过的归纳假设"存起来复用，让强归纳既能"看全部前文"、又不至于慢到不可用。
+归纳法里"前面步骤不用重证"的常识，在工程上就落成了这个让长文本生成变快的关键优化。</p>
+<hr />
+<h2 id="动手一个最小自回归生成器看归纳链如何一步步搭起来">🎬 动手：一个最小自回归生成器，看"归纳链"如何一步步搭起来</h2>
+<p>把上面所有画面缝进一个能跑的最小自回归生成器，把每一次"归纳步"打印出来：</p>
+<div class="highlight"><pre><span></span><code><span class="kn">import</span><span class="w"> </span><span class="nn">torch</span>
+<span class="kn">import</span><span class="w"> </span><span class="nn">torch.nn.functional</span><span class="w"> </span><span class="k">as</span><span class="w"> </span><span class="nn">F</span>
+
+<span class="n">torch</span><span class="o">.</span><span class="n">manual_seed</span><span class="p">(</span><span class="mi">0</span><span class="p">)</span>
+<span class="n">V</span> <span class="o">=</span> <span class="mi">8</span>
+<span class="n">W</span> <span class="o">=</span> <span class="n">torch</span><span class="o">.</span><span class="n">randn</span><span class="p">(</span><span class="n">V</span><span class="p">,</span> <span class="n">V</span><span class="p">)</span>
+
+<span class="k">def</span><span class="w"> </span><span class="nf">generate</span><span class="p">(</span><span class="n">start</span><span class="p">,</span> <span class="n">n</span><span class="p">):</span>
+    <span class="n">seq</span> <span class="o">=</span> <span class="p">[</span><span class="n">start</span><span class="p">]</span>
+    <span class="nb">print</span><span class="p">(</span><span class="sa">f</span><span class="s2">&quot;奠基：放下第 1 个词 = </span><span class="si">{</span><span class="n">start</span><span class="si">}</span><span class="s2">&quot;</span><span class="p">)</span>
+    <span class="k">for</span> <span class="n">step</span> <span class="ow">in</span> <span class="nb">range</span><span class="p">(</span><span class="n">n</span><span class="p">):</span>
+        <span class="n">logits</span> <span class="o">=</span> <span class="n">W</span><span class="p">[</span><span class="n">seq</span><span class="p">[</span><span class="o">-</span><span class="mi">1</span><span class="p">]]</span>                       <span class="c1"># 归纳步：由前文推出下一个词</span>
+        <span class="n">nxt</span> <span class="o">=</span> <span class="n">torch</span><span class="o">.</span><span class="n">multinomial</span><span class="p">(</span><span class="n">F</span><span class="o">.</span><span class="n">softmax</span><span class="p">(</span><span class="n">logits</span><span class="p">,</span> <span class="n">dim</span><span class="o">=-</span><span class="mi">1</span><span class="p">),</span> <span class="mi">1</span><span class="p">)</span><span class="o">.</span><span class="n">item</span><span class="p">()</span>
+        <span class="n">seq</span><span class="o">.</span><span class="n">append</span><span class="p">(</span><span class="n">nxt</span><span class="p">)</span>
+        <span class="nb">print</span><span class="p">(</span><span class="sa">f</span><span class="s2">&quot;归纳步 </span><span class="si">{</span><span class="n">step</span><span class="o">+</span><span class="mi">1</span><span class="si">}</span><span class="s2">：由前 </span><span class="si">{</span><span class="nb">len</span><span class="p">(</span><span class="n">seq</span><span class="p">)</span><span class="o">-</span><span class="mi">1</span><span class="si">}</span><span class="s2"> 个词  -&gt;  推出第 </span><span class="si">{</span><span class="nb">len</span><span class="p">(</span><span class="n">seq</span><span class="p">)</span><span class="si">}</span><span class="s2"> 个词 = </span><span class="si">{</span><span class="n">nxt</span><span class="si">}</span><span class="s2">&quot;</span><span class="p">)</span>
+    <span class="k">return</span> <span class="n">seq</span>
+
+<span class="n">out</span> <span class="o">=</span> <span class="n">generate</span><span class="p">(</span><span class="mi">0</span><span class="p">,</span> <span class="mi">5</span><span class="p">)</span>
+<span class="nb">print</span><span class="p">(</span><span class="s2">&quot;最终序列:&quot;</span><span class="p">,</span> <span class="n">out</span><span class="p">)</span>
+<span class="c1"># 奠基 + 5 次归纳步 = 一条完整的归纳链，也就是一句&quot;生成&quot;出来的话</span>
+</code></pre></div>
+
+<p>每一行都是一次归纳步：由已有的前文，推出下一个词，再把它接回前文，继续推。
+<strong>这条不断延长的"归纳链"，就是大模型写出的每一句话。</strong> 仓库里的动画脚本把它画了出来：</p>
+<div class="highlight"><pre><span></span><code>python<span class="w"> </span>induction_autoregression_visualization.py
+</code></pre></div>
+
+<blockquote>
+<p>左边你会看到一排"骨牌"逐个落下（逐词生成），每落下一块，都有一束箭头从它指回<strong>前面所有</strong>已生成的词——
+这就是"强归纳：看全部前文"的样子；
+右边则演示"归纳链断裂"：两条本该一样的序列，只在某一步被扰动了一点点，
+之后就沿着归纳步越拉越远——<strong>一步错、后面全歪的曝光偏差，一目了然。</strong></p>
+</blockquote>
+<hr />
+<h2 id="缝合把所有画面接起来">缝合：把所有画面接起来</h2>
+<p>回到开头，现在每个概念都有了画面和代码出处：</p>
+<table>
+<thead>
+<tr>
+<th>归纳法概念</th>
+<th>高中怎么讲</th>
+<th>这篇文章怎么看（画面）</th>
+<th>在大模型里是什么</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><strong>奠基</strong></td>
+<td>证 n=1 成立</td>
+<td>放下第一块骨牌（第 0、1 节）</td>
+<td>第一个词 / 起始符</td>
+</tr>
+<tr>
+<td><strong>归纳步</strong></td>
+<td>n=k ⟹ n=k+1</td>
+<td>由前文推出下一个词（第 1、2 节）</td>
+<td>自回归的每一步生成</td>
+</tr>
+<tr>
+<td><strong>强归纳</strong></td>
+<td>用 P(1)…P(k)</td>
+<td>注意力回看全部前文（疑惑点一）</td>
+<td>Transformer 的长距记忆</td>
+</tr>
+<tr>
+<td><strong>链条依赖每步成立</strong></td>
+<td>有一步不成立就断</td>
+<td>一环断、后面全歪（第 3 节）</td>
+<td>曝光偏差 / 错误累积</td>
+</tr>
+<tr>
+<td><strong>归纳假设不必重证</strong></td>
+<td>已证的直接用</td>
+<td>缓存旧结果不重算（疑惑点二）</td>
+<td>KV-cache</td>
+</tr>
+</tbody>
+</table>
+<p>三句话总结这篇文章：</p>
+<blockquote>
+<p><strong>数学归纳法的灵魂是"奠基 + 归纳步"</strong>——定义起点和"由前推后"的规则，就能构造无限（第 1 节）；
+<strong>自回归生成就是这套结构</strong>——第一个词是奠基、每次预测下一个词是归纳步，而注意力让它成了"看全部前文"的强归纳（第 2 节、疑惑点一）；
+<strong>归纳链的脆弱与高效也都继承了下来</strong>——一步错则后面全歪（曝光偏差），前项不必重证则可缓存（KV-cache）（第 3 节、疑惑点二）。</p>
+</blockquote>
+<p>当年数学归纳法学得那么"套路化"，不是因为它难，是因为没人告诉你：
+<strong>那套"奠基 + 由前推后"的证明结构，最后长成了大模型逐字写出每一句话的骨架，
+连它一步说错就崩、以及怎么缓存偷懒，都写在归纳法的老道理里。</strong>
+现在把上面每段代码跑一遍，比高中刷十套归纳证明题都值。</p>
+<hr />
+<blockquote>
+<p><strong>备注（选题/标题）：</strong> 这篇走的是"高中知识其实是 AI 基石"的钩子（和《对数》《向量》《sin 和 cos》同一路子）。
+核心爽点是"自回归 = 数学归纳法"这个结构同构，且顺势带出两个真机制（强归纳↔注意力、归纳链断裂↔曝光偏差）。
+可与《对数》《向量》《复数》拼成"注意力四件套"，形成系列合力。
+若并入"大学4年"主系列：《大学4年没让你真正搞懂的数学归纳法，被大模型的逐字生成讲透了》。</p>
+</blockquote>
+    </div>
+  </article>
+
+</main>
+
+<!-- Floating Ask-AI chat widget -->
+<button class="ai-fab" id="ai-fab" aria-label="Ask AI about this article" title="Ask AI about this article">
+  <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+    <path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"/>
+  </svg>
+  <span class="ai-fab-label">Ask AI</span>
+</button>
+
+<div class="ai-panel" id="ai-panel" role="dialog" aria-labelledby="ai-panel-title" aria-hidden="true">
+  <header class="ai-panel-head">
+    <div class="ai-panel-title-wrap">
+      <span class="ai-dot"></span>
+      <h3 id="ai-panel-title">Ask AI about this post</h3>
+    </div>
+    <div class="ai-panel-actions">
+      <button class="ai-icon-btn" id="ai-clear" title="Clear conversation" aria-label="Clear">
+        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><polyline points="3 6 5 6 21 6"/><path d="M19 6l-1 14a2 2 0 0 1-2 2H8a2 2 0 0 1-2-2L5 6"/><path d="M10 11v6M14 11v6"/><path d="M9 6V4a1 1 0 0 1 1-1h4a1 1 0 0 1 1 1v2"/></svg>
+      </button>
+      <button class="ai-icon-btn" id="ai-close" title="Minimize" aria-label="Minimize">
+        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><polyline points="6 9 12 15 18 9"/></svg>
+      </button>
+    </div>
+  </header>
+
+  <div class="ai-messages" id="ai-messages">
+    <div class="ai-empty" id="ai-empty">
+      <p class="ai-empty-title">On-device AI · Gemini Nano</p>
+      <p class="ai-empty-sub">Ask anything about this article. Runs in your browser — nothing leaves your device.</p>
+    </div>
+  </div>
+
+  <div class="ai-status" id="ai-status" hidden></div>
+
+  <form class="ai-composer" id="ai-form">
+    <textarea id="ai-input" rows="1" placeholder="Ask about this post…" autocomplete="off"></textarea>
+    <button type="submit" id="ai-send" class="ai-send" aria-label="Send" disabled>
+      <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><line x1="22" y1="2" x2="11" y2="13"/><polygon points="22 2 15 22 11 13 2 9 22 2"/></svg>
+    </button>
+  </form>
+</div>
+
+<script>
+(function () {
+  const POST_TITLE = "\u9ad8\u4e2d\u6700\u5bb9\u6613\u88ab\u5ffd\u7565\u7684\u6570\u5b66\u5f52\u7eb3\u6cd5\uff0c\u5176\u5b9e\u5c31\u662f\u5927\u6a21\u578b\"\u9010\u5b57\u751f\u6210\"\u7684\u9aa8\u67b6";
+  const contentEl = document.querySelector('article .content');
+
+  const fab = document.getElementById('ai-fab');
+  const panel = document.getElementById('ai-panel');
+  const closeBtn = document.getElementById('ai-close');
+  const clearBtn = document.getElementById('ai-clear');
+  const msgsEl = document.getElementById('ai-messages');
+  const emptyEl = document.getElementById('ai-empty');
+  const statusEl = document.getElementById('ai-status');
+  const formEl = document.getElementById('ai-form');
+  const inputEl = document.getElementById('ai-input');
+  const sendBtn = document.getElementById('ai-send');
+
+  function articleText() {
+    if (!contentEl) return '';
+    return (contentEl.innerText || contentEl.textContent || '')
+      .replace(/[ \t]+\n/g, '\n')
+      .replace(/\n{3,}/g, '\n\n')
+      .trim();
+  }
+
+  function setStatus(msg, cls) {
+    if (!msg) { statusEl.hidden = true; statusEl.textContent = ''; statusEl.className = 'ai-status'; return; }
+    statusEl.hidden = false;
+    statusEl.textContent = msg;
+    statusEl.className = 'ai-status' + (cls ? ' ' + cls : '');
+  }
+
+  function hideEmpty() { if (emptyEl) emptyEl.style.display = 'none'; }
+
+  function appendBubble(role, text) {
+    hideEmpty();
+    const wrap = document.createElement('div');
+    wrap.className = 'ai-msg ai-msg-' + role;
+    const bubble = document.createElement('div');
+    bubble.className = 'ai-bubble';
+    bubble.textContent = text;
+    wrap.appendChild(bubble);
+    msgsEl.appendChild(wrap);
+    msgsEl.scrollTop = msgsEl.scrollHeight;
+    return bubble;
+  }
+
+  function appendTyping() {
+    hideEmpty();
+    const wrap = document.createElement('div');
+    wrap.className = 'ai-msg ai-msg-assistant ai-typing';
+    wrap.innerHTML = '<div class="ai-bubble"><span class="ai-dots"><i></i><i></i><i></i></span></div>';
+    msgsEl.appendChild(wrap);
+    msgsEl.scrollTop = msgsEl.scrollHeight;
+    return wrap;
+  }
+
+  function autoSize() {
+    inputEl.style.height = 'auto';
+    inputEl.style.height = Math.min(inputEl.scrollHeight, 140) + 'px';
+  }
+
+  function openPanel() {
+    panel.classList.add('open');
+    panel.setAttribute('aria-hidden', 'false');
+    fab.classList.add('hidden');
+    setTimeout(() => inputEl.focus(), 50);
+  }
+  function closePanel() {
+    panel.classList.remove('open');
+    panel.setAttribute('aria-hidden', 'true');
+    fab.classList.remove('hidden');
+  }
+
+  fab.addEventListener('click', openPanel);
+  closeBtn.addEventListener('click', closePanel);
+  document.addEventListener('keydown', e => {
+    if (e.key === 'Escape' && panel.classList.contains('open')) closePanel();
+  });
+
+  // ---- LanguageModel session ----
+  let session = null;
+  let creating = null;
+  let history = [];
+
+  function buildSystemPrompt() {
+    // Keep article context modest — Gemini Nano's input quota is small.
+    const article = articleText().slice(0, 4000);
+    return (
+      'You are a concise, helpful assistant answering questions about a blog post. ' +
+      'Use the article below as your primary source. If the answer is not in it, say so briefly and answer generally. ' +
+      'Reply in the same language as the user\'s question. Keep answers short unless asked for detail.\n\n' +
+      '=== ARTICLE TITLE ===\n' + POST_TITLE + '\n\n' +
+      '=== ARTICLE CONTENT ===\n' + article
+    );
+  }
+
+  async function ensureSession() {
+    if (session) return session;
+    if (creating) return creating;
+
+    if (!('LanguageModel' in self)) {
+      throw new Error(
+        'On-device AI not available. Use Chrome 138+ on desktop, or enable ' +
+        '"Prompt API for Gemini Nano" in chrome://flags.'
+      );
+    }
+
+    setStatus('Checking model…', 'info');
+    const status = await LanguageModel.availability();
+    if (status === 'unavailable') {
+      throw new Error('Model unavailable on this device.');
+    }
+
+    creating = (async () => {
+      // Only show download UI when the model isn't already there.
+      const willDownload = (status !== 'available');
+      if (willDownload) setStatus('Preparing model (first run downloads ~2GB)…', 'info');
+      else setStatus('Warming up…', 'info');
+
+      const s = await LanguageModel.create({
+        initialPrompts: [{ role: 'system', content: buildSystemPrompt() }],
+        monitor(m) {
+          m.addEventListener('downloadprogress', e => {
+            // Skip the spurious 0% event Chrome fires for cached models.
+            if (!willDownload && e.loaded === 0) return;
+            const pct = (e.loaded * 100).toFixed(1);
+            setStatus('Downloading model: ' + pct + '%', 'info');
+          });
+        }
+      });
+      session = s;
+      setStatus('');
+      return s;
+    })();
+
+    try { return await creating; }
+    finally { creating = null; }
+  }
+
+  async function ask(q) {
+    appendBubble('user', q);
+    history.push({ role: 'user', content: q });
+
+    sendBtn.disabled = true;
+    inputEl.disabled = true;
+    const typing = appendTyping();
+
+    let answerBubble = null;
+    let acc = '';
+    try {
+      const s = await ensureSession();
+      const stream = s.promptStreaming(q);
+      for await (const chunk of stream) {
+        if (!answerBubble) {
+          typing.remove();
+          const wrap = document.createElement('div');
+          wrap.className = 'ai-msg ai-msg-assistant';
+          answerBubble = document.createElement('div');
+          answerBubble.className = 'ai-bubble';
+          wrap.appendChild(answerBubble);
+          msgsEl.appendChild(wrap);
+        }
+        acc += chunk;
+        answerBubble.textContent = acc;
+        msgsEl.scrollTop = msgsEl.scrollHeight;
+      }
+      if (acc) history.push({ role: 'assistant', content: acc });
+      else { typing.remove(); appendBubble('assistant', '(no response)'); }
+    } catch (e) {
+      if (typing && typing.parentNode) typing.remove();
+      const err = document.createElement('div');
+      err.className = 'ai-msg ai-msg-error';
+      err.innerHTML = '<div class="ai-bubble">⚠ ' + (e && e.message ? e.message : String(e)) + '</div>';
+      msgsEl.appendChild(err);
+      msgsEl.scrollTop = msgsEl.scrollHeight;
+    } finally {
+      sendBtn.disabled = !inputEl.value.trim();
+      inputEl.disabled = false;
+      inputEl.focus();
+    }
+  }
+
+  formEl.addEventListener('submit', e => {
+    e.preventDefault();
+    const q = inputEl.value.trim();
+    if (!q) return;
+    inputEl.value = '';
+    autoSize();
+    sendBtn.disabled = true;
+    ask(q);
+  });
+
+  inputEl.addEventListener('input', () => {
+    autoSize();
+    sendBtn.disabled = !inputEl.value.trim();
+  });
+  inputEl.addEventListener('keydown', e => {
+    if (e.key === 'Enter' && !e.shiftKey) {
+      e.preventDefault();
+      formEl.requestSubmit();
+    }
+  });
+
+  clearBtn.addEventListener('click', () => {
+    msgsEl.innerHTML = '';
+    msgsEl.appendChild(emptyEl);
+    emptyEl.style.display = '';
+    history = [];
+    if (session && session.destroy) { try { session.destroy(); } catch (_) {} }
+    session = null;
+    setStatus('');
+  });
+
+  if (!('LanguageModel' in self)) {
+    fab.addEventListener('click', () => {
+      openPanel();
+      setStatus('On-device AI not detected. Use Chrome 138+ desktop, or enable "Prompt API for Gemini Nano" in chrome://flags.', 'bad');
+    }, { once: true });
+  }
+})();
+</script>
+
+<!-- Outline notes / comments — DataScript + IndexedDB -->
+<script src="https://github.com/tonsky/datascript/releases/download/1.7.8/datascript-1.7.8.min.js"></script>
+<script src="../notes.js?v=6"></script>
+<script src="../theme.js"></script>
+<script src="../wechat-copy.js?v=3"></script>
+
+</body>
+</html>
