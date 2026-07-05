@@ -1,0 +1,598 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>高中觉得最没用的 log，其实是大模型判断&quot;自己错得有多离谱&quot;的唯一标尺 · Steve Chan — xlisp</title>
+<meta name="description" content="如果只能留一句话，那就是这句：">
+<meta name="author" content="Steve Chan">
+<link rel="icon" type="image/jpeg" href="../icon.jpeg">
+<link rel="apple-touch-icon" href="../icon.jpeg">
+<meta property="og:type" content="article">
+<meta property="og:title" content="高中觉得最没用的 log，其实是大模型判断&quot;自己错得有多离谱&quot;的唯一标尺">
+<meta property="og:description" content="如果只能留一句话，那就是这句：">
+<meta property="og:image" content="../icon.jpeg">
+<meta property="og:site_name" content="Steve Chan — xlisp">
+<meta name="twitter:card" content="summary_large_image">
+<meta name="twitter:title" content="高中觉得最没用的 log，其实是大模型判断&quot;自己错得有多离谱&quot;的唯一标尺">
+<meta name="twitter:description" content="如果只能留一句话，那就是这句：">
+<meta name="twitter:image" content="../icon.jpeg">
+<link rel="stylesheet" href="../style.css?v=light1">
+<script>(function(){try{if(localStorage.getItem('theme')==='light')document.documentElement.setAttribute('data-theme','light');}catch(e){}})();</script>
+<!-- Math formula rendering via MathJax -->
+<script>
+window.MathJax = {
+  tex: {
+    // arithmatex emits \(...\) / \[...\] markup, so only these delimiters
+    // are needed; plain `$` is left alone (avoids currency false positives).
+    inlineMath: [['\\(', '\\)']],
+    displayMath: [['\\[', '\\]']],
+    processEscapes: true
+  },
+  svg: {
+    // Each formula gets its own self-contained <defs>, so the copy script can
+    // serialize one <svg> and rasterize it to a PNG for WeChat.
+    fontCache: 'local'
+  },
+  options: {
+    skipHtmlTags: ['script', 'noscript', 'style', 'textarea', 'pre', 'code'],
+    ignoreHtmlClass: 'highlight'
+  }
+};
+</script>
+<script src="https://cdn.jsdelivr.net/npm/mathjax@3/es5/tex-svg.js" async></script>
+</head>
+<body>
+<main class="wrap post">
+
+  <nav class="topnav">
+    <a href="../index.html">← home</a>
+  </nav>
+
+  <article>
+    <header class="post-header">
+      <h1>高中觉得最没用的 log，其实是大模型判断&quot;自己错得有多离谱&quot;的唯一标尺</h1>
+      <p class="meta">2026-07-05 · Steve Chan</p>
+    </header>
+
+    <div class="content">
+<blockquote>
+<p>对数、换底公式、<code>lg</code>、<code>ln</code>、对数函数图像……高中背了一整章，考完只剩一句"log 到底有什么用"。
+因为老师只教你"查表、算 pH、比大小"，没告诉你两件事：</p>
+<p><strong>第一，log 的灵魂不是"一种难算的函数"，是一台"把连乘变成连加"的翻译机。
+第二，今天每一个大模型（LLaMA、Qwen、GPT、DeepSeek）训练时判断"自己这一步错得有多离谱"，
+用的唯一标尺就是 log——它的名字叫交叉熵（cross-entropy）。</strong></p>
+<p>这篇文章不背一个公式、不做一道换底题，全部用能跑起来的 PyTorch 代码，
+把对数最核心的"连乘变连加"本质，一路接到大模型的损失函数。
+并且顺手回答四个灵魂拷问：</p>
+<ul>
+<li>log 明明是算 pH、算地震级数的，怎么会和"大模型训练"扯上关系？</li>
+<li>一个句子的概率为什么要"连乘"？为什么连乘一下就出事了？</li>
+<li>交叉熵损失里那个 <code>-log(p)</code> 到底在衡量什么？为什么非得套个 log？</li>
+<li>训练日志里天天见的"困惑度 perplexity"又是什么？为什么它等于 <code>exp(loss)</code>？</li>
+</ul>
+</blockquote>
+<hr />
+<h2 id="0-一句话主线">0. 一句话主线</h2>
+<p>如果只能留一句话，那就是这句：</p>
+<blockquote>
+<p><strong>log 是一台"连乘 → 连加"的翻译机：<code>log(a×b) = log a + log b</code>。</strong></p>
+</blockquote>
+<p>一堆概率乘在一起会小到电脑存不下（下溢成 0），可只要各自取个 log，
+"连乘"就变成了"连加"，天塌下来的数值问题瞬间消失。
+大模型算一个句子有多"可能"、算自己错得有多离谱，靠的全是这台翻译机。</p>
+<div class="highlight"><pre><span></span><code><span class="kn">import</span><span class="w"> </span><span class="nn">torch</span>
+
+<span class="c1"># log 就是指数的逆问题：&quot;e 要自乘多少次，才能得到 x&quot;</span>
+<span class="k">for</span> <span class="n">x</span> <span class="ow">in</span> <span class="p">[</span><span class="mf">1.0</span><span class="p">,</span> <span class="mf">2.718</span><span class="p">,</span> <span class="mf">7.389</span><span class="p">,</span> <span class="mf">20.09</span><span class="p">]:</span>
+    <span class="nb">print</span><span class="p">(</span><span class="sa">f</span><span class="s2">&quot;ln(</span><span class="si">{</span><span class="n">x</span><span class="si">:</span><span class="s2">6.3f</span><span class="si">}</span><span class="s2">) = </span><span class="si">{</span><span class="n">torch</span><span class="o">.</span><span class="n">log</span><span class="p">(</span><span class="n">torch</span><span class="o">.</span><span class="n">tensor</span><span class="p">(</span><span class="n">x</span><span class="p">))</span><span class="si">:</span><span class="s2">.3f</span><span class="si">}</span><span class="s2">&quot;</span><span class="p">)</span>
+<span class="c1"># ln(1)=0, ln(e)=1, ln(e^2)=2, ln(e^3)=3 —— 它问的永远是&quot;e 的几次方&quot;</span>
+</code></pre></div>
+
+<p>记住这个画面：<strong>log 是在数"要乘多少次"</strong>。而"乘多少次"这件事，天生就能把乘法拆成加法。
+下面所有东西都挂在这一个性质上。</p>
+<hr />
+<h2 id="1-log-的真身一台连乘变连加的翻译机">1. log 的真身：一台"连乘变连加"的翻译机</h2>
+<p>高中把 log 塞进一堆"换底、对数不等式"的题里，把你锁死在计算技巧中。
+但 log 真正有用的，只有一条黄金性质——<strong>乘积的 log，等于 log 的和</strong>：</p>
+<div class="arithmatex">\[\log(a \times b) = \log a + \log b\]</div>
+<p>这条性质平平无奇，却是整篇文章的地基。代码验证一下，顺便看它把"四个数连乘"拆成了"四个 log 连加"：</p>
+<div class="highlight"><pre><span></span><code><span class="kn">import</span><span class="w"> </span><span class="nn">torch</span>
+
+<span class="n">a</span> <span class="o">=</span> <span class="n">torch</span><span class="o">.</span><span class="n">tensor</span><span class="p">([</span><span class="mf">0.3</span><span class="p">,</span> <span class="mf">0.1</span><span class="p">,</span> <span class="mf">0.05</span><span class="p">,</span> <span class="mf">0.2</span><span class="p">])</span>   <span class="c1"># 四个概率</span>
+<span class="n">prod</span> <span class="o">=</span> <span class="n">a</span><span class="o">.</span><span class="n">prod</span><span class="p">()</span>                            <span class="c1"># 先把它们连乘起来</span>
+<span class="n">sum_of_logs</span> <span class="o">=</span> <span class="n">a</span><span class="o">.</span><span class="n">log</span><span class="p">()</span><span class="o">.</span><span class="n">sum</span><span class="p">()</span>               <span class="c1"># 各自取 log 再相加</span>
+
+<span class="nb">print</span><span class="p">(</span><span class="s2">&quot;连乘再取 log :&quot;</span><span class="p">,</span> <span class="n">prod</span><span class="o">.</span><span class="n">log</span><span class="p">())</span>        <span class="c1"># log(0.3 * 0.1 * 0.05 * 0.2)</span>
+<span class="nb">print</span><span class="p">(</span><span class="s2">&quot;取 log 再连加 :&quot;</span><span class="p">,</span> <span class="n">sum_of_logs</span><span class="p">)</span>       <span class="c1"># log0.3 + log0.1 + log0.05 + log0.2</span>
+<span class="nb">print</span><span class="p">(</span><span class="s2">&quot;两者相等吗？&quot;</span><span class="p">,</span> <span class="n">torch</span><span class="o">.</span><span class="n">allclose</span><span class="p">(</span><span class="n">prod</span><span class="o">.</span><span class="n">log</span><span class="p">(),</span> <span class="n">sum_of_logs</span><span class="p">))</span>   <span class="c1"># True</span>
+</code></pre></div>
+
+<p><code>True</code>。<strong>"把一串数乘起来再取 log" = "各自取 log 再加起来"。</strong>
+你可能觉得这只是个代数小把戏。但下一节你会看到：正是这个把戏，
+救回了大模型里一个本来会彻底崩掉的计算。</p>
+<hr />
+<h2 id="疑惑点一一个句子的概率为什么要连乘为什么连乘一下就出事了">🤔 疑惑点一：一个句子的概率为什么要"连乘"？为什么连乘一下就出事了？</h2>
+<p><strong>因为语言模型是逐词预测的：它先猜第 1 个词、再在第 1 个词的基础上猜第 2 个……整句话的概率就是每一步概率的连乘。而一句话动辄几十上百个词，每个概率都小于 1，几百个小于 1 的数乘在一起，会小到浮点数存不下，直接变成 0——信息全丢了。</strong></p>
+<p>这是最反直觉、也最致命的一点。模型给每个位置的"下一个词"打一个概率，
+整句话出现的概率，就是这些概率的乘积（这叫链式法则）。用代码看看灾难现场：</p>
+<div class="highlight"><pre><span></span><code><span class="kn">import</span><span class="w"> </span><span class="nn">torch</span>
+
+<span class="c1"># 一句话的概率 = 每个词在前文下的条件概率，全部连乘</span>
+<span class="c1"># 假设这句话有 200 个词，模型给每个词的概率都还不错（0.1 上下）</span>
+<span class="n">probs</span> <span class="o">=</span> <span class="n">torch</span><span class="o">.</span><span class="n">full</span><span class="p">((</span><span class="mi">200</span><span class="p">,),</span> <span class="mf">0.1</span><span class="p">)</span>
+
+<span class="nb">print</span><span class="p">(</span><span class="s2">&quot;直接连乘 200 个 0.1 :&quot;</span><span class="p">,</span> <span class="n">probs</span><span class="o">.</span><span class="n">prod</span><span class="p">())</span>       <span class="c1"># 0.0 —— 下溢！信息全没了</span>
+<span class="nb">print</span><span class="p">(</span><span class="s2">&quot;换成 log 再相加     :&quot;</span><span class="p">,</span> <span class="n">probs</span><span class="o">.</span><span class="n">log</span><span class="p">()</span><span class="o">.</span><span class="n">sum</span><span class="p">())</span>   <span class="c1"># -460.5 —— 完好无损</span>
+</code></pre></div>
+
+<p><code>probs.prod()</code> 得到 <strong><code>0.0</code></strong>。不是这句话概率真的是 0，而是 <code>0.1²⁰⁰ = 10⁻²⁰⁰</code> 这个数，
+比 32 位浮点能表示的最小正数还小得多，电脑只能把它约等于 0。
+<strong>一旦变成 0，梯度就是 0，模型再也学不到任何东西——训练直接死掉。</strong></p>
+<p>而右边 <code>probs.log().sum()</code> 稳稳给出 <code>-460.5</code>。这就是第 1 节那台翻译机的价值：
+<strong>连乘会下溢，连加不会。</strong> 把每个概率取 log 再相加，<code>10⁻²⁰⁰</code> 这种吓人的小数，
+就变成了 <code>-460.5</code> 这种电脑最擅长处理的普通数字。所以大模型<strong>从头到尾不碰原始概率，只在 log 空间里算账。</strong></p>
+<hr />
+<h2 id="2-log-likelihood模型永远在-log-空间里给句子打分">2. log-likelihood：模型永远在 log 空间里给句子打分</h2>
+<p>既然不能连乘，那就连加。一个句子的"对数似然（log-likelihood）"，
+就是把每个正确词的 log 概率加起来。代码里，模型输出的是每个位置在整个词表上的分数（logits），
+我们用 <code>log_softmax</code> <strong>一步到位算出 log 概率</strong>，全程不碰会下溢的原始概率：</p>
+<div class="highlight"><pre><span></span><code><span class="kn">import</span><span class="w"> </span><span class="nn">torch</span>
+<span class="kn">import</span><span class="w"> </span><span class="nn">torch.nn.functional</span><span class="w"> </span><span class="k">as</span><span class="w"> </span><span class="nn">F</span>
+
+<span class="n">torch</span><span class="o">.</span><span class="n">manual_seed</span><span class="p">(</span><span class="mi">0</span><span class="p">)</span>
+<span class="n">V</span> <span class="o">=</span> <span class="mi">1000</span>                                    <span class="c1"># 词表大小：1000 个候选词</span>
+<span class="n">logits</span> <span class="o">=</span> <span class="n">torch</span><span class="o">.</span><span class="n">randn</span><span class="p">(</span><span class="mi">5</span><span class="p">,</span> <span class="n">V</span><span class="p">)</span>                  <span class="c1"># 模型对 5 个位置的原始打分</span>
+<span class="n">target</span> <span class="o">=</span> <span class="n">torch</span><span class="o">.</span><span class="n">tensor</span><span class="p">([</span><span class="mi">12</span><span class="p">,</span> <span class="mi">7</span><span class="p">,</span> <span class="mi">900</span><span class="p">,</span> <span class="mi">3</span><span class="p">,</span> <span class="mi">55</span><span class="p">])</span>  <span class="c1"># 这 5 个位置真正的下一个词</span>
+
+<span class="n">logp</span> <span class="o">=</span> <span class="n">F</span><span class="o">.</span><span class="n">log_softmax</span><span class="p">(</span><span class="n">logits</span><span class="p">,</span> <span class="n">dim</span><span class="o">=-</span><span class="mi">1</span><span class="p">)</span>        <span class="c1"># 直接得到 log 概率（不碰原始概率）</span>
+<span class="n">picked</span> <span class="o">=</span> <span class="n">logp</span><span class="p">[</span><span class="n">torch</span><span class="o">.</span><span class="n">arange</span><span class="p">(</span><span class="mi">5</span><span class="p">),</span> <span class="n">target</span><span class="p">]</span>      <span class="c1"># 取出每个&quot;正确词&quot;的 log 概率</span>
+
+<span class="nb">print</span><span class="p">(</span><span class="s2">&quot;每个正确词的 log 概率:&quot;</span><span class="p">,</span> <span class="n">picked</span><span class="o">.</span><span class="n">round</span><span class="p">(</span><span class="n">decimals</span><span class="o">=</span><span class="mi">2</span><span class="p">))</span>
+<span class="nb">print</span><span class="p">(</span><span class="s2">&quot;整句 log-likelihood  :&quot;</span><span class="p">,</span> <span class="n">picked</span><span class="o">.</span><span class="n">sum</span><span class="p">())</span>     <span class="c1"># 连加，绝不连乘</span>
+<span class="nb">print</span><span class="p">(</span><span class="s2">&quot;负对数似然（要最小化）:&quot;</span><span class="p">,</span> <span class="o">-</span><span class="n">picked</span><span class="o">.</span><span class="n">sum</span><span class="p">())</span>     <span class="c1"># 加个负号，就成了 loss</span>
+</code></pre></div>
+
+<p><code>log_softmax</code> 而不是"先 softmax 再 log"，是工程上专门为了数值稳定设计的——<strong>又是 log 在背后兜底。</strong>
+把 <code>log-likelihood</code> 取个负号，就得到了"负对数似然（NLL）"：模型越可能说对这句话，NLL 越小。
+<strong>训练的目标，就是把这个 log 空间里的数字压到最低。</strong> 而它，正是交叉熵的真身。</p>
+<hr />
+<h2 id="3-log-就是意外概率越低-logp-越大">3. log 就是"意外"：概率越低，<code>-log(p)</code> 越大</h2>
+<p>为什么偏偏用 log 来当损失，而不是用"1 − 概率"之类更朴素的东西？
+因为 <code>-log(p)</code> 有一个无可替代的性质：<strong>它精确地度量了"意外程度"。</strong>
+一件几乎必然的事发生，你毫不意外；一件几乎不可能的事发生，你惊掉下巴。看代码里这条曲线的陡峭程度：</p>
+<div class="highlight"><pre><span></span><code><span class="kn">import</span><span class="w"> </span><span class="nn">torch</span>
+
+<span class="c1"># 意外程度 = -log(概率)。越不可能发生的事，一旦发生就越&quot;意外&quot;</span>
+<span class="k">for</span> <span class="n">p</span> <span class="ow">in</span> <span class="p">[</span><span class="mf">0.9</span><span class="p">,</span> <span class="mf">0.5</span><span class="p">,</span> <span class="mf">0.1</span><span class="p">,</span> <span class="mf">0.01</span><span class="p">,</span> <span class="mf">1e-4</span><span class="p">]:</span>
+    <span class="n">surprise</span> <span class="o">=</span> <span class="o">-</span><span class="n">torch</span><span class="o">.</span><span class="n">log</span><span class="p">(</span><span class="n">torch</span><span class="o">.</span><span class="n">tensor</span><span class="p">(</span><span class="n">p</span><span class="p">))</span>
+    <span class="nb">print</span><span class="p">(</span><span class="sa">f</span><span class="s2">&quot;概率 </span><span class="si">{</span><span class="n">p</span><span class="si">:</span><span class="s2">7.4f</span><span class="si">}</span><span class="s2">  -&gt;  意外 = </span><span class="si">{</span><span class="n">surprise</span><span class="si">:</span><span class="s2">.2f</span><span class="si">}</span><span class="s2">&quot;</span><span class="p">)</span>
+<span class="c1"># 0.9 -&gt; 0.11（几乎不意外）   0.01 -&gt; 4.61   1e-4 -&gt; 9.21（意外爆炸）</span>
+</code></pre></div>
+
+<p>看这个增长：概率从 <code>0.9</code> 掉到 <code>1e-4</code>，意外值从 <code>0.11</code> 暴涨到 <code>9.21</code>。
+<strong><code>-log(p)</code> 在概率趋近 0 时会冲向无穷大</strong>——这正是我们想要的性质：
+模型对一件真实发生的事给出"几乎不可能"的判断，就该受到近乎无穷的惩罚。
+<code>1 − p</code> 做不到这种"错得越离谱、罚得越狠到失控"的效果，只有 log 可以。</p>
+<hr />
+<h2 id="4-交叉熵把平均意外当成损失log-专治自信的错误">4. 交叉熵：把"平均意外"当成损失，log 专治"自信的错误"</h2>
+<p>把第 3 节的"意外"用到每个正确词上，再取平均，就是<strong>交叉熵损失</strong>：</p>
+<div class="arithmatex">\[\text{loss} = \frac{1}{N}\sum_{i=1}^{N} -\log p(\text{正确词}_i)\]</div>
+<p>一句话：<strong>交叉熵 = 模型对"本该说出口的那个词"平均有多意外。</strong> 越意外，说明错得越离谱，loss 越大。
+log 在这里最狠的一手，是<strong>重罚"笃定的错误"</strong>——你越自信地答错，惩罚越是指数级爆炸：</p>
+<div class="highlight"><pre><span></span><code><span class="kn">import</span><span class="w"> </span><span class="nn">torch</span>
+<span class="kn">import</span><span class="w"> </span><span class="nn">torch.nn.functional</span><span class="w"> </span><span class="k">as</span><span class="w"> </span><span class="nn">F</span>
+
+<span class="c1"># 两个模型，对同一道题（正确答案是类别 2）给出不同的自信程度</span>
+<span class="n">confident_right</span> <span class="o">=</span> <span class="n">torch</span><span class="o">.</span><span class="n">tensor</span><span class="p">([[</span><span class="mf">0.5</span><span class="p">,</span> <span class="mf">0.5</span><span class="p">,</span> <span class="mf">5.0</span><span class="p">]])</span>   <span class="c1"># 笃定选【对】</span>
+<span class="n">confident_wrong</span> <span class="o">=</span> <span class="n">torch</span><span class="o">.</span><span class="n">tensor</span><span class="p">([[</span><span class="mf">5.0</span><span class="p">,</span> <span class="mf">0.5</span><span class="p">,</span> <span class="mf">0.5</span><span class="p">]])</span>   <span class="c1"># 笃定选【错】</span>
+<span class="n">target</span> <span class="o">=</span> <span class="n">torch</span><span class="o">.</span><span class="n">tensor</span><span class="p">([</span><span class="mi">2</span><span class="p">])</span>
+
+<span class="k">for</span> <span class="n">name</span><span class="p">,</span> <span class="n">logits</span> <span class="ow">in</span> <span class="p">[(</span><span class="s2">&quot;笃定答对&quot;</span><span class="p">,</span> <span class="n">confident_right</span><span class="p">),</span> <span class="p">(</span><span class="s2">&quot;笃定答错&quot;</span><span class="p">,</span> <span class="n">confident_wrong</span><span class="p">)]:</span>
+    <span class="n">loss</span> <span class="o">=</span> <span class="n">F</span><span class="o">.</span><span class="n">cross_entropy</span><span class="p">(</span><span class="n">logits</span><span class="p">,</span> <span class="n">target</span><span class="p">)</span>          <span class="c1"># 内部就是 -log(正确类的概率)</span>
+    <span class="nb">print</span><span class="p">(</span><span class="sa">f</span><span class="s2">&quot;</span><span class="si">{</span><span class="n">name</span><span class="si">}</span><span class="s2">: 交叉熵 = </span><span class="si">{</span><span class="n">loss</span><span class="si">:</span><span class="s2">.3f</span><span class="si">}</span><span class="s2">&quot;</span><span class="p">)</span>
+<span class="c1"># 笃定答对 -&gt; loss≈0.02（几乎不罚）   笃定答错 -&gt; loss≈4.52（往死里罚）</span>
+</code></pre></div>
+
+<p>同样是"很自信"，答对的几乎零惩罚，答错的被罚到 <code>4.5</code>。
+<strong>这种"温柔奖对、严惩自信之错"的手感，完全来自 <code>-log</code></strong>——它逼着模型"没把握就别太笃定"，
+正是这条 log 曲线，塑造了今天大模型那种"该确定时确定、该含糊时含糊"的分寸感。
+<code>F.cross_entropy</code> 这一个在每份训练代码里出现无数次的函数，内核就是你高中那章 log。</p>
+<hr />
+<h2 id="疑惑点二训练日志里的困惑度-perplexity是什么为什么它等于-exploss">🤔 疑惑点二：训练日志里的"困惑度 perplexity"是什么？为什么它等于 <code>exp(loss)</code>？</h2>
+<p><strong>因为交叉熵是 log 空间里的"意外值"，人脑对它没有直觉；把它用 <code>exp</code> 送回原空间，就变成一个能读懂的数——"模型现在平均在几个词之间纠结"。loss 是 log，困惑度就是把 log 脱掉。</strong></p>
+<p>交叉熵虽然好算，但 <code>2.3</code> 这个数字对人没有意义。于是我们用 log 的逆运算 <code>exp</code> 把它翻译回来：</p>
+<div class="highlight"><pre><span></span><code><span class="kn">import</span><span class="w"> </span><span class="nn">torch</span>
+
+<span class="c1"># 困惑度 = e^(交叉熵)，把 log 里的&quot;意外&quot;翻译回&quot;在几个词之间纠结&quot;</span>
+<span class="k">for</span> <span class="n">ce</span> <span class="ow">in</span> <span class="p">[</span><span class="mf">0.0</span><span class="p">,</span> <span class="mf">0.693</span><span class="p">,</span> <span class="mf">2.303</span><span class="p">]:</span>
+    <span class="n">ppl</span> <span class="o">=</span> <span class="n">torch</span><span class="o">.</span><span class="n">exp</span><span class="p">(</span><span class="n">torch</span><span class="o">.</span><span class="n">tensor</span><span class="p">(</span><span class="n">ce</span><span class="p">))</span>
+    <span class="nb">print</span><span class="p">(</span><span class="sa">f</span><span class="s2">&quot;交叉熵 </span><span class="si">{</span><span class="n">ce</span><span class="si">:</span><span class="s2">.3f</span><span class="si">}</span><span class="s2">  -&gt;  困惑度 = </span><span class="si">{</span><span class="n">ppl</span><span class="si">:</span><span class="s2">.1f</span><span class="si">}</span><span class="s2">&quot;</span><span class="p">)</span>
+<span class="c1"># 0 -&gt; 1（毫不犹豫，闭眼选对）</span>
+<span class="c1"># 0.693(=ln2) -&gt; 2（在 2 个词之间五五开地纠结）</span>
+<span class="c1"># 2.303(=ln10) -&gt; 10（在 10 个词之间抓瞎）</span>
+</code></pre></div>
+
+<p>困惑度 <code>= exp(交叉熵)</code> 之所以成立，就是因为 <code>exp</code> 和 <code>log</code> 互为逆运算——<strong>它把 log 脱掉，还原成"有效选项数"。</strong>
+一个 GPT 说困惑度是 <code>8</code>，意思就是"它预测下一个词时，平均像在 8 个词里犹豫"；
+困惑度掉到 <code>3</code>，就是选择范围收窄到 3 个。<strong>这就是为什么所有语言模型的战报都盯着 perplexity——
+它是那把 log 尺子翻译给人看的、唯一说人话的版本。</strong></p>
+<hr />
+<h2 id="动手训练一个最小语言模型看-log-loss-与困惑度一起跳水">🎬 动手：训练一个最小语言模型，看 log-loss 与困惑度一起跳水</h2>
+<p>把上面所有画面缝进一个能跑的最小 bigram 语言模型：用当前字符预测下一个字符，
+一边训练，一边看交叉熵（log 空间的意外）和困惑度（人话版）如何同步下滑：</p>
+<div class="highlight"><pre><span></span><code><span class="kn">import</span><span class="w"> </span><span class="nn">torch</span>
+<span class="kn">import</span><span class="w"> </span><span class="nn">torch.nn</span><span class="w"> </span><span class="k">as</span><span class="w"> </span><span class="nn">nn</span>
+<span class="kn">import</span><span class="w"> </span><span class="nn">torch.nn.functional</span><span class="w"> </span><span class="k">as</span><span class="w"> </span><span class="nn">F</span>
+
+<span class="n">text</span> <span class="o">=</span> <span class="s2">&quot;hello world &quot;</span> <span class="o">*</span> <span class="mi">50</span>                 <span class="c1"># 玩具语料：一段不断重复的字符串</span>
+<span class="n">chars</span> <span class="o">=</span> <span class="nb">sorted</span><span class="p">(</span><span class="nb">set</span><span class="p">(</span><span class="n">text</span><span class="p">))</span>
+<span class="n">stoi</span> <span class="o">=</span> <span class="p">{</span><span class="n">c</span><span class="p">:</span> <span class="n">i</span> <span class="k">for</span> <span class="n">i</span><span class="p">,</span> <span class="n">c</span> <span class="ow">in</span> <span class="nb">enumerate</span><span class="p">(</span><span class="n">chars</span><span class="p">)}</span>
+<span class="n">data</span> <span class="o">=</span> <span class="n">torch</span><span class="o">.</span><span class="n">tensor</span><span class="p">([</span><span class="n">stoi</span><span class="p">[</span><span class="n">c</span><span class="p">]</span> <span class="k">for</span> <span class="n">c</span> <span class="ow">in</span> <span class="n">text</span><span class="p">])</span>
+<span class="n">x</span><span class="p">,</span> <span class="n">y</span> <span class="o">=</span> <span class="n">data</span><span class="p">[:</span><span class="o">-</span><span class="mi">1</span><span class="p">],</span> <span class="n">data</span><span class="p">[</span><span class="mi">1</span><span class="p">:]</span>                 <span class="c1"># 输入=当前字符，目标=下一个字符</span>
+
+<span class="n">V</span> <span class="o">=</span> <span class="nb">len</span><span class="p">(</span><span class="n">chars</span><span class="p">)</span>
+<span class="n">model</span> <span class="o">=</span> <span class="n">nn</span><span class="o">.</span><span class="n">Embedding</span><span class="p">(</span><span class="n">V</span><span class="p">,</span> <span class="n">V</span><span class="p">)</span>                 <span class="c1"># 最简 bigram：每个字符直接查出一行 logits</span>
+<span class="n">opt</span> <span class="o">=</span> <span class="n">torch</span><span class="o">.</span><span class="n">optim</span><span class="o">.</span><span class="n">Adam</span><span class="p">(</span><span class="n">model</span><span class="o">.</span><span class="n">parameters</span><span class="p">(),</span> <span class="n">lr</span><span class="o">=</span><span class="mf">0.1</span><span class="p">)</span>
+
+<span class="k">for</span> <span class="n">step</span> <span class="ow">in</span> <span class="nb">range</span><span class="p">(</span><span class="mi">301</span><span class="p">):</span>
+    <span class="n">logits</span> <span class="o">=</span> <span class="n">model</span><span class="p">(</span><span class="n">x</span><span class="p">)</span>
+    <span class="n">loss</span> <span class="o">=</span> <span class="n">F</span><span class="o">.</span><span class="n">cross_entropy</span><span class="p">(</span><span class="n">logits</span><span class="p">,</span> <span class="n">y</span><span class="p">)</span>      <span class="c1"># 平均 -log(正确字符的概率)</span>
+    <span class="n">opt</span><span class="o">.</span><span class="n">zero_grad</span><span class="p">();</span> <span class="n">loss</span><span class="o">.</span><span class="n">backward</span><span class="p">();</span> <span class="n">opt</span><span class="o">.</span><span class="n">step</span><span class="p">()</span>
+    <span class="k">if</span> <span class="n">step</span> <span class="o">%</span> <span class="mi">60</span> <span class="o">==</span> <span class="mi">0</span><span class="p">:</span>
+        <span class="n">ppl</span> <span class="o">=</span> <span class="n">torch</span><span class="o">.</span><span class="n">exp</span><span class="p">(</span><span class="n">loss</span><span class="p">)</span>              <span class="c1"># 困惑度 = exp(交叉熵)</span>
+        <span class="nb">print</span><span class="p">(</span><span class="sa">f</span><span class="s2">&quot;step </span><span class="si">{</span><span class="n">step</span><span class="si">:</span><span class="s2">3d</span><span class="si">}</span><span class="s2">  交叉熵=</span><span class="si">{</span><span class="n">loss</span><span class="si">:</span><span class="s2">.3f</span><span class="si">}</span><span class="s2">  困惑度=</span><span class="si">{</span><span class="n">ppl</span><span class="si">:</span><span class="s2">.2f</span><span class="si">}</span><span class="s2">&quot;</span><span class="p">)</span>
+<span class="c1"># 交叉熵一路下滑；困惑度从&quot;在好几个字符间纠结&quot;逼近 1（几乎笃定下一个字符）</span>
+</code></pre></div>
+
+<p>你会看到交叉熵从一个偏大的值一路跌下去，困惑度也跟着从"好几"逼近"1"——
+<strong>模型正在学会"闭着眼都知道下一个字符是什么"。</strong> 残留的那点困惑度，来自语料里真正的歧义
+（比如 <code>l</code> 后面既可能是 <code>l</code> 又可能是 <code>o</code>），这恰恰说明困惑度诚实地反映了"还剩多少不确定"。</p>
+<p>仓库里的动画脚本把这根"log 尺子"画了出来：</p>
+<div class="highlight"><pre><span></span><code>python<span class="w"> </span>log_likelihood_visualization.py
+</code></pre></div>
+
+<blockquote>
+<p>左边画的是那条 <code>意外 = -log(p)</code> 的曲线，一个小球代表"模型对正确词的把握"，
+训练时它从左边（概率低、意外高、贴着那道陡峭的墙）一路滑向右边（概率高、意外趋近 0）；
+右边则是交叉熵与困惑度随训练步数同步跳水。
+<strong>你会亲眼看到：概率每往 0 靠一点，意外就沿着那道 log 的陡墙暴涨——这就是大模型不敢"自信答错"的原因。</strong></p>
+</blockquote>
+<hr />
+<h2 id="缝合把所有画面接起来">缝合：把所有画面接起来</h2>
+<p>回到开头，现在每个概念都有了画面和代码出处：</p>
+<table>
+<thead>
+<tr>
+<th>对数概念</th>
+<th>高中怎么讲</th>
+<th>这篇文章怎么看（画面）</th>
+<th>在大模型里是什么</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><strong>log 的定义</strong></td>
+<td><code>logₐN</code>、换底公式</td>
+<td>数"e 的几次方"（第 0 节）</td>
+<td>一切损失计算的底层空间</td>
+</tr>
+<tr>
+<td><strong><code>log(ab)=log a+log b</code></strong></td>
+<td>一条要背的性质</td>
+<td>连乘变连加的翻译机（第 1 节）</td>
+<td>句子概率不下溢的救命稻草</td>
+</tr>
+<tr>
+<td><strong>对数函数图像</strong></td>
+<td>一条过 (1,0) 的曲线</td>
+<td><code>-log(p)</code> 那道陡峭的"意外墙"（第 3 节）</td>
+<td>严惩"自信错误"的手感</td>
+</tr>
+<tr>
+<td><strong><code>log</code> 与 <code>exp</code> 互逆</strong></td>
+<td>指对互化</td>
+<td>脱掉 log，还原"有效选项数"（疑惑点二）</td>
+<td>困惑度 = <code>exp(loss)</code></td>
+</tr>
+<tr>
+<td><strong>对数似然</strong></td>
+<td>课本几乎没讲</td>
+<td>正确词 log 概率的连加（第 2 节）</td>
+<td>交叉熵损失的真身</td>
+</tr>
+</tbody>
+</table>
+<p>三句话总结这篇文章：</p>
+<blockquote>
+<p><strong>log 的灵魂是"连乘变连加"</strong>——正是它让几百个概率相乘不再下溢成 0（第 1、2 节）；
+<strong><code>-log(p)</code> 精确地度量"意外"</strong>，概率趋 0 时意外冲向无穷，于是"自信的错误"被指数级重罚（第 3、4 节）；
+<strong>交叉熵就是平均意外、困惑度就是把 log 脱掉的人话版</strong>，这就是今天所有大模型训练时唯一的那把尺子（第 4 节、疑惑点二）。</p>
+</blockquote>
+<p>当年对数背得那么苦，不是因为它难，是因为没人告诉你：
+<strong>那条你觉得最没用、过 (1,0) 的 log 曲线，最后长成了每一个大模型的损失函数，
+成了它衡量"自己错得有多离谱"的唯一标尺。</strong>
+现在把上面每段代码跑一遍，比高中刷十套对数题都值。</p>
+<hr />
+<blockquote>
+<p><strong>备注（选题/标题）：</strong> 这篇走的是"高中知识其实是 AI 基石"的钩子（和《sin 和 cos》《求根公式》同一路子）。
+若想并入"大学4年"主系列，标题可换成：
+《大学4年没让你真正搞懂的对数，被一段交叉熵代码讲透了》。
+与《信息论》那篇是姊妹篇：信息论那篇讲"熵是平均意外"，这篇从 log 本身切入、落到损失函数，可互相引流。</p>
+</blockquote>
+    </div>
+  </article>
+
+</main>
+
+<!-- Floating Ask-AI chat widget -->
+<button class="ai-fab" id="ai-fab" aria-label="Ask AI about this article" title="Ask AI about this article">
+  <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+    <path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"/>
+  </svg>
+  <span class="ai-fab-label">Ask AI</span>
+</button>
+
+<div class="ai-panel" id="ai-panel" role="dialog" aria-labelledby="ai-panel-title" aria-hidden="true">
+  <header class="ai-panel-head">
+    <div class="ai-panel-title-wrap">
+      <span class="ai-dot"></span>
+      <h3 id="ai-panel-title">Ask AI about this post</h3>
+    </div>
+    <div class="ai-panel-actions">
+      <button class="ai-icon-btn" id="ai-clear" title="Clear conversation" aria-label="Clear">
+        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><polyline points="3 6 5 6 21 6"/><path d="M19 6l-1 14a2 2 0 0 1-2 2H8a2 2 0 0 1-2-2L5 6"/><path d="M10 11v6M14 11v6"/><path d="M9 6V4a1 1 0 0 1 1-1h4a1 1 0 0 1 1 1v2"/></svg>
+      </button>
+      <button class="ai-icon-btn" id="ai-close" title="Minimize" aria-label="Minimize">
+        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><polyline points="6 9 12 15 18 9"/></svg>
+      </button>
+    </div>
+  </header>
+
+  <div class="ai-messages" id="ai-messages">
+    <div class="ai-empty" id="ai-empty">
+      <p class="ai-empty-title">On-device AI · Gemini Nano</p>
+      <p class="ai-empty-sub">Ask anything about this article. Runs in your browser — nothing leaves your device.</p>
+    </div>
+  </div>
+
+  <div class="ai-status" id="ai-status" hidden></div>
+
+  <form class="ai-composer" id="ai-form">
+    <textarea id="ai-input" rows="1" placeholder="Ask about this post…" autocomplete="off"></textarea>
+    <button type="submit" id="ai-send" class="ai-send" aria-label="Send" disabled>
+      <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><line x1="22" y1="2" x2="11" y2="13"/><polygon points="22 2 15 22 11 13 2 9 22 2"/></svg>
+    </button>
+  </form>
+</div>
+
+<script>
+(function () {
+  const POST_TITLE = "\u9ad8\u4e2d\u89c9\u5f97\u6700\u6ca1\u7528\u7684 log\uff0c\u5176\u5b9e\u662f\u5927\u6a21\u578b\u5224\u65ad\"\u81ea\u5df1\u9519\u5f97\u6709\u591a\u79bb\u8c31\"\u7684\u552f\u4e00\u6807\u5c3a";
+  const contentEl = document.querySelector('article .content');
+
+  const fab = document.getElementById('ai-fab');
+  const panel = document.getElementById('ai-panel');
+  const closeBtn = document.getElementById('ai-close');
+  const clearBtn = document.getElementById('ai-clear');
+  const msgsEl = document.getElementById('ai-messages');
+  const emptyEl = document.getElementById('ai-empty');
+  const statusEl = document.getElementById('ai-status');
+  const formEl = document.getElementById('ai-form');
+  const inputEl = document.getElementById('ai-input');
+  const sendBtn = document.getElementById('ai-send');
+
+  function articleText() {
+    if (!contentEl) return '';
+    return (contentEl.innerText || contentEl.textContent || '')
+      .replace(/[ \t]+\n/g, '\n')
+      .replace(/\n{3,}/g, '\n\n')
+      .trim();
+  }
+
+  function setStatus(msg, cls) {
+    if (!msg) { statusEl.hidden = true; statusEl.textContent = ''; statusEl.className = 'ai-status'; return; }
+    statusEl.hidden = false;
+    statusEl.textContent = msg;
+    statusEl.className = 'ai-status' + (cls ? ' ' + cls : '');
+  }
+
+  function hideEmpty() { if (emptyEl) emptyEl.style.display = 'none'; }
+
+  function appendBubble(role, text) {
+    hideEmpty();
+    const wrap = document.createElement('div');
+    wrap.className = 'ai-msg ai-msg-' + role;
+    const bubble = document.createElement('div');
+    bubble.className = 'ai-bubble';
+    bubble.textContent = text;
+    wrap.appendChild(bubble);
+    msgsEl.appendChild(wrap);
+    msgsEl.scrollTop = msgsEl.scrollHeight;
+    return bubble;
+  }
+
+  function appendTyping() {
+    hideEmpty();
+    const wrap = document.createElement('div');
+    wrap.className = 'ai-msg ai-msg-assistant ai-typing';
+    wrap.innerHTML = '<div class="ai-bubble"><span class="ai-dots"><i></i><i></i><i></i></span></div>';
+    msgsEl.appendChild(wrap);
+    msgsEl.scrollTop = msgsEl.scrollHeight;
+    return wrap;
+  }
+
+  function autoSize() {
+    inputEl.style.height = 'auto';
+    inputEl.style.height = Math.min(inputEl.scrollHeight, 140) + 'px';
+  }
+
+  function openPanel() {
+    panel.classList.add('open');
+    panel.setAttribute('aria-hidden', 'false');
+    fab.classList.add('hidden');
+    setTimeout(() => inputEl.focus(), 50);
+  }
+  function closePanel() {
+    panel.classList.remove('open');
+    panel.setAttribute('aria-hidden', 'true');
+    fab.classList.remove('hidden');
+  }
+
+  fab.addEventListener('click', openPanel);
+  closeBtn.addEventListener('click', closePanel);
+  document.addEventListener('keydown', e => {
+    if (e.key === 'Escape' && panel.classList.contains('open')) closePanel();
+  });
+
+  // ---- LanguageModel session ----
+  let session = null;
+  let creating = null;
+  let history = [];
+
+  function buildSystemPrompt() {
+    // Keep article context modest — Gemini Nano's input quota is small.
+    const article = articleText().slice(0, 4000);
+    return (
+      'You are a concise, helpful assistant answering questions about a blog post. ' +
+      'Use the article below as your primary source. If the answer is not in it, say so briefly and answer generally. ' +
+      'Reply in the same language as the user\'s question. Keep answers short unless asked for detail.\n\n' +
+      '=== ARTICLE TITLE ===\n' + POST_TITLE + '\n\n' +
+      '=== ARTICLE CONTENT ===\n' + article
+    );
+  }
+
+  async function ensureSession() {
+    if (session) return session;
+    if (creating) return creating;
+
+    if (!('LanguageModel' in self)) {
+      throw new Error(
+        'On-device AI not available. Use Chrome 138+ on desktop, or enable ' +
+        '"Prompt API for Gemini Nano" in chrome://flags.'
+      );
+    }
+
+    setStatus('Checking model…', 'info');
+    const status = await LanguageModel.availability();
+    if (status === 'unavailable') {
+      throw new Error('Model unavailable on this device.');
+    }
+
+    creating = (async () => {
+      // Only show download UI when the model isn't already there.
+      const willDownload = (status !== 'available');
+      if (willDownload) setStatus('Preparing model (first run downloads ~2GB)…', 'info');
+      else setStatus('Warming up…', 'info');
+
+      const s = await LanguageModel.create({
+        initialPrompts: [{ role: 'system', content: buildSystemPrompt() }],
+        monitor(m) {
+          m.addEventListener('downloadprogress', e => {
+            // Skip the spurious 0% event Chrome fires for cached models.
+            if (!willDownload && e.loaded === 0) return;
+            const pct = (e.loaded * 100).toFixed(1);
+            setStatus('Downloading model: ' + pct + '%', 'info');
+          });
+        }
+      });
+      session = s;
+      setStatus('');
+      return s;
+    })();
+
+    try { return await creating; }
+    finally { creating = null; }
+  }
+
+  async function ask(q) {
+    appendBubble('user', q);
+    history.push({ role: 'user', content: q });
+
+    sendBtn.disabled = true;
+    inputEl.disabled = true;
+    const typing = appendTyping();
+
+    let answerBubble = null;
+    let acc = '';
+    try {
+      const s = await ensureSession();
+      const stream = s.promptStreaming(q);
+      for await (const chunk of stream) {
+        if (!answerBubble) {
+          typing.remove();
+          const wrap = document.createElement('div');
+          wrap.className = 'ai-msg ai-msg-assistant';
+          answerBubble = document.createElement('div');
+          answerBubble.className = 'ai-bubble';
+          wrap.appendChild(answerBubble);
+          msgsEl.appendChild(wrap);
+        }
+        acc += chunk;
+        answerBubble.textContent = acc;
+        msgsEl.scrollTop = msgsEl.scrollHeight;
+      }
+      if (acc) history.push({ role: 'assistant', content: acc });
+      else { typing.remove(); appendBubble('assistant', '(no response)'); }
+    } catch (e) {
+      if (typing && typing.parentNode) typing.remove();
+      const err = document.createElement('div');
+      err.className = 'ai-msg ai-msg-error';
+      err.innerHTML = '<div class="ai-bubble">⚠ ' + (e && e.message ? e.message : String(e)) + '</div>';
+      msgsEl.appendChild(err);
+      msgsEl.scrollTop = msgsEl.scrollHeight;
+    } finally {
+      sendBtn.disabled = !inputEl.value.trim();
+      inputEl.disabled = false;
+      inputEl.focus();
+    }
+  }
+
+  formEl.addEventListener('submit', e => {
+    e.preventDefault();
+    const q = inputEl.value.trim();
+    if (!q) return;
+    inputEl.value = '';
+    autoSize();
+    sendBtn.disabled = true;
+    ask(q);
+  });
+
+  inputEl.addEventListener('input', () => {
+    autoSize();
+    sendBtn.disabled = !inputEl.value.trim();
+  });
+  inputEl.addEventListener('keydown', e => {
+    if (e.key === 'Enter' && !e.shiftKey) {
+      e.preventDefault();
+      formEl.requestSubmit();
+    }
+  });
+
+  clearBtn.addEventListener('click', () => {
+    msgsEl.innerHTML = '';
+    msgsEl.appendChild(emptyEl);
+    emptyEl.style.display = '';
+    history = [];
+    if (session && session.destroy) { try { session.destroy(); } catch (_) {} }
+    session = null;
+    setStatus('');
+  });
+
+  if (!('LanguageModel' in self)) {
+    fab.addEventListener('click', () => {
+      openPanel();
+      setStatus('On-device AI not detected. Use Chrome 138+ desktop, or enable "Prompt API for Gemini Nano" in chrome://flags.', 'bad');
+    }, { once: true });
+  }
+})();
+</script>
+
+<!-- Outline notes / comments — DataScript + IndexedDB -->
+<script src="https://github.com/tonsky/datascript/releases/download/1.7.8/datascript-1.7.8.min.js"></script>
+<script src="../notes.js?v=6"></script>
+<script src="../theme.js"></script>
+<script src="../wechat-copy.js?v=3"></script>
+
+</body>
+</html>
