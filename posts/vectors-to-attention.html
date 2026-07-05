@@ -1,0 +1,622 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>高中觉得只是&quot;带箭头的线段&quot;的向量，其实是大模型把&quot;意思&quot;变成&quot;方向&quot;的地基 · Steve Chan — xlisp</title>
+<meta name="description" content="如果只能留一句话，那就是这句：">
+<meta name="author" content="Steve Chan">
+<link rel="icon" type="image/jpeg" href="../icon.jpeg">
+<link rel="apple-touch-icon" href="../icon.jpeg">
+<meta property="og:type" content="article">
+<meta property="og:title" content="高中觉得只是&quot;带箭头的线段&quot;的向量，其实是大模型把&quot;意思&quot;变成&quot;方向&quot;的地基">
+<meta property="og:description" content="如果只能留一句话，那就是这句：">
+<meta property="og:image" content="../icon.jpeg">
+<meta property="og:site_name" content="Steve Chan — xlisp">
+<meta name="twitter:card" content="summary_large_image">
+<meta name="twitter:title" content="高中觉得只是&quot;带箭头的线段&quot;的向量，其实是大模型把&quot;意思&quot;变成&quot;方向&quot;的地基">
+<meta name="twitter:description" content="如果只能留一句话，那就是这句：">
+<meta name="twitter:image" content="../icon.jpeg">
+<link rel="stylesheet" href="../style.css?v=light1">
+<script>(function(){try{if(localStorage.getItem('theme')==='light')document.documentElement.setAttribute('data-theme','light');}catch(e){}})();</script>
+<!-- Math formula rendering via MathJax -->
+<script>
+window.MathJax = {
+  tex: {
+    // arithmatex emits \(...\) / \[...\] markup, so only these delimiters
+    // are needed; plain `$` is left alone (avoids currency false positives).
+    inlineMath: [['\\(', '\\)']],
+    displayMath: [['\\[', '\\]']],
+    processEscapes: true
+  },
+  svg: {
+    // Each formula gets its own self-contained <defs>, so the copy script can
+    // serialize one <svg> and rasterize it to a PNG for WeChat.
+    fontCache: 'local'
+  },
+  options: {
+    skipHtmlTags: ['script', 'noscript', 'style', 'textarea', 'pre', 'code'],
+    ignoreHtmlClass: 'highlight'
+  }
+};
+</script>
+<script src="https://cdn.jsdelivr.net/npm/mathjax@3/es5/tex-svg.js" async></script>
+</head>
+<body>
+<main class="wrap post">
+
+  <nav class="topnav">
+    <a href="../index.html">← home</a>
+  </nav>
+
+  <article>
+    <header class="post-header">
+      <h1>高中觉得只是&quot;带箭头的线段&quot;的向量，其实是大模型把&quot;意思&quot;变成&quot;方向&quot;的地基</h1>
+      <p class="meta">2026-07-05 · Steve Chan</p>
+    </header>
+
+    <div class="content">
+<blockquote>
+<p>向量、坐标、模长、数量积（点积）、向量加减……高中学了一整章，考完只记得"力的分解"和"a·b=|a||b|cosθ"。
+因为老师只教你"算箭头、求夹角、解物理题"，没告诉你两件事：</p>
+<p><strong>第一，向量的灵魂不是"带箭头的线段"，是"用一个方向来表示一个意思"。
+第二，今天每一个大模型（LLaMA、Qwen、GPT、DeepSeek）之所以懂"猫和狗很像、和苹果不像"，
+靠的正是把每个词变成一个向量，再用点积去量"两个方向有多一致"——这套东西撑起了整个注意力机制。</strong></p>
+<p>这篇文章不背一个公式、不做一道受力分析，全部用能跑起来的 PyTorch 代码，
+把向量最核心的"方向 = 意义、点积 = 相关度"本质，一路接到大模型的注意力。
+并且顺手回答四个灵魂拷问：</p>
+<ul>
+<li>向量明明是算力、算位移的，怎么会和"词义""大模型"扯上关系？</li>
+<li>一个"词"到底怎么变成向量的？这串坐标里藏着什么？</li>
+<li>为什么衡量两个词像不像，偏偏用"点积"，而不是别的算法？</li>
+<li>注意力里的 <code>Q·K</code> 除以 <code>√d</code> 是在干嘛？点积和高中的"夹角、模长"又是什么关系？</li>
+</ul>
+</blockquote>
+<hr />
+<h2 id="0-一句话主线">0. 一句话主线</h2>
+<p>如果只能留一句话，那就是这句：</p>
+<blockquote>
+<p><strong>向量把"意思"编码成"方向"；点积衡量"两个方向有多一致"，也就是"两个东西有多相关"。</strong></p>
+</blockquote>
+<p>意思相近的词，方向就相近；点积就大。意思无关的词，方向近乎垂直；点积就趋近 0。
+大模型判断"这个词该关注那个词多少"，从头到尾就是在做一件事——<strong>算两个向量的点积。</strong></p>
+<div class="highlight"><pre><span></span><code><span class="kn">import</span><span class="w"> </span><span class="nn">torch</span>
+
+<span class="c1"># 向量就是一串坐标 —— 空间里的一个&quot;位置 / 方向&quot;</span>
+<span class="n">v</span> <span class="o">=</span> <span class="n">torch</span><span class="o">.</span><span class="n">tensor</span><span class="p">([</span><span class="mf">3.0</span><span class="p">,</span> <span class="mf">4.0</span><span class="p">])</span>
+<span class="nb">print</span><span class="p">(</span><span class="s2">&quot;向量:&quot;</span><span class="p">,</span> <span class="n">v</span><span class="p">)</span>
+<span class="nb">print</span><span class="p">(</span><span class="s2">&quot;模长（箭头有多长）:&quot;</span><span class="p">,</span> <span class="n">v</span><span class="o">.</span><span class="n">norm</span><span class="p">())</span>      <span class="c1"># 5.0，正是高中的勾三股四</span>
+</code></pre></div>
+
+<p>记住这个画面：<strong>向量 = 空间里的一根箭头，它的"方向"才是灵魂，"长度"只是次要属性。</strong>
+下面所有东西都挂在"方向表示意义"这一件事上。</p>
+<hr />
+<h2 id="1-向量不是箭头是空间里的一个方向">1. 向量不是箭头，是"空间里的一个方向"</h2>
+<p>高中把向量画成一根带箭头的线段，把你的注意力锁在"长度和角度"上。
+但真正有用的视角是：<strong>一串坐标，就唯一确定了空间里的一个方向。</strong> 把长度归一化掉，只看方向：</p>
+<div class="highlight"><pre><span></span><code><span class="kn">import</span><span class="w"> </span><span class="nn">torch</span>
+
+<span class="n">a</span> <span class="o">=</span> <span class="n">torch</span><span class="o">.</span><span class="n">tensor</span><span class="p">([</span><span class="mf">1.0</span><span class="p">,</span> <span class="mf">1.0</span><span class="p">])</span>
+<span class="n">b</span> <span class="o">=</span> <span class="n">torch</span><span class="o">.</span><span class="n">tensor</span><span class="p">([</span><span class="mf">2.0</span><span class="p">,</span> <span class="mf">2.1</span><span class="p">])</span>     <span class="c1"># 坐标不同，但和 a 几乎指同一个方向</span>
+<span class="n">c</span> <span class="o">=</span> <span class="n">torch</span><span class="o">.</span><span class="n">tensor</span><span class="p">([</span><span class="o">-</span><span class="mf">1.0</span><span class="p">,</span> <span class="o">-</span><span class="mf">0.9</span><span class="p">])</span>   <span class="c1"># 和 a 几乎指相反方向</span>
+
+<span class="k">for</span> <span class="n">name</span><span class="p">,</span> <span class="n">v</span> <span class="ow">in</span> <span class="p">[(</span><span class="s2">&quot;a&quot;</span><span class="p">,</span> <span class="n">a</span><span class="p">),</span> <span class="p">(</span><span class="s2">&quot;b≈同向&quot;</span><span class="p">,</span> <span class="n">b</span><span class="p">),</span> <span class="p">(</span><span class="s2">&quot;c≈反向&quot;</span><span class="p">,</span> <span class="n">c</span><span class="p">)]:</span>
+    <span class="nb">print</span><span class="p">(</span><span class="sa">f</span><span class="s2">&quot;</span><span class="si">{</span><span class="n">name</span><span class="si">}</span><span class="s2"> 的纯方向:&quot;</span><span class="p">,</span> <span class="p">(</span><span class="n">v</span> <span class="o">/</span> <span class="n">v</span><span class="o">.</span><span class="n">norm</span><span class="p">())</span><span class="o">.</span><span class="n">round</span><span class="p">(</span><span class="n">decimals</span><span class="o">=</span><span class="mi">2</span><span class="p">))</span>
+<span class="c1"># a 和 b 归一化后几乎一样（同向）；c 是它的负方向（反向）</span>
+</code></pre></div>
+
+<p><code>b</code> 的坐标是 <code>a</code> 的两倍多，但归一化后<strong>方向几乎重合</strong>；<code>c</code> 则指向正相反。
+这就是关键的视角切换：<strong>我们真正关心的从来不是箭头多长，而是它指向哪。</strong>
+下一节的"点积"，量的正是"两根箭头指的方向有多一致"。</p>
+<hr />
+<h2 id="2-点积衡量两个方向有多一致的标尺">2. 点积：衡量"两个方向有多一致"的标尺</h2>
+<p>高中的数量积 <code>a·b</code>，被埋在"求夹角、求投影"的题里。但它最有用的身份只有一个——<strong>相关度标尺</strong>：</p>
+<div class="highlight"><pre><span></span><code><span class="kn">import</span><span class="w"> </span><span class="nn">torch</span>
+
+<span class="n">a</span> <span class="o">=</span> <span class="n">torch</span><span class="o">.</span><span class="n">tensor</span><span class="p">([</span><span class="mf">1.0</span><span class="p">,</span> <span class="mf">0.0</span><span class="p">])</span>
+<span class="k">for</span> <span class="n">name</span><span class="p">,</span> <span class="n">v</span> <span class="ow">in</span> <span class="p">[(</span><span class="s2">&quot;同向&quot;</span><span class="p">,</span> <span class="n">torch</span><span class="o">.</span><span class="n">tensor</span><span class="p">([</span><span class="mf">1.0</span><span class="p">,</span> <span class="mf">0.0</span><span class="p">])),</span>
+                <span class="p">(</span><span class="s2">&quot;垂直&quot;</span><span class="p">,</span> <span class="n">torch</span><span class="o">.</span><span class="n">tensor</span><span class="p">([</span><span class="mf">0.0</span><span class="p">,</span> <span class="mf">1.0</span><span class="p">])),</span>
+                <span class="p">(</span><span class="s2">&quot;反向&quot;</span><span class="p">,</span> <span class="n">torch</span><span class="o">.</span><span class="n">tensor</span><span class="p">([</span><span class="o">-</span><span class="mf">1.0</span><span class="p">,</span> <span class="mf">0.0</span><span class="p">]))]:</span>
+    <span class="nb">print</span><span class="p">(</span><span class="sa">f</span><span class="s2">&quot;</span><span class="si">{</span><span class="n">name</span><span class="si">}</span><span class="s2">: 点积 a·v = </span><span class="si">{</span><span class="n">torch</span><span class="o">.</span><span class="n">dot</span><span class="p">(</span><span class="n">a</span><span class="p">,</span><span class="w"> </span><span class="n">v</span><span class="p">)</span><span class="si">:</span><span class="s2">+.1f</span><span class="si">}</span><span class="s2">&quot;</span><span class="p">)</span>
+<span class="c1"># 同向 -&gt; +1（最相关）   垂直 -&gt; 0（毫不相关）   反向 -&gt; -1（最相反）</span>
+</code></pre></div>
+
+<p>点积把"两个方向的关系"压缩成一个数：<strong>同向为正、越同向越大；垂直为 0；反向为负。</strong>
+如果再把长度的影响除掉，就得到只看方向的"余弦相似度"——大模型判断词义相似度用的就是它：</p>
+<div class="highlight"><pre><span></span><code><span class="kn">import</span><span class="w"> </span><span class="nn">torch</span>
+<span class="kn">import</span><span class="w"> </span><span class="nn">torch.nn.functional</span><span class="w"> </span><span class="k">as</span><span class="w"> </span><span class="nn">F</span>
+
+<span class="n">a</span> <span class="o">=</span> <span class="n">torch</span><span class="o">.</span><span class="n">tensor</span><span class="p">([</span><span class="mf">2.0</span><span class="p">,</span> <span class="mf">1.0</span><span class="p">])</span>
+<span class="n">b</span> <span class="o">=</span> <span class="n">torch</span><span class="o">.</span><span class="n">tensor</span><span class="p">([</span><span class="mf">4.0</span><span class="p">,</span> <span class="mf">2.0</span><span class="p">])</span>                       <span class="c1"># b 就是 2a，方向完全一致</span>
+<span class="nb">print</span><span class="p">(</span><span class="s2">&quot;余弦相似度:&quot;</span><span class="p">,</span> <span class="n">F</span><span class="o">.</span><span class="n">cosine_similarity</span><span class="p">(</span><span class="n">a</span><span class="p">,</span> <span class="n">b</span><span class="p">,</span> <span class="n">dim</span><span class="o">=</span><span class="mi">0</span><span class="p">)</span><span class="o">.</span><span class="n">item</span><span class="p">())</span>   <span class="c1"># 1.0：方向一样就是 1</span>
+</code></pre></div>
+
+<p><code>1.0</code>。<strong>方向完全一致，余弦相似度就是 1，跟长度差多少倍无关。</strong>
+记住这把标尺：<strong>点积（及其归一化版余弦）= 两个向量有多"像"。</strong> 它是后面一切的核心零件。</p>
+<hr />
+<h2 id="疑惑点一一个词到底怎么变成向量的这串坐标里藏着什么">🤔 疑惑点一：一个"词"到底怎么变成向量的？这串坐标里藏着什么？</h2>
+<p><strong>模型里有一张巨大的"词 → 向量"对照表（叫嵌入表 embedding），每个词对应表里的一行坐标。这些坐标不是人写死的，是训练出来的：模型读了海量文本后，自动把"经常出现在相似语境里的词"，摆到了相似的方向上。所以坐标里藏着的，就是这个词的"意思"。</strong></p>
+<p>第一步很朴素——每个词就是查一张表，取出属于它的那一行：</p>
+<div class="highlight"><pre><span></span><code><span class="kn">import</span><span class="w"> </span><span class="nn">torch</span>
+<span class="kn">import</span><span class="w"> </span><span class="nn">torch.nn</span><span class="w"> </span><span class="k">as</span><span class="w"> </span><span class="nn">nn</span>
+
+<span class="n">torch</span><span class="o">.</span><span class="n">manual_seed</span><span class="p">(</span><span class="mi">0</span><span class="p">)</span>
+<span class="n">vocab</span> <span class="o">=</span> <span class="p">[</span><span class="s2">&quot;猫&quot;</span><span class="p">,</span> <span class="s2">&quot;狗&quot;</span><span class="p">,</span> <span class="s2">&quot;苹果&quot;</span><span class="p">]</span>
+<span class="n">emb</span> <span class="o">=</span> <span class="n">nn</span><span class="o">.</span><span class="n">Embedding</span><span class="p">(</span><span class="nb">len</span><span class="p">(</span><span class="n">vocab</span><span class="p">),</span> <span class="mi">4</span><span class="p">)</span>      <span class="c1"># 3 个词，每个用一个 4 维向量表示</span>
+<span class="n">ids</span> <span class="o">=</span> <span class="n">torch</span><span class="o">.</span><span class="n">tensor</span><span class="p">([</span><span class="mi">0</span><span class="p">,</span> <span class="mi">1</span><span class="p">,</span> <span class="mi">2</span><span class="p">])</span>          <span class="c1"># 词的编号</span>
+<span class="nb">print</span><span class="p">(</span><span class="n">emb</span><span class="p">(</span><span class="n">ids</span><span class="p">)</span><span class="o">.</span><span class="n">round</span><span class="p">(</span><span class="n">decimals</span><span class="o">=</span><span class="mi">2</span><span class="p">))</span>      <span class="c1"># 取出每个词对应的那一行&quot;坐标&quot;</span>
+</code></pre></div>
+
+<p>刚初始化时这些坐标是随机的，什么也不代表。但训练之后，<strong>这张表会自我组织</strong>：
+"猫""狗"这种常一起出现的词，方向会被拉到一起；"苹果"会被推到另一个方向。
+下一节我们直接摆出训练完的效果——<strong>意思，变成了几何。</strong></p>
+<hr />
+<h2 id="3-词向量把意思摆进空间意思近的方向就近">3. 词向量：把"意思"摆进空间，意思近的方向就近</h2>
+<p>训练好的词向量最迷人的一点是：<strong>语义相似度，直接变成了几何上的方向相似度。</strong>
+手工摆三个词向量，感受一下"意思近 → 点积大"：</p>
+<div class="highlight"><pre><span></span><code><span class="kn">import</span><span class="w"> </span><span class="nn">torch</span>
+<span class="kn">import</span><span class="w"> </span><span class="nn">torch.nn.functional</span><span class="w"> </span><span class="k">as</span><span class="w"> </span><span class="nn">F</span>
+
+<span class="n">vec</span> <span class="o">=</span> <span class="p">{</span>
+    <span class="s2">&quot;猫&quot;</span><span class="p">:</span>   <span class="n">torch</span><span class="o">.</span><span class="n">tensor</span><span class="p">([</span><span class="mf">0.90</span><span class="p">,</span> <span class="mf">0.10</span><span class="p">]),</span>
+    <span class="s2">&quot;狗&quot;</span><span class="p">:</span>   <span class="n">torch</span><span class="o">.</span><span class="n">tensor</span><span class="p">([</span><span class="mf">0.80</span><span class="p">,</span> <span class="mf">0.20</span><span class="p">]),</span>   <span class="c1"># 和&quot;猫&quot;同为动物 -&gt; 方向接近</span>
+    <span class="s2">&quot;苹果&quot;</span><span class="p">:</span> <span class="n">torch</span><span class="o">.</span><span class="n">tensor</span><span class="p">([</span><span class="mf">0.10</span><span class="p">,</span> <span class="mf">0.90</span><span class="p">]),</span>   <span class="c1"># 水果 -&gt; 指向另一个方向</span>
+<span class="p">}</span>
+
+<span class="k">def</span><span class="w"> </span><span class="nf">cos</span><span class="p">(</span><span class="n">x</span><span class="p">,</span> <span class="n">y</span><span class="p">):</span>
+    <span class="k">return</span> <span class="n">F</span><span class="o">.</span><span class="n">cosine_similarity</span><span class="p">(</span><span class="n">vec</span><span class="p">[</span><span class="n">x</span><span class="p">],</span> <span class="n">vec</span><span class="p">[</span><span class="n">y</span><span class="p">],</span> <span class="n">dim</span><span class="o">=</span><span class="mi">0</span><span class="p">)</span><span class="o">.</span><span class="n">item</span><span class="p">()</span>
+
+<span class="nb">print</span><span class="p">(</span><span class="s2">&quot;猫 vs 狗  :&quot;</span><span class="p">,</span> <span class="nb">round</span><span class="p">(</span><span class="n">cos</span><span class="p">(</span><span class="s2">&quot;猫&quot;</span><span class="p">,</span> <span class="s2">&quot;狗&quot;</span><span class="p">),</span> <span class="mi">3</span><span class="p">))</span>    <span class="c1"># 高：意思近，方向近</span>
+<span class="nb">print</span><span class="p">(</span><span class="s2">&quot;猫 vs 苹果:&quot;</span><span class="p">,</span> <span class="nb">round</span><span class="p">(</span><span class="n">cos</span><span class="p">(</span><span class="s2">&quot;猫&quot;</span><span class="p">,</span> <span class="s2">&quot;苹果&quot;</span><span class="p">),</span> <span class="mi">3</span><span class="p">))</span>  <span class="c1"># 低：意思远，方向远</span>
+</code></pre></div>
+
+<p>"猫"和"狗"的余弦接近 1，"猫"和"苹果"则很低。<strong>在这个空间里，"相似"不再是抽象的语感，
+而是一个能算出来的角度。</strong> 你能在词向量空间里做"最近邻搜索"找近义词、能给文本聚类、
+能做语义检索（RAG 的召回底层就是这个）——<strong>全都建立在"意思 = 方向"这一步之上。</strong></p>
+<hr />
+<h2 id="4-向量加减-语义运算国王-男人-女人-王后">4. 向量加减 = 语义运算：<code>国王 - 男人 + 女人 ≈ 王后</code></h2>
+<p>既然"意思"变成了空间里的方向，那"意思之间的关系"就变成了<strong>向量的加减</strong>。
+这就是词向量最著名的魔法——你可以对"意义"做算术：</p>
+<div class="highlight"><pre><span></span><code><span class="kn">import</span><span class="w"> </span><span class="nn">torch</span>
+<span class="kn">import</span><span class="w"> </span><span class="nn">torch.nn.functional</span><span class="w"> </span><span class="k">as</span><span class="w"> </span><span class="nn">F</span>
+
+<span class="n">king</span>  <span class="o">=</span> <span class="n">torch</span><span class="o">.</span><span class="n">tensor</span><span class="p">([</span><span class="mf">0.90</span><span class="p">,</span> <span class="mf">0.70</span><span class="p">,</span> <span class="mf">0.20</span><span class="p">])</span>
+<span class="n">man</span>   <span class="o">=</span> <span class="n">torch</span><span class="o">.</span><span class="n">tensor</span><span class="p">([</span><span class="mf">0.80</span><span class="p">,</span> <span class="mf">0.10</span><span class="p">,</span> <span class="mf">0.10</span><span class="p">])</span>
+<span class="n">woman</span> <span class="o">=</span> <span class="n">torch</span><span class="o">.</span><span class="n">tensor</span><span class="p">([</span><span class="mf">0.20</span><span class="p">,</span> <span class="mf">0.10</span><span class="p">,</span> <span class="mf">0.80</span><span class="p">])</span>
+<span class="n">queen</span> <span class="o">=</span> <span class="n">torch</span><span class="o">.</span><span class="n">tensor</span><span class="p">([</span><span class="mf">0.35</span><span class="p">,</span> <span class="mf">0.72</span><span class="p">,</span> <span class="mf">0.88</span><span class="p">])</span>
+
+<span class="n">guess</span> <span class="o">=</span> <span class="n">king</span> <span class="o">-</span> <span class="n">man</span> <span class="o">+</span> <span class="n">woman</span>              <span class="c1"># 向量加减 = 语义加减</span>
+<span class="nb">print</span><span class="p">(</span><span class="s2">&quot;king - man + woman =&quot;</span><span class="p">,</span> <span class="n">guess</span><span class="o">.</span><span class="n">round</span><span class="p">(</span><span class="n">decimals</span><span class="o">=</span><span class="mi">2</span><span class="p">))</span>
+<span class="nb">print</span><span class="p">(</span><span class="s2">&quot;和 queen 的余弦相似度:&quot;</span><span class="p">,</span> <span class="nb">round</span><span class="p">(</span><span class="n">F</span><span class="o">.</span><span class="n">cosine_similarity</span><span class="p">(</span><span class="n">guess</span><span class="p">,</span> <span class="n">queen</span><span class="p">,</span> <span class="n">dim</span><span class="o">=</span><span class="mi">0</span><span class="p">)</span><span class="o">.</span><span class="n">item</span><span class="p">(),</span> <span class="mi">3</span><span class="p">))</span>
+</code></pre></div>
+
+<p><code>king - man + woman</code> 得到的向量，和 <code>queen</code> 的方向几乎重合（余弦≈1）。
+<strong>"从国王里减掉'男性'、加上'女性'"这句人话，在向量空间里是一次真实的加减运算。</strong>
+"性别""王室身份"这些抽象概念，各自对应着空间里的一个方向——这就是为什么大模型能做类比、
+能理解"巴黎之于法国，如同东京之于日本"。<strong>语义关系，被编码成了几何位移。</strong></p>
+<hr />
+<h2 id="5-注意力的内核就是一堆点积">5. 注意力的内核，就是一堆点积</h2>
+<p>现在把第 2 节的"点积 = 相关度"接到大模型最核心的注意力上。
+注意力要做的事，一句话：<strong>让每个词去"关注"和它最相关的其他词。</strong> 而"相关度"，就是点积：</p>
+<div class="highlight"><pre><span></span><code><span class="kn">import</span><span class="w"> </span><span class="nn">torch</span>
+<span class="kn">import</span><span class="w"> </span><span class="nn">torch.nn.functional</span><span class="w"> </span><span class="k">as</span><span class="w"> </span><span class="nn">F</span>
+
+<span class="n">torch</span><span class="o">.</span><span class="n">manual_seed</span><span class="p">(</span><span class="mi">0</span><span class="p">)</span>
+<span class="n">X</span> <span class="o">=</span> <span class="n">torch</span><span class="o">.</span><span class="n">randn</span><span class="p">(</span><span class="mi">3</span><span class="p">,</span> <span class="mi">4</span><span class="p">)</span>                 <span class="c1"># 3 个词，每个 4 维向量</span>
+
+<span class="n">scores</span> <span class="o">=</span> <span class="n">X</span> <span class="o">@</span> <span class="n">X</span><span class="o">.</span><span class="n">T</span>                      <span class="c1"># 两两做点积 -&gt; 相关度矩阵</span>
+<span class="n">weights</span> <span class="o">=</span> <span class="n">F</span><span class="o">.</span><span class="n">softmax</span><span class="p">(</span><span class="n">scores</span><span class="p">,</span> <span class="n">dim</span><span class="o">=-</span><span class="mi">1</span><span class="p">)</span>   <span class="c1"># 每行归一化成&quot;注意力分配&quot;</span>
+
+<span class="nb">print</span><span class="p">(</span><span class="s2">&quot;相关度（点积）矩阵:</span><span class="se">\n</span><span class="s2">&quot;</span><span class="p">,</span> <span class="n">scores</span><span class="o">.</span><span class="n">round</span><span class="p">(</span><span class="n">decimals</span><span class="o">=</span><span class="mi">2</span><span class="p">))</span>
+<span class="nb">print</span><span class="p">(</span><span class="s2">&quot;每个词该关注谁（softmax 后）:</span><span class="se">\n</span><span class="s2">&quot;</span><span class="p">,</span> <span class="n">weights</span><span class="o">.</span><span class="n">round</span><span class="p">(</span><span class="n">decimals</span><span class="o">=</span><span class="mi">2</span><span class="p">))</span>
+</code></pre></div>
+
+<p><code>X @ X.T</code> 就是让每个词和每个词做一次点积，得到一张"谁和谁多相关"的矩阵；
+再用 softmax 把每一行变成"注意力该怎么分配"。<strong>注意力机制里那句吓人的 <code>softmax(QKᵀ/√d)V</code>，
+拆开看，<code>QKᵀ</code> 就是你高中学的点积在做"批量相关度计算"。</strong>
+（真实的 Q、K 是词向量再各乘一个投影矩阵，但内核——"用点积量相关度"——分毫不差。）</p>
+<hr />
+<h2 id="疑惑点二qk-为什么要除以-d点积和高中的夹角模长是什么关系">🤔 疑惑点二：<code>Q·K</code> 为什么要除以 <code>√d</code>？点积和高中的"夹角、模长"是什么关系？</h2>
+<p><strong>点积天生等于 <code>|a||b|cosθ</code>——它同时被"两个向量的长度"和"夹角"影响。而向量维度 d 越高，点积的数值就天然越大（一堆维度的乘积累加起来）。维度动辄上千时，点积会大到让 softmax 饱和、梯度消失，所以要除以 <code>√d</code> 把它拉回正常范围。这个 <code>√d</code>，就是在给"维度带来的膨胀"做校正。</strong></p>
+<p>先把高中那条 <code>a·b = |a||b|cosθ</code> 用代码还原一遍，确认点积和"模长×夹角"是一回事：</p>
+<div class="highlight"><pre><span></span><code><span class="kn">import</span><span class="w"> </span><span class="nn">torch</span>
+<span class="kn">import</span><span class="w"> </span><span class="nn">math</span>
+
+<span class="n">a</span> <span class="o">=</span> <span class="n">torch</span><span class="o">.</span><span class="n">tensor</span><span class="p">([</span><span class="mf">3.0</span><span class="p">,</span> <span class="mf">4.0</span><span class="p">])</span>
+<span class="n">b</span> <span class="o">=</span> <span class="n">torch</span><span class="o">.</span><span class="n">tensor</span><span class="p">([</span><span class="mf">4.0</span><span class="p">,</span> <span class="mf">3.0</span><span class="p">])</span>
+
+<span class="n">dot</span> <span class="o">=</span> <span class="n">torch</span><span class="o">.</span><span class="n">dot</span><span class="p">(</span><span class="n">a</span><span class="p">,</span> <span class="n">b</span><span class="p">)</span>
+<span class="n">cos</span> <span class="o">=</span> <span class="n">dot</span> <span class="o">/</span> <span class="p">(</span><span class="n">a</span><span class="o">.</span><span class="n">norm</span><span class="p">()</span> <span class="o">*</span> <span class="n">b</span><span class="o">.</span><span class="n">norm</span><span class="p">())</span>
+<span class="nb">print</span><span class="p">(</span><span class="s2">&quot;点积 a·b       :&quot;</span><span class="p">,</span> <span class="n">dot</span><span class="o">.</span><span class="n">item</span><span class="p">())</span>                        <span class="c1"># 24</span>
+<span class="nb">print</span><span class="p">(</span><span class="s2">&quot;= |a||b|cosθ   :&quot;</span><span class="p">,</span> <span class="nb">round</span><span class="p">((</span><span class="n">a</span><span class="o">.</span><span class="n">norm</span><span class="p">()</span> <span class="o">*</span> <span class="n">b</span><span class="o">.</span><span class="n">norm</span><span class="p">()</span> <span class="o">*</span> <span class="n">cos</span><span class="p">)</span><span class="o">.</span><span class="n">item</span><span class="p">(),</span> <span class="mi">2</span><span class="p">))</span>  <span class="c1"># 也是 24</span>
+<span class="nb">print</span><span class="p">(</span><span class="s2">&quot;夹角(度)       :&quot;</span><span class="p">,</span> <span class="nb">round</span><span class="p">(</span><span class="n">math</span><span class="o">.</span><span class="n">degrees</span><span class="p">(</span><span class="n">math</span><span class="o">.</span><span class="n">acos</span><span class="p">(</span><span class="n">cos</span><span class="o">.</span><span class="n">item</span><span class="p">())),</span> <span class="mi">1</span><span class="p">))</span> <span class="c1"># ≈16.3°</span>
+</code></pre></div>
+
+<p>点积确实就是 <code>|a||b|cosθ</code>。再看维度带来的"数值膨胀"，以及 <code>√d</code> 如何救场：</p>
+<div class="highlight"><pre><span></span><code><span class="kn">import</span><span class="w"> </span><span class="nn">torch</span>
+
+<span class="n">torch</span><span class="o">.</span><span class="n">manual_seed</span><span class="p">(</span><span class="mi">0</span><span class="p">)</span>
+<span class="k">for</span> <span class="n">d</span> <span class="ow">in</span> <span class="p">[</span><span class="mi">4</span><span class="p">,</span> <span class="mi">64</span><span class="p">,</span> <span class="mi">1024</span><span class="p">]:</span>
+    <span class="n">q</span><span class="p">,</span> <span class="n">k</span> <span class="o">=</span> <span class="n">torch</span><span class="o">.</span><span class="n">randn</span><span class="p">(</span><span class="n">d</span><span class="p">),</span> <span class="n">torch</span><span class="o">.</span><span class="n">randn</span><span class="p">(</span><span class="n">d</span><span class="p">)</span>
+    <span class="n">raw</span> <span class="o">=</span> <span class="n">torch</span><span class="o">.</span><span class="n">dot</span><span class="p">(</span><span class="n">q</span><span class="p">,</span> <span class="n">k</span><span class="p">)</span>
+    <span class="nb">print</span><span class="p">(</span><span class="sa">f</span><span class="s2">&quot;d=</span><span class="si">{</span><span class="n">d</span><span class="si">:</span><span class="s2">5d</span><span class="si">}</span><span class="s2">  原始点积≈</span><span class="si">{</span><span class="n">raw</span><span class="si">:</span><span class="s2">7.2f</span><span class="si">}</span><span class="s2">   除以√d 后≈</span><span class="si">{</span><span class="n">raw</span><span class="w"> </span><span class="o">/</span><span class="w"> </span><span class="n">d</span><span class="w"> </span><span class="o">**</span><span class="w"> </span><span class="mf">0.5</span><span class="si">:</span><span class="s2">6.2f</span><span class="si">}</span><span class="s2">&quot;</span><span class="p">)</span>
+<span class="c1"># 维度越高原始点积越大越野；除以 √d 后，各维度都被拉回 O(1) 的稳定范围</span>
+</code></pre></div>
+
+<p>维度从 4 涨到 1024，原始点积的量级越来越野；而除以 <code>√d</code> 之后，数值稳稳待在个位数。
+<strong><code>softmax(QKᵀ/√d)</code> 里那个不起眼的 <code>√d</code>，就是在补偿"高维让点积膨胀"这件事</strong>——
+让注意力分数不管在多少维里，都落在 softmax 最灵敏、梯度最健康的区间。你高中的"模长、夹角"，
+在这里以最朴素的方式，决定了整个大模型能不能训得动。</p>
+<hr />
+<h2 id="动手一个最小注意力看点积如何让同类互相吸引">🎬 动手：一个最小注意力，看点积如何让"同类互相吸引"</h2>
+<p>把上面所有画面缝进一个能跑的最小注意力：手工摆 4 个词向量，看点积如何决定"谁关注谁"：</p>
+<div class="highlight"><pre><span></span><code><span class="kn">import</span><span class="w"> </span><span class="nn">torch</span>
+<span class="kn">import</span><span class="w"> </span><span class="nn">torch.nn.functional</span><span class="w"> </span><span class="k">as</span><span class="w"> </span><span class="nn">F</span>
+
+<span class="n">words</span> <span class="o">=</span> <span class="p">[</span><span class="s2">&quot;cat&quot;</span><span class="p">,</span> <span class="s2">&quot;kitten&quot;</span><span class="p">,</span> <span class="s2">&quot;car&quot;</span><span class="p">,</span> <span class="s2">&quot;truck&quot;</span><span class="p">]</span>
+<span class="n">X</span> <span class="o">=</span> <span class="n">torch</span><span class="o">.</span><span class="n">tensor</span><span class="p">([[</span><span class="mf">1.0</span><span class="p">,</span> <span class="mf">0.1</span><span class="p">],</span>      <span class="c1"># cat</span>
+                  <span class="p">[</span><span class="mf">0.9</span><span class="p">,</span> <span class="mf">0.2</span><span class="p">],</span>      <span class="c1"># kitten —— 和 cat 几乎同向</span>
+                  <span class="p">[</span><span class="mf">0.1</span><span class="p">,</span> <span class="mf">1.0</span><span class="p">],</span>      <span class="c1"># car</span>
+                  <span class="p">[</span><span class="mf">0.2</span><span class="p">,</span> <span class="mf">0.9</span><span class="p">]])</span>     <span class="c1"># truck  —— 和 car 几乎同向</span>
+
+<span class="n">scores</span> <span class="o">=</span> <span class="n">X</span> <span class="o">@</span> <span class="n">X</span><span class="o">.</span><span class="n">T</span> <span class="o">/</span> <span class="n">X</span><span class="o">.</span><span class="n">shape</span><span class="p">[</span><span class="mi">1</span><span class="p">]</span> <span class="o">**</span> <span class="mf">0.5</span>     <span class="c1"># 点积 / √d</span>
+<span class="n">scores</span><span class="o">.</span><span class="n">fill_diagonal_</span><span class="p">(</span><span class="nb">float</span><span class="p">(</span><span class="s2">&quot;-inf&quot;</span><span class="p">))</span>     <span class="c1"># 先不让词只顾自己</span>
+<span class="n">weights</span> <span class="o">=</span> <span class="n">F</span><span class="o">.</span><span class="n">softmax</span><span class="p">(</span><span class="n">scores</span><span class="p">,</span> <span class="n">dim</span><span class="o">=-</span><span class="mi">1</span><span class="p">)</span>
+
+<span class="k">for</span> <span class="n">i</span><span class="p">,</span> <span class="n">w</span> <span class="ow">in</span> <span class="nb">enumerate</span><span class="p">(</span><span class="n">words</span><span class="p">):</span>
+    <span class="nb">print</span><span class="p">(</span><span class="sa">f</span><span class="s2">&quot;</span><span class="si">{</span><span class="n">w</span><span class="si">:</span><span class="s2">7s</span><span class="si">}</span><span class="s2"> 最关注 -&gt; </span><span class="si">{</span><span class="n">words</span><span class="p">[</span><span class="n">weights</span><span class="p">[</span><span class="n">i</span><span class="p">]</span><span class="o">.</span><span class="n">argmax</span><span class="p">()]</span><span class="si">}</span><span class="s2">&quot;</span><span class="p">)</span>
+<span class="c1"># cat 最关注 kitten，car 最关注 truck —— 点积让方向相近的词互相吸引</span>
+</code></pre></div>
+
+<p><code>cat</code> 把注意力给了 <code>kitten</code>，<code>car</code> 把注意力给了 <code>truck</code>——<strong>因为它们的向量方向相近，点积最大。</strong>
+这就是注意力的全部秘密：<strong>方向相近 = 点积大 = 注意力高。</strong> 语义上的"相关"，
+被向量的点积翻译成了模型能算的数字。</p>
+<p>仓库里的动画脚本把这个"词向量自我组织"的过程画了出来：</p>
+<div class="highlight"><pre><span></span><code>python<span class="w"> </span>word_vectors_visualization.py
+</code></pre></div>
+
+<blockquote>
+<p>左边是一堆随机初始化的词向量箭头，训练时你会看到"动物"那几根慢慢转到一起、"水果"那几根转向另一边——
+<strong>意思相近的词，方向真的在往一块儿聚；</strong>
+右边则是它们两两之间的余弦相似度热力图，从一片模糊逐渐变得"同类发亮、异类变暗"。
+最后你会直观看到：<strong>训练，就是在把"意义"一点点摆进空间的方向里。</strong></p>
+</blockquote>
+<hr />
+<h2 id="缝合把所有画面接起来">缝合：把所有画面接起来</h2>
+<p>回到开头，现在每个概念都有了画面和代码出处：</p>
+<table>
+<thead>
+<tr>
+<th>向量概念</th>
+<th>高中怎么讲</th>
+<th>这篇文章怎么看（画面）</th>
+<th>在大模型里是什么</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><strong>向量 / 坐标</strong></td>
+<td>带箭头的线段</td>
+<td>空间里的一个"方向"（第 0、1 节）</td>
+<td>每个词的"意思"（词向量）</td>
+</tr>
+<tr>
+<td><strong>点积 <code>a·b</code></strong></td>
+<td>数量积、求夹角</td>
+<td>衡量"两个方向多一致"的标尺（第 2 节）</td>
+<td>注意力里的"相关度"</td>
+</tr>
+<tr>
+<td><strong>余弦相似度</strong></td>
+<td><code>cosθ = a·b/|a||b|</code></td>
+<td>只看方向的"像不像"（第 2、3 节）</td>
+<td>语义检索 / 找近义词</td>
+</tr>
+<tr>
+<td><strong>向量加减</strong></td>
+<td>平行四边形法则</td>
+<td>语义加减：国王-男人+女人（第 4 节）</td>
+<td>类比推理、概念运算</td>
+</tr>
+<tr>
+<td><strong><code>a·b=|a||b|cosθ</code></strong></td>
+<td>一条要背的公式</td>
+<td>点积被模长和维度撑大（疑惑点二）</td>
+<td><code>QKᵀ</code> 要除以 <code>√d</code> 的原因</td>
+</tr>
+</tbody>
+</table>
+<p>三句话总结这篇文章：</p>
+<blockquote>
+<p><strong>向量的灵魂是"用方向表示意义"</strong>——意思近的词，方向就近（第 1、3 节）；
+<strong>点积是"衡量两个方向多一致"的标尺</strong>，也就是相关度，归一化后就是余弦相似度（第 2 节）；
+<strong>于是注意力的内核 <code>QKᵀ</code> 就是一堆点积</strong>，让每个词去关注和它方向最近（意思最相关）的词（第 5 节、疑惑点二）。</p>
+</blockquote>
+<p>当年向量学得那么枯燥，不是因为它难，是因为没人告诉你：
+<strong>那根你以为只用来分解力的箭头，最后变成了每个词的"意思"，
+而高中那个 <code>a·b</code> 的点积，成了大模型判断"该关注谁"的唯一标尺。</strong>
+现在把上面每段代码跑一遍，比高中刷十套向量题都值。</p>
+<hr />
+<blockquote>
+<p><strong>备注（选题/标题）：</strong> 这篇走的是"高中知识其实是 AI 基石"的钩子（和《sin 和 cos》《对数》《求根公式》同一路子）。
+若想并入"大学4年"主系列，标题可换成：
+《大学4年没让你真正搞懂的向量，被一段注意力代码讲透了》。
+与《线性代数》那篇有承接：那篇讲"矩阵是变换"，这篇讲"向量是意义"，可互相引流；
+与《对数》《sin 和 cos》共同拼出"注意力"的三块地基（相关度、损失、位置）。</p>
+</blockquote>
+    </div>
+  </article>
+
+</main>
+
+<!-- Floating Ask-AI chat widget -->
+<button class="ai-fab" id="ai-fab" aria-label="Ask AI about this article" title="Ask AI about this article">
+  <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+    <path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"/>
+  </svg>
+  <span class="ai-fab-label">Ask AI</span>
+</button>
+
+<div class="ai-panel" id="ai-panel" role="dialog" aria-labelledby="ai-panel-title" aria-hidden="true">
+  <header class="ai-panel-head">
+    <div class="ai-panel-title-wrap">
+      <span class="ai-dot"></span>
+      <h3 id="ai-panel-title">Ask AI about this post</h3>
+    </div>
+    <div class="ai-panel-actions">
+      <button class="ai-icon-btn" id="ai-clear" title="Clear conversation" aria-label="Clear">
+        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><polyline points="3 6 5 6 21 6"/><path d="M19 6l-1 14a2 2 0 0 1-2 2H8a2 2 0 0 1-2-2L5 6"/><path d="M10 11v6M14 11v6"/><path d="M9 6V4a1 1 0 0 1 1-1h4a1 1 0 0 1 1 1v2"/></svg>
+      </button>
+      <button class="ai-icon-btn" id="ai-close" title="Minimize" aria-label="Minimize">
+        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><polyline points="6 9 12 15 18 9"/></svg>
+      </button>
+    </div>
+  </header>
+
+  <div class="ai-messages" id="ai-messages">
+    <div class="ai-empty" id="ai-empty">
+      <p class="ai-empty-title">On-device AI · Gemini Nano</p>
+      <p class="ai-empty-sub">Ask anything about this article. Runs in your browser — nothing leaves your device.</p>
+    </div>
+  </div>
+
+  <div class="ai-status" id="ai-status" hidden></div>
+
+  <form class="ai-composer" id="ai-form">
+    <textarea id="ai-input" rows="1" placeholder="Ask about this post…" autocomplete="off"></textarea>
+    <button type="submit" id="ai-send" class="ai-send" aria-label="Send" disabled>
+      <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><line x1="22" y1="2" x2="11" y2="13"/><polygon points="22 2 15 22 11 13 2 9 22 2"/></svg>
+    </button>
+  </form>
+</div>
+
+<script>
+(function () {
+  const POST_TITLE = "\u9ad8\u4e2d\u89c9\u5f97\u53ea\u662f\"\u5e26\u7bad\u5934\u7684\u7ebf\u6bb5\"\u7684\u5411\u91cf\uff0c\u5176\u5b9e\u662f\u5927\u6a21\u578b\u628a\"\u610f\u601d\"\u53d8\u6210\"\u65b9\u5411\"\u7684\u5730\u57fa";
+  const contentEl = document.querySelector('article .content');
+
+  const fab = document.getElementById('ai-fab');
+  const panel = document.getElementById('ai-panel');
+  const closeBtn = document.getElementById('ai-close');
+  const clearBtn = document.getElementById('ai-clear');
+  const msgsEl = document.getElementById('ai-messages');
+  const emptyEl = document.getElementById('ai-empty');
+  const statusEl = document.getElementById('ai-status');
+  const formEl = document.getElementById('ai-form');
+  const inputEl = document.getElementById('ai-input');
+  const sendBtn = document.getElementById('ai-send');
+
+  function articleText() {
+    if (!contentEl) return '';
+    return (contentEl.innerText || contentEl.textContent || '')
+      .replace(/[ \t]+\n/g, '\n')
+      .replace(/\n{3,}/g, '\n\n')
+      .trim();
+  }
+
+  function setStatus(msg, cls) {
+    if (!msg) { statusEl.hidden = true; statusEl.textContent = ''; statusEl.className = 'ai-status'; return; }
+    statusEl.hidden = false;
+    statusEl.textContent = msg;
+    statusEl.className = 'ai-status' + (cls ? ' ' + cls : '');
+  }
+
+  function hideEmpty() { if (emptyEl) emptyEl.style.display = 'none'; }
+
+  function appendBubble(role, text) {
+    hideEmpty();
+    const wrap = document.createElement('div');
+    wrap.className = 'ai-msg ai-msg-' + role;
+    const bubble = document.createElement('div');
+    bubble.className = 'ai-bubble';
+    bubble.textContent = text;
+    wrap.appendChild(bubble);
+    msgsEl.appendChild(wrap);
+    msgsEl.scrollTop = msgsEl.scrollHeight;
+    return bubble;
+  }
+
+  function appendTyping() {
+    hideEmpty();
+    const wrap = document.createElement('div');
+    wrap.className = 'ai-msg ai-msg-assistant ai-typing';
+    wrap.innerHTML = '<div class="ai-bubble"><span class="ai-dots"><i></i><i></i><i></i></span></div>';
+    msgsEl.appendChild(wrap);
+    msgsEl.scrollTop = msgsEl.scrollHeight;
+    return wrap;
+  }
+
+  function autoSize() {
+    inputEl.style.height = 'auto';
+    inputEl.style.height = Math.min(inputEl.scrollHeight, 140) + 'px';
+  }
+
+  function openPanel() {
+    panel.classList.add('open');
+    panel.setAttribute('aria-hidden', 'false');
+    fab.classList.add('hidden');
+    setTimeout(() => inputEl.focus(), 50);
+  }
+  function closePanel() {
+    panel.classList.remove('open');
+    panel.setAttribute('aria-hidden', 'true');
+    fab.classList.remove('hidden');
+  }
+
+  fab.addEventListener('click', openPanel);
+  closeBtn.addEventListener('click', closePanel);
+  document.addEventListener('keydown', e => {
+    if (e.key === 'Escape' && panel.classList.contains('open')) closePanel();
+  });
+
+  // ---- LanguageModel session ----
+  let session = null;
+  let creating = null;
+  let history = [];
+
+  function buildSystemPrompt() {
+    // Keep article context modest — Gemini Nano's input quota is small.
+    const article = articleText().slice(0, 4000);
+    return (
+      'You are a concise, helpful assistant answering questions about a blog post. ' +
+      'Use the article below as your primary source. If the answer is not in it, say so briefly and answer generally. ' +
+      'Reply in the same language as the user\'s question. Keep answers short unless asked for detail.\n\n' +
+      '=== ARTICLE TITLE ===\n' + POST_TITLE + '\n\n' +
+      '=== ARTICLE CONTENT ===\n' + article
+    );
+  }
+
+  async function ensureSession() {
+    if (session) return session;
+    if (creating) return creating;
+
+    if (!('LanguageModel' in self)) {
+      throw new Error(
+        'On-device AI not available. Use Chrome 138+ on desktop, or enable ' +
+        '"Prompt API for Gemini Nano" in chrome://flags.'
+      );
+    }
+
+    setStatus('Checking model…', 'info');
+    const status = await LanguageModel.availability();
+    if (status === 'unavailable') {
+      throw new Error('Model unavailable on this device.');
+    }
+
+    creating = (async () => {
+      // Only show download UI when the model isn't already there.
+      const willDownload = (status !== 'available');
+      if (willDownload) setStatus('Preparing model (first run downloads ~2GB)…', 'info');
+      else setStatus('Warming up…', 'info');
+
+      const s = await LanguageModel.create({
+        initialPrompts: [{ role: 'system', content: buildSystemPrompt() }],
+        monitor(m) {
+          m.addEventListener('downloadprogress', e => {
+            // Skip the spurious 0% event Chrome fires for cached models.
+            if (!willDownload && e.loaded === 0) return;
+            const pct = (e.loaded * 100).toFixed(1);
+            setStatus('Downloading model: ' + pct + '%', 'info');
+          });
+        }
+      });
+      session = s;
+      setStatus('');
+      return s;
+    })();
+
+    try { return await creating; }
+    finally { creating = null; }
+  }
+
+  async function ask(q) {
+    appendBubble('user', q);
+    history.push({ role: 'user', content: q });
+
+    sendBtn.disabled = true;
+    inputEl.disabled = true;
+    const typing = appendTyping();
+
+    let answerBubble = null;
+    let acc = '';
+    try {
+      const s = await ensureSession();
+      const stream = s.promptStreaming(q);
+      for await (const chunk of stream) {
+        if (!answerBubble) {
+          typing.remove();
+          const wrap = document.createElement('div');
+          wrap.className = 'ai-msg ai-msg-assistant';
+          answerBubble = document.createElement('div');
+          answerBubble.className = 'ai-bubble';
+          wrap.appendChild(answerBubble);
+          msgsEl.appendChild(wrap);
+        }
+        acc += chunk;
+        answerBubble.textContent = acc;
+        msgsEl.scrollTop = msgsEl.scrollHeight;
+      }
+      if (acc) history.push({ role: 'assistant', content: acc });
+      else { typing.remove(); appendBubble('assistant', '(no response)'); }
+    } catch (e) {
+      if (typing && typing.parentNode) typing.remove();
+      const err = document.createElement('div');
+      err.className = 'ai-msg ai-msg-error';
+      err.innerHTML = '<div class="ai-bubble">⚠ ' + (e && e.message ? e.message : String(e)) + '</div>';
+      msgsEl.appendChild(err);
+      msgsEl.scrollTop = msgsEl.scrollHeight;
+    } finally {
+      sendBtn.disabled = !inputEl.value.trim();
+      inputEl.disabled = false;
+      inputEl.focus();
+    }
+  }
+
+  formEl.addEventListener('submit', e => {
+    e.preventDefault();
+    const q = inputEl.value.trim();
+    if (!q) return;
+    inputEl.value = '';
+    autoSize();
+    sendBtn.disabled = true;
+    ask(q);
+  });
+
+  inputEl.addEventListener('input', () => {
+    autoSize();
+    sendBtn.disabled = !inputEl.value.trim();
+  });
+  inputEl.addEventListener('keydown', e => {
+    if (e.key === 'Enter' && !e.shiftKey) {
+      e.preventDefault();
+      formEl.requestSubmit();
+    }
+  });
+
+  clearBtn.addEventListener('click', () => {
+    msgsEl.innerHTML = '';
+    msgsEl.appendChild(emptyEl);
+    emptyEl.style.display = '';
+    history = [];
+    if (session && session.destroy) { try { session.destroy(); } catch (_) {} }
+    session = null;
+    setStatus('');
+  });
+
+  if (!('LanguageModel' in self)) {
+    fab.addEventListener('click', () => {
+      openPanel();
+      setStatus('On-device AI not detected. Use Chrome 138+ desktop, or enable "Prompt API for Gemini Nano" in chrome://flags.', 'bad');
+    }, { once: true });
+  }
+})();
+</script>
+
+<!-- Outline notes / comments — DataScript + IndexedDB -->
+<script src="https://github.com/tonsky/datascript/releases/download/1.7.8/datascript-1.7.8.min.js"></script>
+<script src="../notes.js?v=6"></script>
+<script src="../theme.js"></script>
+<script src="../wechat-copy.js?v=3"></script>
+
+</body>
+</html>
