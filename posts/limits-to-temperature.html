@@ -1,0 +1,565 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>高中觉得最玄乎的&quot;极限&quot;，其实是大模型&quot;从犹豫到笃定&quot;的那个旋钮 · Steve Chan — xlisp</title>
+<meta name="description" content="如果只能留一句话，那就是这句：">
+<meta name="author" content="Steve Chan">
+<link rel="icon" type="image/jpeg" href="../icon.jpeg">
+<link rel="apple-touch-icon" href="../icon.jpeg">
+<meta property="og:type" content="article">
+<meta property="og:title" content="高中觉得最玄乎的&quot;极限&quot;，其实是大模型&quot;从犹豫到笃定&quot;的那个旋钮">
+<meta property="og:description" content="如果只能留一句话，那就是这句：">
+<meta property="og:image" content="../icon.jpeg">
+<meta property="og:site_name" content="Steve Chan — xlisp">
+<meta name="twitter:card" content="summary_large_image">
+<meta name="twitter:title" content="高中觉得最玄乎的&quot;极限&quot;，其实是大模型&quot;从犹豫到笃定&quot;的那个旋钮">
+<meta name="twitter:description" content="如果只能留一句话，那就是这句：">
+<meta name="twitter:image" content="../icon.jpeg">
+<link rel="stylesheet" href="../style.css?v=light1">
+<script>(function(){try{if(localStorage.getItem('theme')==='light')document.documentElement.setAttribute('data-theme','light');}catch(e){}})();</script>
+<!-- Math formula rendering via MathJax -->
+<script>
+window.MathJax = {
+  tex: {
+    // arithmatex emits \(...\) / \[...\] markup, so only these delimiters
+    // are needed; plain `$` is left alone (avoids currency false positives).
+    inlineMath: [['\\(', '\\)']],
+    displayMath: [['\\[', '\\]']],
+    processEscapes: true
+  },
+  svg: {
+    // Each formula gets its own self-contained <defs>, so the copy script can
+    // serialize one <svg> and rasterize it to a PNG for WeChat.
+    fontCache: 'local'
+  },
+  options: {
+    skipHtmlTags: ['script', 'noscript', 'style', 'textarea', 'pre', 'code'],
+    ignoreHtmlClass: 'highlight'
+  }
+};
+</script>
+<script src="https://cdn.jsdelivr.net/npm/mathjax@3/es5/tex-svg.js" async></script>
+</head>
+<body>
+<main class="wrap post">
+
+  <nav class="topnav">
+    <a href="../index.html">← home</a>
+  </nav>
+
+  <article>
+    <header class="post-header">
+      <h1>高中觉得最玄乎的&quot;极限&quot;，其实是大模型&quot;从犹豫到笃定&quot;的那个旋钮</h1>
+      <p class="meta">2026-07-05 · Steve Chan</p>
+    </header>
+
+    <div class="content">
+<blockquote>
+<p>极限、<code>lim</code>、ε-δ、数列收敛、<code>x→0</code>……高中（到大一）学得云里雾里，只记得"<code>(1+1/n)^n</code> 趋近 e"这种结论。
+因为老师只教你"求极限、判断收敛"，没告诉你两件事：</p>
+<p><strong>第一，极限的灵魂不是"一种难算的题型"，是回答一个问题：无限逼近某个状态时，会发生什么。
+第二，今天每一个大模型（LLaMA、Qwen、GPT、DeepSeek）采样时那个"温度 temperature"旋钮，
+一端的极限是"绝对笃定"（只选最可能的词），另一端的极限是"完全随机"（所有词平均乱选）——
+这就是极限思想最日常的一次落地。</strong></p>
+<p>这篇文章不背一个公式、不做一道 ε-δ 证明，全部用能跑起来的 PyTorch 代码，
+把极限最核心的"无限逼近"本质，一路接到大模型的采样温度与训练收敛。
+并且顺手回答四个灵魂拷问：</p>
+<ul>
+<li>极限（<code>x→某值</code> 时的趋势）明明是纯数学，怎么和大模型扯上关系？</li>
+<li>采样温度调到 0 会怎样？调到无穷大又会怎样？</li>
+<li>训练时 loss 一直降却降不到 0，那个"降不动的地方"是什么？</li>
+<li>"逼近但取不到"的极限思想，在模型里究竟藏在哪？</li>
+</ul>
+</blockquote>
+<hr />
+<h2 id="0-一句话主线">0. 一句话主线</h2>
+<p>如果只能留一句话，那就是这句：</p>
+<blockquote>
+<p><strong>极限研究的是"无限逼近某个状态时会发生什么"。</strong></p>
+</blockquote>
+<p>大模型里最典型的两处极限：<strong>采样温度 <code>T→0</code> 时，softmax 逼近 argmax（绝对笃定）；<code>T→∞</code> 时，
+逼近均匀分布（完全犹豫）。</strong> 而训练，则是 loss 这个数列，无限逼近它的下界极限的过程。</p>
+<div class="highlight"><pre><span></span><code><span class="kn">import</span><span class="w"> </span><span class="nn">torch</span>
+
+<span class="c1"># 极限：n 越来越大时，数列逼近的那个值</span>
+<span class="k">for</span> <span class="n">n</span> <span class="ow">in</span> <span class="p">[</span><span class="mi">1</span><span class="p">,</span> <span class="mi">10</span><span class="p">,</span> <span class="mi">100</span><span class="p">,</span> <span class="mi">10000</span><span class="p">]:</span>
+    <span class="nb">print</span><span class="p">(</span><span class="sa">f</span><span class="s2">&quot;n=</span><span class="si">{</span><span class="n">n</span><span class="si">:</span><span class="s2">6d</span><span class="si">}</span><span class="s2">   1/n=</span><span class="si">{</span><span class="mi">1</span><span class="o">/</span><span class="n">n</span><span class="si">:</span><span class="s2">.4f</span><span class="si">}</span><span class="s2">   (1+1/n)^n=</span><span class="si">{</span><span class="p">(</span><span class="mi">1</span><span class="w"> </span><span class="o">+</span><span class="w"> </span><span class="mi">1</span><span class="o">/</span><span class="n">n</span><span class="p">)</span><span class="w"> </span><span class="o">**</span><span class="w"> </span><span class="n">n</span><span class="si">:</span><span class="s2">.5f</span><span class="si">}</span><span class="s2">&quot;</span><span class="p">)</span>
+<span class="c1"># 1/n -&gt; 0；(1+1/n)^n -&gt; e≈2.71828 —— 一路逼近，但每一步都取不到</span>
+</code></pre></div>
+
+<p>记住这个画面：<strong>极限是"逼近的目标"——你可以无限靠近它，却不一定真正抵达。</strong>
+下面所有东西都挂在"无限逼近"这一件事上。</p>
+<hr />
+<h2 id="1-极限就是逼近的目标">1. 极限就是"逼近的目标"</h2>
+<p>高中把极限包装成一堆"求值、判敛"的技巧，把你困在计算里。但极限只讲一件事：
+<strong>当变量沿着某个方向一直走下去，函数值会稳定地靠向哪个数。</strong> 那个数，就是极限。</p>
+<div class="highlight"><pre><span></span><code><span class="kn">import</span><span class="w"> </span><span class="nn">torch</span>
+
+<span class="c1"># 一个数列沿着 n 增大不断逼近 0，但永远差那么一点点</span>
+<span class="n">n</span> <span class="o">=</span> <span class="n">torch</span><span class="o">.</span><span class="n">arange</span><span class="p">(</span><span class="mi">1</span><span class="p">,</span> <span class="mi">8</span><span class="p">)</span>
+<span class="n">seq</span> <span class="o">=</span> <span class="mi">1</span> <span class="o">/</span> <span class="p">(</span><span class="mi">2</span> <span class="o">**</span> <span class="n">n</span><span class="o">.</span><span class="n">float</span><span class="p">())</span>               <span class="c1"># 1/2, 1/4, 1/8, ...</span>
+<span class="nb">print</span><span class="p">(</span><span class="s2">&quot;数列:&quot;</span><span class="p">,</span> <span class="n">seq</span><span class="o">.</span><span class="n">round</span><span class="p">(</span><span class="n">decimals</span><span class="o">=</span><span class="mi">4</span><span class="p">)</span><span class="o">.</span><span class="n">tolist</span><span class="p">())</span>
+<span class="nb">print</span><span class="p">(</span><span class="s2">&quot;它逼近的极限:&quot;</span><span class="p">,</span> <span class="mf">0.0</span><span class="p">,</span> <span class="s2">&quot;（越来越近，但每一项都 &gt; 0，取不到）&quot;</span><span class="p">)</span>
+</code></pre></div>
+
+<p><code>1/2, 1/4, 1/8, …</code> 这串数越来越接近 0，却永远大于 0——<strong>"无限逼近但取不到"，正是极限的精髓。</strong>
+这个看似哲学的性质，等下会变成大模型里两个极其具体的行为：温度的两个极端、训练的收敛下界。</p>
+<hr />
+<h2 id="2-softmax-的温度同一组分数可尖可平">2. softmax 的温度：同一组分数，可尖可平</h2>
+<p>大模型每步预测下一个词，输出一组分数（logits），再用 softmax 变成概率。
+其中藏着一个旋钮——<strong>温度 T</strong>：把 logits 先除以 T 再做 softmax。T 改变的是分布的"尖锐程度"：</p>
+<div class="highlight"><pre><span></span><code><span class="kn">import</span><span class="w"> </span><span class="nn">torch</span>
+<span class="kn">import</span><span class="w"> </span><span class="nn">torch.nn.functional</span><span class="w"> </span><span class="k">as</span><span class="w"> </span><span class="nn">F</span>
+
+<span class="n">logits</span> <span class="o">=</span> <span class="n">torch</span><span class="o">.</span><span class="n">tensor</span><span class="p">([</span><span class="mf">2.0</span><span class="p">,</span> <span class="mf">1.0</span><span class="p">,</span> <span class="mf">0.1</span><span class="p">])</span>       <span class="c1"># 同一组分数</span>
+<span class="k">for</span> <span class="n">T</span> <span class="ow">in</span> <span class="p">[</span><span class="mf">2.0</span><span class="p">,</span> <span class="mf">1.0</span><span class="p">,</span> <span class="mf">0.3</span><span class="p">]:</span>
+    <span class="n">p</span> <span class="o">=</span> <span class="n">F</span><span class="o">.</span><span class="n">softmax</span><span class="p">(</span><span class="n">logits</span> <span class="o">/</span> <span class="n">T</span><span class="p">,</span> <span class="n">dim</span><span class="o">=-</span><span class="mi">1</span><span class="p">)</span>
+    <span class="nb">print</span><span class="p">(</span><span class="sa">f</span><span class="s2">&quot;T=</span><span class="si">{</span><span class="n">T</span><span class="si">}</span><span class="s2">: </span><span class="si">{</span><span class="n">p</span><span class="o">.</span><span class="n">round</span><span class="p">(</span><span class="n">decimals</span><span class="o">=</span><span class="mi">3</span><span class="p">)</span><span class="o">.</span><span class="n">tolist</span><span class="p">()</span><span class="si">}</span><span class="s2">&quot;</span><span class="p">)</span>
+<span class="c1"># T 大 -&gt; 分布平（三个词都有机会，犹豫）</span>
+<span class="c1"># T 小 -&gt; 分布尖（概率集中到最大的那个，笃定）</span>
+</code></pre></div>
+
+<p>同样的分数，<code>T</code> 大时分布平坦、模型"犹豫"；<code>T</code> 小时分布尖锐、模型"笃定"。
+温度只是连续地调节"尖还是平"。而当我们把它推向两个极端——<code>T→0</code> 和 <code>T→∞</code>——极限就登场了。</p>
+<hr />
+<h2 id="疑惑点一温度调到-0-会怎样调到无穷大又会怎样">🤔 疑惑点一：温度调到 0 会怎样？调到无穷大又会怎样？</h2>
+<p><strong><code>T→0</code> 是一个极限：分布会无限逼近 argmax，也就是把全部概率压给分数最高的那个词，变成 one-hot——模型绝对笃定、毫不犹豫（这就是"贪心解码"）。<code>T→∞</code> 是另一个极限：所有 logits 被除到几乎相等，softmax 逼近均匀分布——模型完全放弃判断、每个词等概率乱选。真实采样就在这两个极限之间调节。</strong></p>
+<p>把这两个极限直接跑出来看：</p>
+<div class="highlight"><pre><span></span><code><span class="kn">import</span><span class="w"> </span><span class="nn">torch</span>
+<span class="kn">import</span><span class="w"> </span><span class="nn">torch.nn.functional</span><span class="w"> </span><span class="k">as</span><span class="w"> </span><span class="nn">F</span>
+
+<span class="n">logits</span> <span class="o">=</span> <span class="n">torch</span><span class="o">.</span><span class="n">tensor</span><span class="p">([</span><span class="mf">2.0</span><span class="p">,</span> <span class="mf">1.0</span><span class="p">,</span> <span class="mf">0.1</span><span class="p">])</span>
+<span class="nb">print</span><span class="p">(</span><span class="s2">&quot;T-&gt;0  (取0.01):&quot;</span><span class="p">,</span> <span class="n">F</span><span class="o">.</span><span class="n">softmax</span><span class="p">(</span><span class="n">logits</span> <span class="o">/</span> <span class="mf">0.01</span><span class="p">,</span> <span class="n">dim</span><span class="o">=-</span><span class="mi">1</span><span class="p">)</span><span class="o">.</span><span class="n">round</span><span class="p">(</span><span class="n">decimals</span><span class="o">=</span><span class="mi">3</span><span class="p">)</span><span class="o">.</span><span class="n">tolist</span><span class="p">())</span>
+<span class="nb">print</span><span class="p">(</span><span class="s2">&quot;T-&gt;inf(取100) :&quot;</span><span class="p">,</span> <span class="n">F</span><span class="o">.</span><span class="n">softmax</span><span class="p">(</span><span class="n">logits</span> <span class="o">/</span> <span class="mi">100</span><span class="p">,</span> <span class="n">dim</span><span class="o">=-</span><span class="mi">1</span><span class="p">)</span><span class="o">.</span><span class="n">round</span><span class="p">(</span><span class="n">decimals</span><span class="o">=</span><span class="mi">3</span><span class="p">)</span><span class="o">.</span><span class="n">tolist</span><span class="p">())</span>
+<span class="c1"># T-&gt;0  逼近 [1,0,0]：argmax，绝对确定</span>
+<span class="c1"># T-&gt;inf 逼近 [.33,.33,.33]：均匀分布，完全随机</span>
+</code></pre></div>
+
+<p><code>T→0</code> 时分布逼近 <code>[1, 0, 0]</code>（把所有概率给最大项，就是 argmax）；
+<code>T→∞</code> 时逼近 <code>[0.33, 0.33, 0.33]</code>（均匀）。<strong>注意这两个都是"逼近"而非"等于"</strong>——
+数学上 <code>T</code> 严格取 0 会除零，我们只能让它无限趋近。<strong>这正是极限"逼近但取不到"的精神在采样里的化身。</strong></p>
+<hr />
+<h2 id="3-温度就是确定性-创造力的连续旋钮">3. 温度就是"确定性 ↔ 创造力"的连续旋钮</h2>
+<p>理解了两个极限，中间的温度就有了清晰的意义：<strong>它是一个从"死板确定"滑到"天马行空"的连续旋钮。</strong></p>
+<div class="highlight"><pre><span></span><code><span class="kn">import</span><span class="w"> </span><span class="nn">torch</span>
+<span class="kn">import</span><span class="w"> </span><span class="nn">torch.nn.functional</span><span class="w"> </span><span class="k">as</span><span class="w"> </span><span class="nn">F</span>
+
+<span class="n">torch</span><span class="o">.</span><span class="n">manual_seed</span><span class="p">(</span><span class="mi">0</span><span class="p">)</span>
+<span class="n">logits</span> <span class="o">=</span> <span class="n">torch</span><span class="o">.</span><span class="n">tensor</span><span class="p">([</span><span class="mf">2.0</span><span class="p">,</span> <span class="mf">1.5</span><span class="p">,</span> <span class="mf">1.0</span><span class="p">,</span> <span class="mf">0.5</span><span class="p">])</span>
+<span class="k">for</span> <span class="n">T</span> <span class="ow">in</span> <span class="p">[</span><span class="mf">0.2</span><span class="p">,</span> <span class="mf">1.0</span><span class="p">,</span> <span class="mf">3.0</span><span class="p">]:</span>
+    <span class="n">p</span> <span class="o">=</span> <span class="n">F</span><span class="o">.</span><span class="n">softmax</span><span class="p">(</span><span class="n">logits</span> <span class="o">/</span> <span class="n">T</span><span class="p">,</span> <span class="n">dim</span><span class="o">=-</span><span class="mi">1</span><span class="p">)</span>
+    <span class="n">picks</span> <span class="o">=</span> <span class="n">torch</span><span class="o">.</span><span class="n">multinomial</span><span class="p">(</span><span class="n">p</span><span class="p">,</span> <span class="mi">1000</span><span class="p">,</span> <span class="n">replacement</span><span class="o">=</span><span class="kc">True</span><span class="p">)</span><span class="o">.</span><span class="n">bincount</span><span class="p">(</span><span class="n">minlength</span><span class="o">=</span><span class="mi">4</span><span class="p">)</span>
+    <span class="nb">print</span><span class="p">(</span><span class="sa">f</span><span class="s2">&quot;T=</span><span class="si">{</span><span class="n">T</span><span class="si">}</span><span class="s2">: 四个词各被采样 </span><span class="si">{</span><span class="n">picks</span><span class="o">.</span><span class="n">tolist</span><span class="p">()</span><span class="si">}</span><span class="s2"> 次&quot;</span><span class="p">)</span>
+<span class="c1"># T=0.2 几乎只选第一个词（确定、复读）</span>
+<span class="c1"># T=3.0 四个词都被大量选中（发散、有创造力也更容易胡说）</span>
+</code></pre></div>
+
+<p>低温（趋近 <code>T→0</code> 那个极限）几乎只复读最高分的词，输出稳定但呆板；
+高温（趋近 <code>T→∞</code> 那个极限）让冷门词也有机会，输出更有创造力、也更容易跑偏。
+<strong>你在各种大模型 API 里调的那个 <code>temperature</code> 参数，调的就是"离哪个极限更近"。</strong></p>
+<hr />
+<h2 id="4-训练也是极限loss-逼近它的下界">4. 训练也是极限：loss 逼近它的下界</h2>
+<p>极限的第二处化身，在训练里。loss 一路下降，但通常降不到 0——<strong>它在逼近一个下界（数据里不可消除的噪声）。</strong></p>
+<div class="highlight"><pre><span></span><code><span class="kn">import</span><span class="w"> </span><span class="nn">torch</span>
+<span class="kn">import</span><span class="w"> </span><span class="nn">torch.nn</span><span class="w"> </span><span class="k">as</span><span class="w"> </span><span class="nn">nn</span>
+<span class="kn">import</span><span class="w"> </span><span class="nn">torch.nn.functional</span><span class="w"> </span><span class="k">as</span><span class="w"> </span><span class="nn">F</span>
+
+<span class="n">torch</span><span class="o">.</span><span class="n">manual_seed</span><span class="p">(</span><span class="mi">0</span><span class="p">)</span>
+<span class="c1"># 数据带有标准差 0.3 的噪声 -&gt; loss 的极限下界 ≈ 0.3² = 0.09</span>
+<span class="n">X</span> <span class="o">=</span> <span class="n">torch</span><span class="o">.</span><span class="n">randn</span><span class="p">(</span><span class="mi">200</span><span class="p">,</span> <span class="mi">1</span><span class="p">)</span>
+<span class="n">y</span> <span class="o">=</span> <span class="mi">2</span> <span class="o">*</span> <span class="n">X</span> <span class="o">+</span> <span class="mi">1</span> <span class="o">+</span> <span class="mf">0.3</span> <span class="o">*</span> <span class="n">torch</span><span class="o">.</span><span class="n">randn</span><span class="p">(</span><span class="mi">200</span><span class="p">,</span> <span class="mi">1</span><span class="p">)</span>
+<span class="n">model</span> <span class="o">=</span> <span class="n">nn</span><span class="o">.</span><span class="n">Linear</span><span class="p">(</span><span class="mi">1</span><span class="p">,</span> <span class="mi">1</span><span class="p">)</span>
+<span class="n">opt</span> <span class="o">=</span> <span class="n">torch</span><span class="o">.</span><span class="n">optim</span><span class="o">.</span><span class="n">SGD</span><span class="p">(</span><span class="n">model</span><span class="o">.</span><span class="n">parameters</span><span class="p">(),</span> <span class="n">lr</span><span class="o">=</span><span class="mf">0.05</span><span class="p">)</span>
+
+<span class="k">for</span> <span class="n">step</span> <span class="ow">in</span> <span class="nb">range</span><span class="p">(</span><span class="mi">201</span><span class="p">):</span>
+    <span class="n">loss</span> <span class="o">=</span> <span class="n">F</span><span class="o">.</span><span class="n">mse_loss</span><span class="p">(</span><span class="n">model</span><span class="p">(</span><span class="n">X</span><span class="p">),</span> <span class="n">y</span><span class="p">)</span>
+    <span class="n">opt</span><span class="o">.</span><span class="n">zero_grad</span><span class="p">();</span> <span class="n">loss</span><span class="o">.</span><span class="n">backward</span><span class="p">();</span> <span class="n">opt</span><span class="o">.</span><span class="n">step</span><span class="p">()</span>
+    <span class="k">if</span> <span class="n">step</span> <span class="o">%</span> <span class="mi">40</span> <span class="o">==</span> <span class="mi">0</span><span class="p">:</span>
+        <span class="nb">print</span><span class="p">(</span><span class="sa">f</span><span class="s2">&quot;step </span><span class="si">{</span><span class="n">step</span><span class="si">:</span><span class="s2">3d</span><span class="si">}</span><span class="s2">  loss=</span><span class="si">{</span><span class="n">loss</span><span class="o">.</span><span class="n">item</span><span class="p">()</span><span class="si">:</span><span class="s2">.4f</span><span class="si">}</span><span class="s2">&quot;</span><span class="p">)</span>
+<span class="c1"># loss 一路下滑，然后停在 0.10 附近（≈ 噪声方差 0.3²=0.09）—— 那就是它逼近的极限下界，再努力也过不去</span>
+</code></pre></div>
+
+<p>loss 从一个大值一路下降，最后<strong>卡在 <code>0.10</code> 附近不动</strong>——那正是数据噪声方差 <code>0.3²=0.09</code> 的量级。
+<strong>这就是"逼近但取不到"在训练里的样子：模型能无限接近这个下界，却永远无法突破它。</strong>
+所谓"训练收敛"，本质就是 loss 这个数列，抵达了它的极限。</p>
+<hr />
+<h2 id="疑惑点二那个逼近但取不到的极限最深处藏在哪">🤔 疑惑点二：那个"逼近但取不到"的极限，最深处藏在哪？</h2>
+<p><strong>藏在"导数"里——而导数是整个梯度下降的根。导数的定义本身就是一个极限：让步长 <code>h</code> 无限趋近 0，<code>(f(x+h)−f(x))/h</code> 逼近的那个值，就是导数。模型每一步更新参数用的梯度，就建立在这个"h→0"的极限之上。所以极限不只是采样和收敛的比喻，它是"模型如何学习"的数学地基。</strong></p>
+<p>把导数的定义——一个极限——用代码逼近出来：</p>
+<div class="highlight"><pre><span></span><code><span class="c1"># 导数就是一个极限：h 无限趋近 0 时，(f(x+h)-f(x))/h 逼近的值</span>
+<span class="n">f</span> <span class="o">=</span> <span class="k">lambda</span> <span class="n">x</span><span class="p">:</span> <span class="n">x</span> <span class="o">**</span> <span class="mi">2</span>                 <span class="c1"># f(x)=x²，其导数 f&#39;(x)=2x，在 x=3 处应为 6</span>
+<span class="n">x</span> <span class="o">=</span> <span class="mf">3.0</span>
+<span class="k">for</span> <span class="n">h</span> <span class="ow">in</span> <span class="p">[</span><span class="mf">1.0</span><span class="p">,</span> <span class="mf">0.1</span><span class="p">,</span> <span class="mf">0.001</span><span class="p">,</span> <span class="mf">1e-6</span><span class="p">]:</span>
+    <span class="n">slope</span> <span class="o">=</span> <span class="p">(</span><span class="n">f</span><span class="p">(</span><span class="n">x</span> <span class="o">+</span> <span class="n">h</span><span class="p">)</span> <span class="o">-</span> <span class="n">f</span><span class="p">(</span><span class="n">x</span><span class="p">))</span> <span class="o">/</span> <span class="n">h</span>
+    <span class="nb">print</span><span class="p">(</span><span class="sa">f</span><span class="s2">&quot;h=</span><span class="si">{</span><span class="n">h</span><span class="si">:</span><span class="s2">&gt;8</span><span class="si">}</span><span class="s2">: 斜率 ≈ </span><span class="si">{</span><span class="n">slope</span><span class="si">:</span><span class="s2">.5f</span><span class="si">}</span><span class="s2">&quot;</span><span class="p">)</span>
+<span class="c1"># h 越趋近 0，斜率越逼近 6.00000 —— 梯度下降的每一步，都站在这个极限之上</span>
+</code></pre></div>
+
+<p><code>h</code> 从 1 缩到 <code>1e-6</code>，算出的斜率从 7 一路逼近 <code>6.00000</code>——这正是 <code>f'(3)=2×3=6</code>。
+<strong>你调用的每一次 <code>loss.backward()</code>，背后都是无数个这样的"h→0"极限。</strong>
+（如果读过本系列《微积分》那篇，那里讲"导数是变化率"，这篇补上它更底层的一句：<strong>导数首先是一个极限。</strong>）</p>
+<hr />
+<h2 id="动手看-softmax-随温度从-滑到-0">🎬 动手：看 softmax 随温度从 ∞ 滑到 0</h2>
+<p>把温度这个"极限旋钮"从高到低扫一遍，用字符条直观看分布如何从"均匀"收紧成"one-hot"：</p>
+<div class="highlight"><pre><span></span><code><span class="kn">import</span><span class="w"> </span><span class="nn">torch</span>
+<span class="kn">import</span><span class="w"> </span><span class="nn">torch.nn.functional</span><span class="w"> </span><span class="k">as</span><span class="w"> </span><span class="nn">F</span>
+
+<span class="n">logits</span> <span class="o">=</span> <span class="n">torch</span><span class="o">.</span><span class="n">tensor</span><span class="p">([</span><span class="mf">3.0</span><span class="p">,</span> <span class="mf">2.0</span><span class="p">,</span> <span class="mf">1.0</span><span class="p">,</span> <span class="mf">0.5</span><span class="p">])</span>
+<span class="nb">print</span><span class="p">(</span><span class="s2">&quot;温度从高到低，分布如何从&#39;完全犹豫&#39;逼近&#39;绝对笃定&#39;:&quot;</span><span class="p">)</span>
+<span class="k">for</span> <span class="n">T</span> <span class="ow">in</span> <span class="p">[</span><span class="mf">10.0</span><span class="p">,</span> <span class="mf">2.0</span><span class="p">,</span> <span class="mf">1.0</span><span class="p">,</span> <span class="mf">0.5</span><span class="p">,</span> <span class="mf">0.1</span><span class="p">]:</span>
+    <span class="n">p</span> <span class="o">=</span> <span class="n">F</span><span class="o">.</span><span class="n">softmax</span><span class="p">(</span><span class="n">logits</span> <span class="o">/</span> <span class="n">T</span><span class="p">,</span> <span class="n">dim</span><span class="o">=-</span><span class="mi">1</span><span class="p">)</span>
+    <span class="n">bar</span> <span class="o">=</span> <span class="s2">&quot;&quot;</span><span class="o">.</span><span class="n">join</span><span class="p">(</span><span class="s2">&quot;█&quot;</span> <span class="k">if</span> <span class="n">v</span> <span class="o">&gt;</span> <span class="mf">0.15</span> <span class="k">else</span> <span class="s2">&quot;·&quot;</span> <span class="k">for</span> <span class="n">v</span> <span class="ow">in</span> <span class="n">p</span><span class="p">)</span>
+    <span class="nb">print</span><span class="p">(</span><span class="sa">f</span><span class="s2">&quot;T=</span><span class="si">{</span><span class="n">T</span><span class="si">:</span><span class="s2">&gt;4</span><span class="si">}</span><span class="s2">: </span><span class="si">{</span><span class="n">p</span><span class="o">.</span><span class="n">round</span><span class="p">(</span><span class="n">decimals</span><span class="o">=</span><span class="mi">2</span><span class="p">)</span><span class="o">.</span><span class="n">tolist</span><span class="p">()</span><span class="si">}</span><span class="s2">   </span><span class="si">{</span><span class="n">bar</span><span class="si">}</span><span class="s2">&quot;</span><span class="p">)</span>
+<span class="c1"># T=10 四格接近均匀（T-&gt;inf 的极限方向）</span>
+<span class="c1"># T=0.1 概率几乎全压在第一格（T-&gt;0 的极限方向：argmax）</span>
+</code></pre></div>
+
+<p>仓库里的动画脚本把这个"极限旋钮"完整画了出来：</p>
+<div class="highlight"><pre><span></span><code>python<span class="w"> </span>temperature_limit_visualization.py
+</code></pre></div>
+
+<blockquote>
+<p>左边是 softmax 分布的条形图，温度从很高滑到很低时，你会看到它<strong>从平坦的均匀分布，一路收紧成一根独苗（one-hot）</strong>；
+右边是分布的"熵"（不确定性）随温度变化的曲线——<code>T→∞</code> 时熵逼近最大值（最犹豫），
+<code>T→0</code> 时熵逼近 0（最笃定）。<strong>两端各有一个极限，中间是连续的过渡</strong>，这就是极限思想最生动的一张图。</p>
+</blockquote>
+<hr />
+<h2 id="缝合把所有画面接起来">缝合：把所有画面接起来</h2>
+<p>回到开头，现在每个概念都有了画面和代码出处：</p>
+<table>
+<thead>
+<tr>
+<th>极限概念</th>
+<th>高中怎么讲</th>
+<th>这篇文章怎么看（画面）</th>
+<th>在大模型里是什么</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><strong>数列极限</strong></td>
+<td><code>lim</code> 求趋近值</td>
+<td>逼近但取不到（第 0、1 节）</td>
+<td>训练收敛的下界</td>
+</tr>
+<tr>
+<td><strong><code>T→0</code> 的极限</strong></td>
+<td>单侧极限</td>
+<td>softmax 逼近 argmax（疑惑点一）</td>
+<td>贪心解码、绝对笃定</td>
+</tr>
+<tr>
+<td><strong><code>T→∞</code> 的极限</strong></td>
+<td>趋于无穷</td>
+<td>softmax 逼近均匀分布（疑惑点一）</td>
+<td>完全随机采样</td>
+</tr>
+<tr>
+<td><strong>收敛</strong></td>
+<td>数列稳定到一点</td>
+<td>loss 卡在噪声下界（第 4 节）</td>
+<td>"训练收敛"</td>
+</tr>
+<tr>
+<td><strong>导数的定义</strong></td>
+<td><code>h→0</code> 的极限</td>
+<td>斜率逼近 2x（疑惑点二）</td>
+<td>梯度下降的地基</td>
+</tr>
+</tbody>
+</table>
+<p>三句话总结这篇文章：</p>
+<blockquote>
+<p><strong>极限的灵魂是"无限逼近某个状态"</strong>——逼近得到、却不一定抵达（第 1 节）；
+<strong>采样温度的两端就是两个极限</strong>——<code>T→0</code> 逼近 argmax（笃定）、<code>T→∞</code> 逼近均匀（犹豫），中间连续可调（第 2、3 节、疑惑点一）；
+<strong>训练收敛与梯度，也都建立在极限上</strong>——loss 逼近下界、导数是 <code>h→0</code> 的极限（第 4 节、疑惑点二）。</p>
+</blockquote>
+<p>当年极限学得那么玄乎，不是因为它难，是因为没人告诉你：
+<strong>那个"无限逼近却取不到"的抽象思想，最后变成了你在大模型里调的每一个温度旋钮，
+和它每一步学习背后的梯度。</strong>
+现在把上面每段代码跑一遍，比高中刷十套极限题都值。</p>
+<hr />
+<blockquote>
+<p><strong>备注（选题/标题）：</strong> 这篇走的是"高中知识其实是 AI 基石"的钩子（和《对数》《向量》《sin 和 cos》同一路子）。
+核心爽点是"温度的两端各是一个极限"这个既实用（人人都调过 temperature）又优雅的映射。
+与《微积分》那篇有承接：那篇讲"导数是变化率"，这篇补"导数首先是一个极限"，可互相引流。
+若并入"大学4年"主系列：《大学4年没让你真正搞懂的极限，被大模型的温度旋钮讲透了》。</p>
+</blockquote>
+    </div>
+  </article>
+
+</main>
+
+<!-- Floating Ask-AI chat widget -->
+<button class="ai-fab" id="ai-fab" aria-label="Ask AI about this article" title="Ask AI about this article">
+  <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+    <path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"/>
+  </svg>
+  <span class="ai-fab-label">Ask AI</span>
+</button>
+
+<div class="ai-panel" id="ai-panel" role="dialog" aria-labelledby="ai-panel-title" aria-hidden="true">
+  <header class="ai-panel-head">
+    <div class="ai-panel-title-wrap">
+      <span class="ai-dot"></span>
+      <h3 id="ai-panel-title">Ask AI about this post</h3>
+    </div>
+    <div class="ai-panel-actions">
+      <button class="ai-icon-btn" id="ai-clear" title="Clear conversation" aria-label="Clear">
+        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><polyline points="3 6 5 6 21 6"/><path d="M19 6l-1 14a2 2 0 0 1-2 2H8a2 2 0 0 1-2-2L5 6"/><path d="M10 11v6M14 11v6"/><path d="M9 6V4a1 1 0 0 1 1-1h4a1 1 0 0 1 1 1v2"/></svg>
+      </button>
+      <button class="ai-icon-btn" id="ai-close" title="Minimize" aria-label="Minimize">
+        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><polyline points="6 9 12 15 18 9"/></svg>
+      </button>
+    </div>
+  </header>
+
+  <div class="ai-messages" id="ai-messages">
+    <div class="ai-empty" id="ai-empty">
+      <p class="ai-empty-title">On-device AI · Gemini Nano</p>
+      <p class="ai-empty-sub">Ask anything about this article. Runs in your browser — nothing leaves your device.</p>
+    </div>
+  </div>
+
+  <div class="ai-status" id="ai-status" hidden></div>
+
+  <form class="ai-composer" id="ai-form">
+    <textarea id="ai-input" rows="1" placeholder="Ask about this post…" autocomplete="off"></textarea>
+    <button type="submit" id="ai-send" class="ai-send" aria-label="Send" disabled>
+      <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><line x1="22" y1="2" x2="11" y2="13"/><polygon points="22 2 15 22 11 13 2 9 22 2"/></svg>
+    </button>
+  </form>
+</div>
+
+<script>
+(function () {
+  const POST_TITLE = "\u9ad8\u4e2d\u89c9\u5f97\u6700\u7384\u4e4e\u7684\"\u6781\u9650\"\uff0c\u5176\u5b9e\u662f\u5927\u6a21\u578b\"\u4ece\u72b9\u8c6b\u5230\u7b03\u5b9a\"\u7684\u90a3\u4e2a\u65cb\u94ae";
+  const contentEl = document.querySelector('article .content');
+
+  const fab = document.getElementById('ai-fab');
+  const panel = document.getElementById('ai-panel');
+  const closeBtn = document.getElementById('ai-close');
+  const clearBtn = document.getElementById('ai-clear');
+  const msgsEl = document.getElementById('ai-messages');
+  const emptyEl = document.getElementById('ai-empty');
+  const statusEl = document.getElementById('ai-status');
+  const formEl = document.getElementById('ai-form');
+  const inputEl = document.getElementById('ai-input');
+  const sendBtn = document.getElementById('ai-send');
+
+  function articleText() {
+    if (!contentEl) return '';
+    return (contentEl.innerText || contentEl.textContent || '')
+      .replace(/[ \t]+\n/g, '\n')
+      .replace(/\n{3,}/g, '\n\n')
+      .trim();
+  }
+
+  function setStatus(msg, cls) {
+    if (!msg) { statusEl.hidden = true; statusEl.textContent = ''; statusEl.className = 'ai-status'; return; }
+    statusEl.hidden = false;
+    statusEl.textContent = msg;
+    statusEl.className = 'ai-status' + (cls ? ' ' + cls : '');
+  }
+
+  function hideEmpty() { if (emptyEl) emptyEl.style.display = 'none'; }
+
+  function appendBubble(role, text) {
+    hideEmpty();
+    const wrap = document.createElement('div');
+    wrap.className = 'ai-msg ai-msg-' + role;
+    const bubble = document.createElement('div');
+    bubble.className = 'ai-bubble';
+    bubble.textContent = text;
+    wrap.appendChild(bubble);
+    msgsEl.appendChild(wrap);
+    msgsEl.scrollTop = msgsEl.scrollHeight;
+    return bubble;
+  }
+
+  function appendTyping() {
+    hideEmpty();
+    const wrap = document.createElement('div');
+    wrap.className = 'ai-msg ai-msg-assistant ai-typing';
+    wrap.innerHTML = '<div class="ai-bubble"><span class="ai-dots"><i></i><i></i><i></i></span></div>';
+    msgsEl.appendChild(wrap);
+    msgsEl.scrollTop = msgsEl.scrollHeight;
+    return wrap;
+  }
+
+  function autoSize() {
+    inputEl.style.height = 'auto';
+    inputEl.style.height = Math.min(inputEl.scrollHeight, 140) + 'px';
+  }
+
+  function openPanel() {
+    panel.classList.add('open');
+    panel.setAttribute('aria-hidden', 'false');
+    fab.classList.add('hidden');
+    setTimeout(() => inputEl.focus(), 50);
+  }
+  function closePanel() {
+    panel.classList.remove('open');
+    panel.setAttribute('aria-hidden', 'true');
+    fab.classList.remove('hidden');
+  }
+
+  fab.addEventListener('click', openPanel);
+  closeBtn.addEventListener('click', closePanel);
+  document.addEventListener('keydown', e => {
+    if (e.key === 'Escape' && panel.classList.contains('open')) closePanel();
+  });
+
+  // ---- LanguageModel session ----
+  let session = null;
+  let creating = null;
+  let history = [];
+
+  function buildSystemPrompt() {
+    // Keep article context modest — Gemini Nano's input quota is small.
+    const article = articleText().slice(0, 4000);
+    return (
+      'You are a concise, helpful assistant answering questions about a blog post. ' +
+      'Use the article below as your primary source. If the answer is not in it, say so briefly and answer generally. ' +
+      'Reply in the same language as the user\'s question. Keep answers short unless asked for detail.\n\n' +
+      '=== ARTICLE TITLE ===\n' + POST_TITLE + '\n\n' +
+      '=== ARTICLE CONTENT ===\n' + article
+    );
+  }
+
+  async function ensureSession() {
+    if (session) return session;
+    if (creating) return creating;
+
+    if (!('LanguageModel' in self)) {
+      throw new Error(
+        'On-device AI not available. Use Chrome 138+ on desktop, or enable ' +
+        '"Prompt API for Gemini Nano" in chrome://flags.'
+      );
+    }
+
+    setStatus('Checking model…', 'info');
+    const status = await LanguageModel.availability();
+    if (status === 'unavailable') {
+      throw new Error('Model unavailable on this device.');
+    }
+
+    creating = (async () => {
+      // Only show download UI when the model isn't already there.
+      const willDownload = (status !== 'available');
+      if (willDownload) setStatus('Preparing model (first run downloads ~2GB)…', 'info');
+      else setStatus('Warming up…', 'info');
+
+      const s = await LanguageModel.create({
+        initialPrompts: [{ role: 'system', content: buildSystemPrompt() }],
+        monitor(m) {
+          m.addEventListener('downloadprogress', e => {
+            // Skip the spurious 0% event Chrome fires for cached models.
+            if (!willDownload && e.loaded === 0) return;
+            const pct = (e.loaded * 100).toFixed(1);
+            setStatus('Downloading model: ' + pct + '%', 'info');
+          });
+        }
+      });
+      session = s;
+      setStatus('');
+      return s;
+    })();
+
+    try { return await creating; }
+    finally { creating = null; }
+  }
+
+  async function ask(q) {
+    appendBubble('user', q);
+    history.push({ role: 'user', content: q });
+
+    sendBtn.disabled = true;
+    inputEl.disabled = true;
+    const typing = appendTyping();
+
+    let answerBubble = null;
+    let acc = '';
+    try {
+      const s = await ensureSession();
+      const stream = s.promptStreaming(q);
+      for await (const chunk of stream) {
+        if (!answerBubble) {
+          typing.remove();
+          const wrap = document.createElement('div');
+          wrap.className = 'ai-msg ai-msg-assistant';
+          answerBubble = document.createElement('div');
+          answerBubble.className = 'ai-bubble';
+          wrap.appendChild(answerBubble);
+          msgsEl.appendChild(wrap);
+        }
+        acc += chunk;
+        answerBubble.textContent = acc;
+        msgsEl.scrollTop = msgsEl.scrollHeight;
+      }
+      if (acc) history.push({ role: 'assistant', content: acc });
+      else { typing.remove(); appendBubble('assistant', '(no response)'); }
+    } catch (e) {
+      if (typing && typing.parentNode) typing.remove();
+      const err = document.createElement('div');
+      err.className = 'ai-msg ai-msg-error';
+      err.innerHTML = '<div class="ai-bubble">⚠ ' + (e && e.message ? e.message : String(e)) + '</div>';
+      msgsEl.appendChild(err);
+      msgsEl.scrollTop = msgsEl.scrollHeight;
+    } finally {
+      sendBtn.disabled = !inputEl.value.trim();
+      inputEl.disabled = false;
+      inputEl.focus();
+    }
+  }
+
+  formEl.addEventListener('submit', e => {
+    e.preventDefault();
+    const q = inputEl.value.trim();
+    if (!q) return;
+    inputEl.value = '';
+    autoSize();
+    sendBtn.disabled = true;
+    ask(q);
+  });
+
+  inputEl.addEventListener('input', () => {
+    autoSize();
+    sendBtn.disabled = !inputEl.value.trim();
+  });
+  inputEl.addEventListener('keydown', e => {
+    if (e.key === 'Enter' && !e.shiftKey) {
+      e.preventDefault();
+      formEl.requestSubmit();
+    }
+  });
+
+  clearBtn.addEventListener('click', () => {
+    msgsEl.innerHTML = '';
+    msgsEl.appendChild(emptyEl);
+    emptyEl.style.display = '';
+    history = [];
+    if (session && session.destroy) { try { session.destroy(); } catch (_) {} }
+    session = null;
+    setStatus('');
+  });
+
+  if (!('LanguageModel' in self)) {
+    fab.addEventListener('click', () => {
+      openPanel();
+      setStatus('On-device AI not detected. Use Chrome 138+ desktop, or enable "Prompt API for Gemini Nano" in chrome://flags.', 'bad');
+    }, { once: true });
+  }
+})();
+</script>
+
+<!-- Outline notes / comments — DataScript + IndexedDB -->
+<script src="https://github.com/tonsky/datascript/releases/download/1.7.8/datascript-1.7.8.min.js"></script>
+<script src="../notes.js?v=6"></script>
+<script src="../theme.js"></script>
+<script src="../wechat-copy.js?v=3"></script>
+
+</body>
+</html>
