@@ -1,0 +1,559 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>高中背到头秃的排列组合，其实解释了大模型为什么&quot;不可能靠背、只能靠学&quot; · Steve Chan — xlisp</title>
+<meta name="description" content="如果只能留一句话，那就是这句：">
+<meta name="author" content="Steve Chan">
+<link rel="icon" type="image/jpeg" href="../icon.jpeg">
+<link rel="apple-touch-icon" href="../icon.jpeg">
+<meta property="og:type" content="article">
+<meta property="og:title" content="高中背到头秃的排列组合，其实解释了大模型为什么&quot;不可能靠背、只能靠学&quot;">
+<meta property="og:description" content="如果只能留一句话，那就是这句：">
+<meta property="og:image" content="../icon.jpeg">
+<meta property="og:site_name" content="Steve Chan — xlisp">
+<meta name="twitter:card" content="summary_large_image">
+<meta name="twitter:title" content="高中背到头秃的排列组合，其实解释了大模型为什么&quot;不可能靠背、只能靠学&quot;">
+<meta name="twitter:description" content="如果只能留一句话，那就是这句：">
+<meta name="twitter:image" content="../icon.jpeg">
+<link rel="stylesheet" href="../style.css?v=light1">
+<script>(function(){try{if(localStorage.getItem('theme')==='light')document.documentElement.setAttribute('data-theme','light');}catch(e){}})();</script>
+<!-- Math formula rendering via MathJax -->
+<script>
+window.MathJax = {
+  tex: {
+    // arithmatex emits \(...\) / \[...\] markup, so only these delimiters
+    // are needed; plain `$` is left alone (avoids currency false positives).
+    inlineMath: [['\\(', '\\)']],
+    displayMath: [['\\[', '\\]']],
+    processEscapes: true
+  },
+  svg: {
+    // Each formula gets its own self-contained <defs>, so the copy script can
+    // serialize one <svg> and rasterize it to a PNG for WeChat.
+    fontCache: 'local'
+  },
+  options: {
+    skipHtmlTags: ['script', 'noscript', 'style', 'textarea', 'pre', 'code'],
+    ignoreHtmlClass: 'highlight'
+  }
+};
+</script>
+<script src="https://cdn.jsdelivr.net/npm/mathjax@3/es5/tex-svg.js" async></script>
+</head>
+<body>
+<main class="wrap post">
+
+  <nav class="topnav">
+    <a href="../index.html">← home</a>
+  </nav>
+
+  <article>
+    <header class="post-header">
+      <h1>高中背到头秃的排列组合，其实解释了大模型为什么&quot;不可能靠背、只能靠学&quot;</h1>
+      <p class="meta">2026-07-05 · Steve Chan</p>
+    </header>
+
+    <div class="content">
+<blockquote>
+<p>排列、组合、<code>Aⁿₘ</code>、<code>Cⁿₘ</code>、乘法原理、加法原理……高中背了一整章，考完只记得"排队问题"和"摸球问题"。
+因为老师只教你"套公式数方案数"，没告诉你两件事：</p>
+<p><strong>第一，排列组合的灵魂不是"算彩票中奖率"，是量化一件事：可能性有多少种。
+第二，今天每一个大模型（LLaMA、Qwen、GPT、DeepSeek）之所以是"学出来"而不是"背出来"的，
+正是因为可能的句子数量是一个大到超过全宇宙原子数的组合爆炸——它根本背不完，只能学"组合规律"。</strong></p>
+<p>这篇文章不背一个公式、不做一道摸球题，全部用能跑起来的 Python 代码，
+把排列组合最核心的"乘法原理 → 组合爆炸"本质，一路接到大模型的泛化与生成。
+并且顺手回答四个灵魂拷问：</p>
+<ul>
+<li>排列组合明明是算排队、摸球的，怎么会和大模型扯上关系？</li>
+<li>到底有多少种"可能的句子"？这个数字大到什么地步？</li>
+<li>既然可能的句子是天文数字，模型怎么可能"见过"它要生成的那句话？</li>
+<li>生成文字时，模型是怎么在这个天文数字里找出一条路的？</li>
+</ul>
+</blockquote>
+<hr />
+<h2 id="0-一句话主线">0. 一句话主线</h2>
+<p>如果只能留一句话，那就是这句：</p>
+<blockquote>
+<p><strong>长度 L、词表 V 的句子，一共有 <code>V^L</code> 种——这是一个组合爆炸。</strong></p>
+</blockquote>
+<p>这个数字大到超过全宇宙的原子数。它带来两个决定性后果：<strong>其一，模型不可能"背下所有句子"，
+只能学会"词该怎么组合"的规律（泛化）；其二，生成一句话，是在一棵每层 V 个分支的巨树里搜索一条路。</strong></p>
+<div class="highlight"><pre><span></span><code><span class="c1"># 乘法原理：每个位置有 V 种选择，L 个位置就是 V 自乘 L 次</span>
+<span class="n">V</span><span class="p">,</span> <span class="n">L</span> <span class="o">=</span> <span class="mi">3</span><span class="p">,</span> <span class="mi">4</span>        <span class="c1"># 词表 3 个词，句子长 4</span>
+<span class="nb">print</span><span class="p">(</span><span class="s2">&quot;可能的句子总数 = V^L =&quot;</span><span class="p">,</span> <span class="n">V</span> <span class="o">**</span> <span class="n">L</span><span class="p">)</span>     <span class="c1"># 81</span>
+</code></pre></div>
+
+<p>记住这个画面：<strong>每多一个词，可能性就乘以 V。语言的可能性，是指数级膨胀的。</strong>
+下面所有东西都挂在"<code>V^L</code> 到底有多大"这一件事上。</p>
+<hr />
+<h2 id="1-排列组合的灵魂乘法原理">1. 排列组合的灵魂：乘法原理</h2>
+<p>高中把排列组合拆成一堆"有无重复、有无顺序"的分类套路，把你埋在公式里。
+但所有公式的根，只有一条<strong>乘法原理</strong>：一件事分几步做，每步的选择数相乘，就是总方案数。</p>
+<div class="highlight"><pre><span></span><code><span class="kn">import</span><span class="w"> </span><span class="nn">math</span>
+
+<span class="c1"># 排列 A(n,k)：从 n 个里有序取 k 个 = n×(n-1)×…×(n-k+1)</span>
+<span class="c1"># 组合 C(n,k)：从 n 个里无序取 k 个 = A(n,k) / k!</span>
+<span class="n">n</span><span class="p">,</span> <span class="n">k</span> <span class="o">=</span> <span class="mi">10</span><span class="p">,</span> <span class="mi">3</span>
+<span class="n">perm</span> <span class="o">=</span> <span class="n">math</span><span class="o">.</span><span class="n">perm</span><span class="p">(</span><span class="n">n</span><span class="p">,</span> <span class="n">k</span><span class="p">)</span>          <span class="c1"># 有序：第1步10种、第2步9种、第3步8种</span>
+<span class="n">comb</span> <span class="o">=</span> <span class="n">math</span><span class="o">.</span><span class="n">comb</span><span class="p">(</span><span class="n">n</span><span class="p">,</span> <span class="n">k</span><span class="p">)</span>          <span class="c1"># 无序：再除掉 k 个的内部排列 k!</span>
+<span class="nb">print</span><span class="p">(</span><span class="sa">f</span><span class="s2">&quot;排列 A(</span><span class="si">{</span><span class="n">n</span><span class="si">}</span><span class="s2">,</span><span class="si">{</span><span class="n">k</span><span class="si">}</span><span class="s2">) = </span><span class="si">{</span><span class="n">perm</span><span class="si">}</span><span class="s2">&quot;</span><span class="p">)</span>     <span class="c1"># 720</span>
+<span class="nb">print</span><span class="p">(</span><span class="sa">f</span><span class="s2">&quot;组合 C(</span><span class="si">{</span><span class="n">n</span><span class="si">}</span><span class="s2">,</span><span class="si">{</span><span class="n">k</span><span class="si">}</span><span class="s2">) = </span><span class="si">{</span><span class="n">comb</span><span class="si">}</span><span class="s2">&quot;</span><span class="p">)</span>     <span class="c1"># 120</span>
+<span class="nb">print</span><span class="p">(</span><span class="s2">&quot;验证 A = C × k! :&quot;</span><span class="p">,</span> <span class="n">comb</span> <span class="o">*</span> <span class="n">math</span><span class="o">.</span><span class="n">factorial</span><span class="p">(</span><span class="n">k</span><span class="p">)</span> <span class="o">==</span> <span class="n">perm</span><span class="p">)</span>   <span class="c1"># True</span>
+</code></pre></div>
+
+<p>排列和组合的全部区别，不过是"顺序算不算数"。但对语言来说，<strong>顺序当然算数</strong>（"猫追狗"≠"狗追猫"），
+所以句子的数量走的是最凶猛的那条路——<strong>每个位置独立地从 V 个词里选，方案数直接连乘成 <code>V^L</code>。</strong></p>
+<hr />
+<h2 id="2-组合爆炸vl-到底有多大">2. 组合爆炸：<code>V^L</code> 到底有多大</h2>
+<p>把词表和句长换成真实量级，感受一下这个数字的恐怖：</p>
+<div class="highlight"><pre><span></span><code><span class="c1"># 真实量级：5 万词表，一个只有 20 个词的短句</span>
+<span class="n">V</span><span class="p">,</span> <span class="n">L</span> <span class="o">=</span> <span class="mi">50000</span><span class="p">,</span> <span class="mi">20</span>
+<span class="n">count</span> <span class="o">=</span> <span class="n">V</span> <span class="o">**</span> <span class="n">L</span>
+<span class="nb">print</span><span class="p">(</span><span class="s2">&quot;可能的句子数大约有&quot;</span><span class="p">,</span> <span class="nb">len</span><span class="p">(</span><span class="nb">str</span><span class="p">(</span><span class="n">count</span><span class="p">)),</span> <span class="s2">&quot;位数&quot;</span><span class="p">)</span>     <span class="c1"># 94 位</span>
+<span class="nb">print</span><span class="p">(</span><span class="s2">&quot;作为对比，全宇宙的原子数大约 80 位数&quot;</span><span class="p">)</span>
+<span class="c1"># 一个 20 词短句的可能性，就已经比整个宇宙的原子还多 10 亿亿倍</span>
+</code></pre></div>
+
+<p><code>50000²⁰</code> 是一个 <strong>94 位</strong>的数字。而整个可观测宇宙的原子数，大约只有 80 位数。
+<strong>换句话说：仅仅 20 个词的短句，它的可能排列就已经远远超过了宇宙里所有的原子。</strong>
+这个数字一旦摆出来，一个残酷的事实就无法回避了——见下一节。</p>
+<hr />
+<h2 id="疑惑点一既然句子几乎无穷模型怎么可能见过它要生成的那句话">🤔 疑惑点一：既然句子几乎无穷，模型怎么可能"见过"它要生成的那句话？</h2>
+<p><strong>它见不过，也不可能见过。哪怕训练集有 10 万亿句，除以那个 94 位数的可能空间，比例也几乎是 0。所以大模型生成的绝大多数句子，都是它训练时从没见过的全新组合。它靠的不是"检索记忆里的句子"，而是学会了"词与词该怎么组合"的规律，再当场拼出一句新的——这就是泛化。</strong></p>
+<p>用一个除法，把这个"沧海一粟"算给自己看：</p>
+<div class="highlight"><pre><span></span><code><span class="n">train_sentences</span> <span class="o">=</span> <span class="mi">10</span> <span class="o">**</span> <span class="mi">13</span>         <span class="c1"># 假设训了 10 万亿句（远超现实）</span>
+<span class="n">possible</span> <span class="o">=</span> <span class="mi">50000</span> <span class="o">**</span> <span class="mi">20</span>             <span class="c1"># 可能的句子空间</span>
+<span class="nb">print</span><span class="p">(</span><span class="s2">&quot;训练集 / 可能空间 =&quot;</span><span class="p">,</span> <span class="n">train_sentences</span> <span class="o">/</span> <span class="n">possible</span><span class="p">)</span>
+<span class="c1"># ≈ 1e-81 —— 训练集在可能空间里，比一粒沙之于整个宇宙还渺小</span>
+</code></pre></div>
+
+<p>结果是 <code>1e-81</code> 这个渺小到没有实感的数。<strong>这就是"大模型不是搜索引擎"的数学根源：</strong>
+它不可能靠"背题库"工作，因为题库连可能空间的亿亿亿……分之一都盖不住。
+它必须做的，是从有限的例子里，抽出"语言如何组合"的规律。</p>
+<hr />
+<h2 id="3-为什么组合式泛化能行少量部件海量组合">3. 为什么"组合式泛化"能行：少量部件，海量组合</h2>
+<p>组合数在这里给出了泛化的底气：<strong>用少量的"部件"，通过组合，就能覆盖海量的结果。</strong></p>
+<div class="highlight"><pre><span></span><code><span class="kn">import</span><span class="w"> </span><span class="nn">math</span>
+
+<span class="c1"># 从 n 个部件里选 k 个来组合，方式数增长得极快</span>
+<span class="k">for</span> <span class="n">n</span><span class="p">,</span> <span class="n">k</span> <span class="ow">in</span> <span class="p">[(</span><span class="mi">10</span><span class="p">,</span> <span class="mi">3</span><span class="p">),</span> <span class="p">(</span><span class="mi">100</span><span class="p">,</span> <span class="mi">5</span><span class="p">),</span> <span class="p">(</span><span class="mi">1000</span><span class="p">,</span> <span class="mi">10</span><span class="p">)]:</span>
+    <span class="nb">print</span><span class="p">(</span><span class="sa">f</span><span class="s2">&quot;C(</span><span class="si">{</span><span class="n">n</span><span class="si">}</span><span class="s2">,</span><span class="si">{</span><span class="n">k</span><span class="si">}</span><span class="s2">) = </span><span class="si">{</span><span class="n">math</span><span class="o">.</span><span class="n">comb</span><span class="p">(</span><span class="n">n</span><span class="p">,</span><span class="w"> </span><span class="n">k</span><span class="p">)</span><span class="si">:</span><span class="s2">,</span><span class="si">}</span><span class="s2">&quot;</span><span class="p">)</span>
+<span class="c1"># 1000 个部件里选 10 个 -&gt; 已经 2.6 万亿种组合</span>
+</code></pre></div>
+
+<p>这正是大模型的工作方式：<strong>它学的是有限的"部件"和"组合规则"</strong>——词的含义（词向量）、
+语法结构、语义搭配——然后把它们像乐高一样拼装。学会几万个词 + 有限的组合规律，
+就能应对那个 94 位数的句子空间。<strong>"有限规则生成无限句子"，这句语言学的老话，
+底层就是组合数学：少量部件的组合，其数量是爆炸式的。</strong></p>
+<hr />
+<h2 id="4-生成-在一棵巨树里搜索一条路">4. 生成 = 在一棵巨树里搜索一条路</h2>
+<p>既然不能枚举所有 <code>V^L</code> 种句子挑最好的，模型只能<strong>一个词一个词地往下走</strong>，
+在一棵"每层 V 个分支"的树里搜一条高概率的路：</p>
+<div class="highlight"><pre><span></span><code><span class="c1"># 生成就是在一棵每层 V 个分支的树里找一条路径</span>
+<span class="n">V</span><span class="p">,</span> <span class="n">L</span> <span class="o">=</span> <span class="mi">5</span><span class="p">,</span> <span class="mi">10</span>
+<span class="nb">print</span><span class="p">(</span><span class="s2">&quot;穷举所有路径要看&quot;</span><span class="p">,</span> <span class="n">V</span> <span class="o">**</span> <span class="n">L</span><span class="p">,</span> <span class="s2">&quot;条 —— 不可能&quot;</span><span class="p">)</span>     <span class="c1"># 9,765,625</span>
+
+<span class="c1"># 贪心：每步只留最优 1 条；beam(宽度 b)：每步留最优 b 条</span>
+<span class="k">for</span> <span class="n">beam</span> <span class="ow">in</span> <span class="p">[</span><span class="mi">1</span><span class="p">,</span> <span class="mi">3</span><span class="p">,</span> <span class="mi">5</span><span class="p">]:</span>
+    <span class="nb">print</span><span class="p">(</span><span class="sa">f</span><span class="s2">&quot;beam=</span><span class="si">{</span><span class="n">beam</span><span class="si">}</span><span class="s2">: 每步只评估 </span><span class="si">{</span><span class="n">beam</span><span class="w"> </span><span class="o">*</span><span class="w"> </span><span class="n">V</span><span class="si">}</span><span class="s2"> 个候选，而非 </span><span class="si">{</span><span class="n">V</span><span class="w"> </span><span class="o">**</span><span class="w"> </span><span class="n">L</span><span class="si">}</span><span class="s2"> 全枚举&quot;</span><span class="p">)</span>
+</code></pre></div>
+
+<p>穷举 <code>V^L</code> 条路径不可能，于是有了两种务实的走法：<strong>贪心</strong>（每步只选当前最优的一个词）
+和 <strong>beam search</strong>（每步保留最优的 b 条半成品）。它们都把"在天文数字里找全局最优"这个不可能任务，
+换成了"每步在 V 个词里做局部选择"的可行任务。</p>
+<hr />
+<h2 id="疑惑点二为什么不干脆枚举所有句子选概率最高的那句">🤔 疑惑点二：为什么不干脆枚举所有句子、选概率最高的那句？</h2>
+<p><strong>因为那要遍历 <code>V^L</code> 种句子，是一个 94 位数级别的计算量，宇宙毁灭都算不完。所以大模型放弃"全局最优"，改用"逐词近似"：每一步只在当前 V 个词里挑，走 L 步得到一句话。这是用可行性换掉了最优性——beam search 只是在"贪心"和"全枚举"之间，留了 b 条后路，稍微逼近一下全局最优而已。</strong></p>
+<p>用代码把"逐步近似"跑一遍——它把 <code>V^L</code> 的不可能，拆成了 L 次"V 选一"的可行：</p>
+<div class="highlight"><pre><span></span><code><span class="kn">import</span><span class="w"> </span><span class="nn">torch</span>
+
+<span class="n">torch</span><span class="o">.</span><span class="n">manual_seed</span><span class="p">(</span><span class="mi">0</span><span class="p">)</span>
+<span class="n">V</span> <span class="o">=</span> <span class="mi">5</span>
+<span class="n">seq</span> <span class="o">=</span> <span class="p">[]</span>
+<span class="k">for</span> <span class="n">step</span> <span class="ow">in</span> <span class="nb">range</span><span class="p">(</span><span class="mi">6</span><span class="p">):</span>                  <span class="c1"># 逐词生成，每步只在 V 个词里做局部选择</span>
+    <span class="n">logits</span> <span class="o">=</span> <span class="n">torch</span><span class="o">.</span><span class="n">randn</span><span class="p">(</span><span class="n">V</span><span class="p">)</span>            <span class="c1"># 模型这一步给出的打分</span>
+    <span class="n">nxt</span> <span class="o">=</span> <span class="n">logits</span><span class="o">.</span><span class="n">argmax</span><span class="p">()</span><span class="o">.</span><span class="n">item</span><span class="p">()</span>       <span class="c1"># 贪心：选本步概率最高的词</span>
+    <span class="n">seq</span><span class="o">.</span><span class="n">append</span><span class="p">(</span><span class="n">nxt</span><span class="p">)</span>
+<span class="nb">print</span><span class="p">(</span><span class="s2">&quot;贪心逐词生成的序列:&quot;</span><span class="p">,</span> <span class="n">seq</span><span class="p">)</span>
+<span class="c1"># 从不回头枚举整棵树，只沿着一条路往前走 —— 这才把生成变得可行</span>
+</code></pre></div>
+
+<hr />
+<h2 id="动手贪心-vs-beam-search谁找到的路概率更高">🎬 动手：贪心 vs beam search，谁找到的路概率更高</h2>
+<p>把上面所有画面缝进一个能跑的最小搜索：在一棵玩具概率树里，比较贪心和 beam search 找到的路径概率：</p>
+<div class="highlight"><pre><span></span><code><span class="kn">import</span><span class="w"> </span><span class="nn">torch</span>
+<span class="kn">import</span><span class="w"> </span><span class="nn">torch.nn.functional</span><span class="w"> </span><span class="k">as</span><span class="w"> </span><span class="nn">F</span>
+
+<span class="n">torch</span><span class="o">.</span><span class="n">manual_seed</span><span class="p">(</span><span class="mi">1</span><span class="p">)</span>
+<span class="n">V</span><span class="p">,</span> <span class="n">L</span><span class="p">,</span> <span class="n">beam</span> <span class="o">=</span> <span class="mi">4</span><span class="p">,</span> <span class="mi">5</span><span class="p">,</span> <span class="mi">3</span>
+<span class="n">W</span> <span class="o">=</span> <span class="n">torch</span><span class="o">.</span><span class="n">randn</span><span class="p">(</span><span class="n">V</span><span class="p">,</span> <span class="n">V</span><span class="p">)</span>                          <span class="c1"># 转移打分：下一个词与当前词有关</span>
+
+<span class="k">def</span><span class="w"> </span><span class="nf">greedy</span><span class="p">():</span>                                  <span class="c1"># 贪心：每步只留最优 1 条</span>
+    <span class="n">cur</span><span class="p">,</span> <span class="n">logp</span><span class="p">,</span> <span class="n">path</span> <span class="o">=</span> <span class="mi">0</span><span class="p">,</span> <span class="mf">0.0</span><span class="p">,</span> <span class="p">[</span><span class="mi">0</span><span class="p">]</span>
+    <span class="k">for</span> <span class="n">_</span> <span class="ow">in</span> <span class="nb">range</span><span class="p">(</span><span class="n">L</span><span class="p">):</span>
+        <span class="n">lp</span> <span class="o">=</span> <span class="n">F</span><span class="o">.</span><span class="n">log_softmax</span><span class="p">(</span><span class="n">W</span><span class="p">[</span><span class="n">cur</span><span class="p">],</span> <span class="n">dim</span><span class="o">=-</span><span class="mi">1</span><span class="p">)</span>
+        <span class="n">cur</span> <span class="o">=</span> <span class="n">lp</span><span class="o">.</span><span class="n">argmax</span><span class="p">()</span><span class="o">.</span><span class="n">item</span><span class="p">()</span>
+        <span class="n">logp</span> <span class="o">+=</span> <span class="n">lp</span><span class="p">[</span><span class="n">cur</span><span class="p">]</span><span class="o">.</span><span class="n">item</span><span class="p">();</span> <span class="n">path</span><span class="o">.</span><span class="n">append</span><span class="p">(</span><span class="n">cur</span><span class="p">)</span>
+    <span class="k">return</span> <span class="n">path</span><span class="p">,</span> <span class="n">logp</span>
+
+<span class="k">def</span><span class="w"> </span><span class="nf">beam_search</span><span class="p">(</span><span class="n">b</span><span class="p">):</span>                            <span class="c1"># beam：每步留最优 b 条</span>
+    <span class="n">beams</span> <span class="o">=</span> <span class="p">[([</span><span class="mi">0</span><span class="p">],</span> <span class="mf">0.0</span><span class="p">)]</span>
+    <span class="k">for</span> <span class="n">_</span> <span class="ow">in</span> <span class="nb">range</span><span class="p">(</span><span class="n">L</span><span class="p">):</span>
+        <span class="n">cand</span> <span class="o">=</span> <span class="p">[]</span>
+        <span class="k">for</span> <span class="n">path</span><span class="p">,</span> <span class="n">logp</span> <span class="ow">in</span> <span class="n">beams</span><span class="p">:</span>
+            <span class="n">lp</span> <span class="o">=</span> <span class="n">F</span><span class="o">.</span><span class="n">log_softmax</span><span class="p">(</span><span class="n">W</span><span class="p">[</span><span class="n">path</span><span class="p">[</span><span class="o">-</span><span class="mi">1</span><span class="p">]],</span> <span class="n">dim</span><span class="o">=-</span><span class="mi">1</span><span class="p">)</span>
+            <span class="k">for</span> <span class="n">v</span> <span class="ow">in</span> <span class="nb">range</span><span class="p">(</span><span class="n">V</span><span class="p">):</span>
+                <span class="n">cand</span><span class="o">.</span><span class="n">append</span><span class="p">((</span><span class="n">path</span> <span class="o">+</span> <span class="p">[</span><span class="n">v</span><span class="p">],</span> <span class="n">logp</span> <span class="o">+</span> <span class="n">lp</span><span class="p">[</span><span class="n">v</span><span class="p">]</span><span class="o">.</span><span class="n">item</span><span class="p">()))</span>
+        <span class="n">beams</span> <span class="o">=</span> <span class="nb">sorted</span><span class="p">(</span><span class="n">cand</span><span class="p">,</span> <span class="n">key</span><span class="o">=</span><span class="k">lambda</span> <span class="n">t</span><span class="p">:</span> <span class="o">-</span><span class="n">t</span><span class="p">[</span><span class="mi">1</span><span class="p">])[:</span><span class="n">b</span><span class="p">]</span>   <span class="c1"># 只保留最优 b 条</span>
+    <span class="k">return</span> <span class="n">beams</span><span class="p">[</span><span class="mi">0</span><span class="p">]</span>
+
+<span class="n">gp</span><span class="p">,</span> <span class="n">gl</span> <span class="o">=</span> <span class="n">greedy</span><span class="p">()</span>
+<span class="n">bp</span><span class="p">,</span> <span class="n">bl</span> <span class="o">=</span> <span class="n">beam_search</span><span class="p">(</span><span class="n">beam</span><span class="p">)</span>
+<span class="nb">print</span><span class="p">(</span><span class="sa">f</span><span class="s2">&quot;贪心   : 路径 </span><span class="si">{</span><span class="n">gp</span><span class="si">}</span><span class="s2">  总 log 概率 = </span><span class="si">{</span><span class="n">gl</span><span class="si">:</span><span class="s2">.3f</span><span class="si">}</span><span class="s2">&quot;</span><span class="p">)</span>
+<span class="nb">print</span><span class="p">(</span><span class="sa">f</span><span class="s2">&quot;beam=</span><span class="si">{</span><span class="n">beam</span><span class="si">}</span><span class="s2">: 路径 </span><span class="si">{</span><span class="n">bp</span><span class="si">}</span><span class="s2">  总 log 概率 = </span><span class="si">{</span><span class="n">bl</span><span class="si">:</span><span class="s2">.3f</span><span class="si">}</span><span class="s2">&quot;</span><span class="p">)</span>
+<span class="nb">print</span><span class="p">(</span><span class="s2">&quot;beam 找到了概率更高的路&quot;</span> <span class="k">if</span> <span class="n">bl</span> <span class="o">&gt;</span> <span class="n">gl</span> <span class="k">else</span> <span class="s2">&quot;两者恰好相同&quot;</span><span class="p">)</span>
+</code></pre></div>
+
+<p>贪心每步只顾眼前最优，容易错过"这一步稍差、但后面更好"的路；beam 多留几条后路，
+往往能找到总概率更高的句子。<strong>这就是排列组合最实际的落地：既然那棵 <code>V^L</code> 的树无法穷举，
+就用有限的搜索宽度，在爆炸的可能性里捞一条尽量好的路。</strong></p>
+<hr />
+<h2 id="缝合把所有画面接起来">缝合：把所有画面接起来</h2>
+<p>回到开头，现在每个概念都有了画面和代码出处：</p>
+<table>
+<thead>
+<tr>
+<th>排列组合概念</th>
+<th>高中怎么讲</th>
+<th>这篇文章怎么看（画面）</th>
+<th>在大模型里是什么</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><strong>乘法原理</strong></td>
+<td>分步相乘</td>
+<td>每加一词、可能性乘以 V（第 0、1 节）</td>
+<td>句子空间 = <code>V^L</code></td>
+</tr>
+<tr>
+<td><strong>组合爆炸</strong></td>
+<td>阶乘增长很快</td>
+<td>20 词短句 &gt; 全宇宙原子（第 2 节）</td>
+<td>为什么不能靠"背"</td>
+</tr>
+<tr>
+<td><strong>组合数 C(n,k)</strong></td>
+<td>摸球、选人</td>
+<td>少量部件、海量组合（第 3 节）</td>
+<td>泛化的底气</td>
+</tr>
+<tr>
+<td><strong>方案枚举</strong></td>
+<td>列出所有情况</td>
+<td><code>V^L</code> 棵树无法穷举（第 4 节）</td>
+<td>生成 = 树搜索</td>
+</tr>
+<tr>
+<td><strong>最优 vs 可行</strong></td>
+<td>数出最优解</td>
+<td>逐词近似换掉全枚举（疑惑点二）</td>
+<td>贪心 / beam search</td>
+</tr>
+</tbody>
+</table>
+<p>三句话总结这篇文章：</p>
+<blockquote>
+<p><strong>排列组合的灵魂是"数可能性"</strong>——句子空间是 <code>V^L</code> 的组合爆炸，20 词短句就超过全宇宙原子（第 1、2 节）；
+<strong>爆炸大到背不完，所以模型只能泛化</strong>——学有限的部件与组合规律，拼出没见过的新句子（疑惑点一、第 3 节）；
+<strong>也大到不能枚举，所以生成是树搜索</strong>——用贪心 / beam search 在指数级的树里捞一条高概率的路（第 4 节、疑惑点二）。</p>
+</blockquote>
+<p>当年排列组合背得那么苦，不是因为它难，是因为没人告诉你：
+<strong>那个你以为只用来算彩票的"方案数"，最后长成了大模型面对的整个语言空间，
+而正是它大到背不完，才逼出了今天大模型"会举一反三"的泛化能力。</strong>
+现在把上面每段代码跑一遍，比高中刷十套排列组合题都值。</p>
+<hr />
+<blockquote>
+<p><strong>备注（选题/标题）：</strong> 这篇走的是"高中知识其实是 AI 基石"的钩子（和《对数》《向量》《sin 和 cos》同一路子）。
+与其他篇不同，这篇偏"观念冲击"而非"单一机制拆解"——核心爽点是"20 词 &gt; 全宇宙原子"那个反差，
+标题也可直接押这个点：《一个 20 字的句子，可能性比全宇宙的原子还多——这就是大模型学不完、只能"悟"的原因》。
+若并入"大学4年"主系列：《大学4年没让你真正搞懂的排列组合，被大模型的生成过程讲透了》。</p>
+</blockquote>
+    </div>
+  </article>
+
+</main>
+
+<!-- Floating Ask-AI chat widget -->
+<button class="ai-fab" id="ai-fab" aria-label="Ask AI about this article" title="Ask AI about this article">
+  <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+    <path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"/>
+  </svg>
+  <span class="ai-fab-label">Ask AI</span>
+</button>
+
+<div class="ai-panel" id="ai-panel" role="dialog" aria-labelledby="ai-panel-title" aria-hidden="true">
+  <header class="ai-panel-head">
+    <div class="ai-panel-title-wrap">
+      <span class="ai-dot"></span>
+      <h3 id="ai-panel-title">Ask AI about this post</h3>
+    </div>
+    <div class="ai-panel-actions">
+      <button class="ai-icon-btn" id="ai-clear" title="Clear conversation" aria-label="Clear">
+        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><polyline points="3 6 5 6 21 6"/><path d="M19 6l-1 14a2 2 0 0 1-2 2H8a2 2 0 0 1-2-2L5 6"/><path d="M10 11v6M14 11v6"/><path d="M9 6V4a1 1 0 0 1 1-1h4a1 1 0 0 1 1 1v2"/></svg>
+      </button>
+      <button class="ai-icon-btn" id="ai-close" title="Minimize" aria-label="Minimize">
+        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><polyline points="6 9 12 15 18 9"/></svg>
+      </button>
+    </div>
+  </header>
+
+  <div class="ai-messages" id="ai-messages">
+    <div class="ai-empty" id="ai-empty">
+      <p class="ai-empty-title">On-device AI · Gemini Nano</p>
+      <p class="ai-empty-sub">Ask anything about this article. Runs in your browser — nothing leaves your device.</p>
+    </div>
+  </div>
+
+  <div class="ai-status" id="ai-status" hidden></div>
+
+  <form class="ai-composer" id="ai-form">
+    <textarea id="ai-input" rows="1" placeholder="Ask about this post…" autocomplete="off"></textarea>
+    <button type="submit" id="ai-send" class="ai-send" aria-label="Send" disabled>
+      <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><line x1="22" y1="2" x2="11" y2="13"/><polygon points="22 2 15 22 11 13 2 9 22 2"/></svg>
+    </button>
+  </form>
+</div>
+
+<script>
+(function () {
+  const POST_TITLE = "\u9ad8\u4e2d\u80cc\u5230\u5934\u79c3\u7684\u6392\u5217\u7ec4\u5408\uff0c\u5176\u5b9e\u89e3\u91ca\u4e86\u5927\u6a21\u578b\u4e3a\u4ec0\u4e48\"\u4e0d\u53ef\u80fd\u9760\u80cc\u3001\u53ea\u80fd\u9760\u5b66\"";
+  const contentEl = document.querySelector('article .content');
+
+  const fab = document.getElementById('ai-fab');
+  const panel = document.getElementById('ai-panel');
+  const closeBtn = document.getElementById('ai-close');
+  const clearBtn = document.getElementById('ai-clear');
+  const msgsEl = document.getElementById('ai-messages');
+  const emptyEl = document.getElementById('ai-empty');
+  const statusEl = document.getElementById('ai-status');
+  const formEl = document.getElementById('ai-form');
+  const inputEl = document.getElementById('ai-input');
+  const sendBtn = document.getElementById('ai-send');
+
+  function articleText() {
+    if (!contentEl) return '';
+    return (contentEl.innerText || contentEl.textContent || '')
+      .replace(/[ \t]+\n/g, '\n')
+      .replace(/\n{3,}/g, '\n\n')
+      .trim();
+  }
+
+  function setStatus(msg, cls) {
+    if (!msg) { statusEl.hidden = true; statusEl.textContent = ''; statusEl.className = 'ai-status'; return; }
+    statusEl.hidden = false;
+    statusEl.textContent = msg;
+    statusEl.className = 'ai-status' + (cls ? ' ' + cls : '');
+  }
+
+  function hideEmpty() { if (emptyEl) emptyEl.style.display = 'none'; }
+
+  function appendBubble(role, text) {
+    hideEmpty();
+    const wrap = document.createElement('div');
+    wrap.className = 'ai-msg ai-msg-' + role;
+    const bubble = document.createElement('div');
+    bubble.className = 'ai-bubble';
+    bubble.textContent = text;
+    wrap.appendChild(bubble);
+    msgsEl.appendChild(wrap);
+    msgsEl.scrollTop = msgsEl.scrollHeight;
+    return bubble;
+  }
+
+  function appendTyping() {
+    hideEmpty();
+    const wrap = document.createElement('div');
+    wrap.className = 'ai-msg ai-msg-assistant ai-typing';
+    wrap.innerHTML = '<div class="ai-bubble"><span class="ai-dots"><i></i><i></i><i></i></span></div>';
+    msgsEl.appendChild(wrap);
+    msgsEl.scrollTop = msgsEl.scrollHeight;
+    return wrap;
+  }
+
+  function autoSize() {
+    inputEl.style.height = 'auto';
+    inputEl.style.height = Math.min(inputEl.scrollHeight, 140) + 'px';
+  }
+
+  function openPanel() {
+    panel.classList.add('open');
+    panel.setAttribute('aria-hidden', 'false');
+    fab.classList.add('hidden');
+    setTimeout(() => inputEl.focus(), 50);
+  }
+  function closePanel() {
+    panel.classList.remove('open');
+    panel.setAttribute('aria-hidden', 'true');
+    fab.classList.remove('hidden');
+  }
+
+  fab.addEventListener('click', openPanel);
+  closeBtn.addEventListener('click', closePanel);
+  document.addEventListener('keydown', e => {
+    if (e.key === 'Escape' && panel.classList.contains('open')) closePanel();
+  });
+
+  // ---- LanguageModel session ----
+  let session = null;
+  let creating = null;
+  let history = [];
+
+  function buildSystemPrompt() {
+    // Keep article context modest — Gemini Nano's input quota is small.
+    const article = articleText().slice(0, 4000);
+    return (
+      'You are a concise, helpful assistant answering questions about a blog post. ' +
+      'Use the article below as your primary source. If the answer is not in it, say so briefly and answer generally. ' +
+      'Reply in the same language as the user\'s question. Keep answers short unless asked for detail.\n\n' +
+      '=== ARTICLE TITLE ===\n' + POST_TITLE + '\n\n' +
+      '=== ARTICLE CONTENT ===\n' + article
+    );
+  }
+
+  async function ensureSession() {
+    if (session) return session;
+    if (creating) return creating;
+
+    if (!('LanguageModel' in self)) {
+      throw new Error(
+        'On-device AI not available. Use Chrome 138+ on desktop, or enable ' +
+        '"Prompt API for Gemini Nano" in chrome://flags.'
+      );
+    }
+
+    setStatus('Checking model…', 'info');
+    const status = await LanguageModel.availability();
+    if (status === 'unavailable') {
+      throw new Error('Model unavailable on this device.');
+    }
+
+    creating = (async () => {
+      // Only show download UI when the model isn't already there.
+      const willDownload = (status !== 'available');
+      if (willDownload) setStatus('Preparing model (first run downloads ~2GB)…', 'info');
+      else setStatus('Warming up…', 'info');
+
+      const s = await LanguageModel.create({
+        initialPrompts: [{ role: 'system', content: buildSystemPrompt() }],
+        monitor(m) {
+          m.addEventListener('downloadprogress', e => {
+            // Skip the spurious 0% event Chrome fires for cached models.
+            if (!willDownload && e.loaded === 0) return;
+            const pct = (e.loaded * 100).toFixed(1);
+            setStatus('Downloading model: ' + pct + '%', 'info');
+          });
+        }
+      });
+      session = s;
+      setStatus('');
+      return s;
+    })();
+
+    try { return await creating; }
+    finally { creating = null; }
+  }
+
+  async function ask(q) {
+    appendBubble('user', q);
+    history.push({ role: 'user', content: q });
+
+    sendBtn.disabled = true;
+    inputEl.disabled = true;
+    const typing = appendTyping();
+
+    let answerBubble = null;
+    let acc = '';
+    try {
+      const s = await ensureSession();
+      const stream = s.promptStreaming(q);
+      for await (const chunk of stream) {
+        if (!answerBubble) {
+          typing.remove();
+          const wrap = document.createElement('div');
+          wrap.className = 'ai-msg ai-msg-assistant';
+          answerBubble = document.createElement('div');
+          answerBubble.className = 'ai-bubble';
+          wrap.appendChild(answerBubble);
+          msgsEl.appendChild(wrap);
+        }
+        acc += chunk;
+        answerBubble.textContent = acc;
+        msgsEl.scrollTop = msgsEl.scrollHeight;
+      }
+      if (acc) history.push({ role: 'assistant', content: acc });
+      else { typing.remove(); appendBubble('assistant', '(no response)'); }
+    } catch (e) {
+      if (typing && typing.parentNode) typing.remove();
+      const err = document.createElement('div');
+      err.className = 'ai-msg ai-msg-error';
+      err.innerHTML = '<div class="ai-bubble">⚠ ' + (e && e.message ? e.message : String(e)) + '</div>';
+      msgsEl.appendChild(err);
+      msgsEl.scrollTop = msgsEl.scrollHeight;
+    } finally {
+      sendBtn.disabled = !inputEl.value.trim();
+      inputEl.disabled = false;
+      inputEl.focus();
+    }
+  }
+
+  formEl.addEventListener('submit', e => {
+    e.preventDefault();
+    const q = inputEl.value.trim();
+    if (!q) return;
+    inputEl.value = '';
+    autoSize();
+    sendBtn.disabled = true;
+    ask(q);
+  });
+
+  inputEl.addEventListener('input', () => {
+    autoSize();
+    sendBtn.disabled = !inputEl.value.trim();
+  });
+  inputEl.addEventListener('keydown', e => {
+    if (e.key === 'Enter' && !e.shiftKey) {
+      e.preventDefault();
+      formEl.requestSubmit();
+    }
+  });
+
+  clearBtn.addEventListener('click', () => {
+    msgsEl.innerHTML = '';
+    msgsEl.appendChild(emptyEl);
+    emptyEl.style.display = '';
+    history = [];
+    if (session && session.destroy) { try { session.destroy(); } catch (_) {} }
+    session = null;
+    setStatus('');
+  });
+
+  if (!('LanguageModel' in self)) {
+    fab.addEventListener('click', () => {
+      openPanel();
+      setStatus('On-device AI not detected. Use Chrome 138+ desktop, or enable "Prompt API for Gemini Nano" in chrome://flags.', 'bad');
+    }, { once: true });
+  }
+})();
+</script>
+
+<!-- Outline notes / comments — DataScript + IndexedDB -->
+<script src="https://github.com/tonsky/datascript/releases/download/1.7.8/datascript-1.7.8.min.js"></script>
+<script src="../notes.js?v=6"></script>
+<script src="../theme.js"></script>
+<script src="../wechat-copy.js?v=3"></script>
+
+</body>
+</html>
