@@ -52,28 +52,113 @@ window.MathJax = {
   <article>
     <header class="post-header">
       <h1>高中觉得最没用的&quot;虚数 i&quot;，其实是大模型旋转位置编码最优雅的写法</h1>
-      <p class="meta">2026-07-05 · Steve Chan</p>
+      <p class="meta">2026-07-07 · Steve Chan</p>
     </header>
 
     <div class="content">
 <blockquote>
 <p>虚数 <code>i</code>、复数、复平面、模长与幅角、欧拉公式……高中（或大一）学的时候满脑子问号：
 "一个平方等于 −1 的数，现实里根本不存在，学它干嘛？"
-因为老师只教你"复数怎么算、怎么在复平面画点"，没告诉你两件事：</p>
-<p><strong>第一，复数的灵魂不是"实部+虚部"那个二元组，是一个"旋转 + 缩放"的操作。
-第二，今天每一个大模型（LLaMA、Qwen、GPT、DeepSeek）源码里，旋转位置编码 RoPE 的真实实现，
+因为老师只教你"复数怎么算、怎么在复平面画点"，没告诉你三件事：</p>
+<p><strong>第一，虚数不是数学家闲着没事"发明"的，是 450 年前解三次方程时被逼出来的——
+它一出生就是一座"以虚补实"的桥：从实数出发，借道虚数，回到实数答案。
+第二，复数的灵魂不是"实部+虚部"那个二元组，是一个"旋转 + 缩放"的操作。
+第三，今天每一个大模型（LLaMA、Qwen、GPT、DeepSeek）源码里，旋转位置编码 RoPE 的真实实现，
 就是把词向量看成复数、乘上一个单位复数 <code>e^(iθ)</code>——一行代码完成二维旋转。</strong></p>
 <p>这篇文章不背一个公式、不做一道复数化简，全部用能跑起来的 PyTorch 代码，
 把复数最核心的"乘法即旋转"本质，一路接到大模型源码里的 <code>view_as_complex</code>。
-并且顺手回答四个灵魂拷问：</p>
+并且顺手回答六个灵魂拷问：</p>
 <ul>
+<li>虚数到底是怎么冒出来的？真是数学家为了解 <code>x² = −1</code> 硬造的吗？</li>
+<li>一个"现实里不存在"的数，跟贷款买房、科技股估值、你家插座有什么关系？</li>
 <li>平方等于 −1 的虚数 <code>i</code>"根本不存在"，怎么会出现在大模型的正经代码里？</li>
 <li>凭什么说"复数乘法就是旋转"？乘一个 <code>i</code> 到底在转什么？</li>
 <li>欧拉公式 <code>e^(iθ) = cosθ + i·sinθ</code> 凭什么把指数、三角、虚数三样东西缝在一起？</li>
-<li>LLaMA 源码里那句 <code>view_as_complex</code> / <code>freqs_cis</code> 到底在干嘛？</li>
+<li>LLaMA 源码里那句 <code>view_as_complex</code> / <code>freqs_cis</code> 到底在干嘛？为什么向量要两两配对成复数？</li>
 </ul>
 </blockquote>
 <p>（读过本系列《sin 和 cos》那篇的话，这篇是它的"第二种讲法"：那篇用旋转矩阵，这篇用复数——你会看到工业界真正用的是后者。）</p>
+<hr />
+<h2 id="-1-虚数的身世不是发明出来的是被三次方程逼出来的">-1. 虚数的身世：不是"发明"出来的，是被三次方程逼出来的</h2>
+<p>先纠正一个几乎所有教科书都在暗示的误解：<strong>虚数不是为了解 <code>x² = −1</code> 硬造的。</strong>
+<code>x² = −1</code> 无解就无解了，古人说一句"此方程无解"，天塌不下来——没有任何人需要为它发明一种新数。</p>
+<p>虚数真正的出生地，是<strong>三次方程</strong>。而且出生的方式非常憋屈：</p>
+<p>1545 年，意大利数学家卡尔达诺（Cardano）在《大术》里公布了三次方程的求根公式。
+1572 年，工程师出身的邦贝利（Bombelli）拿这个公式去解一个再普通不过的方程：</p>
+<div class="arithmatex">\[x^3 = 15x + 4\]</div>
+<p>这个方程<strong>明明有一个人畜无害的实数解 <code>x = 4</code></strong>（代进去：64 = 60 + 4，成立）。
+但卡尔达诺公式算到一半，会冒出一个当时无法接受的东西：</p>
+<div class="arithmatex">\[x = \sqrt[3]{2 + \sqrt{-121}} + \sqrt[3]{2 - \sqrt{-121}}\]</div>
+<p><code>√−121</code>？负数开平方？按当时的常识这就是"无意义"，公式失效，收工。
+可邦贝利不甘心：<strong>答案明明是实实在在的 4，凭什么中间过程走不通？</strong>
+于是他做了一件数学史上第一次的事：<strong>硬着头皮把 <code>√−121</code> 当成一个"合法的量"继续算</strong>——
+结果 <code>∛(2+√−121) = 2+√−1</code>，<code>∛(2−√−121) = 2−√−1</code>，两个一相加，虚的部分正负抵消：</p>
+<div class="arithmatex">\[x = (2 + \sqrt{-1}) + (2 - \sqrt{-1}) = 4\]</div>
+<p><strong>从实数出发，借道一段"不存在"的虚数，最后回到实数答案。</strong> 这就是虚数的出生证明。
+用代码验一遍邦贝利在 1572 年的手算：</p>
+<div class="highlight"><pre><span></span><code><span class="kn">import</span><span class="w"> </span><span class="nn">torch</span>
+
+<span class="c1"># 卡尔达诺公式中间冒出的两个&quot;怪物&quot;：2 ± √(-121) = 2 ± 11i</span>
+<span class="n">a</span> <span class="o">=</span> <span class="n">torch</span><span class="o">.</span><span class="n">complex</span><span class="p">(</span><span class="n">torch</span><span class="o">.</span><span class="n">tensor</span><span class="p">(</span><span class="mf">2.0</span><span class="p">),</span> <span class="n">torch</span><span class="o">.</span><span class="n">tensor</span><span class="p">(</span><span class="mf">11.0</span><span class="p">))</span>
+<span class="n">b</span> <span class="o">=</span> <span class="n">torch</span><span class="o">.</span><span class="n">complex</span><span class="p">(</span><span class="n">torch</span><span class="o">.</span><span class="n">tensor</span><span class="p">(</span><span class="mf">2.0</span><span class="p">),</span> <span class="n">torch</span><span class="o">.</span><span class="n">tensor</span><span class="p">(</span><span class="o">-</span><span class="mf">11.0</span><span class="p">))</span>
+
+<span class="c1"># 邦贝利的发现：它们的立方根是 2 ± i</span>
+<span class="n">ra</span> <span class="o">=</span> <span class="n">torch</span><span class="o">.</span><span class="n">complex</span><span class="p">(</span><span class="n">torch</span><span class="o">.</span><span class="n">tensor</span><span class="p">(</span><span class="mf">2.0</span><span class="p">),</span> <span class="n">torch</span><span class="o">.</span><span class="n">tensor</span><span class="p">(</span><span class="mf">1.0</span><span class="p">))</span>
+<span class="n">rb</span> <span class="o">=</span> <span class="n">torch</span><span class="o">.</span><span class="n">complex</span><span class="p">(</span><span class="n">torch</span><span class="o">.</span><span class="n">tensor</span><span class="p">(</span><span class="mf">2.0</span><span class="p">),</span> <span class="n">torch</span><span class="o">.</span><span class="n">tensor</span><span class="p">(</span><span class="o">-</span><span class="mf">1.0</span><span class="p">))</span>
+<span class="nb">print</span><span class="p">(</span><span class="s2">&quot;(2+i)³ =&quot;</span><span class="p">,</span> <span class="n">ra</span><span class="o">**</span><span class="mi">3</span><span class="p">)</span>      <span class="c1"># (2+11j) —— 确实是 2 + √(-121)</span>
+<span class="nb">print</span><span class="p">(</span><span class="s2">&quot;(2−i)³ =&quot;</span><span class="p">,</span> <span class="n">rb</span><span class="o">**</span><span class="mi">3</span><span class="p">)</span>      <span class="c1"># (2-11j)</span>
+
+<span class="n">x</span> <span class="o">=</span> <span class="n">ra</span> <span class="o">+</span> <span class="n">rb</span>                    <span class="c1"># 两个立方根一相加，虚部抵消</span>
+<span class="nb">print</span><span class="p">(</span><span class="s2">&quot;x =&quot;</span><span class="p">,</span> <span class="n">x</span><span class="p">)</span>                <span class="c1"># (4+0j) —— 借道虚数，回到实数解 4</span>
+<span class="nb">print</span><span class="p">(</span><span class="s2">&quot;验证: 4³ = 15×4 + 4 ?&quot;</span><span class="p">,</span> <span class="mi">4</span><span class="o">**</span><span class="mi">3</span> <span class="o">==</span> <span class="mi">15</span><span class="o">*</span><span class="mi">4</span> <span class="o">+</span> <span class="mi">4</span><span class="p">)</span>   <span class="c1"># True</span>
+</code></pre></div>
+
+<p>注意这个出生姿势，它决定了虚数的本性：<strong>虚数一出生就不是"目的"，是"通道"——
+现实问题（实数）进，现实答案（实数）出，虚数是中间那段必须借用的桥。以虚补实。</strong></p>
+<p>出生之后还坐了两百多年冷板凳：笛卡尔给它起名 "imaginary"（想象的数），本来就是嘲讽；
+连大量使用它的欧拉都说它"只存在于想象中"。直到 1797–1831 年，韦塞尔、阿尔冈、高斯三人
+先后给出同一个解释：<strong>复数不是什么幽灵，就是平面上的一个点；乘复数，就是旋转。</strong>
+高斯说过一句话，大意是：当初要是把 <code>i</code> 叫做"侧向单位"而不是"虚数"，就没人觉得它神秘了。
+——<code>i</code> 的问题从来不是数学问题，是<strong>起名事故</strong>。（这句"乘复数=旋转"就是本文后面全部内容。）</p>
+<hr />
+<h2 id="-05-别急着进代码生活里你早就在用复数思维">-0.5 别急着进代码：生活里你早就在用"复数思维"</h2>
+<p>有人会说：桥归桥，那毕竟是解方程，跟我生活有什么关系？
+关系大了。<strong>数学从来不是先有符号再找应用，每一种"新数"都是被生活逼出来的</strong>：</p>
+<ul>
+<li>数猎物 → 自然数；</li>
+<li>分猎物 → 分数；</li>
+<li><strong>欠猎物 → 负数</strong>。注意：世界上并不存在"−3 个苹果"这种东西，你永远拿不出来给我看。
+  但"欠三个苹果"是真实的生活关系。负数就是给"欠"记账——<strong>它记的不是东西，是关系</strong>。
+  当年负数也被欧洲数学家骂了几百年"荒谬之数"，今天你看银行卡余额变负会觉得荒谬吗？</li>
+</ul>
+<p>虚数是同一个故事的下一章：它记的也不是"东西"，而是<strong>另一个维度上的量</strong>。生活里到处都是：</p>
+<p><strong>① 借贷：花未来的钱，补今天的窟窿——这就是"以虚补实"。</strong>
+你买房，手上只有首付，中间凭空多出一笔"不存在的钱"（贷款）把交易补齐闭环。
+这笔钱此刻在现实中并不存在——它是未来三十年收入的"预支"，是个虚的量。
+但没有这个虚的量，"今天住进房子"这个实的结果就达不成。
+对照邦贝利：实数进（首付+房子）→ 借道虚量（负债）→ 实数出（还清、房子归你）。
+<strong>结构一模一样：中间量"不存在"，但没有它到不了终点。</strong></p>
+<p><strong>② 科技股估值：把"虚"的未来，折算进"实"的现价。</strong>
+一家科技公司今天可能还在亏损，股价却高得离谱——因为股价买的不是它的今天，
+是它<strong>未来现金流折现到今天</strong>的值。未来还没发生，是彻头彻尾的"虚部"；
+但这个虚部实实在在地写在今天每一笔成交价里。市场天天在做"虚部驱动实部"的运算。
+故事变了（虚部变了），哪怕今天的业务一分没变（实部没动），股价照样天翻地覆。</p>
+<p><strong>③ 你家墙上的插座：虚数每天在给你供电。</strong>
+交流电的电压电流是来回振荡的，电力工程师算它们时全部用复数（工程上叫"相量"）。
+你电表读到的功率是实部；而虚部（无功功率、相位差）你看不见，
+但空调压缩机能不能启动、电网会不会崩，恰恰取决于它。
+<strong>实部是你看得见的那一面，虚部是躲在后面但真实起作用的那一维</strong>——这不是比喻，是国家电网每秒都在解的方程。</p>
+<p><strong>④ 虚拟空间：游戏币、Q币、会员等级、社交账号。</strong>
+它们没有一件摸得着，全是"虚"的；但它们能换真钱、真服务、真社会关系——虚的维度反过来改写实的世界。
+数字时代的基本操作，就是在"实"的世界旁边搭一个"虚"的维度，两边持续兑换。
+复平面干的就是这个：在实数轴旁边，垂直立起一根虚数轴。</p>
+<p>看出共同点了吗？<strong>"复数思维" = 承认世界不止一根轴。</strong>
+只用一根实数轴记账的人，理解不了负债的人为什么敢买房、亏损的公司为什么值钱；
+加上第二根轴（未来、信用、相位、虚拟资产），这些"荒谬"瞬间全部合理。
+脱离生活讲数学是没有意义的——反过来，一旦接上生活，"平方等于 −1"这种鬼话
+就还原成一句大白话：<strong>有些量不在你眼前这根轴上，它在侧面那根轴上。</strong></p>
+<p>而"侧面那根轴"，正是高斯说的"侧向单位"。接下来我们就到复平面上，
+看看"乘一个 <code>i</code>"到底是在侧哪个面——然后一路走进大模型的源码。</p>
 <hr />
 <h2 id="0-一句话主线">0. 一句话主线</h2>
 <p>如果只能留一句话，那就是这句：</p>
@@ -214,39 +299,117 @@ window.MathJax = {
 <strong>就是 LLaMA 里 <code>apply_rotary_emb</code> 的骨架。</strong> 你会看到旋转前后每个词的模长分毫不差，
 因为乘的是单位复数，只转方向不改大小。那个源码里看着神秘的 <code>freqs_cis</code>，本质就是你高中的 <code>cosθ + i·sinθ</code>。</p>
 <hr />
+<h2 id="疑惑点三apply_rope-短短两行凭什么先要-view_as_complex">🤔 疑惑点三：<code>apply_rope</code> 短短两行，凭什么先要 <code>view_as_complex</code>？</h2>
+<p>后面马上要写的 <code>apply_rope</code> 长这样，LLaMA 源码同款，但第一眼像咒语：</p>
+<div class="highlight"><pre><span></span><code><span class="k">def</span><span class="w"> </span><span class="nf">apply_rope</span><span class="p">(</span><span class="n">x</span><span class="p">,</span> <span class="n">freqs_cis</span><span class="p">):</span>
+    <span class="n">x_c</span> <span class="o">=</span> <span class="n">torch</span><span class="o">.</span><span class="n">view_as_complex</span><span class="p">(</span><span class="n">x</span><span class="o">.</span><span class="n">reshape</span><span class="p">(</span><span class="o">*</span><span class="n">x</span><span class="o">.</span><span class="n">shape</span><span class="p">[:</span><span class="o">-</span><span class="mi">1</span><span class="p">],</span> <span class="o">-</span><span class="mi">1</span><span class="p">,</span> <span class="mi">2</span><span class="p">))</span>
+    <span class="k">return</span> <span class="n">torch</span><span class="o">.</span><span class="n">view_as_real</span><span class="p">(</span><span class="n">x_c</span> <span class="o">*</span> <span class="n">freqs_cis</span><span class="p">)</span><span class="o">.</span><span class="n">reshape</span><span class="p">(</span><span class="n">x</span><span class="o">.</span><span class="n">shape</span><span class="p">)</span>
+</code></pre></div>
+
+<p>两个问题：<strong>为什么要 <code>reshape(..., -1, 2)</code> 两两配对？为什么非得 <code>view_as_complex</code>？</strong></p>
+<p><strong>第一问的答案：因为"旋转"是二维平面里的动作，一个孤零零的实数根本没法转。</strong>
+一维数轴上的数只有两种命运——伸缩、翻号，你没办法"转"它 30°。
+要旋转，至少得凑够两个坐标 <code>(x, y)</code> 组成一个平面。
+所以 RoPE 的第一步是把 d 维向量<strong>相邻两个数一组</strong>，切成 d/2 个互不干扰的二维小平面——
+每一对就是一根可以独立拨动的钟表指针（后面会看到，每根指针转速还不一样）。</p>
+<p><strong>第二问的答案：<code>view_as_complex</code> 不是计算，是换副眼镜。</strong>
+它是零拷贝操作——内存里的数一个字节都没动，只是把"两个挨着的 float"重新<strong>宣布</strong>为"一个复数"。
+为什么要换这副眼镜？因为在复数眼镜下，"二维旋转"那套 cos/sin 四则运算会坍缩成一次乘法（第 2 节的老朋友）。</p>
+<p>空口无凭，把 <code>apply_rope</code> 拆成慢镜头，一行一行放。用一个 4 维玩具向量、全部转 90°，数字一眼能心算：</p>
+<div class="highlight"><pre><span></span><code><span class="kn">import</span><span class="w"> </span><span class="nn">torch</span>
+
+<span class="n">x</span> <span class="o">=</span> <span class="n">torch</span><span class="o">.</span><span class="n">tensor</span><span class="p">([</span><span class="mf">1.0</span><span class="p">,</span> <span class="mf">0.0</span><span class="p">,</span>   <span class="mf">0.0</span><span class="p">,</span> <span class="mf">2.0</span><span class="p">])</span>   <span class="c1"># 一个 4 维&quot;词向量&quot;</span>
+<span class="c1"># 想象成 2 根指针：第一对 (1,0) 指向正右；第二对 (0,2) 指向正上、长度 2</span>
+
+<span class="c1"># ── 第 1 步：reshape，两两配对 ─────────────────────────────</span>
+<span class="n">pairs</span> <span class="o">=</span> <span class="n">x</span><span class="o">.</span><span class="n">reshape</span><span class="p">(</span><span class="o">-</span><span class="mi">1</span><span class="p">,</span> <span class="mi">2</span><span class="p">)</span>
+<span class="nb">print</span><span class="p">(</span><span class="n">pairs</span><span class="p">)</span>        <span class="c1"># [[1., 0.], [0., 2.]] —— 两个二维点，此刻还是普通 float</span>
+
+<span class="c1"># ── 第 2 步：view_as_complex，换副眼镜（内存零拷贝）─────────</span>
+<span class="n">z</span> <span class="o">=</span> <span class="n">torch</span><span class="o">.</span><span class="n">view_as_complex</span><span class="p">(</span><span class="n">pairs</span><span class="p">)</span>
+<span class="nb">print</span><span class="p">(</span><span class="n">z</span><span class="p">)</span>            <span class="c1"># [1.+0.j, 0.+2.j] —— 同样的字节，现在被&quot;读作&quot;两个复数</span>
+
+<span class="c1"># ── 第 3 步：乘 e^(iθ)，一次乘法 = 一次旋转 ─────────────────</span>
+<span class="n">theta</span> <span class="o">=</span> <span class="n">torch</span><span class="o">.</span><span class="n">tensor</span><span class="p">(</span><span class="n">torch</span><span class="o">.</span><span class="n">pi</span> <span class="o">/</span> <span class="mi">2</span><span class="p">)</span>                   <span class="c1"># 90°</span>
+<span class="n">rot</span> <span class="o">=</span> <span class="n">torch</span><span class="o">.</span><span class="n">polar</span><span class="p">(</span><span class="n">torch</span><span class="o">.</span><span class="n">ones</span><span class="p">(</span><span class="mi">2</span><span class="p">),</span> <span class="n">theta</span><span class="o">.</span><span class="n">repeat</span><span class="p">(</span><span class="mi">2</span><span class="p">))</span>    <span class="c1"># 两根指针都乘 e^(i·90°)</span>
+<span class="n">z_rot</span> <span class="o">=</span> <span class="n">z</span> <span class="o">*</span> <span class="n">rot</span>
+<span class="nb">print</span><span class="p">(</span><span class="n">z_rot</span><span class="p">)</span>        <span class="c1"># ≈ [0+1j, -2+0j] —— 右→上，上→左，各转 90°（0 会带 1e-8 级浮点零头）</span>
+
+<span class="c1"># ── 第 4 步：view_as_real + reshape，摘掉眼镜摊平回去 ───────</span>
+<span class="n">out</span> <span class="o">=</span> <span class="n">torch</span><span class="o">.</span><span class="n">view_as_real</span><span class="p">(</span><span class="n">z_rot</span><span class="p">)</span><span class="o">.</span><span class="n">reshape</span><span class="p">(</span><span class="mi">4</span><span class="p">)</span>
+<span class="nb">print</span><span class="p">(</span><span class="n">out</span><span class="p">)</span>          <span class="c1"># ≈ [0., 1., -2., 0.] —— 还是 4 个 float，位置已经&quot;转&quot;了进去</span>
+</code></pre></div>
+
+<p>四步里真正做了运算的只有第 3 步那一次乘法；第 1、2、4 步全在<strong>倒腾形状</strong>，一个数值都没改。
+<code>apply_rope</code> 那两行"咒语"，就是这四步的紧凑写法：配对 → 戴眼镜 → 乘 → 摘眼镜。</p>
+<p>那不戴复数眼镜行不行？<strong>行，就是丑。</strong> 二维旋转的裸公式是 4 项乘加：</p>
+<div class="highlight"><pre><span></span><code><span class="c1"># 同一件事的&quot;裸写&quot;版：x&#39; = x·cosθ − y·sinθ,   y&#39; = x·sinθ + y·cosθ</span>
+<span class="n">cos_t</span><span class="p">,</span> <span class="n">sin_t</span> <span class="o">=</span> <span class="n">torch</span><span class="o">.</span><span class="n">cos</span><span class="p">(</span><span class="n">theta</span><span class="p">),</span> <span class="n">torch</span><span class="o">.</span><span class="n">sin</span><span class="p">(</span><span class="n">theta</span><span class="p">)</span>
+<span class="n">manual</span> <span class="o">=</span> <span class="n">torch</span><span class="o">.</span><span class="n">stack</span><span class="p">([</span><span class="n">pairs</span><span class="p">[:,</span> <span class="mi">0</span><span class="p">]</span> <span class="o">*</span> <span class="n">cos_t</span> <span class="o">-</span> <span class="n">pairs</span><span class="p">[:,</span> <span class="mi">1</span><span class="p">]</span> <span class="o">*</span> <span class="n">sin_t</span><span class="p">,</span>
+                      <span class="n">pairs</span><span class="p">[:,</span> <span class="mi">0</span><span class="p">]</span> <span class="o">*</span> <span class="n">sin_t</span> <span class="o">+</span> <span class="n">pairs</span><span class="p">[:,</span> <span class="mi">1</span><span class="p">]</span> <span class="o">*</span> <span class="n">cos_t</span><span class="p">],</span> <span class="n">dim</span><span class="o">=-</span><span class="mi">1</span><span class="p">)</span><span class="o">.</span><span class="n">reshape</span><span class="p">(</span><span class="mi">4</span><span class="p">)</span>
+<span class="nb">print</span><span class="p">(</span><span class="n">manual</span><span class="p">)</span>                          <span class="c1"># [0., 1., -2., 0.] —— 分毫不差</span>
+<span class="nb">print</span><span class="p">(</span><span class="n">torch</span><span class="o">.</span><span class="n">allclose</span><span class="p">(</span><span class="n">out</span><span class="p">,</span> <span class="n">manual</span><span class="p">))</span>     <span class="c1"># True</span>
+</code></pre></div>
+
+<p>两个版本输出一模一样——<strong><code>view_as_complex</code> 没有任何魔法</strong>。
+把复数乘法按定义展开：<code>(a+bi)(cosθ + i·sinθ) = (a·cosθ − b·sinθ) + i·(a·sinθ + b·cosθ)</code>，
+实部虚部正是上面那两行旋转公式。<strong>PyTorch 替你背了公式，你只管"乘一下 = 转一下"。</strong>
+（顺带白赚一个工程好处：复数乘法在 GPU 上有现成的高效实现，LLaMA 这么写既短又快。）</p>
+<hr />
 <h2 id="动手一个最小复数版-rope接进注意力">🎬 动手：一个最小复数版 RoPE，接进注意力</h2>
-<p>把上面所有画面缝进一个能跑的最小复数 RoPE，作用在一串词上，看注意力如何长出"位置感"：</p>
+<p>把上面所有画面缝进一个能跑的最小复数 RoPE。这次做一个最能体现"位置感"的实验：
+<strong>固定一个 query 词和一个 key 词，把它俩在句子里整体平移，看注意力分数动不动。</strong></p>
 <div class="highlight"><pre><span></span><code><span class="kn">import</span><span class="w"> </span><span class="nn">torch</span>
 
 <span class="k">def</span><span class="w"> </span><span class="nf">build_freqs_cis</span><span class="p">(</span><span class="n">seq_len</span><span class="p">,</span> <span class="n">d</span><span class="p">,</span> <span class="n">base</span><span class="o">=</span><span class="mf">10000.0</span><span class="p">):</span>
     <span class="n">i</span> <span class="o">=</span> <span class="n">torch</span><span class="o">.</span><span class="n">arange</span><span class="p">(</span><span class="mi">0</span><span class="p">,</span> <span class="n">d</span> <span class="o">//</span> <span class="mi">2</span><span class="p">)</span><span class="o">.</span><span class="n">float</span><span class="p">()</span>
-    <span class="n">freqs</span> <span class="o">=</span> <span class="mf">1.0</span> <span class="o">/</span> <span class="p">(</span><span class="n">base</span> <span class="o">**</span> <span class="p">(</span><span class="mi">2</span> <span class="o">*</span> <span class="n">i</span> <span class="o">/</span> <span class="n">d</span><span class="p">))</span>
+    <span class="n">freqs</span> <span class="o">=</span> <span class="mf">1.0</span> <span class="o">/</span> <span class="p">(</span><span class="n">base</span> <span class="o">**</span> <span class="p">(</span><span class="mi">2</span> <span class="o">*</span> <span class="n">i</span> <span class="o">/</span> <span class="n">d</span><span class="p">))</span>          <span class="c1"># d/2 根指针各自的转速（快 -&gt; 慢）</span>
     <span class="n">angles</span> <span class="o">=</span> <span class="n">torch</span><span class="o">.</span><span class="n">outer</span><span class="p">(</span><span class="n">torch</span><span class="o">.</span><span class="n">arange</span><span class="p">(</span><span class="n">seq_len</span><span class="p">)</span><span class="o">.</span><span class="n">float</span><span class="p">(),</span> <span class="n">freqs</span><span class="p">)</span>
-    <span class="k">return</span> <span class="n">torch</span><span class="o">.</span><span class="n">polar</span><span class="p">(</span><span class="n">torch</span><span class="o">.</span><span class="n">ones_like</span><span class="p">(</span><span class="n">angles</span><span class="p">),</span> <span class="n">angles</span><span class="p">)</span>     <span class="c1"># e^(i·pos·freq)</span>
+    <span class="k">return</span> <span class="n">torch</span><span class="o">.</span><span class="n">polar</span><span class="p">(</span><span class="n">torch</span><span class="o">.</span><span class="n">ones_like</span><span class="p">(</span><span class="n">angles</span><span class="p">),</span> <span class="n">angles</span><span class="p">)</span>   <span class="c1"># e^(i·pos·freq)</span>
 
-<span class="k">def</span><span class="w"> </span><span class="nf">apply_rope</span><span class="p">(</span><span class="n">x</span><span class="p">,</span> <span class="n">freqs_cis</span><span class="p">):</span>
-    <span class="n">x_c</span> <span class="o">=</span> <span class="n">torch</span><span class="o">.</span><span class="n">view_as_complex</span><span class="p">(</span><span class="n">x</span><span class="o">.</span><span class="n">reshape</span><span class="p">(</span><span class="o">*</span><span class="n">x</span><span class="o">.</span><span class="n">shape</span><span class="p">[:</span><span class="o">-</span><span class="mi">1</span><span class="p">],</span> <span class="o">-</span><span class="mi">1</span><span class="p">,</span> <span class="mi">2</span><span class="p">))</span>
-    <span class="k">return</span> <span class="n">torch</span><span class="o">.</span><span class="n">view_as_real</span><span class="p">(</span><span class="n">x_c</span> <span class="o">*</span> <span class="n">freqs_cis</span><span class="p">)</span><span class="o">.</span><span class="n">reshape</span><span class="p">(</span><span class="n">x</span><span class="o">.</span><span class="n">shape</span><span class="p">)</span>
+<span class="k">def</span><span class="w"> </span><span class="nf">apply_rope</span><span class="p">(</span><span class="n">x</span><span class="p">,</span> <span class="n">freqs_cis</span><span class="p">):</span>                    <span class="c1"># 疑惑点三拆过的四步：</span>
+    <span class="n">x_c</span> <span class="o">=</span> <span class="n">torch</span><span class="o">.</span><span class="n">view_as_complex</span><span class="p">(</span><span class="n">x</span><span class="o">.</span><span class="n">reshape</span><span class="p">(</span><span class="o">*</span><span class="n">x</span><span class="o">.</span><span class="n">shape</span><span class="p">[:</span><span class="o">-</span><span class="mi">1</span><span class="p">],</span> <span class="o">-</span><span class="mi">1</span><span class="p">,</span> <span class="mi">2</span><span class="p">))</span>  <span class="c1"># 配对 + 戴眼镜</span>
+    <span class="k">return</span> <span class="n">torch</span><span class="o">.</span><span class="n">view_as_real</span><span class="p">(</span><span class="n">x_c</span> <span class="o">*</span> <span class="n">freqs_cis</span><span class="p">)</span><span class="o">.</span><span class="n">reshape</span><span class="p">(</span><span class="n">x</span><span class="o">.</span><span class="n">shape</span><span class="p">)</span>   <span class="c1"># 乘(=转) + 摘眼镜</span>
 
 <span class="n">torch</span><span class="o">.</span><span class="n">manual_seed</span><span class="p">(</span><span class="mi">0</span><span class="p">)</span>
-<span class="n">seq_len</span><span class="p">,</span> <span class="n">d</span> <span class="o">=</span> <span class="mi">6</span><span class="p">,</span> <span class="mi">8</span>
-<span class="n">X</span> <span class="o">=</span> <span class="n">torch</span><span class="o">.</span><span class="n">randn</span><span class="p">(</span><span class="n">seq_len</span><span class="p">,</span> <span class="n">d</span><span class="p">)</span>
-<span class="n">freqs_cis</span> <span class="o">=</span> <span class="n">build_freqs_cis</span><span class="p">(</span><span class="n">seq_len</span><span class="p">,</span> <span class="n">d</span><span class="p">)</span>
-<span class="n">Xr</span> <span class="o">=</span> <span class="n">apply_rope</span><span class="p">(</span><span class="n">X</span><span class="p">,</span> <span class="n">freqs_cis</span><span class="p">)</span>                    <span class="c1"># 注入位置信息后的词向量</span>
+<span class="n">d</span> <span class="o">=</span> <span class="mi">8</span>
+<span class="n">q_word</span> <span class="o">=</span> <span class="n">torch</span><span class="o">.</span><span class="n">randn</span><span class="p">(</span><span class="n">d</span><span class="p">)</span>                          <span class="c1"># 一个固定的 query 词</span>
+<span class="n">k_word</span> <span class="o">=</span> <span class="n">torch</span><span class="o">.</span><span class="n">randn</span><span class="p">(</span><span class="n">d</span><span class="p">)</span>                          <span class="c1"># 一个固定的 key 词</span>
+<span class="n">freqs_cis</span> <span class="o">=</span> <span class="n">build_freqs_cis</span><span class="p">(</span><span class="n">seq_len</span><span class="o">=</span><span class="mi">32</span><span class="p">,</span> <span class="n">d</span><span class="o">=</span><span class="n">d</span><span class="p">)</span>
 
-<span class="n">scores</span> <span class="o">=</span> <span class="n">Xr</span> <span class="o">@</span> <span class="n">Xr</span><span class="o">.</span><span class="n">transpose</span><span class="p">(</span><span class="o">-</span><span class="mi">2</span><span class="p">,</span> <span class="o">-</span><span class="mi">1</span><span class="p">)</span> <span class="o">/</span> <span class="n">d</span> <span class="o">**</span> <span class="mf">0.5</span>    <span class="c1"># 加了位置的注意力相关度</span>
-<span class="nb">print</span><span class="p">(</span><span class="s2">&quot;第 0 个词对其余各词的注意力打分:&quot;</span><span class="p">)</span>
-<span class="nb">print</span><span class="p">(</span><span class="n">scores</span><span class="p">[</span><span class="mi">0</span><span class="p">]</span><span class="o">.</span><span class="n">round</span><span class="p">(</span><span class="n">decimals</span><span class="o">=</span><span class="mi">3</span><span class="p">))</span>               <span class="c1"># 这些分数现在&quot;知道&quot;了谁离谁多远</span>
+<span class="k">def</span><span class="w"> </span><span class="nf">score</span><span class="p">(</span><span class="n">m</span><span class="p">,</span> <span class="n">n</span><span class="p">):</span>
+<span class="w">    </span><span class="sd">&quot;&quot;&quot;query 放在位置 m、key 放在位置 n 时的注意力分数&quot;&quot;&quot;</span>
+    <span class="n">q</span> <span class="o">=</span> <span class="n">apply_rope</span><span class="p">(</span><span class="n">q_word</span><span class="p">,</span> <span class="n">freqs_cis</span><span class="p">[</span><span class="n">m</span><span class="p">])</span>         <span class="c1"># 转 m 份角度</span>
+    <span class="n">k</span> <span class="o">=</span> <span class="n">apply_rope</span><span class="p">(</span><span class="n">k_word</span><span class="p">,</span> <span class="n">freqs_cis</span><span class="p">[</span><span class="n">n</span><span class="p">])</span>         <span class="c1"># 转 n 份角度</span>
+    <span class="k">return</span> <span class="p">(</span><span class="n">q</span> <span class="o">@</span> <span class="n">k</span> <span class="o">/</span> <span class="n">d</span> <span class="o">**</span> <span class="mf">0.5</span><span class="p">)</span><span class="o">.</span><span class="n">item</span><span class="p">()</span>
+
+<span class="nb">print</span><span class="p">(</span><span class="s2">&quot;同一对词，相对距离固定为 3，整体平移：&quot;</span><span class="p">)</span>
+<span class="k">for</span> <span class="n">m</span><span class="p">,</span> <span class="n">n</span> <span class="ow">in</span> <span class="p">[(</span><span class="mi">0</span><span class="p">,</span> <span class="mi">3</span><span class="p">),</span> <span class="p">(</span><span class="mi">7</span><span class="p">,</span> <span class="mi">10</span><span class="p">),</span> <span class="p">(</span><span class="mi">20</span><span class="p">,</span> <span class="mi">23</span><span class="p">)]:</span>
+    <span class="nb">print</span><span class="p">(</span><span class="sa">f</span><span class="s2">&quot;  query@</span><span class="si">{</span><span class="n">m</span><span class="si">:</span><span class="s2">2d</span><span class="si">}</span><span class="s2">, key@</span><span class="si">{</span><span class="n">n</span><span class="si">:</span><span class="s2">2d</span><span class="si">}</span><span class="s2">  -&gt;  分数 = </span><span class="si">{</span><span class="n">score</span><span class="p">(</span><span class="n">m</span><span class="p">,</span><span class="w"> </span><span class="n">n</span><span class="p">)</span><span class="si">:</span><span class="s2">.6f</span><span class="si">}</span><span class="s2">&quot;</span><span class="p">)</span>
+
+<span class="nb">print</span><span class="p">(</span><span class="s2">&quot;同一对词，相对距离改变：&quot;</span><span class="p">)</span>
+<span class="k">for</span> <span class="n">m</span><span class="p">,</span> <span class="n">n</span> <span class="ow">in</span> <span class="p">[(</span><span class="mi">0</span><span class="p">,</span> <span class="mi">1</span><span class="p">),</span> <span class="p">(</span><span class="mi">0</span><span class="p">,</span> <span class="mi">3</span><span class="p">),</span> <span class="p">(</span><span class="mi">0</span><span class="p">,</span> <span class="mi">8</span><span class="p">)]:</span>
+    <span class="nb">print</span><span class="p">(</span><span class="sa">f</span><span class="s2">&quot;  query@</span><span class="si">{</span><span class="n">m</span><span class="si">:</span><span class="s2">2d</span><span class="si">}</span><span class="s2">, key@</span><span class="si">{</span><span class="n">n</span><span class="si">:</span><span class="s2">2d</span><span class="si">}</span><span class="s2">  -&gt;  分数 = </span><span class="si">{</span><span class="n">score</span><span class="p">(</span><span class="n">m</span><span class="p">,</span><span class="w"> </span><span class="n">n</span><span class="p">)</span><span class="si">:</span><span class="s2">.6f</span><span class="si">}</span><span class="s2">&quot;</span><span class="p">)</span>
 </code></pre></div>
 
-<p>短短几行，就是今天所有主流大模型位置编码的内核。仓库里的动画脚本把这套"复平面旋转"画了出来：</p>
-<div class="highlight"><pre><span></span><code>python<span class="w"> </span>complex_rope_visualization.py
+<p>跑出来你会看到：上面三行分数<strong>小数点后六位都一样</strong>——这对词从句首平移到句子中段、再到第 20 个词，
+注意力纹丝不动；下面三行一改相对距离，分数立刻变了。
+<strong>这就是"位置感"的准确含义：模型对"隔了几个词"敏感，对"整句话从哪开始"完全免疫</strong>——
+第 3 节用单个复数证明的 <code>qₘ* · kₙ</code> 只依赖 <code>n−m</code>，现在在真实形状的向量上原样复现。
+短短几行，就是今天所有主流大模型位置编码的内核。仓库里的三维动画脚本，
+用<strong>交流电相量图的经典画法</strong>（复平面竖起来当截面，"位置"沿水平轴向前延伸）把这两件事演了出来：</p>
+<div class="highlight"><pre><span></span><code>python<span class="w"> </span>scripts/complex_rope_visualization.py
 </code></pre></div>
 
 <blockquote>
-<p>画面里，几个单位复数像钟表指针一样在复平面上转，位置每加 1 就多转一个固定角度；
-快指针负责分辨相邻词、慢指针负责记住远方。右边那条曲线是"注意力分数 vs 相对距离"——
-<strong>无论你把绝对位置整体平移多少，曲线形状纹丝不动</strong>，这就是"只认相对位置"的直观证据。</p>
+<p>左图：三根转速不同的"相量"（对应 d/2 对维度里的快/中/慢三对）随位置前进、
+一边旋转一边拖出三根螺旋，投影到底面就是一族相交的正弦波——快波分辨相邻词、
+慢波记住远距离，这就是 <code>freqs_cis</code> 的全部内容。
+右图：query（橙）、key（绿）两根螺旋，动画分两幕——
+第一幕"整体平移"：距离 r=3 锁死，位置对 (m, m+3) 沿轴滑动，两支箭头之间的
+红色夹角扇形<strong>像焊死了一样纹丝不动</strong>，分数恒定；
+第二幕"改变距离"：m 固定、r 从 0 拉大，扇形张开、分数跟着变。
+<strong>模型看得见的只有这个夹角：位置平移隐形，相对距离显形。</strong></p>
 </blockquote>
 <hr />
 <h2 id="缝合把所有画面接起来">缝合：把所有画面接起来</h2>
@@ -257,6 +420,7 @@ window.MathJax = {
 <th>复数概念</th>
 <th>高中怎么讲</th>
 <th>这篇文章怎么看（画面）</th>
+<th>在生活里是什么</th>
 <th>在大模型里是什么</th>
 </tr>
 </thead>
@@ -265,44 +429,61 @@ window.MathJax = {
 <td><strong>虚数 <code>i</code></strong></td>
 <td>平方等于 −1 的数</td>
 <td>"转 90°"这个动作（第 1 节）</td>
+<td>侧面那根轴：信用、未来、相位</td>
 <td>复平面旋转的最小单位</td>
+</tr>
+<tr>
+<td><strong>虚数的出身</strong></td>
+<td>（从来不讲）</td>
+<td>解三次方程借道的桥（第 -1 节）</td>
+<td>贷款买房：借虚补实，闭环回实</td>
+<td>——它的第 450 年应用</td>
 </tr>
 <tr>
 <td><strong><code>i² = −1</code></strong></td>
 <td>一条要背的规则</td>
 <td>转两个 90° = 掉头（第 1 节）</td>
+<td>两次"侧向"就是掉头</td>
 <td>旋转可叠加的起点</td>
 </tr>
 <tr>
 <td><strong>欧拉公式</strong></td>
 <td><code>e^(iθ)=cosθ+isinθ</code></td>
 <td>"转 θ 度"的发生器（第 2 节）</td>
+<td>交流电相量，每秒 50 圈</td>
 <td>RoPE 里的 <code>freqs_cis</code></td>
 </tr>
 <tr>
 <td><strong>复数乘法</strong></td>
 <td>模长相乘、幅角相加</td>
 <td>乘一下 = 转一下（疑惑点一）</td>
+<td>利滚利叠加、相位叠加</td>
 <td>给词向量盖"位置戳"</td>
 </tr>
 <tr>
 <td><strong>共轭 <code>z*</code></strong></td>
 <td>虚部取反</td>
 <td>反向旋转，消掉绝对位置（第 3 节）</td>
+<td>借了就要还，虚部对消</td>
 <td>注意力只认相对距离</td>
 </tr>
 </tbody>
 </table>
-<p>三句话总结这篇文章：</p>
+<p>四句话总结这篇文章：</p>
 <blockquote>
-<p><strong>复数的灵魂是"旋转"</strong>——<code>e^(iθ)</code> 就是"转 θ 度"这个操作，乘一下就转一下（第 1、2 节）；
+<p><strong>虚数是被生活（三次方程）逼出来的，不是发明出来的</strong>——它一出生就是"以虚补实"的桥：
+实数进、借道虚数、实数出，和贷款买房、科技股折现未来是同一套思维（第 -1、-0.5 节）；
+<strong>复数的灵魂是"旋转"</strong>——<code>e^(iθ)</code> 就是"转 θ 度"这个操作，乘一下就转一下（第 1、2 节）；
 <strong>复数乘法 = 幅角相加</strong>，让"位置 m"变成"乘了 m 次旋转"，相对位置变成角度相减（疑惑点一、第 3 节）；
-<strong>于是 RoPE 的工业实现就是复数乘法</strong>，LLaMA 源码里的 <code>view_as_complex + freqs_cis</code>，正是你高中的欧拉公式（疑惑点二）。</p>
+<strong>于是 RoPE 的工业实现就是复数乘法</strong>，LLaMA 源码里的 <code>view_as_complex + freqs_cis</code>，正是你高中的欧拉公式——
+<code>view_as_complex</code> 只是零拷贝地"换副眼镜"，把两两配对的 float 读作复数，好让四行旋转公式坍缩成一次乘法（疑惑点二、三）。</p>
 </blockquote>
-<p>当年虚数学得那么憋屈，不是因为它难，是因为没人告诉你：
+<p>当年虚数学得那么憋屈，不是因为它难，是因为它被从生活里连根拔了出来：
+没人告诉你它是三次方程逼出来的救命通道，没人告诉你你每次刷信用卡、看科技股、开空调
+都在用"虚的维度撬动实的世界"这套思维，也没人告诉你——
 <strong>那个"根本不存在"的 <code>i</code>，最后转进了每一个大模型的位置编码里，
 成了它记住"谁先谁后"最优雅的那行代码。</strong>
-现在把上面每段代码跑一遍，比高中刷十套复数题都值。</p>
+数学来源于生活，也终将回到生活。现在把上面每段代码跑一遍，比高中刷十套复数题都值。</p>
 <hr />
 <blockquote>
 <p><strong>备注（选题/标题）：</strong> 这篇是《sin 和 cos》的"第二种讲法"，务必<strong>错峰发布</strong>——
