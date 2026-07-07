@@ -67,7 +67,7 @@ window.MathJax = {
 就是把词向量看成复数、乘上一个单位复数 <code>e^(iθ)</code>——一行代码完成二维旋转。</strong></p>
 <p>这篇文章不背一个公式、不做一道复数化简，全部用能跑起来的 PyTorch 代码，
 把复数最核心的"乘法即旋转"本质，一路接到大模型源码里的 <code>view_as_complex</code>。
-并且顺手回答六个灵魂拷问：</p>
+并且顺手回答七个灵魂拷问：</p>
 <ul>
 <li>虚数到底是怎么冒出来的？真是数学家为了解 <code>x² = −1</code> 硬造的吗？</li>
 <li>一个"现实里不存在"的数，跟贷款买房、科技股估值、你家插座有什么关系？</li>
@@ -75,6 +75,7 @@ window.MathJax = {
 <li>凭什么说"复数乘法就是旋转"？乘一个 <code>i</code> 到底在转什么？</li>
 <li>欧拉公式 <code>e^(iθ) = cosθ + i·sinθ</code> 凭什么把指数、三角、虚数三样东西缝在一起？</li>
 <li>LLaMA 源码里那句 <code>view_as_complex</code> / <code>freqs_cis</code> 到底在干嘛？为什么向量要两两配对成复数？</li>
+<li>词向量靠几千维装语义、超过三维人类就没法想象——复数多出的那根虚轴，也是这种"高维"吗？</li>
 </ul>
 </blockquote>
 <p>（读过本系列《sin 和 cos》那篇的话，这篇是它的"第二种讲法"：那篇用旋转矩阵，这篇用复数——你会看到工业界真正用的是后者。）</p>
@@ -365,6 +366,83 @@ window.MathJax = {
 实部虚部正是上面那两行旋转公式。<strong>PyTorch 替你背了公式，你只管"乘一下 = 转一下"。</strong>
 （顺带白赚一个工程好处：复数乘法在 GPU 上有现成的高效实现，LLaMA 这么写既短又快。）</p>
 <hr />
+<h2 id="疑惑点四复数也是高维吗给维度花钱的两种方式">🤔 疑惑点四：复数也是"高维"吗？——给维度花钱的两种方式</h2>
+<p>前面把几千维向量切成 d/2 个复平面，很容易冒出一个疑问：
+词向量搞几千维，是为了装下更多语义、让超平面能切开更多类别——维度越高容量越大，
+代价是超过三维人类就没法想象了，只能投影到二三维看个残影。
+<strong>那复数多出来的那根虚轴，是不是同一种"想象不了的东西"的最小版？</strong></p>
+<p><strong>恰恰相反——这是两种完全不同的花钱方式。</strong></p>
+<p><strong>高维词向量：用维度买"容量"。</strong> 这条路线里维度是同质的、可互换的：
+第 3071 维没有任何专属分工，"国王 − 男人 + 女人 ≈ 女王"这种意义是训练<strong>统计</strong>出来的，
+事先谁也说不出哪一维管什么。正因为没有结构可抓，人才理解不了，
+PCA / t-SNE 投影出来的图只是丢掉了绝大部分信息的残影。这条路线上维度是<strong>廉价</strong>的：
+<code>R^n</code> 想加多少加多少，从 768 加到 4096 再到 16384，没有任何数学障碍。</p>
+<p><strong>复数：用维度买"结构"。</strong> 复数只有 2 维，而且第 2 维<strong>有明确分工</strong>——
+就是高斯说的那根"侧向轴"，专门负责相位/旋转。多出这一维不是为了多装东西，
+是为了买两条运算性质：<strong>"旋转"变成一次乘法</strong>（本文全部内容），
+以及<strong>代数封闭</strong>——任何多项式方程在复数里都有根，
+邦贝利当年那次"借道 <code>√−121</code>"之所以能走通，靠的正是这条。
+所以一个复数 = 复平面上一支箭头，<strong>完全画得出来、完全理解得了</strong>：
+它不是"难以想象的高维怪物"，恰恰是数系扩张史上<strong>最可视化</strong>的一步。</p>
+<p><strong>而且"买结构"这条路贵得惊人，很快就到头了。</strong> 想再往上走：
+四元数用 4 维买到"三维空间的旋转"，代价是丢掉乘法交换律（<code>ab ≠ ba</code>）；
+八元数用 8 维继续买，连结合律也丢了；然后数学上被<strong>证明</strong>此路封死——
+能构成这种带除法数系的维度只有 1、2、4、8 四个（Hurwitz 定理），
+第 3 维、第 5 维想"当一种数"都不行。对比容量路线的随便加维，
+你就能看清这是两条完全不同的路：<strong>容量廉价而无形，结构昂贵而有形。</strong></p>
+<p><strong>RoPE 恰好是两条路线的合流，这正是它优雅的地方：</strong>
+容量来自那几千个实数维度——<strong>语义装在向量指向哪里</strong>；
+结构来自把它们看成 d/2 个复平面——<strong>位置装在每个平面被拨了多少度</strong>。
+两半分得干干净净，代码可以验证：</p>
+<div class="highlight"><pre><span></span><code><span class="kn">import</span><span class="w"> </span><span class="nn">torch</span>
+
+<span class="n">torch</span><span class="o">.</span><span class="n">manual_seed</span><span class="p">(</span><span class="mi">0</span><span class="p">)</span>
+<span class="n">d</span> <span class="o">=</span> <span class="mi">8</span>
+<span class="n">x</span> <span class="o">=</span> <span class="n">torch</span><span class="o">.</span><span class="n">randn</span><span class="p">(</span><span class="n">d</span><span class="p">)</span>
+<span class="n">x_c</span> <span class="o">=</span> <span class="n">torch</span><span class="o">.</span><span class="n">view_as_complex</span><span class="p">(</span><span class="n">x</span><span class="o">.</span><span class="n">reshape</span><span class="p">(</span><span class="o">-</span><span class="mi">1</span><span class="p">,</span> <span class="mi">2</span><span class="p">))</span>            <span class="c1"># d/2 个复平面</span>
+<span class="n">freqs</span> <span class="o">=</span> <span class="mf">1.0</span> <span class="o">/</span> <span class="p">(</span><span class="mi">10000</span> <span class="o">**</span> <span class="p">(</span><span class="mi">2</span> <span class="o">*</span> <span class="n">torch</span><span class="o">.</span><span class="n">arange</span><span class="p">(</span><span class="n">d</span> <span class="o">//</span> <span class="mi">2</span><span class="p">)</span> <span class="o">/</span> <span class="n">d</span><span class="p">))</span>
+<span class="n">pos</span> <span class="o">=</span> <span class="mi">3</span>
+<span class="n">y_c</span> <span class="o">=</span> <span class="n">x_c</span> <span class="o">*</span> <span class="n">torch</span><span class="o">.</span><span class="n">polar</span><span class="p">(</span><span class="n">torch</span><span class="o">.</span><span class="n">ones</span><span class="p">(</span><span class="n">d</span> <span class="o">//</span> <span class="mi">2</span><span class="p">),</span> <span class="n">pos</span> <span class="o">*</span> <span class="n">freqs</span><span class="p">)</span>  <span class="c1"># RoPE：乘 e^(i·pos·freq)</span>
+
+<span class="nb">print</span><span class="p">(</span><span class="s2">&quot;转前各平面指针长度:&quot;</span><span class="p">,</span> <span class="n">x_c</span><span class="o">.</span><span class="n">abs</span><span class="p">()</span><span class="o">.</span><span class="n">round</span><span class="p">(</span><span class="n">decimals</span><span class="o">=</span><span class="mi">3</span><span class="p">))</span>
+<span class="nb">print</span><span class="p">(</span><span class="s2">&quot;转后各平面指针长度:&quot;</span><span class="p">,</span> <span class="n">y_c</span><span class="o">.</span><span class="n">abs</span><span class="p">()</span><span class="o">.</span><span class="n">round</span><span class="p">(</span><span class="n">decimals</span><span class="o">=</span><span class="mi">3</span><span class="p">))</span>   <span class="c1"># 一模一样：容量那半分毫未动</span>
+<span class="n">diff</span> <span class="o">=</span> <span class="n">torch</span><span class="o">.</span><span class="n">remainder</span><span class="p">(</span><span class="n">y_c</span><span class="o">.</span><span class="n">angle</span><span class="p">()</span> <span class="o">-</span> <span class="n">x_c</span><span class="o">.</span><span class="n">angle</span><span class="p">(),</span> <span class="mi">2</span> <span class="o">*</span> <span class="n">torch</span><span class="o">.</span><span class="n">pi</span><span class="p">)</span>
+<span class="nb">print</span><span class="p">(</span><span class="s2">&quot;各平面实际被拨的角度:&quot;</span><span class="p">,</span> <span class="n">diff</span><span class="o">.</span><span class="n">round</span><span class="p">(</span><span class="n">decimals</span><span class="o">=</span><span class="mi">3</span><span class="p">))</span>
+<span class="nb">print</span><span class="p">(</span><span class="s2">&quot;理论上该拨的 pos·freq:&quot;</span><span class="p">,</span> <span class="p">(</span><span class="n">pos</span> <span class="o">*</span> <span class="n">freqs</span><span class="p">)</span><span class="o">.</span><span class="n">round</span><span class="p">(</span><span class="n">decimals</span><span class="o">=</span><span class="mi">3</span><span class="p">))</span>   <span class="c1"># 精确等于：结构那半在干活</span>
+</code></pre></div>
+
+<p>每个平面的指针长度分毫不动（<strong>语义容量没被碰</strong>），角度被精确拨了 <code>pos·freq</code>（<strong>旋转结构在干活</strong>）。
+这也回答了"可视化会不会骗人"：文章里画的 d/2 根指针<strong>不是</strong>高维投影的残影，
+而是旋转机制的<strong>无损</strong>呈现——真正画不出来的，从头到尾只有语义那一半。</p>
+<p><strong>等等——d 个实数变成 d/2 个复数，维度砍半，这不就是"降维"吗？信息不丢吗？</strong></p>
+<p>一个比特都不丢。因为一个复数从来就不是"一个数"，而是"两个实数打包"：实部一个、虚部一个。
+8 个实数换成 4 个复数，是 8 张一元纸币换 4 张二元——钱没变，只是两两捆在了一起。
+"维度"这个词在这里会骗人：<code>C^(d/2)</code> 用<strong>复数</strong>当尺子量是 d/2 维，
+换回<strong>实数</strong>当尺子量还是 d 维（复维度 × 2 = 实维度）。
+数字减半是因为换了计量单位，不是东西变少了——就像 500 克改写成 0.5 千克。</p>
+<p>分辨真降维和换单位，看一条铁标准：<strong>可不可逆。</strong>
+真降维（比如 PCA 把 4096 维投到 2 维画图）是不可逆的——投影完就回不去了，信息真的扔了；
+而 <code>view_as_complex</code> 完全可逆，逆操作就是 <code>view_as_real</code>，转回来的张量逐比特相等：</p>
+<div class="highlight"><pre><span></span><code><span class="kn">import</span><span class="w"> </span><span class="nn">torch</span>
+
+<span class="n">x</span> <span class="o">=</span> <span class="n">torch</span><span class="o">.</span><span class="n">randn</span><span class="p">(</span><span class="mi">8</span><span class="p">)</span>                             <span class="c1"># 8 个 float32，32 字节</span>
+<span class="n">z</span> <span class="o">=</span> <span class="n">torch</span><span class="o">.</span><span class="n">view_as_complex</span><span class="p">(</span><span class="n">x</span><span class="o">.</span><span class="n">reshape</span><span class="p">(</span><span class="o">-</span><span class="mi">1</span><span class="p">,</span> <span class="mi">2</span><span class="p">))</span>    <span class="c1"># 4 个 complex64，还是 32 字节</span>
+<span class="n">back</span> <span class="o">=</span> <span class="n">torch</span><span class="o">.</span><span class="n">view_as_real</span><span class="p">(</span><span class="n">z</span><span class="p">)</span><span class="o">.</span><span class="n">reshape</span><span class="p">(</span><span class="mi">8</span><span class="p">)</span>
+<span class="nb">print</span><span class="p">(</span><span class="n">torch</span><span class="o">.</span><span class="n">equal</span><span class="p">(</span><span class="n">x</span><span class="p">,</span> <span class="n">back</span><span class="p">))</span>                    <span class="c1"># True —— 逐比特相等，零损失</span>
+<span class="nb">print</span><span class="p">(</span><span class="n">x</span><span class="o">.</span><span class="n">numel</span><span class="p">()</span> <span class="o">*</span> <span class="n">x</span><span class="o">.</span><span class="n">element_size</span><span class="p">(),</span> <span class="s2">&quot;字节 -&gt;&quot;</span><span class="p">,</span> <span class="n">z</span><span class="o">.</span><span class="n">numel</span><span class="p">()</span> <span class="o">*</span> <span class="n">z</span><span class="o">.</span><span class="n">element_size</span><span class="p">(),</span> <span class="s2">&quot;字节&quot;</span><span class="p">)</span>   <span class="c1"># 32 -&gt; 32</span>
+</code></pre></div>
+
+<p>所以判断有没有损失，别数"个数"，看字节和可逆性：32 字节进、32 字节出、原路可退。
+降维是扔坐标；<code>view_as_complex</code> 是把坐标两两<strong>装订成册</strong>——书页一页没少，只是换了装订方式。</p>
+<p>（真正"变少"的其实是另一样东西：<strong>允许的操作</strong>。把一对实数看成复数后，RoPE 只对它做
+"乘单位复数"这一种动作——二维平面上任意线性变换有 4 个自由度，纯旋转只有 1 个。
+但这是<strong>主动选择只用旋转</strong>（为了不碰模长、只盖位置戳），是限制"动作"，不是压缩"数据"。）</p>
+<p>顺带说一句"超过三维怎么办"：数学家的办法其实不是硬想象，
+而是像复数这样<strong>给维度指派结构</strong>，然后用代数代替视觉。
+Hinton 有句玩笑说得透彻："要处理 14 维空间，就想象一个 3 维空间，
+然后大声对自己说'十四'。"——能画就画（复平面），不能画就换代数（<code>e^(iθ)</code>），
+这本身就是复数教给我们的方法论。</p>
+<hr />
 <h2 id="动手一个最小复数版-rope接进注意力">🎬 动手：一个最小复数版 RoPE，接进注意力</h2>
 <p>把上面所有画面缝进一个能跑的最小复数 RoPE。这次做一个最能体现"位置感"的实验：
 <strong>固定一个 query 词和一个 key 词，把它俩在句子里整体平移，看注意力分数动不动。</strong></p>
@@ -470,6 +548,13 @@ window.MathJax = {
 <td>反向旋转，消掉绝对位置（第 3 节）</td>
 <td>借了就要还，虚部对消</td>
 <td>注意力只认相对距离</td>
+</tr>
+<tr>
+<td><strong>复数的 2 维</strong></td>
+<td>（从不解释为什么是 2 维）</td>
+<td>用维度买"结构"不是买"容量"（疑惑点四）</td>
+<td>第二根轴有分工：相位、信用、未来</td>
+<td>d 维装语义 × d/2 平面装位置</td>
 </tr>
 </tbody>
 </table>
