@@ -67,7 +67,7 @@ window.MathJax = {
 就是把词向量看成复数、乘上一个单位复数 <code>e^(iθ)</code>——一行代码完成二维旋转。</strong></p>
 <p>这篇文章不背一个公式、不做一道复数化简，全部用能跑起来的 PyTorch 代码，
 把复数最核心的"乘法即旋转"本质，一路接到大模型源码里的 <code>view_as_complex</code>。
-并且顺手回答七个灵魂拷问：</p>
+并且顺手回答八个灵魂拷问：</p>
 <ul>
 <li>虚数到底是怎么冒出来的？真是数学家为了解 <code>x² = −1</code> 硬造的吗？</li>
 <li>一个"现实里不存在"的数，跟贷款买房、科技股估值、你家插座有什么关系？</li>
@@ -76,6 +76,7 @@ window.MathJax = {
 <li>欧拉公式 <code>e^(iθ) = cosθ + i·sinθ</code> 凭什么把指数、三角、虚数三样东西缝在一起？</li>
 <li>LLaMA 源码里那句 <code>view_as_complex</code> / <code>freqs_cis</code> 到底在干嘛？为什么向量要两两配对成复数？</li>
 <li>词向量靠几千维装语义、超过三维人类就没法想象——复数多出的那根虚轴，也是这种"高维"吗？</li>
+<li>分数只认相对距离，那"谁在前谁在后"还分得出来吗？不同语言的快排聚到同一片语义空间，算"同频"吗？</li>
 </ul>
 </blockquote>
 <p>（读过本系列《sin 和 cos》那篇的话，这篇是它的"第二种讲法"：那篇用旋转矩阵，这篇用复数——你会看到工业界真正用的是后者。）</p>
@@ -311,6 +312,46 @@ window.MathJax = {
 <p>三行输出的分数<strong>一模一样</strong>。原因用复数写出来一目了然：
 <code>qₘ* · kₙ = q* · k · e^(i(n−m)θ)</code>——旋转项只剩下 <code>(n−m)</code> 这个相对量，绝对位置被自动消掉了。
 <strong>RoPE 让模型天生理解"相对位置"：它不在乎你这句话从第几个字开始，只在乎"这个词离那个词隔了多远"。</strong></p>
+<h3 id="35-两个追问聚类算同频吗前后还分得出来吗">3.5 两个追问：聚类算"同频"吗？"前后"还分得出来吗？</h3>
+<p><strong>追问一：大模型把 Python 版和 C 版的快速排序聚到同一片语义空间——那算"同频"吗？</strong></p>
+<p>不算，那是<strong>同向</strong>。这件事发生在语义那一半：训练把不同语言快排的向量<strong>指向</strong>拉近了，
+所以余弦相似度高。这个直觉有一半是对的——点积/余弦相似度字面上就是在量夹角，
+"合拍"的感觉没错；但"频率"这个词在 RoPE 里有专属含义：每对维度的<strong>转速</strong> <code>θⱼ</code>，
+它只管位置、不管语义，快排聚类跟转速毫无关系。
+真要说"同频"，RoPE 里它体现在另一处：<strong>全部 token 共用同一组转速</strong>——
+正因为所有人的钟走得一样快，"相位差"才可比。就像时区：大家用同一套钟表系统，"差三个小时"才有意义。</p>
+<p><strong>追问二：分数只依赖 <code>n−m</code>，那它带符号吗？"A 在 B 前"和"A 在 B 后"分数一样吗？</strong></p>
+<p>把一对维度的分数写开，夹角其实由两部分叠加：</p>
+<div class="arithmatex">\[\text{score} = |q|\,|k|\cdot\cos(\underbrace{\varphi_0}_{\text{内容自带的初始夹角}} + \underbrace{(n-m)\theta}_{\text{位置贡献的相位差}})\]</div>
+<p>代码一验就清楚：</p>
+<div class="highlight"><pre><span></span><code><span class="kn">import</span><span class="w"> </span><span class="nn">numpy</span><span class="w"> </span><span class="k">as</span><span class="w"> </span><span class="nn">np</span>
+
+<span class="n">theta</span> <span class="o">=</span> <span class="mf">0.35</span>
+<span class="n">q</span> <span class="o">=</span> <span class="mf">0.8</span> <span class="o">+</span> <span class="mf">0.6</span><span class="n">j</span>                       <span class="c1"># 内容自带初始幅角</span>
+<span class="n">k</span> <span class="o">=</span> <span class="mf">0.3</span> <span class="o">+</span> <span class="mf">0.9</span><span class="n">j</span>
+
+<span class="k">def</span><span class="w"> </span><span class="nf">score</span><span class="p">(</span><span class="n">m</span><span class="p">,</span> <span class="n">n</span><span class="p">):</span>
+    <span class="k">return</span> <span class="p">(</span><span class="n">np</span><span class="o">.</span><span class="n">conj</span><span class="p">(</span><span class="n">q</span> <span class="o">*</span> <span class="n">np</span><span class="o">.</span><span class="n">exp</span><span class="p">(</span><span class="mi">1</span><span class="n">j</span><span class="o">*</span><span class="n">m</span><span class="o">*</span><span class="n">theta</span><span class="p">))</span> <span class="o">*</span> <span class="p">(</span><span class="n">k</span> <span class="o">*</span> <span class="n">np</span><span class="o">.</span><span class="n">exp</span><span class="p">(</span><span class="mi">1</span><span class="n">j</span><span class="o">*</span><span class="n">n</span><span class="o">*</span><span class="n">theta</span><span class="p">)))</span><span class="o">.</span><span class="n">real</span>
+
+<span class="nb">print</span><span class="p">(</span><span class="s2">&quot;q@5,  k@8  (k 在后, Δ=+3):&quot;</span><span class="p">,</span> <span class="nb">round</span><span class="p">(</span><span class="n">score</span><span class="p">(</span><span class="mi">5</span><span class="p">,</span> <span class="mi">8</span><span class="p">),</span> <span class="mi">4</span><span class="p">))</span>    <span class="c1"># -0.0803</span>
+<span class="nb">print</span><span class="p">(</span><span class="s2">&quot;q@8,  k@5  (k 在前, Δ=-3):&quot;</span><span class="p">,</span> <span class="nb">round</span><span class="p">(</span><span class="n">score</span><span class="p">(</span><span class="mi">8</span><span class="p">,</span> <span class="mi">5</span><span class="p">),</span> <span class="mi">4</span><span class="p">))</span>    <span class="c1">#  0.8565 —— 前后分数不同！</span>
+<span class="nb">print</span><span class="p">(</span><span class="s2">&quot;q@15, k@18 (整体平移, Δ=+3):&quot;</span><span class="p">,</span> <span class="nb">round</span><span class="p">(</span><span class="n">score</span><span class="p">(</span><span class="mi">15</span><span class="p">,</span> <span class="mi">18</span><span class="p">),</span> <span class="mi">4</span><span class="p">))</span> <span class="c1"># -0.0803 —— 平移依旧免疫</span>
+</code></pre></div>
+
+<p>三个结论：</p>
+<ol>
+<li><strong>距离</strong>由相位差决定：整体平移 (5,8)→(15,18)，分数纹丝不动（都是 −0.0803）；</li>
+<li><strong>先后也分得出来</strong>：交换前后，Δ 从 +3 变 −3，只要内容初始夹角 <code>φ0 ≠ 0</code>，
+   <code>cos(φ0 + Δθ) ≠ cos(φ0 − Δθ)</code>——实验里 k 在后是 −0.08、k 在前是 0.86，天差地别。
+   反过来说更有意思：<strong>如果词向量没有自己的"内容相位"（φ0 = 0），cos 是偶函数，
+   RoPE 反而分不清前后。</strong> 先后感是"语义 × 位置"<strong>乘</strong>出来的——
+   这正是 RoPE 用乘法而不是加法注入位置的深意；</li>
+<li><strong>多频率分工</strong>：快转速把"相邻谁先谁后"拉开，慢转速守住"隔五十个词"的远距离顺序。</li>
+</ol>
+<p>一个诚实的补充：decoder 型大模型"不能看未来"不是 RoPE 干的，是因果 mask 硬性规定的；
+RoPE 负责的是可见范围内"离多远、什么顺序"的<strong>度量</strong>。</p>
+<p>一句话收束：一次点积同时读出两个分量——<strong>分类靠方向（内容项 <code>q*k</code>），
+排序靠相位（旋转项 <code>e^(i(n−m)θ)</code>）</strong>，"是什么"和"在哪里"在同一个乘法里结账。</p>
 <hr />
 <h2 id="疑惑点二llama-源码里的-view_as_complex-freqs_cis-到底在干嘛">🤔 疑惑点二：LLaMA 源码里的 <code>view_as_complex</code> / <code>freqs_cis</code> 到底在干嘛？</h2>
 <p><strong>就是把上面这套"看成复数、乘 <code>e^(iθ)</code>"批量做完：先把几百维的词向量两两配对，凑成 d/2 个复数；再乘上预先算好的一整排单位复数 <code>e^(i·位置·频率)</code>（源码里叫 <code>freqs_cis</code>，cis 就是 cos+i·sin）；最后转回实数。不同的配对用不同的频率（转速），快的分辨相邻词、慢的记住远距离——和钟表的时针分针秒针一个道理。</strong></p>
