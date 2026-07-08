@@ -1,0 +1,592 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>为什么大模型能堆到几十层还训得动？答案藏在一个最不起眼的动作里 · Steve Chan — xlisp</title>
+<meta name="description" content="如果只能留一句话，那就是这句：">
+<meta name="author" content="Steve Chan">
+<link rel="icon" type="image/jpeg" href="../icon.jpeg">
+<link rel="apple-touch-icon" href="../icon.jpeg">
+<meta property="og:type" content="article">
+<meta property="og:title" content="为什么大模型能堆到几十层还训得动？答案藏在一个最不起眼的动作里">
+<meta property="og:description" content="如果只能留一句话，那就是这句：">
+<meta property="og:image" content="../icon.jpeg">
+<meta property="og:site_name" content="Steve Chan — xlisp">
+<meta name="twitter:card" content="summary_large_image">
+<meta name="twitter:title" content="为什么大模型能堆到几十层还训得动？答案藏在一个最不起眼的动作里">
+<meta name="twitter:description" content="如果只能留一句话，那就是这句：">
+<meta name="twitter:image" content="../icon.jpeg">
+<link rel="stylesheet" href="../style.css?v=light1">
+<script>(function(){try{if(localStorage.getItem('theme')==='light')document.documentElement.setAttribute('data-theme','light');}catch(e){}})();</script>
+<!-- Math formula rendering via MathJax -->
+<script>
+window.MathJax = {
+  tex: {
+    // arithmatex emits \(...\) / \[...\] markup, so only these delimiters
+    // are needed; plain `$` is left alone (avoids currency false positives).
+    inlineMath: [['\\(', '\\)']],
+    displayMath: [['\\[', '\\]']],
+    processEscapes: true
+  },
+  svg: {
+    // Each formula gets its own self-contained <defs>, so the copy script can
+    // serialize one <svg> and rasterize it to a PNG for WeChat.
+    fontCache: 'local'
+  },
+  options: {
+    skipHtmlTags: ['script', 'noscript', 'style', 'textarea', 'pre', 'code'],
+    ignoreHtmlClass: 'highlight'
+  }
+};
+</script>
+<script src="https://cdn.jsdelivr.net/npm/mathjax@3/es5/tex-svg.js" async></script>
+</head>
+<body>
+<main class="wrap post">
+
+  <nav class="topnav">
+    <a href="../index.html">← home</a>
+  </nav>
+
+  <article>
+    <header class="post-header">
+      <h1>为什么大模型能堆到几十层还训得动？答案藏在一个最不起眼的动作里</h1>
+      <p class="meta">2026-07-08 · Steve Chan</p>
+    </header>
+
+    <div class="content">
+<blockquote>
+<p>一个几十层、上百层堆起来的大模型，凭什么不会"算着算着就崩"——数值要么爆炸成天文数字，要么衰减到接近 0？
+答案不在什么高深结构里，而在一个简单到几乎会被忽略的动作上：</p>
+<p><strong>每过一层，就把数据"减掉均值、除以标准差"，重新拉回"中心 0、波动 1"的标准状态。</strong></p>
+<p>这个动作在统计里叫标准化（standardization），在大模型里叫 LayerNorm，是每个 Transformer block 的标配零件——也是最少被人讲清楚的那一个。今天每一个大模型（LLaMA、Qwen、GPT、DeepSeek）能又深又稳地训下去，靠的正是它。</p>
+<p>这篇文章不堆公式、不查正态分布表，全部用能跑起来的 PyTorch 代码，
+把"减均值、除标准差"从一个朴素的统计动作，一路接到撑起深度网络的稳定器。
+并且顺手回答四个问题：</p>
+<ul>
+<li>数据在网络里传着传着，为什么会越来越飘？</li>
+<li>"减均值、除标准差"这套动作，到底救了什么？</li>
+<li>大模型为什么用 LayerNorm，而不是你可能听过的 BatchNorm？</li>
+<li>既然都归一化到"均值 0、方差 1"了，为什么又要乘一个 γ、加一个 β 把它变回去？</li>
+</ul>
+</blockquote>
+<hr />
+<h2 id="0-一句话主线">0. 一句话主线</h2>
+<p>如果只能留一句话，那就是这句：</p>
+<blockquote>
+<p><strong>标准化（归一化）= 把一组数"减掉均值、除以标准差"，拉回"中心在 0、波动为 1"的标准状态。</strong></p>
+</blockquote>
+<p>这个动作最常见的用途，是把量纲不同的数据放到同一把尺子上比；
+而大模型用它做另一件更关键的事——把每一层算出来的、量级越来越野的词向量，重新拉回一个稳定区间，
+好让下一层能安安稳稳地接着算。<strong>从头到尾，就是在做"减均值、除标准差"这一件事。</strong></p>
+<div class="highlight"><pre><span></span><code><span class="kn">import</span><span class="w"> </span><span class="nn">torch</span>
+
+<span class="n">scores</span> <span class="o">=</span> <span class="n">torch</span><span class="o">.</span><span class="n">tensor</span><span class="p">([</span><span class="mf">88.0</span><span class="p">,</span> <span class="mf">92.0</span><span class="p">,</span> <span class="mf">79.0</span><span class="p">,</span> <span class="mf">95.0</span><span class="p">,</span> <span class="mf">61.0</span><span class="p">])</span>   <span class="c1"># 一组原始数值</span>
+<span class="n">z</span> <span class="o">=</span> <span class="p">(</span><span class="n">scores</span> <span class="o">-</span> <span class="n">scores</span><span class="o">.</span><span class="n">mean</span><span class="p">())</span> <span class="o">/</span> <span class="n">scores</span><span class="o">.</span><span class="n">std</span><span class="p">(</span><span class="n">unbiased</span><span class="o">=</span><span class="kc">False</span><span class="p">)</span>  <span class="c1"># 减均值，除标准差</span>
+<span class="nb">print</span><span class="p">(</span><span class="s2">&quot;标准化后:&quot;</span><span class="p">,</span> <span class="n">z</span><span class="o">.</span><span class="n">round</span><span class="p">(</span><span class="n">decimals</span><span class="o">=</span><span class="mi">2</span><span class="p">))</span>
+<span class="nb">print</span><span class="p">(</span><span class="s2">&quot;新均值≈&quot;</span><span class="p">,</span> <span class="n">z</span><span class="o">.</span><span class="n">mean</span><span class="p">()</span><span class="o">.</span><span class="n">round</span><span class="p">(</span><span class="n">decimals</span><span class="o">=</span><span class="mi">2</span><span class="p">),</span> <span class="s2">&quot; 新标准差≈&quot;</span><span class="p">,</span> <span class="n">z</span><span class="o">.</span><span class="n">std</span><span class="p">(</span><span class="n">unbiased</span><span class="o">=</span><span class="kc">False</span><span class="p">)</span><span class="o">.</span><span class="n">round</span><span class="p">(</span><span class="n">decimals</span><span class="o">=</span><span class="mi">2</span><span class="p">))</span>
+<span class="c1"># 新均值≈0，新标准差≈1 —— 无论原来什么量级，都被拉回同一个标准状态</span>
+</code></pre></div>
+
+<p>记住这个画面：<strong>不管原来是几十还是几千，减均值、除标准差之后，一律变成"中心在 0、波动为 1"。</strong>
+下面所有东西都挂在"把分布拉回标准状态"这一件事上。</p>
+<hr />
+<h2 id="1-标准化把量纲不同的数拉到同一把尺子上">1. 标准化：把量纲不同的数，拉到同一把尺子上</h2>
+<p>标准化最直观的用途，是比较量纲、量级都不同的数据。它干的事只有一句：<strong>消除量纲和量级，只留下"相对位置"。</strong></p>
+<div class="highlight"><pre><span></span><code><span class="kn">import</span><span class="w"> </span><span class="nn">torch</span>
+
+<span class="n">subject_a</span> <span class="o">=</span> <span class="n">torch</span><span class="o">.</span><span class="n">tensor</span><span class="p">([</span><span class="mf">110.0</span><span class="p">,</span> <span class="mf">95.0</span><span class="p">,</span> <span class="mf">120.0</span><span class="p">,</span> <span class="mf">88.0</span><span class="p">])</span>   <span class="c1"># A 项，量级偏大</span>
+<span class="n">subject_b</span> <span class="o">=</span> <span class="n">torch</span><span class="o">.</span><span class="n">tensor</span><span class="p">([</span><span class="mf">70.0</span><span class="p">,</span>  <span class="mf">55.0</span><span class="p">,</span> <span class="mf">82.0</span><span class="p">,</span>  <span class="mf">60.0</span><span class="p">])</span>   <span class="c1"># B 项，量级偏小</span>
+
+<span class="k">def</span><span class="w"> </span><span class="nf">zscore</span><span class="p">(</span><span class="n">x</span><span class="p">):</span>
+    <span class="k">return</span> <span class="p">(</span><span class="n">x</span> <span class="o">-</span> <span class="n">x</span><span class="o">.</span><span class="n">mean</span><span class="p">())</span> <span class="o">/</span> <span class="n">x</span><span class="o">.</span><span class="n">std</span><span class="p">(</span><span class="n">unbiased</span><span class="o">=</span><span class="kc">False</span><span class="p">)</span>
+
+<span class="nb">print</span><span class="p">(</span><span class="s2">&quot;A 项标准化:&quot;</span><span class="p">,</span> <span class="n">zscore</span><span class="p">(</span><span class="n">subject_a</span><span class="p">)</span><span class="o">.</span><span class="n">round</span><span class="p">(</span><span class="n">decimals</span><span class="o">=</span><span class="mi">2</span><span class="p">))</span>
+<span class="nb">print</span><span class="p">(</span><span class="s2">&quot;B 项标准化:&quot;</span><span class="p">,</span> <span class="n">zscore</span><span class="p">(</span><span class="n">subject_b</span><span class="p">)</span><span class="o">.</span><span class="n">round</span><span class="p">(</span><span class="n">decimals</span><span class="o">=</span><span class="mi">2</span><span class="p">))</span>
+<span class="c1"># 两项被拉到同一把尺子：谁在自己那组里更靠前，一眼就能比</span>
+</code></pre></div>
+
+<p>两组数原始量级不同，没法直接比。
+但<strong>减均值、除标准差之后，两组都变成"我在本组里领先/落后多少个标准差"</strong>，量纲消失了，只剩相对位置。
+这套"抹掉绝对量级、只留相对结构"的动作，正是大模型每一层都需要的——下面看它为什么需要。</p>
+<hr />
+<h2 id="2-标准化在几何上做了什么居中-收窄">2. 标准化在几何上做了什么：居中 + 收窄</h2>
+<p>别把标准化当成一个公式，把它当成对整个分布做的两个动作：<strong>先平移到 0，再缩放到 1。</strong></p>
+<div class="highlight"><pre><span></span><code><span class="kn">import</span><span class="w"> </span><span class="nn">torch</span>
+
+<span class="n">x</span> <span class="o">=</span> <span class="n">torch</span><span class="o">.</span><span class="n">randn</span><span class="p">(</span><span class="mi">1000</span><span class="p">)</span> <span class="o">*</span> <span class="mi">20</span> <span class="o">+</span> <span class="mi">100</span>     <span class="c1"># 均值≈100、标准差≈20 的一堆数</span>
+<span class="nb">print</span><span class="p">(</span><span class="s2">&quot;原始:  均值≈&quot;</span><span class="p">,</span> <span class="n">x</span><span class="o">.</span><span class="n">mean</span><span class="p">()</span><span class="o">.</span><span class="n">round</span><span class="p">(),</span> <span class="s2">&quot; 标准差≈&quot;</span><span class="p">,</span> <span class="n">x</span><span class="o">.</span><span class="n">std</span><span class="p">(</span><span class="n">unbiased</span><span class="o">=</span><span class="kc">False</span><span class="p">)</span><span class="o">.</span><span class="n">round</span><span class="p">())</span>
+
+<span class="n">x_centered</span> <span class="o">=</span> <span class="n">x</span> <span class="o">-</span> <span class="n">x</span><span class="o">.</span><span class="n">mean</span><span class="p">()</span>            <span class="c1"># 动作一：整体平移，把中心搬到 0</span>
+<span class="n">x_norm</span> <span class="o">=</span> <span class="n">x_centered</span> <span class="o">/</span> <span class="n">x</span><span class="o">.</span><span class="n">std</span><span class="p">(</span><span class="n">unbiased</span><span class="o">=</span><span class="kc">False</span><span class="p">)</span>   <span class="c1"># 动作二：整体缩放，把波动压到 1</span>
+<span class="nb">print</span><span class="p">(</span><span class="s2">&quot;标准化: 均值≈&quot;</span><span class="p">,</span> <span class="n">x_norm</span><span class="o">.</span><span class="n">mean</span><span class="p">()</span><span class="o">.</span><span class="n">round</span><span class="p">(),</span> <span class="s2">&quot; 标准差≈&quot;</span><span class="p">,</span> <span class="n">x_norm</span><span class="o">.</span><span class="n">std</span><span class="p">(</span><span class="n">unbiased</span><span class="o">=</span><span class="kc">False</span><span class="p">)</span><span class="o">.</span><span class="n">round</span><span class="p">())</span>
+<span class="c1"># 均值≈0，标准差≈1：钟形曲线还是那个钟形，只是被搬到原点、宽度收成了 1</span>
+</code></pre></div>
+
+<p><strong>分布的"形状"没变，只是被搬到了原点、宽度收成了 1。</strong> 想象一条钟形曲线：
+标准化不改变它是"钟形"这个事实，只是把它挪到中间、把胖瘦调成标准宽度。
+这个"居中 + 收窄"的动作，就是我们接下来要塞进神经网络每一层里的东西。</p>
+<hr />
+<h2 id="疑惑点一数据在网络里传着传着为什么会越来越飘归一化救了什么">🤔 疑惑点一：数据在网络里传着传着，为什么会"越来越飘"？归一化救了什么？</h2>
+<p><strong>每一层都是"乘一个矩阵、过一个激活"。矩阵乘法会把数值的量级一层层放大或缩小——就像麦克风对着音箱，前一层的输出当后一层的输入，一点点偏差被反复放大，几十层之后数值要么爆炸成天文数字（梯度爆炸），要么衰减到接近 0（梯度消失），网络就训不动了。归一化的作用，就是在每一层之后强行把数值"拉回标准状态"，掐断这条放大链。</strong></p>
+<p>先亲眼看看"不归一化会飘成什么样"：</p>
+<div class="highlight"><pre><span></span><code><span class="kn">import</span><span class="w"> </span><span class="nn">torch</span>
+
+<span class="n">torch</span><span class="o">.</span><span class="n">manual_seed</span><span class="p">(</span><span class="mi">0</span><span class="p">)</span>
+<span class="n">x</span> <span class="o">=</span> <span class="n">torch</span><span class="o">.</span><span class="n">randn</span><span class="p">(</span><span class="mi">1</span><span class="p">,</span> <span class="mi">64</span><span class="p">)</span>
+<span class="k">for</span> <span class="n">layer</span> <span class="ow">in</span> <span class="nb">range</span><span class="p">(</span><span class="mi">1</span><span class="p">,</span> <span class="mi">51</span><span class="p">):</span>
+    <span class="n">W</span> <span class="o">=</span> <span class="n">torch</span><span class="o">.</span><span class="n">randn</span><span class="p">(</span><span class="mi">64</span><span class="p">,</span> <span class="mi">64</span><span class="p">)</span> <span class="o">*</span> <span class="mf">0.6</span>      <span class="c1"># 一个普通的线性层</span>
+    <span class="n">x</span> <span class="o">=</span> <span class="n">torch</span><span class="o">.</span><span class="n">relu</span><span class="p">(</span><span class="n">x</span> <span class="o">@</span> <span class="n">W</span><span class="p">)</span>              <span class="c1"># 乘矩阵 + 激活，模拟往深处传</span>
+    <span class="k">if</span> <span class="n">layer</span> <span class="o">%</span> <span class="mi">10</span> <span class="o">==</span> <span class="mi">0</span><span class="p">:</span>
+        <span class="nb">print</span><span class="p">(</span><span class="sa">f</span><span class="s2">&quot;第 </span><span class="si">{</span><span class="n">layer</span><span class="si">:</span><span class="s2">2d</span><span class="si">}</span><span class="s2"> 层后：数值绝对值均值 ≈ </span><span class="si">{</span><span class="n">x</span><span class="o">.</span><span class="n">abs</span><span class="p">()</span><span class="o">.</span><span class="n">mean</span><span class="p">()</span><span class="si">:</span><span class="s2">.4f</span><span class="si">}</span><span class="s2">&quot;</span><span class="p">)</span>
+<span class="c1"># 你会看到数值一路飘走（膨胀或塌缩），越深越离谱</span>
+</code></pre></div>
+
+<p>再看看"每层之后归一化一下"的效果：</p>
+<div class="highlight"><pre><span></span><code><span class="kn">import</span><span class="w"> </span><span class="nn">torch</span>
+<span class="kn">import</span><span class="w"> </span><span class="nn">torch.nn.functional</span><span class="w"> </span><span class="k">as</span><span class="w"> </span><span class="nn">F</span>
+
+<span class="n">torch</span><span class="o">.</span><span class="n">manual_seed</span><span class="p">(</span><span class="mi">0</span><span class="p">)</span>
+<span class="n">x</span> <span class="o">=</span> <span class="n">torch</span><span class="o">.</span><span class="n">randn</span><span class="p">(</span><span class="mi">1</span><span class="p">,</span> <span class="mi">64</span><span class="p">)</span>
+<span class="k">for</span> <span class="n">layer</span> <span class="ow">in</span> <span class="nb">range</span><span class="p">(</span><span class="mi">1</span><span class="p">,</span> <span class="mi">51</span><span class="p">):</span>
+    <span class="n">W</span> <span class="o">=</span> <span class="n">torch</span><span class="o">.</span><span class="n">randn</span><span class="p">(</span><span class="mi">64</span><span class="p">,</span> <span class="mi">64</span><span class="p">)</span> <span class="o">*</span> <span class="mf">0.6</span>
+    <span class="n">x</span> <span class="o">=</span> <span class="n">torch</span><span class="o">.</span><span class="n">relu</span><span class="p">(</span><span class="n">x</span> <span class="o">@</span> <span class="n">W</span><span class="p">)</span>
+    <span class="n">x</span> <span class="o">=</span> <span class="p">(</span><span class="n">x</span> <span class="o">-</span> <span class="n">x</span><span class="o">.</span><span class="n">mean</span><span class="p">(</span><span class="o">-</span><span class="mi">1</span><span class="p">,</span> <span class="n">keepdim</span><span class="o">=</span><span class="kc">True</span><span class="p">))</span> <span class="o">/</span> <span class="p">(</span><span class="n">x</span><span class="o">.</span><span class="n">std</span><span class="p">(</span><span class="o">-</span><span class="mi">1</span><span class="p">,</span> <span class="n">keepdim</span><span class="o">=</span><span class="kc">True</span><span class="p">)</span> <span class="o">+</span> <span class="mf">1e-5</span><span class="p">)</span>  <span class="c1"># 每层归一化</span>
+    <span class="k">if</span> <span class="n">layer</span> <span class="o">%</span> <span class="mi">10</span> <span class="o">==</span> <span class="mi">0</span><span class="p">:</span>
+        <span class="nb">print</span><span class="p">(</span><span class="sa">f</span><span class="s2">&quot;第 </span><span class="si">{</span><span class="n">layer</span><span class="si">:</span><span class="s2">2d</span><span class="si">}</span><span class="s2"> 层后：数值绝对值均值 ≈ </span><span class="si">{</span><span class="n">x</span><span class="o">.</span><span class="n">abs</span><span class="p">()</span><span class="o">.</span><span class="n">mean</span><span class="p">()</span><span class="si">:</span><span class="s2">.4f</span><span class="si">}</span><span class="s2">&quot;</span><span class="p">)</span>
+<span class="c1"># 加了归一化，数值稳稳待在一个区间，50 层也不飘</span>
+</code></pre></div>
+
+<p>第一段代码里数值一路失控，第二段里稳如老狗。
+<strong>这就是为什么 Transformer 能把几十上百层堆起来——每个 block 里都夹了一次"减均值、除标准差"，
+把上一层的输出重新拉回标准状态，让下一层永远面对一个"规矩"的输入。</strong>
+那个不起眼的"减均值、除标准差"，就是这条深度网络能训得动的命脉。</p>
+<hr />
+<h2 id="3-layernorm对每个词向量自己做一次标准化">3. LayerNorm：对"每个词向量自己"做一次标准化</h2>
+<p>现在把这套动作正式接到大模型上。Transformer 里的 LayerNorm 干的事，
+和前面那个标准化一字不差——<strong>对每个词的那一行向量，减掉这行的均值、除以这行的标准差。</strong></p>
+<div class="highlight"><pre><span></span><code><span class="kn">import</span><span class="w"> </span><span class="nn">torch</span>
+<span class="kn">import</span><span class="w"> </span><span class="nn">torch.nn</span><span class="w"> </span><span class="k">as</span><span class="w"> </span><span class="nn">nn</span>
+
+<span class="n">torch</span><span class="o">.</span><span class="n">manual_seed</span><span class="p">(</span><span class="mi">0</span><span class="p">)</span>
+<span class="n">x</span> <span class="o">=</span> <span class="n">torch</span><span class="o">.</span><span class="n">randn</span><span class="p">(</span><span class="mi">2</span><span class="p">,</span> <span class="mi">4</span><span class="p">)</span>                 <span class="c1"># 2 个词，每个词是一个 4 维向量</span>
+
+<span class="c1"># —— 手动版：就是&quot;减均值、除标准差&quot; ——</span>
+<span class="n">mean</span> <span class="o">=</span> <span class="n">x</span><span class="o">.</span><span class="n">mean</span><span class="p">(</span><span class="n">dim</span><span class="o">=-</span><span class="mi">1</span><span class="p">,</span> <span class="n">keepdim</span><span class="o">=</span><span class="kc">True</span><span class="p">)</span>
+<span class="n">std</span>  <span class="o">=</span> <span class="n">x</span><span class="o">.</span><span class="n">var</span><span class="p">(</span><span class="n">dim</span><span class="o">=-</span><span class="mi">1</span><span class="p">,</span> <span class="n">keepdim</span><span class="o">=</span><span class="kc">True</span><span class="p">,</span> <span class="n">unbiased</span><span class="o">=</span><span class="kc">False</span><span class="p">)</span><span class="o">.</span><span class="n">sqrt</span><span class="p">()</span>
+<span class="n">manual</span> <span class="o">=</span> <span class="p">(</span><span class="n">x</span> <span class="o">-</span> <span class="n">mean</span><span class="p">)</span> <span class="o">/</span> <span class="p">(</span><span class="n">std</span> <span class="o">+</span> <span class="mf">1e-5</span><span class="p">)</span>
+
+<span class="c1"># —— PyTorch 官方版 ——</span>
+<span class="n">ln</span> <span class="o">=</span> <span class="n">nn</span><span class="o">.</span><span class="n">LayerNorm</span><span class="p">(</span><span class="mi">4</span><span class="p">,</span> <span class="n">elementwise_affine</span><span class="o">=</span><span class="kc">False</span><span class="p">)</span>   <span class="c1"># 先关掉 γ/β，只做纯标准化</span>
+<span class="n">official</span> <span class="o">=</span> <span class="n">ln</span><span class="p">(</span><span class="n">x</span><span class="p">)</span>
+
+<span class="nb">print</span><span class="p">(</span><span class="s2">&quot;手动 vs 官方 完全一致:&quot;</span><span class="p">,</span> <span class="n">torch</span><span class="o">.</span><span class="n">allclose</span><span class="p">(</span><span class="n">manual</span><span class="p">,</span> <span class="n">official</span><span class="p">,</span> <span class="n">atol</span><span class="o">=</span><span class="mf">1e-5</span><span class="p">))</span>  <span class="c1"># True</span>
+</code></pre></div>
+
+<p><code>nn.LayerNorm</code> 拆开看，内核就是那两步动作，一点没多。
+<strong>（补一句现代进展：LLaMA 这些新模型用的是 RMSNorm——把"减均值"那步省了，只保留"除以均方根"，
+更省算力、效果几乎不变。但骨架还是同一件事：把一行数拉回标准量级。）</strong></p>
+<hr />
+<h2 id="疑惑点二既然都归一化到均值-0方差-1了为什么又要乘-γ加-β-把它变回去">🤔 疑惑点二：既然都归一化到"均值 0、方差 1"了，为什么又要乘 γ、加 β 把它变回去？</h2>
+<p><strong>因为"强行统一成均值 0、方差 1"虽然稳，却也抹掉了模型本来可能想保留的信息——万一某一层确实需要一个更大的波动、或者一个非 0 的中心呢？所以 LayerNorm 在标准化之后，又乘一个可学习的 γ（缩放）、加一个可学习的 β（平移）。这两个参数让模型自己去学"这一层到底要多强的归一化"：需要就保持标准状态，不需要就用 γ、β 把它调回来。归一化负责"稳"，γ/β 负责"留住表达能力"。</strong></p>
+<div class="highlight"><pre><span></span><code><span class="kn">import</span><span class="w"> </span><span class="nn">torch</span>
+<span class="kn">import</span><span class="w"> </span><span class="nn">torch.nn</span><span class="w"> </span><span class="k">as</span><span class="w"> </span><span class="nn">nn</span>
+
+<span class="n">torch</span><span class="o">.</span><span class="n">manual_seed</span><span class="p">(</span><span class="mi">0</span><span class="p">)</span>
+<span class="n">x</span> <span class="o">=</span> <span class="n">torch</span><span class="o">.</span><span class="n">randn</span><span class="p">(</span><span class="mi">2</span><span class="p">,</span> <span class="mi">4</span><span class="p">)</span>
+
+<span class="n">ln</span> <span class="o">=</span> <span class="n">nn</span><span class="o">.</span><span class="n">LayerNorm</span><span class="p">(</span><span class="mi">4</span><span class="p">)</span>          <span class="c1"># 默认带 γ、β</span>
+<span class="nb">print</span><span class="p">(</span><span class="s2">&quot;初始 γ:&quot;</span><span class="p">,</span> <span class="n">ln</span><span class="o">.</span><span class="n">weight</span><span class="o">.</span><span class="n">data</span><span class="p">)</span>   <span class="c1"># 全 1</span>
+<span class="nb">print</span><span class="p">(</span><span class="s2">&quot;初始 β:&quot;</span><span class="p">,</span> <span class="n">ln</span><span class="o">.</span><span class="n">bias</span><span class="o">.</span><span class="n">data</span><span class="p">)</span>     <span class="c1"># 全 0</span>
+<span class="c1"># 初始时 γ=1、β=0，等于&quot;只做纯标准化&quot;；训练中它们会被学成模型需要的值</span>
+
+<span class="c1"># 手动复现完整版：标准化后再 * γ + β</span>
+<span class="n">mean</span> <span class="o">=</span> <span class="n">x</span><span class="o">.</span><span class="n">mean</span><span class="p">(</span><span class="o">-</span><span class="mi">1</span><span class="p">,</span> <span class="n">keepdim</span><span class="o">=</span><span class="kc">True</span><span class="p">)</span>
+<span class="n">std</span>  <span class="o">=</span> <span class="n">x</span><span class="o">.</span><span class="n">var</span><span class="p">(</span><span class="o">-</span><span class="mi">1</span><span class="p">,</span> <span class="n">keepdim</span><span class="o">=</span><span class="kc">True</span><span class="p">,</span> <span class="n">unbiased</span><span class="o">=</span><span class="kc">False</span><span class="p">)</span><span class="o">.</span><span class="n">sqrt</span><span class="p">()</span>
+<span class="n">manual</span> <span class="o">=</span> <span class="p">(</span><span class="n">x</span> <span class="o">-</span> <span class="n">mean</span><span class="p">)</span> <span class="o">/</span> <span class="p">(</span><span class="n">std</span> <span class="o">+</span> <span class="mf">1e-5</span><span class="p">)</span> <span class="o">*</span> <span class="n">ln</span><span class="o">.</span><span class="n">weight</span> <span class="o">+</span> <span class="n">ln</span><span class="o">.</span><span class="n">bias</span>
+<span class="nb">print</span><span class="p">(</span><span class="s2">&quot;和官方完全一致:&quot;</span><span class="p">,</span> <span class="n">torch</span><span class="o">.</span><span class="n">allclose</span><span class="p">(</span><span class="n">manual</span><span class="p">,</span> <span class="n">ln</span><span class="p">(</span><span class="n">x</span><span class="p">),</span> <span class="n">atol</span><span class="o">=</span><span class="mf">1e-5</span><span class="p">))</span>   <span class="c1"># True</span>
+</code></pre></div>
+
+<p><strong>归一化把数值拉回标准状态（保证稳定），γ 和 β 再给模型一个"反悔的自由"（保住表达力）。</strong>
+一稳一活，这就是 LayerNorm 完整的样子——而它的地基，仍然是那句"减均值、除标准差"。</p>
+<hr />
+<h2 id="动手把归一化塞进一个最小-transformer-block看它稳住全场">🎬 动手：把归一化塞进一个最小 Transformer block，看它稳住全场</h2>
+<p>Transformer 的每个 block 都是 <code>x = x + 归一化后的子层输出</code>（残差 + 归一化）。
+写一个最小版，直观感受"有没有归一化"的差别：</p>
+<div class="highlight"><pre><span></span><code><span class="kn">import</span><span class="w"> </span><span class="nn">torch</span>
+<span class="kn">import</span><span class="w"> </span><span class="nn">torch.nn</span><span class="w"> </span><span class="k">as</span><span class="w"> </span><span class="nn">nn</span>
+
+<span class="n">torch</span><span class="o">.</span><span class="n">manual_seed</span><span class="p">(</span><span class="mi">0</span><span class="p">)</span>
+<span class="n">d</span> <span class="o">=</span> <span class="mi">16</span>
+<span class="n">ln</span> <span class="o">=</span> <span class="n">nn</span><span class="o">.</span><span class="n">LayerNorm</span><span class="p">(</span><span class="n">d</span><span class="p">)</span>
+<span class="n">linear</span> <span class="o">=</span> <span class="n">nn</span><span class="o">.</span><span class="n">Linear</span><span class="p">(</span><span class="n">d</span><span class="p">,</span> <span class="n">d</span><span class="p">)</span>
+
+<span class="n">x</span> <span class="o">=</span> <span class="n">torch</span><span class="o">.</span><span class="n">randn</span><span class="p">(</span><span class="mi">4</span><span class="p">,</span> <span class="n">d</span><span class="p">)</span> <span class="o">*</span> <span class="mi">5</span>          <span class="c1"># 故意给一个量级偏大的输入</span>
+<span class="nb">print</span><span class="p">(</span><span class="s2">&quot;输入量级(绝对值均值):&quot;</span><span class="p">,</span> <span class="n">x</span><span class="o">.</span><span class="n">abs</span><span class="p">()</span><span class="o">.</span><span class="n">mean</span><span class="p">()</span><span class="o">.</span><span class="n">round</span><span class="p">(</span><span class="n">decimals</span><span class="o">=</span><span class="mi">2</span><span class="p">))</span>
+
+<span class="c1"># 无归一化：直接过子层</span>
+<span class="n">no_norm</span> <span class="o">=</span> <span class="n">x</span> <span class="o">+</span> <span class="n">torch</span><span class="o">.</span><span class="n">relu</span><span class="p">(</span><span class="n">linear</span><span class="p">(</span><span class="n">x</span><span class="p">))</span>
+<span class="nb">print</span><span class="p">(</span><span class="s2">&quot;无归一化 输出量级:&quot;</span><span class="p">,</span> <span class="n">no_norm</span><span class="o">.</span><span class="n">abs</span><span class="p">()</span><span class="o">.</span><span class="n">mean</span><span class="p">()</span><span class="o">.</span><span class="n">round</span><span class="p">(</span><span class="n">decimals</span><span class="o">=</span><span class="mi">2</span><span class="p">))</span>
+
+<span class="c1"># 有归一化（pre-norm，现代 Transformer 的标准做法）：先归一化再进子层</span>
+<span class="n">pre_norm</span> <span class="o">=</span> <span class="n">x</span> <span class="o">+</span> <span class="n">torch</span><span class="o">.</span><span class="n">relu</span><span class="p">(</span><span class="n">linear</span><span class="p">(</span><span class="n">ln</span><span class="p">(</span><span class="n">x</span><span class="p">)))</span>
+<span class="nb">print</span><span class="p">(</span><span class="s2">&quot;有归一化 输出量级:&quot;</span><span class="p">,</span> <span class="n">pre_norm</span><span class="o">.</span><span class="n">abs</span><span class="p">()</span><span class="o">.</span><span class="n">mean</span><span class="p">()</span><span class="o">.</span><span class="n">round</span><span class="p">(</span><span class="n">decimals</span><span class="o">=</span><span class="mi">2</span><span class="p">))</span>
+<span class="c1"># 有归一化的那条，子层始终面对&quot;标准状态&quot;的输入，量级被牢牢摁住</span>
+</code></pre></div>
+
+<p><strong>归一化让每个子层永远面对一个"规矩"的输入，量级不会随着层数滚雪球。</strong>
+把它乘上几十层，就是大模型能又深又稳的秘密。</p>
+<p>仓库里的动画脚本把这个"归一化如何驯服分布"的过程画了出来：</p>
+<div class="highlight"><pre><span></span><code>python<span class="w"> </span>layernorm_visualization.py
+</code></pre></div>
+
+<blockquote>
+<p>左边是一堆数值往深层网络里传：没有归一化时，你会看到直方图一层层被拉宽、
+甚至甩出屏幕（爆炸）或缩成一根针（消失）；
+右边打开归一化后，每一层的直方图都被"居中 + 收窄"重新拽回标准钟形——
+<strong>同样的网络，同样的深度，一个飘到失控，一个稳如水平线。</strong>
+最后你会直观看到：<strong>深度网络能训得动，靠的就是每层之间这一次不起眼的"减均值、除标准差"。</strong></p>
+</blockquote>
+<hr />
+<h2 id="缝合把所有画面接起来">缝合：把所有画面接起来</h2>
+<p>回到开头，现在每个概念都有了画面和代码出处：</p>
+<table>
+<thead>
+<tr>
+<th>概念</th>
+<th>朴素理解</th>
+<th>这篇文章怎么看（画面）</th>
+<th>在大模型里是什么</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><strong>均值 μ</strong></td>
+<td>一组数的平均</td>
+<td>分布的"中心在哪"（第 0、2 节）</td>
+<td>LayerNorm 里要减掉的那个中心</td>
+</tr>
+<tr>
+<td><strong>标准差 σ</strong></td>
+<td>数据有多分散</td>
+<td>分布的"波动有多大"（第 2 节）</td>
+<td>LayerNorm 里要除掉的那个尺度</td>
+</tr>
+<tr>
+<td><strong>标准化 <code>(x-μ)/σ</code></strong></td>
+<td>把数据拉到同一把尺子</td>
+<td>把分布拉回"中心 0、波动 1"（第 1 节）</td>
+<td>每一层对每个词向量做的归一化</td>
+</tr>
+<tr>
+<td><strong>消除量纲</strong></td>
+<td>让不同来源的数能比</td>
+<td>抹掉绝对量级、只留相对结构</td>
+<td>掐断深层网络的数值放大链（疑惑点一）</td>
+</tr>
+<tr>
+<td><strong>缩放平移 γ/β</strong></td>
+<td>标准化本身没有</td>
+<td>归一化后再给模型"反悔的自由"</td>
+<td>LayerNorm 的可学习参数（疑惑点二）</td>
+</tr>
+</tbody>
+</table>
+<p>三句话总结这篇文章：</p>
+<blockquote>
+<p><strong>标准化的灵魂是"减均值、除标准差"</strong>——把任何一组数拉回"中心 0、波动 1"的标准状态（第 1、2 节）；
+<strong>深层网络离不开它</strong>，因为数值一层层传会越滚越飘，每层归一化一次就掐断了这条放大链（疑惑点一）；
+<strong>于是 LayerNorm 就是对每个词向量做的标准化</strong>，再配一对可学习的 γ、β，一稳一活，撑起了每个 Transformer block（第 3 节、疑惑点二）。</p>
+</blockquote>
+<p>标准化这个动作，简单到你可能从没多看它一眼——
+<strong>但正是这个"减均值、除标准差"，成了大模型每一层的稳定器，
+是几十层网络能堆起来、还训得动的命脉。</strong>
+现在把上面每段代码跑一遍，你就摸到了 Transformer 里最沉默、也最不可或缺的那块零件。</p>
+<hr />
+<blockquote>
+<p><strong>备注（选题/标题）：</strong> 这篇刻意<strong>不走"高中知识"钩子</strong>——高中壳的标题已经密集出现（sin/cos、数列、求根公式、向量……），
+除 sin/cos 外反响平平，继续堆会稀释稀缺性、给老读者疲劳感。所以这里改用"机制悬念"式开头
+（对标《为什么 GPT 淘汰了 RNN》那种问题钩子）。备选标题：
+- 《所有人都在讲注意力，却没人讲清楚是什么让 Transformer 真正稳住》
+- 《LayerNorm：每个 Transformer 都有、却最少被讲清的那个零件》
+与《向量→注意力》《对数→交叉熵》承接，共同拼出 Transformer block 的几块地基：
+"相关度（注意力）／损失（交叉熵）／稳定（归一化）／位置（sin/cos）"，可互相引流。
+配套动画脚本：<code>scripts/layernorm_visualization.py</code>。</p>
+</blockquote>
+    </div>
+  </article>
+
+</main>
+
+<!-- Floating Ask-AI chat widget -->
+<button class="ai-fab" id="ai-fab" aria-label="Ask AI about this article" title="Ask AI about this article">
+  <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+    <path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"/>
+  </svg>
+  <span class="ai-fab-label">Ask AI</span>
+</button>
+
+<div class="ai-panel" id="ai-panel" role="dialog" aria-labelledby="ai-panel-title" aria-hidden="true">
+  <header class="ai-panel-head">
+    <div class="ai-panel-title-wrap">
+      <span class="ai-dot"></span>
+      <h3 id="ai-panel-title">Ask AI about this post</h3>
+    </div>
+    <div class="ai-panel-actions">
+      <button class="ai-icon-btn" id="ai-clear" title="Clear conversation" aria-label="Clear">
+        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><polyline points="3 6 5 6 21 6"/><path d="M19 6l-1 14a2 2 0 0 1-2 2H8a2 2 0 0 1-2-2L5 6"/><path d="M10 11v6M14 11v6"/><path d="M9 6V4a1 1 0 0 1 1-1h4a1 1 0 0 1 1 1v2"/></svg>
+      </button>
+      <button class="ai-icon-btn" id="ai-close" title="Minimize" aria-label="Minimize">
+        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><polyline points="6 9 12 15 18 9"/></svg>
+      </button>
+    </div>
+  </header>
+
+  <div class="ai-messages" id="ai-messages">
+    <div class="ai-empty" id="ai-empty">
+      <p class="ai-empty-title">On-device AI · Gemini Nano</p>
+      <p class="ai-empty-sub">Ask anything about this article. Runs in your browser — nothing leaves your device.</p>
+    </div>
+  </div>
+
+  <div class="ai-status" id="ai-status" hidden></div>
+
+  <form class="ai-composer" id="ai-form">
+    <textarea id="ai-input" rows="1" placeholder="Ask about this post…" autocomplete="off"></textarea>
+    <button type="submit" id="ai-send" class="ai-send" aria-label="Send" disabled>
+      <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><line x1="22" y1="2" x2="11" y2="13"/><polygon points="22 2 15 22 11 13 2 9 22 2"/></svg>
+    </button>
+  </form>
+</div>
+
+<script>
+(function () {
+  const POST_TITLE = "\u4e3a\u4ec0\u4e48\u5927\u6a21\u578b\u80fd\u5806\u5230\u51e0\u5341\u5c42\u8fd8\u8bad\u5f97\u52a8\uff1f\u7b54\u6848\u85cf\u5728\u4e00\u4e2a\u6700\u4e0d\u8d77\u773c\u7684\u52a8\u4f5c\u91cc";
+  const contentEl = document.querySelector('article .content');
+
+  const fab = document.getElementById('ai-fab');
+  const panel = document.getElementById('ai-panel');
+  const closeBtn = document.getElementById('ai-close');
+  const clearBtn = document.getElementById('ai-clear');
+  const msgsEl = document.getElementById('ai-messages');
+  const emptyEl = document.getElementById('ai-empty');
+  const statusEl = document.getElementById('ai-status');
+  const formEl = document.getElementById('ai-form');
+  const inputEl = document.getElementById('ai-input');
+  const sendBtn = document.getElementById('ai-send');
+
+  function articleText() {
+    if (!contentEl) return '';
+    return (contentEl.innerText || contentEl.textContent || '')
+      .replace(/[ \t]+\n/g, '\n')
+      .replace(/\n{3,}/g, '\n\n')
+      .trim();
+  }
+
+  function setStatus(msg, cls) {
+    if (!msg) { statusEl.hidden = true; statusEl.textContent = ''; statusEl.className = 'ai-status'; return; }
+    statusEl.hidden = false;
+    statusEl.textContent = msg;
+    statusEl.className = 'ai-status' + (cls ? ' ' + cls : '');
+  }
+
+  function hideEmpty() { if (emptyEl) emptyEl.style.display = 'none'; }
+
+  function appendBubble(role, text) {
+    hideEmpty();
+    const wrap = document.createElement('div');
+    wrap.className = 'ai-msg ai-msg-' + role;
+    const bubble = document.createElement('div');
+    bubble.className = 'ai-bubble';
+    bubble.textContent = text;
+    wrap.appendChild(bubble);
+    msgsEl.appendChild(wrap);
+    msgsEl.scrollTop = msgsEl.scrollHeight;
+    return bubble;
+  }
+
+  function appendTyping() {
+    hideEmpty();
+    const wrap = document.createElement('div');
+    wrap.className = 'ai-msg ai-msg-assistant ai-typing';
+    wrap.innerHTML = '<div class="ai-bubble"><span class="ai-dots"><i></i><i></i><i></i></span></div>';
+    msgsEl.appendChild(wrap);
+    msgsEl.scrollTop = msgsEl.scrollHeight;
+    return wrap;
+  }
+
+  function autoSize() {
+    inputEl.style.height = 'auto';
+    inputEl.style.height = Math.min(inputEl.scrollHeight, 140) + 'px';
+  }
+
+  function openPanel() {
+    panel.classList.add('open');
+    panel.setAttribute('aria-hidden', 'false');
+    fab.classList.add('hidden');
+    setTimeout(() => inputEl.focus(), 50);
+  }
+  function closePanel() {
+    panel.classList.remove('open');
+    panel.setAttribute('aria-hidden', 'true');
+    fab.classList.remove('hidden');
+  }
+
+  fab.addEventListener('click', openPanel);
+  closeBtn.addEventListener('click', closePanel);
+  document.addEventListener('keydown', e => {
+    if (e.key === 'Escape' && panel.classList.contains('open')) closePanel();
+  });
+
+  // ---- LanguageModel session ----
+  let session = null;
+  let creating = null;
+  let history = [];
+
+  function buildSystemPrompt() {
+    // Keep article context modest — Gemini Nano's input quota is small.
+    const article = articleText().slice(0, 4000);
+    return (
+      'You are a concise, helpful assistant answering questions about a blog post. ' +
+      'Use the article below as your primary source. If the answer is not in it, say so briefly and answer generally. ' +
+      'Reply in the same language as the user\'s question. Keep answers short unless asked for detail.\n\n' +
+      '=== ARTICLE TITLE ===\n' + POST_TITLE + '\n\n' +
+      '=== ARTICLE CONTENT ===\n' + article
+    );
+  }
+
+  async function ensureSession() {
+    if (session) return session;
+    if (creating) return creating;
+
+    if (!('LanguageModel' in self)) {
+      throw new Error(
+        'On-device AI not available. Use Chrome 138+ on desktop, or enable ' +
+        '"Prompt API for Gemini Nano" in chrome://flags.'
+      );
+    }
+
+    setStatus('Checking model…', 'info');
+    const status = await LanguageModel.availability();
+    if (status === 'unavailable') {
+      throw new Error('Model unavailable on this device.');
+    }
+
+    creating = (async () => {
+      // Only show download UI when the model isn't already there.
+      const willDownload = (status !== 'available');
+      if (willDownload) setStatus('Preparing model (first run downloads ~2GB)…', 'info');
+      else setStatus('Warming up…', 'info');
+
+      const s = await LanguageModel.create({
+        initialPrompts: [{ role: 'system', content: buildSystemPrompt() }],
+        monitor(m) {
+          m.addEventListener('downloadprogress', e => {
+            // Skip the spurious 0% event Chrome fires for cached models.
+            if (!willDownload && e.loaded === 0) return;
+            const pct = (e.loaded * 100).toFixed(1);
+            setStatus('Downloading model: ' + pct + '%', 'info');
+          });
+        }
+      });
+      session = s;
+      setStatus('');
+      return s;
+    })();
+
+    try { return await creating; }
+    finally { creating = null; }
+  }
+
+  async function ask(q) {
+    appendBubble('user', q);
+    history.push({ role: 'user', content: q });
+
+    sendBtn.disabled = true;
+    inputEl.disabled = true;
+    const typing = appendTyping();
+
+    let answerBubble = null;
+    let acc = '';
+    try {
+      const s = await ensureSession();
+      const stream = s.promptStreaming(q);
+      for await (const chunk of stream) {
+        if (!answerBubble) {
+          typing.remove();
+          const wrap = document.createElement('div');
+          wrap.className = 'ai-msg ai-msg-assistant';
+          answerBubble = document.createElement('div');
+          answerBubble.className = 'ai-bubble';
+          wrap.appendChild(answerBubble);
+          msgsEl.appendChild(wrap);
+        }
+        acc += chunk;
+        answerBubble.textContent = acc;
+        msgsEl.scrollTop = msgsEl.scrollHeight;
+      }
+      if (acc) history.push({ role: 'assistant', content: acc });
+      else { typing.remove(); appendBubble('assistant', '(no response)'); }
+    } catch (e) {
+      if (typing && typing.parentNode) typing.remove();
+      const err = document.createElement('div');
+      err.className = 'ai-msg ai-msg-error';
+      err.innerHTML = '<div class="ai-bubble">⚠ ' + (e && e.message ? e.message : String(e)) + '</div>';
+      msgsEl.appendChild(err);
+      msgsEl.scrollTop = msgsEl.scrollHeight;
+    } finally {
+      sendBtn.disabled = !inputEl.value.trim();
+      inputEl.disabled = false;
+      inputEl.focus();
+    }
+  }
+
+  formEl.addEventListener('submit', e => {
+    e.preventDefault();
+    const q = inputEl.value.trim();
+    if (!q) return;
+    inputEl.value = '';
+    autoSize();
+    sendBtn.disabled = true;
+    ask(q);
+  });
+
+  inputEl.addEventListener('input', () => {
+    autoSize();
+    sendBtn.disabled = !inputEl.value.trim();
+  });
+  inputEl.addEventListener('keydown', e => {
+    if (e.key === 'Enter' && !e.shiftKey) {
+      e.preventDefault();
+      formEl.requestSubmit();
+    }
+  });
+
+  clearBtn.addEventListener('click', () => {
+    msgsEl.innerHTML = '';
+    msgsEl.appendChild(emptyEl);
+    emptyEl.style.display = '';
+    history = [];
+    if (session && session.destroy) { try { session.destroy(); } catch (_) {} }
+    session = null;
+    setStatus('');
+  });
+
+  if (!('LanguageModel' in self)) {
+    fab.addEventListener('click', () => {
+      openPanel();
+      setStatus('On-device AI not detected. Use Chrome 138+ desktop, or enable "Prompt API for Gemini Nano" in chrome://flags.', 'bad');
+    }, { once: true });
+  }
+})();
+</script>
+
+<!-- Outline notes / comments — DataScript + IndexedDB -->
+<script src="https://github.com/tonsky/datascript/releases/download/1.7.8/datascript-1.7.8.min.js"></script>
+<script src="../notes.js?v=6"></script>
+<script src="../theme.js"></script>
+<script src="../wechat-copy.js?v=3"></script>
+
+</body>
+</html>
