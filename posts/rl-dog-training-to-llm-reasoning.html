@@ -1,0 +1,453 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>训一条狗，和训出会&quot;思考&quot;的 DeepSeek，用的是同一套办法 · Steve Chan — xlisp</title>
+<meta name="description" content="先想象一个再普通不过的场景。">
+<meta name="author" content="Steve Chan">
+<link rel="icon" type="image/jpeg" href="../icon.jpeg">
+<link rel="apple-touch-icon" href="../icon.jpeg">
+<meta property="og:type" content="article">
+<meta property="og:title" content="训一条狗，和训出会&quot;思考&quot;的 DeepSeek，用的是同一套办法">
+<meta property="og:description" content="先想象一个再普通不过的场景。">
+<meta property="og:image" content="../icon.jpeg">
+<meta property="og:site_name" content="Steve Chan — xlisp">
+<meta name="twitter:card" content="summary_large_image">
+<meta name="twitter:title" content="训一条狗，和训出会&quot;思考&quot;的 DeepSeek，用的是同一套办法">
+<meta name="twitter:description" content="先想象一个再普通不过的场景。">
+<meta name="twitter:image" content="../icon.jpeg">
+<link rel="stylesheet" href="../style.css?v=light1">
+<script>(function(){try{if(localStorage.getItem('theme')==='light')document.documentElement.setAttribute('data-theme','light');}catch(e){}})();</script>
+<!-- Math formula rendering via MathJax -->
+<script>
+window.MathJax = {
+  tex: {
+    // arithmatex emits \(...\) / \[...\] markup, so only these delimiters
+    // are needed; plain `$` is left alone (avoids currency false positives).
+    inlineMath: [['\\(', '\\)']],
+    displayMath: [['\\[', '\\]']],
+    processEscapes: true
+  },
+  svg: {
+    // Each formula gets its own self-contained <defs>, so the copy script can
+    // serialize one <svg> and rasterize it to a PNG for WeChat.
+    fontCache: 'local'
+  },
+  options: {
+    skipHtmlTags: ['script', 'noscript', 'style', 'textarea', 'pre', 'code'],
+    ignoreHtmlClass: 'highlight'
+  }
+};
+</script>
+<script src="https://cdn.jsdelivr.net/npm/mathjax@3/es5/tex-svg.js" async></script>
+</head>
+<body>
+<main class="wrap post">
+
+  <nav class="topnav">
+    <a href="../index.html">← home</a>
+  </nav>
+
+  <article>
+    <header class="post-header">
+      <h1>训一条狗，和训出会&quot;思考&quot;的 DeepSeek，用的是同一套办法</h1>
+      <p class="meta">2026-07-09 · Steve Chan</p>
+    </header>
+
+    <div class="content">
+<blockquote>
+<p>你在家训狗用的那套"做对给零食、做错不给"，和 OpenAI、DeepSeek 训练大模型学会"思考"的办法，是<strong>同一台发动机</strong>。</p>
+<p>本文不堆术语，用一条狗、一只会玩游戏的像素小鸟、和一个真跑通的大模型数学项目（MathGPT），把这件事讲透——顺便解释一个 2025 年最让人后背发凉的现象：<strong>DeepSeek-R1 的"顿悟时刻"，没有一个人教过它。</strong></p>
+</blockquote>
+<hr />
+<h2 id="引子你早就是一位强化学习工程师了">引子：你早就是一位"强化学习工程师"了</h2>
+<p>先想象一个再普通不过的场景。</p>
+<p>你想教狗握手。你不会给它写一本《握手操作手册》，因为狗看不懂。你能做的只有一件事：<strong>它偶然抬起了爪子，你立刻塞给它一块零食；它没抬，你什么都不给。</strong> 几十次之后，狗自己"悟"了——原来抬爪子能换来零食。你从头到尾没教它"该怎么抬"，你只是在它做对的时候给了个好评。</p>
+<p>记住这个画面。因为 OpenAI 训练 ChatGPT、DeepSeek 训练 R1 学会解数学题和推理，<strong>用的是一模一样的办法</strong>：</p>
+<blockquote>
+<p>没有标准答案手册告诉模型"每一步该怎么想"，只有一个最终的"好/坏"信号——答对给分，答错不给。模型靠一遍遍试错，自己把"什么样的思路更容易做对"刻进了神经网络里。</p>
+</blockquote>
+<p>这就是<strong>强化学习（Reinforcement Learning, RL）</strong>。它和我们熟悉的"填鸭式学习"有本质区别：填鸭式是有老师手把手教（这是猫、那句话该这么翻译），强化学习是<strong>没有老师，只有一个最后打分的考官</strong>。训狗的你，就是那个考官。</p>
+<hr />
+<h2 id="第一幕把训狗翻译成代码你会发现它和大模型一个样">第一幕：把"训狗"翻译成代码，你会发现它和大模型一个样</h2>
+<p>光说类比不够，我们看两段真实跑过的代码，你会发现它们的内核一个字都不差。</p>
+<p><strong>第一段</strong>，让一只像素小鸟自己学会穿管道（Flappy Bird 的 DQN，本质和训狗完全一致——撞管道扣分、活着加分）：</p>
+<div class="highlight"><pre><span></span><code><span class="c1"># 小鸟看到画面，网络输出&quot;扇翅膀&quot;和&quot;不动&quot;两个动作的价值</span>
+<span class="n">current_q</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">model</span><span class="p">(</span><span class="n">states</span><span class="p">)</span><span class="o">.</span><span class="n">gather</span><span class="p">(</span><span class="mi">1</span><span class="p">,</span> <span class="n">actions</span><span class="o">.</span><span class="n">unsqueeze</span><span class="p">(</span><span class="mi">1</span><span class="p">))</span>
+<span class="n">next_q</span>    <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">model</span><span class="p">(</span><span class="n">next_states</span><span class="p">)</span><span class="o">.</span><span class="n">max</span><span class="p">(</span><span class="mi">1</span><span class="p">)[</span><span class="mi">0</span><span class="p">]</span>
+<span class="n">target_q</span>  <span class="o">=</span> <span class="n">rewards</span> <span class="o">+</span> <span class="p">(</span><span class="mi">1</span> <span class="o">-</span> <span class="n">dones</span><span class="p">)</span> <span class="o">*</span> <span class="bp">self</span><span class="o">.</span><span class="n">gamma</span> <span class="o">*</span> <span class="n">next_q</span>   <span class="c1"># 奖励在这里进来</span>
+<span class="n">loss</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">criterion</span><span class="p">(</span><span class="n">current_q</span><span class="p">,</span> <span class="n">target_q</span><span class="p">)</span>
+</code></pre></div>
+
+<p><strong>第二段</strong>，让一个大语言模型学会做数学应用题（MathGPT 的 GRPO）：</p>
+<div class="highlight"><pre><span></span><code><span class="c1"># 模型对同一道题生成一组答案，答对给 1 分、答错给 0 分</span>
+<span class="n">advantages</span> <span class="o">=</span> <span class="n">rewards</span> <span class="o">-</span> <span class="n">rewards</span><span class="o">.</span><span class="n">mean</span><span class="p">()</span>          <span class="c1"># 比这组的平均分高多少</span>
+<span class="n">logp</span>   <span class="o">=</span> <span class="o">-</span><span class="n">model</span><span class="p">(</span><span class="n">inputs</span><span class="p">,</span> <span class="n">targets</span><span class="p">,</span> <span class="n">loss_reduction</span><span class="o">=</span><span class="s1">&#39;none&#39;</span><span class="p">)</span>
+<span class="n">pg_obj</span> <span class="o">=</span> <span class="p">(</span><span class="n">logp</span> <span class="o">*</span> <span class="n">advantages</span><span class="o">.</span><span class="n">unsqueeze</span><span class="p">(</span><span class="o">-</span><span class="mi">1</span><span class="p">))</span><span class="o">.</span><span class="n">sum</span><span class="p">()</span>   <span class="c1"># 提高&quot;高分答案&quot;的概率</span>
+<span class="n">loss</span>   <span class="o">=</span> <span class="o">-</span><span class="n">pg_obj</span>
+</code></pre></div>
+
+<p>一个在玩游戏、一个在解数学题；一个处理像素、一个处理文字。但它们和训狗做的是<strong>同一件事</strong>：</p>
+<blockquote>
+<p>在没有"每一步该怎么做"的标准答案时，仅凭一个最终的"好/坏"信号，让 AI 自己摸索出一套行为习惯。</p>
+</blockquote>
+<p>有一个特别好用的类比，能把大模型和这只狗、这只鸟一秒打通——</p>
+<blockquote>
+<p><strong>狗：看到你手势，决定"抬爪还是不动"，图的是零食。</strong>
+<strong>小鸟：看着画面，一帧帧决定"扇翅还是不动"，图的是活得久。</strong>
+<strong>大模型：看着上文，一个字一个字决定"下一个字写啥"，图的是最后答得对。</strong></p>
+</blockquote>
+<p><strong>写一段话，本质上就是一局"一步步做选择"的游戏</strong>——每蹦出一个字，就相当于走了一步棋。狗在现实里选动作，小鸟在像素里选动作，大模型在文字里选词，玩法一模一样：<strong>看情况 → 做选择 → 拿反馈 → 变得更会选。</strong> 同一台发动机，装在了三个不同的身体里。</p>
+<hr />
+<h2 id="第二幕为什么大模型的思考只能训不能教">第二幕：为什么大模型的"思考"，只能"训"、不能"教"？</h2>
+<p>这里是全文最关键的一步，也是很多人想不通的地方：既然有海量优质文本，直接喂给模型"照着学"（这一步叫 <strong>SFT，监督微调</strong>）不就行了吗？为什么非要绕这么大弯来"训"？</p>
+<p>因为<strong>模仿有天花板</strong>。</p>
+<p>SFT 的本质是让模型背下人类写好的示范——你给它看一万道题的标准解法，它学会了"长得像"标准解法。但它并不"理解"为什么对，它只是在复刻套路。碰到数学这种要求<strong>每一步都精确</strong>的任务，模仿就露馅了：只要中间有一个字蹦错，整个答案就崩了。而且，"正确的推理路径"根本无法穷举地写给它看——一道题有无数种想对的方式，你没法把它们全列成教材。</p>
+<p>这就跟训狗一模一样：<strong>你没法用一本手册教会狗握手，因为"握手"这个动作没法拆成文字步骤喂给它。</strong> 你只能让它自己试，试对了给奖励。</p>
+<p>大模型的"推理能力"也是同理。<strong>没人能写出一本《如何思考》的教科书</strong>，所以只能让模型自己生成一堆思路、自己被打分、自己强化那些做对的——这正是训狗那套"试错 + 奖励"。这就是 RL 在大模型时代无法被替代的根本原因。</p>
+<hr />
+<h2 id="第三幕那个让人后背发凉的证据deepseek-的顿悟时刻">第三幕：那个让人后背发凉的证据——DeepSeek 的"顿悟时刻"</h2>
+<p>如果说前面还是道理，那 2025 年初 DeepSeek-R1 给了世界一个<strong>活的证据</strong>。</p>
+<p>DeepSeek 在训练 R1 时做了件很"狠"的事：几乎不做人工示范，直接用强化学习（GRPO）让模型对着数学题自己试、自己被规则判分。结果模型在训练途中，<strong>自己长出了一种没人教过的行为</strong>——它会在解题解到一半时突然停下来，写出类似"等等，让我重新检查一下前面这步"的句子，然后推翻重来。</p>
+<p>这在 DeepSeek 的论文里被称为 <strong>"aha moment"（顿悟时刻）</strong>。</p>
+<p>请注意：<strong>没有任何一条训练数据教它"要学会反思"。</strong> 就像你从没教过狗"抬爪子"这个具体动作，你只是在它做对时给了零食，它自己琢磨出了这个动作。R1 也一样——你只是在它答对时给了分，它自己琢磨出了"反思一下能提高答对率"这件事，于是把"反思"这个习惯刻进了权重里。</p>
+<p><strong>这就是操作性条件反射（做对给奖励 → 行为被强化）在语言模型上的极致演绎。</strong> 一条狗能学会握手，一个模型能"学会"停下来质疑自己——同一套机制，只是奖励从零食换成了"答案对不对"。</p>
+<hr />
+<h2 id="第四幕拆开引擎它到底怎么给零食的">第四幕：拆开引擎——它到底怎么"给零食"的？</h2>
+<p>DeepSeek 用的方法叫 <strong>GRPO（组相对策略优化）</strong>，名字唬人，其实就是把"训狗"这套做到了极简。我们的 MathGPT 项目跑的就是它，四步，干净得像教科书：</p>
+<p><strong>第一步：对同一道题，让模型自己答一组。</strong> 同一道题让它答 8 遍、16 遍，有的对有的错——这"一组"就像让狗把同一个动作试 8 次。</p>
+<div class="highlight"><pre><span></span><code><span class="n">seqs</span><span class="p">,</span> <span class="n">masks</span> <span class="o">=</span> <span class="n">engine</span><span class="o">.</span><span class="n">generate_batch</span><span class="p">(</span>
+    <span class="n">tokens</span><span class="p">,</span> <span class="n">num_samples</span><span class="o">=</span><span class="mi">8</span><span class="p">,</span> <span class="n">temperature</span><span class="o">=</span><span class="n">args</span><span class="o">.</span><span class="n">temperature</span><span class="p">)</span>
+</code></pre></div>
+
+<p><strong>第二步：对答案，用规则自动打分（不需要另一个 AI 当裁判）。</strong> 数学题的好处是答案能自动判对错：对照标准答案，答对 1 分、答错 0 分。这就是"给不给零食"。</p>
+<div class="highlight"><pre><span></span><code><span class="k">for</span> <span class="n">ans</span> <span class="ow">in</span> <span class="n">generated</span><span class="p">:</span>
+    <span class="n">rewards</span><span class="o">.</span><span class="n">append</span><span class="p">(</span><span class="n">train_task</span><span class="o">.</span><span class="n">reward</span><span class="p">(</span><span class="n">conversation</span><span class="p">,</span> <span class="n">ans</span><span class="p">))</span>  <span class="c1"># 对=1.0，错=0.0</span>
+</code></pre></div>
+
+<p><strong>第三步：算"优势"——比这组的平均分高多少。</strong></p>
+<div class="highlight"><pre><span></span><code><span class="n">advantages</span> <span class="o">=</span> <span class="n">rewards</span> <span class="o">-</span> <span class="n">rewards</span><span class="o">.</span><span class="n">mean</span><span class="p">()</span>   <span class="c1"># 优势 = 自己的分 - 这组的平均分</span>
+</code></pre></div>
+
+<p>这个"优势 = 回报 − 平均回报"是整个强化学习的灵魂。一道题答 8 次对了 2 次，那 2 个正确答案高于平均、优势为正，会被<strong>鼓励</strong>；6 个错的低于平均、优势为负，会被<strong>压制</strong>。跟训狗完全同构：这次比平时做得好，就多给点正反馈。</p>
+<p><strong>第四步：拧一下"决策大脑"，让高分答案下次更容易出现。</strong></p>
+<div class="highlight"><pre><span></span><code><span class="n">logp</span>   <span class="o">=</span> <span class="o">-</span><span class="n">model</span><span class="p">(</span><span class="n">inputs</span><span class="p">,</span> <span class="n">targets</span><span class="p">,</span> <span class="n">loss_reduction</span><span class="o">=</span><span class="s1">&#39;none&#39;</span><span class="p">)</span>
+<span class="n">loss</span>   <span class="o">=</span> <span class="o">-</span><span class="p">(</span><span class="n">logp</span> <span class="o">*</span> <span class="n">advantages</span><span class="o">.</span><span class="n">unsqueeze</span><span class="p">(</span><span class="o">-</span><span class="mi">1</span><span class="p">))</span><span class="o">.</span><span class="n">sum</span><span class="p">()</span>   <span class="c1"># 提高高优势答案的概率</span>
+<span class="n">loss</span><span class="o">.</span><span class="n">backward</span><span class="p">()</span>
+</code></pre></div>
+
+<p>就这么四步。<strong>省掉了额外的裁判模型、省掉了复杂的价值网络</strong>，只用"同一道题这一组答案的平均分"当基线——这就是"组相对（Group Relative）"三个字的由来，也是它比 ChatGPT 当年那套 RLHF（要同时装四个模型、又重又贵）聪明的地方。</p>
+<blockquote>
+<p>MathGPT 在 A800 上跑通了从零预训练 → SFT → GRPO 的完整链路：一个约 700M 参数的小模型，经 GRPO 在 GSM8K 上训练后，数学推理从"基本全错"提升到能解出复杂应用题。它甚至自己学会了在该算的地方调用计算器工具做精确计算——又一个"没人明确教、却被奖励逼出来"的行为。</p>
+</blockquote>
+<hr />
+<h2 id="一条线从狗到小鸟到会思考的大模型">一条线：从狗，到小鸟，到会思考的大模型</h2>
+<p>这套"试错 + 奖励"的思想，走了六十年，但骨架从没变过：</p>
+<div class="highlight"><pre><span></span><code>心理学：动物靠&quot;试错 + 奖惩&quot;学习（训狗的你，就站在这条线的源头）
+        │
+   贝尔曼方程(1950s)：价值 = 即时回报 + 未来价值的折扣（代码里的 rewards + gamma * next_q）
+        │
+   Q-Learning(1989)：学&quot;每个动作值多少分&quot;，但状态一多就爆炸
+        │
+   DQN(2013) ★那只像素小鸟：用神经网络逼近，仅凭画面玩游戏超越人类
+        │
+   AlphaGo(2016)：策略 + 价值 + 自我对弈，&quot;先模仿人类、再自己跟自己下棋超越人类&quot;
+        │        —— 注意这条：先模仿(SFT)、再 RL 超越，正是今天大模型走的路
+        │
+   PPO / RLHF(ChatGPT)：能训了，但要同时装四个模型，太重
+        │
+   GRPO(2024, DeepSeek) ★MathGPT：规则打分 + 组内平均当基线，瘦身成一个模型
+                                   本质 = 带组内基线的策略梯度 + &quot;自我对弈&quot;精神
+</code></pre></div>
+
+<p>看最后两步最值得回味：<strong>GRPO 不是更复杂了，而是更简单了。</strong> 它把 AlphaGo 那套堆到顶峰的复杂系统，精炼回一条干净的"试错 + 奖励"——却继承了最珍贵的那个思想：<strong>让 AI 自己生成、自己评判、自己变强。</strong> 从棋盘上的自我对弈，到数学题上"一组答案里挑出对的强化它"，是同一种智慧的两次绽放。而它们共同的祖师爷，就是你家那条为了零食学会握手的狗。</p>
+<hr />
+<h2 id="结语同一团火从狗窝烧进了大模型">结语：同一团火，从狗窝烧进了大模型</h2>
+<p>回到开头。</p>
+<p>你训狗握手（操作性条件反射）、那只学飞的像素小鸟（DQN）、和那个学会"顿悟"的 DeepSeek（GRPO），相隔百年、处理的东西天差地别，却共享着完全相同的灵魂：</p>
+<blockquote>
+<p><strong>没有人手把手教每一步，只有一个最终的好坏信号；它通过一遍遍试错，自己把"什么行为能带来好结果"刻进了脑子里（或神经网络的权重里）。</strong></p>
+</blockquote>
+<p>这就是为什么 DeepSeek 会"顿悟"——不是因为它更聪明，而是因为它被"训"的方式，逼它自己长出了聪明。而理解这团火最好的方式，永远是<strong>亲手跑一遍</strong>：先让那只小鸟飞起来，再让大模型算对一道数学题。</p>
+<p>一条狗，一只鸟，一个大模型，一条主线，一团从未熄灭的火。</p>
+<hr />
+<p><em>本文基于两个开源实践项目写成：</em>
+- <em>Flappy Bird DQN：<code>rl_games/flappy_bird_app</code>（PyTorch 实现的经典深度 Q 网络）</em>
+- <em>MathGPT GRPO：从零预训练 → SFT → GRPO 的完整大模型强化学习链路（基于 nanochat）</em></p>
+    </div>
+  </article>
+
+</main>
+
+<!-- Floating Ask-AI chat widget -->
+<button class="ai-fab" id="ai-fab" aria-label="Ask AI about this article" title="Ask AI about this article">
+  <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+    <path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"/>
+  </svg>
+  <span class="ai-fab-label">Ask AI</span>
+</button>
+
+<div class="ai-panel" id="ai-panel" role="dialog" aria-labelledby="ai-panel-title" aria-hidden="true">
+  <header class="ai-panel-head">
+    <div class="ai-panel-title-wrap">
+      <span class="ai-dot"></span>
+      <h3 id="ai-panel-title">Ask AI about this post</h3>
+    </div>
+    <div class="ai-panel-actions">
+      <button class="ai-icon-btn" id="ai-clear" title="Clear conversation" aria-label="Clear">
+        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><polyline points="3 6 5 6 21 6"/><path d="M19 6l-1 14a2 2 0 0 1-2 2H8a2 2 0 0 1-2-2L5 6"/><path d="M10 11v6M14 11v6"/><path d="M9 6V4a1 1 0 0 1 1-1h4a1 1 0 0 1 1 1v2"/></svg>
+      </button>
+      <button class="ai-icon-btn" id="ai-close" title="Minimize" aria-label="Minimize">
+        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><polyline points="6 9 12 15 18 9"/></svg>
+      </button>
+    </div>
+  </header>
+
+  <div class="ai-messages" id="ai-messages">
+    <div class="ai-empty" id="ai-empty">
+      <p class="ai-empty-title">On-device AI · Gemini Nano</p>
+      <p class="ai-empty-sub">Ask anything about this article. Runs in your browser — nothing leaves your device.</p>
+    </div>
+  </div>
+
+  <div class="ai-status" id="ai-status" hidden></div>
+
+  <form class="ai-composer" id="ai-form">
+    <textarea id="ai-input" rows="1" placeholder="Ask about this post…" autocomplete="off"></textarea>
+    <button type="submit" id="ai-send" class="ai-send" aria-label="Send" disabled>
+      <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><line x1="22" y1="2" x2="11" y2="13"/><polygon points="22 2 15 22 11 13 2 9 22 2"/></svg>
+    </button>
+  </form>
+</div>
+
+<script>
+(function () {
+  const POST_TITLE = "\u8bad\u4e00\u6761\u72d7\uff0c\u548c\u8bad\u51fa\u4f1a\"\u601d\u8003\"\u7684 DeepSeek\uff0c\u7528\u7684\u662f\u540c\u4e00\u5957\u529e\u6cd5";
+  const contentEl = document.querySelector('article .content');
+
+  const fab = document.getElementById('ai-fab');
+  const panel = document.getElementById('ai-panel');
+  const closeBtn = document.getElementById('ai-close');
+  const clearBtn = document.getElementById('ai-clear');
+  const msgsEl = document.getElementById('ai-messages');
+  const emptyEl = document.getElementById('ai-empty');
+  const statusEl = document.getElementById('ai-status');
+  const formEl = document.getElementById('ai-form');
+  const inputEl = document.getElementById('ai-input');
+  const sendBtn = document.getElementById('ai-send');
+
+  function articleText() {
+    if (!contentEl) return '';
+    return (contentEl.innerText || contentEl.textContent || '')
+      .replace(/[ \t]+\n/g, '\n')
+      .replace(/\n{3,}/g, '\n\n')
+      .trim();
+  }
+
+  function setStatus(msg, cls) {
+    if (!msg) { statusEl.hidden = true; statusEl.textContent = ''; statusEl.className = 'ai-status'; return; }
+    statusEl.hidden = false;
+    statusEl.textContent = msg;
+    statusEl.className = 'ai-status' + (cls ? ' ' + cls : '');
+  }
+
+  function hideEmpty() { if (emptyEl) emptyEl.style.display = 'none'; }
+
+  function appendBubble(role, text) {
+    hideEmpty();
+    const wrap = document.createElement('div');
+    wrap.className = 'ai-msg ai-msg-' + role;
+    const bubble = document.createElement('div');
+    bubble.className = 'ai-bubble';
+    bubble.textContent = text;
+    wrap.appendChild(bubble);
+    msgsEl.appendChild(wrap);
+    msgsEl.scrollTop = msgsEl.scrollHeight;
+    return bubble;
+  }
+
+  function appendTyping() {
+    hideEmpty();
+    const wrap = document.createElement('div');
+    wrap.className = 'ai-msg ai-msg-assistant ai-typing';
+    wrap.innerHTML = '<div class="ai-bubble"><span class="ai-dots"><i></i><i></i><i></i></span></div>';
+    msgsEl.appendChild(wrap);
+    msgsEl.scrollTop = msgsEl.scrollHeight;
+    return wrap;
+  }
+
+  function autoSize() {
+    inputEl.style.height = 'auto';
+    inputEl.style.height = Math.min(inputEl.scrollHeight, 140) + 'px';
+  }
+
+  function openPanel() {
+    panel.classList.add('open');
+    panel.setAttribute('aria-hidden', 'false');
+    fab.classList.add('hidden');
+    setTimeout(() => inputEl.focus(), 50);
+  }
+  function closePanel() {
+    panel.classList.remove('open');
+    panel.setAttribute('aria-hidden', 'true');
+    fab.classList.remove('hidden');
+  }
+
+  fab.addEventListener('click', openPanel);
+  closeBtn.addEventListener('click', closePanel);
+  document.addEventListener('keydown', e => {
+    if (e.key === 'Escape' && panel.classList.contains('open')) closePanel();
+  });
+
+  // ---- LanguageModel session ----
+  let session = null;
+  let creating = null;
+  let history = [];
+
+  function buildSystemPrompt() {
+    // Keep article context modest — Gemini Nano's input quota is small.
+    const article = articleText().slice(0, 4000);
+    return (
+      'You are a concise, helpful assistant answering questions about a blog post. ' +
+      'Use the article below as your primary source. If the answer is not in it, say so briefly and answer generally. ' +
+      'Reply in the same language as the user\'s question. Keep answers short unless asked for detail.\n\n' +
+      '=== ARTICLE TITLE ===\n' + POST_TITLE + '\n\n' +
+      '=== ARTICLE CONTENT ===\n' + article
+    );
+  }
+
+  async function ensureSession() {
+    if (session) return session;
+    if (creating) return creating;
+
+    if (!('LanguageModel' in self)) {
+      throw new Error(
+        'On-device AI not available. Use Chrome 138+ on desktop, or enable ' +
+        '"Prompt API for Gemini Nano" in chrome://flags.'
+      );
+    }
+
+    setStatus('Checking model…', 'info');
+    const status = await LanguageModel.availability();
+    if (status === 'unavailable') {
+      throw new Error('Model unavailable on this device.');
+    }
+
+    creating = (async () => {
+      // Only show download UI when the model isn't already there.
+      const willDownload = (status !== 'available');
+      if (willDownload) setStatus('Preparing model (first run downloads ~2GB)…', 'info');
+      else setStatus('Warming up…', 'info');
+
+      const s = await LanguageModel.create({
+        initialPrompts: [{ role: 'system', content: buildSystemPrompt() }],
+        monitor(m) {
+          m.addEventListener('downloadprogress', e => {
+            // Skip the spurious 0% event Chrome fires for cached models.
+            if (!willDownload && e.loaded === 0) return;
+            const pct = (e.loaded * 100).toFixed(1);
+            setStatus('Downloading model: ' + pct + '%', 'info');
+          });
+        }
+      });
+      session = s;
+      setStatus('');
+      return s;
+    })();
+
+    try { return await creating; }
+    finally { creating = null; }
+  }
+
+  async function ask(q) {
+    appendBubble('user', q);
+    history.push({ role: 'user', content: q });
+
+    sendBtn.disabled = true;
+    inputEl.disabled = true;
+    const typing = appendTyping();
+
+    let answerBubble = null;
+    let acc = '';
+    try {
+      const s = await ensureSession();
+      const stream = s.promptStreaming(q);
+      for await (const chunk of stream) {
+        if (!answerBubble) {
+          typing.remove();
+          const wrap = document.createElement('div');
+          wrap.className = 'ai-msg ai-msg-assistant';
+          answerBubble = document.createElement('div');
+          answerBubble.className = 'ai-bubble';
+          wrap.appendChild(answerBubble);
+          msgsEl.appendChild(wrap);
+        }
+        acc += chunk;
+        answerBubble.textContent = acc;
+        msgsEl.scrollTop = msgsEl.scrollHeight;
+      }
+      if (acc) history.push({ role: 'assistant', content: acc });
+      else { typing.remove(); appendBubble('assistant', '(no response)'); }
+    } catch (e) {
+      if (typing && typing.parentNode) typing.remove();
+      const err = document.createElement('div');
+      err.className = 'ai-msg ai-msg-error';
+      err.innerHTML = '<div class="ai-bubble">⚠ ' + (e && e.message ? e.message : String(e)) + '</div>';
+      msgsEl.appendChild(err);
+      msgsEl.scrollTop = msgsEl.scrollHeight;
+    } finally {
+      sendBtn.disabled = !inputEl.value.trim();
+      inputEl.disabled = false;
+      inputEl.focus();
+    }
+  }
+
+  formEl.addEventListener('submit', e => {
+    e.preventDefault();
+    const q = inputEl.value.trim();
+    if (!q) return;
+    inputEl.value = '';
+    autoSize();
+    sendBtn.disabled = true;
+    ask(q);
+  });
+
+  inputEl.addEventListener('input', () => {
+    autoSize();
+    sendBtn.disabled = !inputEl.value.trim();
+  });
+  inputEl.addEventListener('keydown', e => {
+    if (e.key === 'Enter' && !e.shiftKey) {
+      e.preventDefault();
+      formEl.requestSubmit();
+    }
+  });
+
+  clearBtn.addEventListener('click', () => {
+    msgsEl.innerHTML = '';
+    msgsEl.appendChild(emptyEl);
+    emptyEl.style.display = '';
+    history = [];
+    if (session && session.destroy) { try { session.destroy(); } catch (_) {} }
+    session = null;
+    setStatus('');
+  });
+
+  if (!('LanguageModel' in self)) {
+    fab.addEventListener('click', () => {
+      openPanel();
+      setStatus('On-device AI not detected. Use Chrome 138+ desktop, or enable "Prompt API for Gemini Nano" in chrome://flags.', 'bad');
+    }, { once: true });
+  }
+})();
+</script>
+
+<!-- Outline notes / comments — DataScript + IndexedDB -->
+<script src="https://github.com/tonsky/datascript/releases/download/1.7.8/datascript-1.7.8.min.js"></script>
+<script src="../notes.js?v=6"></script>
+<script src="../theme.js"></script>
+<script src="../wechat-copy.js?v=3"></script>
+
+</body>
+</html>
