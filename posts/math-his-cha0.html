@@ -1,0 +1,723 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>为什么AI，数学家顶尖的人才总是出现在欧美？原因出现在这！ · Steve Chan — xlisp</title>
+<meta name="description" content="一个用 Python + PyTorch + Matplotlib/Manim 来&quot;重走数学发现之路&quot;的可视化项目。">
+<meta name="author" content="Steve Chan">
+<link rel="icon" type="image/jpeg" href="../icon.jpeg">
+<link rel="apple-touch-icon" href="../icon.jpeg">
+<meta property="og:type" content="article">
+<meta property="og:title" content="为什么AI，数学家顶尖的人才总是出现在欧美？原因出现在这！">
+<meta property="og:description" content="一个用 Python + PyTorch + Matplotlib/Manim 来&quot;重走数学发现之路&quot;的可视化项目。">
+<meta property="og:image" content="../icon.jpeg">
+<meta property="og:site_name" content="Steve Chan — xlisp">
+<meta name="twitter:card" content="summary_large_image">
+<meta name="twitter:title" content="为什么AI，数学家顶尖的人才总是出现在欧美？原因出现在这！">
+<meta name="twitter:description" content="一个用 Python + PyTorch + Matplotlib/Manim 来&quot;重走数学发现之路&quot;的可视化项目。">
+<meta name="twitter:image" content="../icon.jpeg">
+<link rel="stylesheet" href="../style.css?v=light1">
+<script>(function(){try{if(localStorage.getItem('theme')==='light')document.documentElement.setAttribute('data-theme','light');}catch(e){}})();</script>
+<!-- Math formula rendering via MathJax -->
+<script>
+window.MathJax = {
+  tex: {
+    // arithmatex emits \(...\) / \[...\] markup, so only these delimiters
+    // are needed; plain `$` is left alone (avoids currency false positives).
+    inlineMath: [['\\(', '\\)']],
+    displayMath: [['\\[', '\\]']],
+    processEscapes: true
+  },
+  svg: {
+    // Each formula gets its own self-contained <defs>, so the copy script can
+    // serialize one <svg> and rasterize it to a PNG for WeChat.
+    fontCache: 'local'
+  },
+  options: {
+    skipHtmlTags: ['script', 'noscript', 'style', 'textarea', 'pre', 'code'],
+    ignoreHtmlClass: 'highlight'
+  }
+};
+</script>
+<script src="https://cdn.jsdelivr.net/npm/mathjax@3/es5/tex-svg.js" async></script>
+</head>
+<body>
+<main class="wrap post">
+
+  <nav class="topnav">
+    <a href="../index.html">← home</a>
+  </nav>
+
+  <article>
+    <header class="post-header">
+      <h1>为什么AI，数学家顶尖的人才总是出现在欧美？原因出现在这！</h1>
+      <p class="meta">2026-07-13 · Steve Chan</p>
+    </header>
+
+    <div class="content">
+<blockquote>
+<p>"教育不是灌输，而是点燃火焰。" —— 苏格拉底</p>
+<p>"我们的应试教育最大的失败，不是学生记不住公式，而是从不告诉他们：这个公式是哪个孤独的灵魂、在哪个动荡的世纪、为了回答什么真实的问题，呕心沥血几十年才写下的。"</p>
+</blockquote>
+<p>一个用 <strong>Python + PyTorch + Matplotlib/Manim</strong> 来"重走数学发现之路"的可视化项目。
+不是再背一遍公式，而是<strong>沿着历史的脚印</strong>，亲手推导一次：从古巴比伦的泥板，到牛顿写下 <span class="arithmatex">\(\dot{x}\)</span>，到伽罗瓦决斗前夜的手稿，到工业革命蒸汽机背后的傅里叶级数。</p>
+<hr />
+<h2 id="项目动机为什么我们学了-12-年数学却讨厌数学">🎯 项目动机：为什么我们学了 12 年数学却讨厌数学？</h2>
+<p>中学数学老师最常见的一句话是：</p>
+<blockquote>
+<p>"你以后买菜会用求根公式吗？"</p>
+</blockquote>
+<p>这是数学教育最惨烈的一次自我背叛。它把<strong>人类两千年最壮丽的智识冒险</strong>，矮化成了"加减乘除买菜论"。</p>
+<p>真实的数学史不是这样的：</p>
+<ul>
+<li><strong>二次方程</strong>的求根公式刻在公元前 1800 年的巴比伦泥板上 —— 那是为了<strong>分配土地</strong>和<strong>计算粮仓</strong>。</li>
+<li><strong>三次方程</strong>的解法引发了 16 世纪意大利数学家之间的<strong>公开决斗</strong>（Cardano vs Tartaglia），赌注是名誉和饭碗。</li>
+<li><strong>五次方程没有根式解</strong> —— 这个结论让 20 岁的阿贝尔贫病而死，让 21 岁的伽罗瓦在决斗前夜写下了<strong>群论</strong>，开启了整个现代代数。</li>
+<li><strong>微积分</strong>不是牛顿一个人在苹果树下发明的 —— 它是<strong>两千年的接力赛</strong>：阿基米德的穷竭法、印度喀拉拉学派的级数、开普勒算酒桶体积、费马求切线、巴罗（牛顿的老师）证出微积分基本定理的几何雏形……牛顿和莱布尼茨只是在 1666 年前后<strong>同时收尾</strong>，接着两人为了优先权<strong>互相指控剽窃了三十年</strong>，把英国数学和欧陆数学撕裂了一个世纪。</li>
+<li><strong>傅里叶级数</strong>诞生于 1807 年，是为了解决<strong>蒸汽机金属部件的热传导</strong>问题 —— 直接服务于工业革命。</li>
+<li><strong>矩阵和线性代数</strong>也是<strong>跨越两千年的合作</strong>：中国《九章算术》在公元前就用消元法解五元一次方程组（比高斯早 1500 年），日本关孝和（1683）比莱布尼茨更早写下行列式，高斯为了<strong>找回失踪的小行星谷神星</strong>发明了最小二乘法，凯莱和西尔维斯特在 1850 年代才把"矩阵"作为一种代数对象正式命名 —— 而这一切，最后成了量子力学、Google PageRank 和深度学习的共同语言。</li>
+</ul>
+<p>马斯克在清华的演讲里说过类似的话：物理教育的失败，是没有教学生<strong>第一性原理</strong>和<strong>真实世界的物理意义</strong>，只让他们背公式应付考试。数学也一样。</p>
+<p><strong>这个项目的目标</strong>：用代码和动画，把数学还原成它本来的样子 —— 一部<strong>带血带肉的人类思想史</strong>。</p>
+<hr />
+<h2 id="学习路线图按历史时间线">🗺️ 学习路线图（按历史时间线）</h2>
+<div class="highlight"><pre><span></span><code>前 1800 ── 前 250 ── 263 ── 1545 ── 1666 ── 1801 ── 1807 ── 1832 ── 1858 ── 1925 ── 现代
+   │         │       │      │       │       │       │       │       │       │       │
+ 巴比伦   阿基米德  刘徽   卡尔达诺 牛顿/   高斯    傅里叶  伽罗瓦  凯莱   海森堡  PyTorch
+ 二次方程  穷竭法  九章   三次决斗 莱布尼兹 找回    热方程  群论    矩阵   矩阵    自动微分
+           圆周率  算术            微积分   谷神星   工业革命 五次无解 代数   力学    深度学习
+</code></pre></div>
+
+<blockquote>
+<p>灰色的横线背后，是<strong>七十多代人</strong>接力奔跑的两千年。本项目的目的，就是把这条河的每一个弯都走一遍。</p>
+</blockquote>
+<h3 id="chapter-0-视角即解法为什么换个角度看难题瞬间消失">Chapter 0 · 视角即解法：为什么"换个角度看，难题瞬间消失"</h3>
+<blockquote>
+<p>"数学家不解决问题，他们改写问题。" —— 笛卡尔式的精神</p>
+</blockquote>
+<p>1787 年，9 岁的高斯被老师罚算 <span class="arithmatex">\(1+2+\cdots+100\)</span>。他几秒钟交卷：5050。
+他不是算得快，而是<strong>看到了别人看不到的对称性</strong>：</p>
+<div class="highlight"><pre><span></span><code>  1 +   2 +   3 + ... +  98 +  99 + 100
+100 +  99 +  98 + ... +   3 +   2 +   1
+─────────────────────────────────────────
+101 + 101 + 101 + ... + 101 + 101 + 101    =  100 × 101 = 10100,  ÷2 = 5050
+</code></pre></div>
+
+<p>这不是"小聪明"，而是<strong>视角的革命</strong> —— 他把"加法"看成了"配对的对称"。
+<strong>几乎所有被罗列在教辅书上的"解题技巧"，本质上都是同一件事：换一个表征，让原来藏起来的结构暴露出来。</strong> 难和易的差异，不在题目本身，而在<strong>你戴的那副结构眼镜</strong>。</p>
+<h4 id="01-历史上反复出现的换视角母题">0.1 历史上反复出现的"换视角"母题</h4>
+<table>
+<thead>
+<tr>
+<th>技巧</th>
+<th>它在偷偷利用的结构</th>
+<th>历史源头</th>
+<th>现代化身</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><strong>配对求和</strong>（高斯 1787）</td>
+<td>对称群 <span class="arithmatex">\(\mathbb{Z}/2\)</span> 的作用</td>
+<td>巴比伦泥板已用</td>
+<td>闭式数列、生成函数</td>
+</tr>
+<tr>
+<td><strong>消元法</strong>（《九章算术》前 200）</td>
+<td>线性方程组的行空间</td>
+<td>刘徽注、高斯 1810</td>
+<td>LU 分解、Gauss–Jordan</td>
+</tr>
+<tr>
+<td><strong>裂项相消</strong>（莱布尼茨 1672）</td>
+<td>离散版"微积分基本定理"  <span class="arithmatex">\(\sum (a_{n+1}-a_n) = a_N - a_0\)</span></td>
+<td>数列差分演算</td>
+<td>Stokes 定理、上同调</td>
+</tr>
+<tr>
+<td><strong>合并同类项</strong></td>
+<td>商环 / 等价类</td>
+<td>花拉子米 <em>al-Jabr</em> (820)</td>
+<td>群环、张量收缩</td>
+</tr>
+<tr>
+<td><strong>配方法</strong>（巴比伦 前 1800）</td>
+<td>二次型的正交对角化</td>
+<td>巴比伦泥板 BM 13901</td>
+<td>主成分分析、SDP</td>
+</tr>
+<tr>
+<td><strong>换元法</strong>（费马 1630s、欧拉 1750s）</td>
+<td>坐标变换 / 流形局部图</td>
+<td>笛卡尔解析几何</td>
+<td>微分同胚、归一化流</td>
+</tr>
+<tr>
+<td><strong>构造辅助线</strong>（欧几里得 前 300）</td>
+<td>把不可见的对称显式化</td>
+<td>《几何原本》</td>
+<td>范畴论的伴随函子</td>
+</tr>
+<tr>
+<td><strong>数学归纳法</strong>（帕斯卡 1654）</td>
+<td>自然数良序原理</td>
+<td>欧几里得已有实质用法</td>
+<td>递归、不动点定理</td>
+</tr>
+<tr>
+<td><strong>生成函数</strong>（欧拉 1740）</td>
+<td>把序列编码成解析函数</td>
+<td>《无穷分析引论》</td>
+<td><span class="arithmatex">\(z\)</span> 变换、母函数法</td>
+</tr>
+<tr>
+<td><strong>对偶变换</strong>（庞色列 1822）</td>
+<td>点 ↔ 线的射影对称</td>
+<td>射影几何</td>
+<td>凸优化对偶、傅里叶变换</td>
+</tr>
+<tr>
+<td><strong>不变量法</strong>（克莱因 1872）</td>
+<td>群作用下的不变量</td>
+<td>埃尔朗根纲领</td>
+<td>李群、规范场论</td>
+</tr>
+</tbody>
+</table>
+<h4 id="02-为什么是高斯一下知道-直觉是历史的浓缩">0.2 为什么是高斯"一下知道"？—— 直觉是历史的浓缩</h4>
+<p>把"高斯一下看出 <span class="arithmatex">\(1+\cdots+n=\frac{n(n+1)}{2}\)</span>"归功于天赋，是教育学上最便宜的偷懒。事实是：</p>
+<ol>
+<li><strong>对称即简化</strong>这条母题，从巴比伦人切土地、毕达哥拉斯排石子（"三角形数"）开始，就在数学传统中流淌。高斯只是<strong>继承了这条直觉</strong>。</li>
+<li>教辅书把这些技巧<strong>罗列</strong>成几十个独立的招式，掩盖了它们其实都是同一件事的不同投影。学生背招式 → 永远只是"做过的题会、没做过的不会"；看清结构 → "没见过的题也能换个角度试试看"。</li>
+<li>这条直觉<strong>可以被训练</strong>：每当你遇到一个能"换视角变简单"的瞬间，就在脑里给它打上标签 —— <strong>是哪种对称？哪种不变量？哪种同构？</strong> 几年下来，你也会"一下看出"。</li>
+</ol>
+<blockquote>
+<p>一句话总结：<strong>所有"灵感"的背后，都是某种对称性、不变性、或同构。</strong></p>
+</blockquote>
+<h4 id="03-可视化与代码">0.3 可视化与代码</h4>
+<ul>
+<li><strong>可视化</strong>：</li>
+<li>高斯配对求和的"两端向中间收拢"动画</li>
+<li>《九章算术》原文 → 矩阵行变换的同步动画</li>
+<li>裂项 <span class="arithmatex">\(\sum \frac{1}{n(n+1)} = \sum(\frac{1}{n}-\frac{1}{n+1})\)</span> 与连续版 <span class="arithmatex">\(\int f' = f(b)-f(a)\)</span> 并排呈现</li>
+<li>高斯积分 <span class="arithmatex">\(\int_{-\infty}^{\infty} e^{-x^2} dx = \sqrt{\pi}\)</span> 的极坐标换元几何</li>
+<li>欧几里得"三角形内角和 = 180°"的辅助线 = 借来的平移对称</li>
+<li>射影对偶：点动 ⇔ 线动 的同步动画</li>
+<li><strong>代码</strong>：<code>ch00_perspectives/</code></li>
+<li><code>gauss_pairing_sum.py</code> —— 配对求和的对称动画 + 用 <code>torch</code> 验证 <span class="arithmatex">\(n\)</span> 到 <span class="arithmatex">\(10^6\)</span></li>
+<li><code>jiuzhang_elimination_anim.py</code> —— 方程章"遍乘直除"与现代矩阵消元同步演示</li>
+<li><code>telescoping_as_calculus.py</code> —— 离散裂项 vs 连续基本定理</li>
+<li><code>gaussian_integral_polar.py</code> —— 极坐标换元算 <span class="arithmatex">\(\sqrt{\pi}\)</span></li>
+<li><code>generating_function_fib.py</code> —— 用 <span class="arithmatex">\(\frac{x}{1-x-x^2}\)</span> 一行解出斐波那契通项（SymPy）</li>
+<li><code>auxiliary_line_euclid.py</code> —— 欧几里得辅助线 = 隐藏的平移</li>
+<li><code>duality_point_line.py</code> —— 射影对偶的实时联动</li>
+</ul>
+<blockquote>
+<p><strong>教育学意义</strong>：本章是贯穿全书的元章节。读完后，每学一个新概念都自动问一句：
+"<strong>这背后是哪种对称、哪种不变量？</strong>" —— 这是数学家和做题家的真正分水岭。</p>
+</blockquote>
+<h3 id="chapter-05-公式即直觉的化石为什么数学反复出现平方1r2log">Chapter 0.5 · 公式即直觉的化石：为什么数学反复出现平方、<span class="arithmatex">\(1/r^2\)</span>、<span class="arithmatex">\(\log\)</span></h3>
+<blockquote>
+<p>"数学家偷懒的方式，是同一个直觉用一辈子。"</p>
+</blockquote>
+<p>为什么方差是 <span class="arithmatex">\(\mathbb{E}[(X-\mu)^2]\)</span> 而不是 <span class="arithmatex">\(\mathbb{E}|X-\mu|\)</span>？为什么万有引力是 <span class="arithmatex">\(1/r^2\)</span> 而不是 <span class="arithmatex">\(1/r\)</span> 或 <span class="arithmatex">\(1/r^3\)</span>？为什么信息量、熵、似然估计、声音响度、地震烈度，全都拿 <span class="arithmatex">\(\log\)</span> 来度量？</p>
+<p>这些不是巧合，也不是数学家的审美偏好 —— 它们是<strong>几何 / 物理 / 概率三条河流在同一个河床上汇流</strong>留下的痕迹。看穿这些<strong>反复出现的母题</strong>，就拿到了"读公式"的钥匙：当你看到一个新公式里出现 <span class="arithmatex">\((\cdot)^2\)</span>、<span class="arithmatex">\(1/r^2\)</span>、<span class="arithmatex">\(\log(\cdot)\)</span>、<span class="arithmatex">\(e^{(\cdot)}\)</span>，应该立刻问 —— <strong>它在偷偷利用哪个空间结构？哪个守恒律？哪种同构？</strong></p>
+<h4 id="051-为什么是平方-几何能量概率三处汇流">0.5.1 为什么是平方？—— 几何、能量、概率三处汇流</h4>
+<p>平方（<span class="arithmatex">\(x^2\)</span>）几乎是数学里最频繁出现的算子，它<strong>同时</strong>承担了至少五种角色：</p>
+<table>
+<thead>
+<tr>
+<th>出现场所</th>
+<th>表达式</th>
+<th>平方的真正含义</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>勾股定理（前 1800，巴比伦泥板）</td>
+<td><span class="arithmatex">\(a^2 + b^2 = c^2\)</span></td>
+<td>欧氏度量：把两个<strong>正交</strong>方向上的长度合成</td>
+</tr>
+<tr>
+<td>动能（莱布尼茨 1686，<em>vis viva</em>）</td>
+<td><span class="arithmatex">\(E = \tfrac{1}{2}mv^2\)</span></td>
+<td>守恒量必须是速度的偶函数（向左 = 向右）</td>
+</tr>
+<tr>
+<td>方差（高斯 1809）</td>
+<td><span class="arithmatex">\(\mathrm{Var} = \mathbb{E}[(X-\mu)^2]\)</span></td>
+<td><span class="arithmatex">\(L^2\)</span> 范数 → 唯一可微 + 满足勾股分解</td>
+</tr>
+<tr>
+<td>最小二乘（高斯 1801，找谷神星）</td>
+<td><span class="arithmatex">\(\min \sum (y_i - \hat{y}_i)^2\)</span></td>
+<td>误差在残差空间的正交投影</td>
+</tr>
+<tr>
+<td>量子振幅（玻恩 1926）</td>
+<td><span class="arithmatex">\(P = \|\psi\|^2\)</span></td>
+<td>概率守恒要求 <span class="arithmatex">\(L^2\)</span> 归一化</td>
+</tr>
+</tbody>
+</table>
+<p>为什么不用绝对值 <span class="arithmatex">\(|x|\)</span>？事实上拉普拉斯 1774 年（更早还有博斯科维奇 1755）真的试过"最小绝对偏差法"，比高斯的最小二乘早 30 年。结果是 —— <span class="arithmatex">\(|x|\)</span> 在零点不可导，没有解析解；而 <span class="arithmatex">\(x^2\)</span> 求导后线性、有闭式解、让正交投影定理成立。<strong>数学不是选了"最好"的度量，是选了"能算"的度量</strong> —— 然后整个分析学（希尔伯特空间、傅里叶、量子力学、PCA、深度学习的 MSE 损失）都建立在这个偶然便利之上。</p>
+<blockquote>
+<p>一句话：<strong><span class="arithmatex">\(x^2\)</span> = "正交分解 + 可微"的双通行证。</strong></p>
+</blockquote>
+<h4 id="052-为什么是-1r2-三维空间的几何必然">0.5.2 为什么是 <span class="arithmatex">\(1/r^2\)</span>？—— 三维空间的几何必然</h4>
+<p>牛顿万有引力 <span class="arithmatex">\(F \propto 1/r^2\)</span>、库仑定律、点光源照度、声波强度衰减 —— 全是 <span class="arithmatex">\(1/r^2\)</span>。这不是物理巧合，而是<strong>三维空间几何的直接后果</strong>：</p>
+<div class="highlight"><pre><span></span><code>半径为 r 的球面面积 = 4πr²
+点源发出的总通量守恒 → 单位面积上的通量 ∝ 1/r²
+</code></pre></div>
+
+<p>这是<strong>高斯散度定理</strong>的直观版本（高斯 1813、格林 1828、奥斯特罗格拉茨基 1839）。所以：</p>
+<table>
+<thead>
+<tr>
+<th>维度</th>
+<th>几何</th>
+<th>力的衰减</th>
+<th>后果</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>1D（弦上的波）</td>
+<td>"球面" = 两个点</td>
+<td>不衰减</td>
+<td>信号无损传播</td>
+</tr>
+<tr>
+<td>2D（水面涟漪）</td>
+<td>圆周长 <span class="arithmatex">\(\propto r\)</span></td>
+<td><span class="arithmatex">\(\propto 1/r\)</span>（强度 <span class="arithmatex">\(\propto 1/r\)</span>）</td>
+<td>没有稳定有界轨道</td>
+</tr>
+<tr>
+<td><strong>3D（我们的世界）</strong></td>
+<td>球面 <span class="arithmatex">\(\propto r^2\)</span></td>
+<td><span class="arithmatex">\(\propto 1/r^2\)</span></td>
+<td>行星轨道稳定</td>
+</tr>
+<tr>
+<td>4D 以上</td>
+<td>超球面 <span class="arithmatex">\(\propto r^{n-1}\)</span></td>
+<td><span class="arithmatex">\(\propto 1/r^{n-1}\)</span></td>
+<td>任何微扰都让原子坍缩</td>
+</tr>
+</tbody>
+</table>
+<p>埃伦费斯特 1917 年用纯维度论证证明：<strong>稳定的束缚态轨道（行星、原子）只存在于 3 维空间</strong>。如果指数偏离 2 哪怕一点，太阳系或氢原子在第一次扰动里就瓦解了。</p>
+<blockquote>
+<p>一句话：<strong><span class="arithmatex">\(1/r^2\)</span> 是三维空间向你展示它的维度。</strong></p>
+</blockquote>
+<h4 id="053-为什么是-log-把乘法变成加法的字典">0.5.3 为什么是 <span class="arithmatex">\(\log\)</span>？—— 把乘法变成加法的字典</h4>
+<p><span class="arithmatex">\(\log\)</span> 在数学中无处不在，但它做的其实只有一件事：<strong>把乘法关系压扁成加法关系</strong>。</p>
+<div class="arithmatex">\[\log(ab) = \log a + \log b\]</div>
+<p>这一行公式背后是<strong>整个对数史</strong>：
+- <strong>1614，纳皮尔（苏格兰）</strong>：发明对数，目的是把天文学家的"乘法噩梦"变成加法。开普勒算行星轨道用了 4 年；纳皮尔表出来后，3 个月就够了。
+- <strong>1620s–1970s，对数计算尺</strong>：电子计算器普及前，<strong>所有工程师</strong>都在用对数尺做乘法 —— 因为对数把 × 变成了 +。
+- <strong>1948，香农</strong>：定义信息量为 <span class="arithmatex">\(-\log p\)</span>。原因是"两个独立事件的信息量应该相加"→ 概率应该相乘 → <strong>必须取 log</strong>。</p>
+<table>
+<thead>
+<tr>
+<th>现象</th>
+<th>表达式</th>
+<th><span class="arithmatex">\(\log\)</span> 在干嘛</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>信息熵（香农 1948）</td>
+<td><span class="arithmatex">\(H = -\sum p_i \log p_i\)</span></td>
+<td>把"独立 → 相乘"变成"相加"</td>
+</tr>
+<tr>
+<td>极大似然（费舍尔 1922）</td>
+<td><span class="arithmatex">\(\log L = \sum \log p(x_i\mid\theta)\)</span></td>
+<td>同上：独立样本概率相乘，取 log 变求和</td>
+</tr>
+<tr>
+<td>玻尔兹曼熵（1877，墓碑）</td>
+<td><span class="arithmatex">\(S = k \log W\)</span></td>
+<td>同上：微观状态数相乘 → 熵相加</td>
+</tr>
+<tr>
+<td>韦伯-费希纳定律（1860）</td>
+<td>感觉 <span class="arithmatex">\(\propto \log\)</span> 刺激</td>
+<td>人耳人眼对<strong>比例</strong>而非<strong>绝对值</strong>敏感</td>
+</tr>
+<tr>
+<td>分贝、星等、pH、里氏震级</td>
+<td>都是 <span class="arithmatex">\(\log\)</span> 度量</td>
+<td>同上：跨数量级的比例感知</td>
+</tr>
+<tr>
+<td>Sigmoid / Softmax / 交叉熵</td>
+<td>内含 <span class="arithmatex">\(\log\)</span></td>
+<td>把概率比变成线性可加的"logit"</td>
+</tr>
+</tbody>
+</table>
+<p>而 <span class="arithmatex">\(\log\)</span> 的"自然底" <span class="arithmatex">\(e\)</span> 不是为了好看 —— 它是<strong>唯一一个使 <span class="arithmatex">\(\frac{d}{dx} a^x = a^x\)</span> 成立的底数</strong>。换句话说，<span class="arithmatex">\(e^x\)</span> 是导数算子的<strong>特征函数</strong>：求导不改变它。这就是为什么微分方程、复利、放射性衰变、神经网络激活函数，全部跟 <span class="arithmatex">\(e\)</span> 缠绕在一起。</p>
+<blockquote>
+<p>一句话：<strong><span class="arithmatex">\(\log\)</span> = 把乘法世界翻译成加法世界的字典；<span class="arithmatex">\(e^x\)</span> = 让微分原地踏步的不动点。</strong></p>
+</blockquote>
+<h4 id="054-一张表数学反复出现的惯用语">0.5.4 一张表：数学反复出现的"惯用语"</h4>
+<table>
+<thead>
+<tr>
+<th>习语</th>
+<th>数学含义</th>
+<th>物理 / 概率含义</th>
+<th>不出现时世界会怎样</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><span class="arithmatex">\(x^2\)</span></td>
+<td><span class="arithmatex">\(L^2\)</span> 范数、正交投影、可微</td>
+<td>动能、方差、量子概率</td>
+<td>没有最小二乘，没有希尔伯特空间</td>
+</tr>
+<tr>
+<td><span class="arithmatex">\(1/r^2\)</span></td>
+<td>3D 球面面积反比</td>
+<td>引力、电场、辐射</td>
+<td>行星轨道与原子结构都不稳定</td>
+</tr>
+<tr>
+<td><span class="arithmatex">\(\log\)</span></td>
+<td>群同态 <span class="arithmatex">\((\mathbb{R}^+, \times) \to (\mathbb{R}, +)\)</span></td>
+<td>熵、似然、感觉强度</td>
+<td>独立性无法被加性度量</td>
+</tr>
+<tr>
+<td><span class="arithmatex">\(e^x\)</span></td>
+<td><span class="arithmatex">\(\frac{d}{dx}\)</span> 的特征函数</td>
+<td>复利、衰变、谐振子</td>
+<td>没有线性 ODE 的闭式解</td>
+</tr>
+<tr>
+<td><span class="arithmatex">\(\sqrt{\cdot}\)</span></td>
+<td><span class="arithmatex">\(L^2\)</span> 范数最后一步、几何均值的孪生</td>
+<td>距离、RMS、标准差</td>
+<td><span class="arithmatex">\(\mathrm{Var}\)</span> 和 <span class="arithmatex">\(X\)</span> 量纲不同</td>
+</tr>
+<tr>
+<td>内积 <span class="arithmatex">\(\langle u,v\rangle\)</span></td>
+<td>投影、相似度</td>
+<td>功 <span class="arithmatex">\(= F\cdot d\)</span>、相关系数</td>
+<td>失去"角度"的概念</td>
+</tr>
+<tr>
+<td>行列式 <span class="arithmatex">\(\det\)</span></td>
+<td><span class="arithmatex">\(n\)</span> 维体积的有向倍率</td>
+<td>雅可比、相空间体积</td>
+<td>微积分换元失语</td>
+</tr>
+<tr>
+<td>复数 <span class="arithmatex">\(e^{i\theta}\)</span></td>
+<td>旋转 = 频率</td>
+<td>量子相位、交流电</td>
+<td>傅里叶变换不复存在</td>
+</tr>
+<tr>
+<td>高斯函数 <span class="arithmatex">\(e^{-x^2/2}\)</span></td>
+<td>傅里叶变换的不动点 <span class="arithmatex">\(\hat{f}=f\)</span></td>
+<td>中心极限定理、热核</td>
+<td>概率论失去其极限定理</td>
+</tr>
+</tbody>
+</table>
+<h4 id="055-数学思维的三条习惯">0.5.5 数学思维的三条习惯</h4>
+<p>读到这里你应该看出一个模式：<strong>数学不是公式的堆砌，而是少数几条"母题"被反复折射</strong>。一旦养成下面三条习惯，公式就从"要背"变成"要看穿"：</p>
+<ol>
+<li><strong>看到平方，先问"在哪个内积空间里做正交分解？"</strong>
+   方差、动能、损失函数、量子振幅 —— 都在某个 <span class="arithmatex">\(L^2\)</span> 空间里量"距离"。</li>
+<li><strong>看到 <span class="arithmatex">\(1/r^k\)</span>，先问"这是几维空间的守恒律？"</strong>
+   通量在 <span class="arithmatex">\(n\)</span> 维球面上守恒就给出 <span class="arithmatex">\(1/r^{n-1}\)</span>。库仑、引力、热扩散都是同一件事的不同面。</li>
+<li><strong>看到 <span class="arithmatex">\(\log\)</span> 或 <span class="arithmatex">\(e\)</span>，先问"哪种乘法被偷偷变成了加法？"</strong>
+   独立事件的概率相乘、熵的可加性、感官的比例敏感 —— <span class="arithmatex">\(\log\)</span> 总在打通"积性"和"加性"两个世界。</li>
+</ol>
+<blockquote>
+<p>把"为什么是这个公式"问到底，最后你会发现答案永远是其中之一：<strong>对称性、守恒律、或同构</strong>。这正好接续 Chapter 0 的母题 —— 视角即解法。</p>
+<p>本文小结：欧美优秀的数学，AI等书籍很多，但最终能启发人思考的“点燃火焰”，寻求其根源的力量，才是教育最重要的事情之一。敬请关注下期文章更新：更多数学思想，数学直觉，有趣故事对AI发展的重大影响～</p>
+</blockquote>
+    </div>
+  </article>
+
+</main>
+
+<!-- Floating Ask-AI chat widget -->
+<button class="ai-fab" id="ai-fab" aria-label="Ask AI about this article" title="Ask AI about this article">
+  <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+    <path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"/>
+  </svg>
+  <span class="ai-fab-label">Ask AI</span>
+</button>
+
+<div class="ai-panel" id="ai-panel" role="dialog" aria-labelledby="ai-panel-title" aria-hidden="true">
+  <header class="ai-panel-head">
+    <div class="ai-panel-title-wrap">
+      <span class="ai-dot"></span>
+      <h3 id="ai-panel-title">Ask AI about this post</h3>
+    </div>
+    <div class="ai-panel-actions">
+      <button class="ai-icon-btn" id="ai-clear" title="Clear conversation" aria-label="Clear">
+        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><polyline points="3 6 5 6 21 6"/><path d="M19 6l-1 14a2 2 0 0 1-2 2H8a2 2 0 0 1-2-2L5 6"/><path d="M10 11v6M14 11v6"/><path d="M9 6V4a1 1 0 0 1 1-1h4a1 1 0 0 1 1 1v2"/></svg>
+      </button>
+      <button class="ai-icon-btn" id="ai-close" title="Minimize" aria-label="Minimize">
+        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><polyline points="6 9 12 15 18 9"/></svg>
+      </button>
+    </div>
+  </header>
+
+  <div class="ai-messages" id="ai-messages">
+    <div class="ai-empty" id="ai-empty">
+      <p class="ai-empty-title">On-device AI · Gemini Nano</p>
+      <p class="ai-empty-sub">Ask anything about this article. Runs in your browser — nothing leaves your device.</p>
+    </div>
+  </div>
+
+  <div class="ai-status" id="ai-status" hidden></div>
+
+  <form class="ai-composer" id="ai-form">
+    <textarea id="ai-input" rows="1" placeholder="Ask about this post…" autocomplete="off"></textarea>
+    <button type="submit" id="ai-send" class="ai-send" aria-label="Send" disabled>
+      <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><line x1="22" y1="2" x2="11" y2="13"/><polygon points="22 2 15 22 11 13 2 9 22 2"/></svg>
+    </button>
+  </form>
+</div>
+
+<script>
+(function () {
+  const POST_TITLE = "\u4e3a\u4ec0\u4e48AI\uff0c\u6570\u5b66\u5bb6\u9876\u5c16\u7684\u4eba\u624d\u603b\u662f\u51fa\u73b0\u5728\u6b27\u7f8e\uff1f\u539f\u56e0\u51fa\u73b0\u5728\u8fd9\uff01";
+  const contentEl = document.querySelector('article .content');
+
+  const fab = document.getElementById('ai-fab');
+  const panel = document.getElementById('ai-panel');
+  const closeBtn = document.getElementById('ai-close');
+  const clearBtn = document.getElementById('ai-clear');
+  const msgsEl = document.getElementById('ai-messages');
+  const emptyEl = document.getElementById('ai-empty');
+  const statusEl = document.getElementById('ai-status');
+  const formEl = document.getElementById('ai-form');
+  const inputEl = document.getElementById('ai-input');
+  const sendBtn = document.getElementById('ai-send');
+
+  function articleText() {
+    if (!contentEl) return '';
+    return (contentEl.innerText || contentEl.textContent || '')
+      .replace(/[ \t]+\n/g, '\n')
+      .replace(/\n{3,}/g, '\n\n')
+      .trim();
+  }
+
+  function setStatus(msg, cls) {
+    if (!msg) { statusEl.hidden = true; statusEl.textContent = ''; statusEl.className = 'ai-status'; return; }
+    statusEl.hidden = false;
+    statusEl.textContent = msg;
+    statusEl.className = 'ai-status' + (cls ? ' ' + cls : '');
+  }
+
+  function hideEmpty() { if (emptyEl) emptyEl.style.display = 'none'; }
+
+  function appendBubble(role, text) {
+    hideEmpty();
+    const wrap = document.createElement('div');
+    wrap.className = 'ai-msg ai-msg-' + role;
+    const bubble = document.createElement('div');
+    bubble.className = 'ai-bubble';
+    bubble.textContent = text;
+    wrap.appendChild(bubble);
+    msgsEl.appendChild(wrap);
+    msgsEl.scrollTop = msgsEl.scrollHeight;
+    return bubble;
+  }
+
+  function appendTyping() {
+    hideEmpty();
+    const wrap = document.createElement('div');
+    wrap.className = 'ai-msg ai-msg-assistant ai-typing';
+    wrap.innerHTML = '<div class="ai-bubble"><span class="ai-dots"><i></i><i></i><i></i></span></div>';
+    msgsEl.appendChild(wrap);
+    msgsEl.scrollTop = msgsEl.scrollHeight;
+    return wrap;
+  }
+
+  function autoSize() {
+    inputEl.style.height = 'auto';
+    inputEl.style.height = Math.min(inputEl.scrollHeight, 140) + 'px';
+  }
+
+  function openPanel() {
+    panel.classList.add('open');
+    panel.setAttribute('aria-hidden', 'false');
+    fab.classList.add('hidden');
+    setTimeout(() => inputEl.focus(), 50);
+  }
+  function closePanel() {
+    panel.classList.remove('open');
+    panel.setAttribute('aria-hidden', 'true');
+    fab.classList.remove('hidden');
+  }
+
+  fab.addEventListener('click', openPanel);
+  closeBtn.addEventListener('click', closePanel);
+  document.addEventListener('keydown', e => {
+    if (e.key === 'Escape' && panel.classList.contains('open')) closePanel();
+  });
+
+  // ---- LanguageModel session ----
+  let session = null;
+  let creating = null;
+  let history = [];
+
+  function buildSystemPrompt() {
+    // Keep article context modest — Gemini Nano's input quota is small.
+    const article = articleText().slice(0, 4000);
+    return (
+      'You are a concise, helpful assistant answering questions about a blog post. ' +
+      'Use the article below as your primary source. If the answer is not in it, say so briefly and answer generally. ' +
+      'Reply in the same language as the user\'s question. Keep answers short unless asked for detail.\n\n' +
+      '=== ARTICLE TITLE ===\n' + POST_TITLE + '\n\n' +
+      '=== ARTICLE CONTENT ===\n' + article
+    );
+  }
+
+  async function ensureSession() {
+    if (session) return session;
+    if (creating) return creating;
+
+    if (!('LanguageModel' in self)) {
+      throw new Error(
+        'On-device AI not available. Use Chrome 138+ on desktop, or enable ' +
+        '"Prompt API for Gemini Nano" in chrome://flags.'
+      );
+    }
+
+    setStatus('Checking model…', 'info');
+    const status = await LanguageModel.availability();
+    if (status === 'unavailable') {
+      throw new Error('Model unavailable on this device.');
+    }
+
+    creating = (async () => {
+      // Only show download UI when the model isn't already there.
+      const willDownload = (status !== 'available');
+      if (willDownload) setStatus('Preparing model (first run downloads ~2GB)…', 'info');
+      else setStatus('Warming up…', 'info');
+
+      const s = await LanguageModel.create({
+        initialPrompts: [{ role: 'system', content: buildSystemPrompt() }],
+        monitor(m) {
+          m.addEventListener('downloadprogress', e => {
+            // Skip the spurious 0% event Chrome fires for cached models.
+            if (!willDownload && e.loaded === 0) return;
+            const pct = (e.loaded * 100).toFixed(1);
+            setStatus('Downloading model: ' + pct + '%', 'info');
+          });
+        }
+      });
+      session = s;
+      setStatus('');
+      return s;
+    })();
+
+    try { return await creating; }
+    finally { creating = null; }
+  }
+
+  async function ask(q) {
+    appendBubble('user', q);
+    history.push({ role: 'user', content: q });
+
+    sendBtn.disabled = true;
+    inputEl.disabled = true;
+    const typing = appendTyping();
+
+    let answerBubble = null;
+    let acc = '';
+    try {
+      const s = await ensureSession();
+      const stream = s.promptStreaming(q);
+      for await (const chunk of stream) {
+        if (!answerBubble) {
+          typing.remove();
+          const wrap = document.createElement('div');
+          wrap.className = 'ai-msg ai-msg-assistant';
+          answerBubble = document.createElement('div');
+          answerBubble.className = 'ai-bubble';
+          wrap.appendChild(answerBubble);
+          msgsEl.appendChild(wrap);
+        }
+        acc += chunk;
+        answerBubble.textContent = acc;
+        msgsEl.scrollTop = msgsEl.scrollHeight;
+      }
+      if (acc) history.push({ role: 'assistant', content: acc });
+      else { typing.remove(); appendBubble('assistant', '(no response)'); }
+    } catch (e) {
+      if (typing && typing.parentNode) typing.remove();
+      const err = document.createElement('div');
+      err.className = 'ai-msg ai-msg-error';
+      err.innerHTML = '<div class="ai-bubble">⚠ ' + (e && e.message ? e.message : String(e)) + '</div>';
+      msgsEl.appendChild(err);
+      msgsEl.scrollTop = msgsEl.scrollHeight;
+    } finally {
+      sendBtn.disabled = !inputEl.value.trim();
+      inputEl.disabled = false;
+      inputEl.focus();
+    }
+  }
+
+  formEl.addEventListener('submit', e => {
+    e.preventDefault();
+    const q = inputEl.value.trim();
+    if (!q) return;
+    inputEl.value = '';
+    autoSize();
+    sendBtn.disabled = true;
+    ask(q);
+  });
+
+  inputEl.addEventListener('input', () => {
+    autoSize();
+    sendBtn.disabled = !inputEl.value.trim();
+  });
+  inputEl.addEventListener('keydown', e => {
+    if (e.key === 'Enter' && !e.shiftKey) {
+      e.preventDefault();
+      formEl.requestSubmit();
+    }
+  });
+
+  clearBtn.addEventListener('click', () => {
+    msgsEl.innerHTML = '';
+    msgsEl.appendChild(emptyEl);
+    emptyEl.style.display = '';
+    history = [];
+    if (session && session.destroy) { try { session.destroy(); } catch (_) {} }
+    session = null;
+    setStatus('');
+  });
+
+  if (!('LanguageModel' in self)) {
+    fab.addEventListener('click', () => {
+      openPanel();
+      setStatus('On-device AI not detected. Use Chrome 138+ desktop, or enable "Prompt API for Gemini Nano" in chrome://flags.', 'bad');
+    }, { once: true });
+  }
+})();
+</script>
+
+<!-- Outline notes / comments — DataScript + IndexedDB -->
+<script src="https://github.com/tonsky/datascript/releases/download/1.7.8/datascript-1.7.8.min.js"></script>
+<script src="../notes.js?v=6"></script>
+<script src="../theme.js"></script>
+<script src="../wechat-copy.js?v=3"></script>
+
+</body>
+</html>
