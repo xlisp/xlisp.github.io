@@ -3,18 +3,18 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width,initial-scale=1">
-<title>合成数据：怎么把一堆垃圾代码变成高质量训练数据 · Steve Chan — xlisp</title>
+<title>Claude 的暗黑科技：把垃圾代码炼成黄金训练数据 · Steve Chan — xlisp</title>
 <meta name="description" content="1. 先定义&quot;垃圾&quot;：原始代码语料的四种故障">
 <meta name="author" content="Steve Chan">
 <link rel="icon" type="image/jpeg" href="../icon.jpeg">
 <link rel="apple-touch-icon" href="../icon.jpeg">
 <meta property="og:type" content="article">
-<meta property="og:title" content="合成数据：怎么把一堆垃圾代码变成高质量训练数据">
+<meta property="og:title" content="Claude 的暗黑科技：把垃圾代码炼成黄金训练数据">
 <meta property="og:description" content="1. 先定义&quot;垃圾&quot;：原始代码语料的四种故障">
 <meta property="og:image" content="../icon.jpeg">
 <meta property="og:site_name" content="Steve Chan — xlisp">
 <meta name="twitter:card" content="summary_large_image">
-<meta name="twitter:title" content="合成数据：怎么把一堆垃圾代码变成高质量训练数据">
+<meta name="twitter:title" content="Claude 的暗黑科技：把垃圾代码炼成黄金训练数据">
 <meta name="twitter:description" content="1. 先定义&quot;垃圾&quot;：原始代码语料的四种故障">
 <meta name="twitter:image" content="../icon.jpeg">
 <link rel="stylesheet" href="../style.css?v=light1">
@@ -51,13 +51,14 @@ window.MathJax = {
 
   <article>
     <header class="post-header">
-      <h1>合成数据：怎么把一堆垃圾代码变成高质量训练数据</h1>
-      <p class="meta">2026-04-20 · Steve Chan</p>
+      <h1>Claude 的暗黑科技：把垃圾代码炼成黄金训练数据</h1>
+      <p class="meta">2026-07-17 · Steve Chan</p>
     </header>
 
     <div class="content">
 <blockquote>
-<p>用户问题：像 Claude 这样的大模型是怎么把<strong>垃圾的代码数据变废为宝</strong>的？从低质量的原始语料，最终转化成 SFT / RL 都能吃的高质量训练数据——具体走哪几步？哪里该用专家系统（linter、类型检查、测试）？哪里该蒸馏优秀软件的输入输出？哪里合成才是正解？以及——<strong>什么时候必须上人工标注</strong>，才能把总成本压到最低？</p>
+<p>GitHub 上 90% 的代码都不完美，甚至充满 Bug。Claude 为什么还能成为顶级编程模型？答案藏在一套“数据炼金术”里：自动筛选、代码修复、执行验证、模型蒸馏，把垃圾代码一步步变成 AI 的编程能力。</p>
+<p>像 Claude 这样的大模型是怎么把<strong>垃圾的代码数据变废为宝</strong>的？从低质量的原始语料，最终转化成 SFT / RL 都能吃的高质量训练数据——具体走哪几步？哪里该用专家系统（linter、类型检查、测试）？哪里该蒸馏优秀软件的输入输出？哪里合成才是正解？以及——<strong>什么时候必须上人工标注</strong>，才能把总成本压到最低？</p>
 <p>这篇文档回答四件事：</p>
 <ol>
 <li><strong>为什么原始代码语料本质上就是"垃圾"</strong>——把"垃圾"拆成四种具体故障，才能对症下药。</li>
@@ -768,7 +769,7 @@ SFT 数据集
 
 <script>
 (function () {
-  const POST_TITLE = "\u5408\u6210\u6570\u636e\uff1a\u600e\u4e48\u628a\u4e00\u5806\u5783\u573e\u4ee3\u7801\u53d8\u6210\u9ad8\u8d28\u91cf\u8bad\u7ec3\u6570\u636e";
+  const POST_TITLE = "Claude \u7684\u6697\u9ed1\u79d1\u6280\uff1a\u628a\u5783\u573e\u4ee3\u7801\u70bc\u6210\u9ec4\u91d1\u8bad\u7ec3\u6570\u636e";
   const contentEl = document.querySelector('article .content');
 
   const fab = document.getElementById('ai-fab');
