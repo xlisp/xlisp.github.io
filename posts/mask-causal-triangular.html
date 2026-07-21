@@ -1,0 +1,1002 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Mask、三角矩阵与因果掩码：历史、起源与原理 · Steve Chan — xlisp</title>
+<meta name="description" content="如果你被 QKᵀ、softmax、-∞ 这些符号吓退了——别急。这一节不用任何数学，">
+<meta name="author" content="Steve Chan">
+<link rel="icon" type="image/jpeg" href="../icon.jpeg">
+<link rel="apple-touch-icon" href="../icon.jpeg">
+<meta property="og:type" content="article">
+<meta property="og:title" content="Mask、三角矩阵与因果掩码：历史、起源与原理">
+<meta property="og:description" content="如果你被 QKᵀ、softmax、-∞ 这些符号吓退了——别急。这一节不用任何数学，">
+<meta property="og:image" content="../icon.jpeg">
+<meta property="og:site_name" content="Steve Chan — xlisp">
+<meta name="twitter:card" content="summary_large_image">
+<meta name="twitter:title" content="Mask、三角矩阵与因果掩码：历史、起源与原理">
+<meta name="twitter:description" content="如果你被 QKᵀ、softmax、-∞ 这些符号吓退了——别急。这一节不用任何数学，">
+<meta name="twitter:image" content="../icon.jpeg">
+<link rel="stylesheet" href="../style.css?v=light1">
+<script>(function(){try{if(localStorage.getItem('theme')==='light')document.documentElement.setAttribute('data-theme','light');}catch(e){}})();</script>
+<!-- Math formula rendering via MathJax -->
+<script>
+window.MathJax = {
+  tex: {
+    // arithmatex emits \(...\) / \[...\] markup, so only these delimiters
+    // are needed; plain `$` is left alone (avoids currency false positives).
+    inlineMath: [['\\(', '\\)']],
+    displayMath: [['\\[', '\\]']],
+    processEscapes: true
+  },
+  svg: {
+    // Each formula gets its own self-contained <defs>, so the copy script can
+    // serialize one <svg> and rasterize it to a PNG for WeChat.
+    fontCache: 'local'
+  },
+  options: {
+    skipHtmlTags: ['script', 'noscript', 'style', 'textarea', 'pre', 'code'],
+    ignoreHtmlClass: 'highlight'
+  }
+};
+</script>
+<script src="https://cdn.jsdelivr.net/npm/mathjax@3/es5/tex-svg.js" async></script>
+</head>
+<body>
+<main class="wrap post">
+
+  <nav class="topnav">
+    <a href="../index.html">← home</a>
+  </nav>
+
+  <article>
+    <header class="post-header">
+      <h1>Mask、三角矩阵与因果掩码：历史、起源与原理</h1>
+      <p class="meta">2026-07-22 · Steve Chan</p>
+    </header>
+
+    <div class="content">
+<blockquote>
+<p>本文以 CodeChat 仓库中的实际代码（<code>codechat/gpt.py</code>、<code>codechat/dataloader.py</code>）为主线，
+辅以 HuggingFace <code>transformers</code> 库的对应实现，讲清楚三个纠缠在一起、却经常被混为一谈的概念：
+<strong>mask（掩码）</strong>、<strong>三角矩阵（triangular matrix）</strong>、<strong>causal mask（因果掩码）</strong>。</p>
+<p>一句话先摆在这里：在本仓库里，因果掩码被 PyTorch 的一行 <code>is_causal=True</code> 隐藏掉了
+（<code>codechat/gpt.py:67</code>），三角矩阵被藏进了内核里；而另一种完全不同的 mask——<strong>loss mask</strong>
+（<code>ignore_index=-100</code>，<code>codechat/gpt.py:132</code>、<code>codechat/dataloader.py</code>）——却显式地散落在数据管线各处。
+把这两种 mask 分清楚，是读懂整个训练流程的前提。</p>
+<p><strong>📖 怎么读这篇文章</strong>：如果你是小白、被公式劝退过，<strong>请从下面的《🎯 写在前面》读起</strong>——
+那一节不用任何数学，只讲三个生活场景，看懂它你就抓住了全文八成。带着那些比喻再往下看编号章节，会轻松很多。</p>
+</blockquote>
+<hr />
+<h2 id="写在前面不懂代码也能看完的三个生活场景">🎯 写在前面：不懂代码也能看完的三个生活场景</h2>
+<blockquote>
+<p>"教育不是灌输，而是点燃火焰。" —— 苏格拉底</p>
+</blockquote>
+<p>如果你被 <code>QKᵀ</code>、<code>softmax</code>、<code>-∞</code> 这些符号吓退了——别急。这一节<strong>不用任何数学</strong>，
+只用几个生活场景，把"掩码 / 因果掩码 / 三角矩阵 / 损失掩码"讲成人话。</p>
+<h3 id="故事的起点1953-年一个想改进考卷的人">故事的起点：1953 年，一个想改进考卷的人</h3>
+<p>1953 年，一位叫 <strong>Wilson Taylor</strong> 的学者想解决一个很实在的问题：<strong>怎么衡量一篇文章好不好读？</strong>
+他想了个绝招——把文章每隔几个词挖掉一个，做成填空题让人来填：</p>
+<blockquote>
+<p>"小明早上起床后，先 <strong><em>_ 了牙，然后吃了 </em></strong>_。"</p>
+</blockquote>
+<p>读者要是能轻松填出"刷""早饭"，说明文章通顺好懂；要是填得磕磕绊绊，说明文章别扭。
+他给这种"挖空填词"的测试起了个名字：<strong>完形填空（cloze test）</strong>。</p>
+<p>这个七十年前为了改考卷发明的小把戏，就是<strong>今天所有大语言模型（包括 ChatGPT、包括本项目 CodeChat）训练方法的祖师爷</strong>。
+因为人们后来发现了一件惊人的事：</p>
+<blockquote>
+<p><strong>一台机器，如果能把海量文章里被挖掉的词都填对，它就"顺便"学会了语法、常识、推理、甚至写代码。</strong></p>
+</blockquote>
+<p>"填空填得好 = 真的读懂了"——这就是训练大模型的全部秘密。剩下所有技术细节，都在回答一个问题：<strong>"空"该怎么挖、怎么保证它老老实实地猜？</strong> 而"掩码"，就是挖空和防作弊用的那块<strong>遮挡板</strong>。</p>
+<blockquote>
+<p>一句话：<strong>训练大模型 = 拼命做完形填空；掩码 = 挖空和防作弊用的遮挡板。</strong></p>
+</blockquote>
+<h3 id="场景一什么是掩码-就是拿张纸遮住一部分">场景一：什么是"掩码"？—— 就是"拿张纸遮住一部分"</h3>
+<p>"掩码（mask）"听着高级，其实你天天在用：</p>
+<ul>
+<li>做数学题时，你用手<strong>遮住</strong>下面的答案，逼自己先想一遍。</li>
+<li>老师改卷时，只看你<strong>手写的答案</strong>，不管卷子上<strong>印好的题目</strong>。</li>
+<li>手电筒在黑夜里只<strong>照亮</strong>一小片，其余全黑。</li>
+</ul>
+<p>掩码就是这么一张"遮挡板"：<strong>把一部分盖住，让你只关注该关注的。</strong> 在大模型里，这块遮挡板出现在两个完全不同的地方——一个管"<strong>别偷看</strong>"，一个管"<strong>别乱改</strong>"。下面两个场景分别讲。</p>
+<blockquote>
+<p>一句话：<strong>掩码 = 一张遮挡板，意思是"这部分你别看 / 别管"。</strong></p>
+</blockquote>
+<h3 id="场景二因果掩码-玩词语接龙时不许偷看后面">场景二：因果掩码 —— 玩词语接龙时，不许偷看后面</h3>
+<p>想象你在玩<strong>词语接龙</strong>，或者就是在写一句话。当你写"我 爱 吃 ___"的时候，
+你<strong>只能看到已经写出来的"我爱吃"，看不到还没写的字</strong>——因为它压根还不存在。这天经地义。</p>
+<p>问题出在训练机器的时候。为了<strong>快</strong>，我们会把整句话"我爱吃苹果"一次性喂给模型。
+可这就<strong>作弊</strong>了：模型要预测第 4 个字时，眼睛一瞟就看见了标准答案"苹果"，它根本不用动脑子。</p>
+<p><strong>"因果掩码"就是那张防作弊的纸</strong>：模型每预测一个字，就把这个字<strong>右边（后面）的所有字全遮住</strong>，
+逼它只能根据<strong>左边（前面）已经出现的字</strong>去猜。就像开车只能看后视镜（过去），不能看到还没发生的路（未来）。</p>
+<ul>
+<li>预测第 1 个字"我"：什么都没有，凭空猜。</li>
+<li>预测第 2 个字"爱"：只准看"我"。</li>
+<li>预测第 3 个字"吃"：只准看"我爱"。</li>
+<li>预测第 4 个字"苹果"：只准看"我爱吃"。</li>
+</ul>
+<p><strong>"能看的东西越往后越多，一个一个往上加"</strong>——记住这个"越加越多"，下一节的三角形就是它。</p>
+<blockquote>
+<p>一句话：<strong>因果掩码 = 预测每个字时，把它后面的字全遮住，逼模型"只看过去、不偷看未来"。</strong>
+（之所以叫"因果"，是因为它模仿了时间的规律：只有过去能影响现在，未来还没发生。）</p>
+</blockquote>
+<h3 id="场景三三角矩阵-一张谁能看谁的座位表形状像楼梯">场景三：三角矩阵 —— 一张"谁能看谁"的座位表，形状像楼梯</h3>
+<p>把上面那句"我爱吃苹果"排成一行，做一张表格：<strong>行 = 正在预测的字，列 = 它能不能看见的字</strong>：</p>
+<p><img alt="座位表：谁能看谁" src="images/seat_chart.png" /></p>
+<div class="highlight"><pre><span></span><code>          我    爱    吃   苹果
+    我    能看  遮住  遮住  遮住     ← 预测&quot;我&quot;，只能看自己
+    爱    能看  能看  遮住  遮住     ← 预测&quot;爱&quot;，能看 我、爱
+    吃    能看  能看  能看  遮住     ← 能看 我、爱、吃
+   苹果   能看  能看  能看  能看     ← 能看全部
+</code></pre></div>
+
+<p>（上面这张图就是这张表——它由 <code>docs/examples/causal_mask_demo.py</code> 直接画出，深绿"能看"、浅绿"遮住"。）
+看见那些"能看"（深绿）组成的形状了吗？——<strong>是一个楼梯，也就是一个三角形。</strong> 这就是"<strong>三角矩阵</strong>"这个名字的来历：
+它不是什么高深的东西，就是"因果掩码"这张座位表<strong>天生长成的楼梯形状</strong>。数学家几百年前研究解方程时
+就反复见到这种"下三角"形状（比如中国《九章算术》的消元法、高斯消元法），大模型只是把这个老朋友借来用了。</p>
+<blockquote>
+<p>一句话：<strong>三角矩阵 = 那张"谁能看谁"座位表的形状；因为"能看的越来越多"，<code>1</code> 自然堆成一个楼梯（三角形）。</strong></p>
+</blockquote>
+<h3 id="场景四损失掩码-老师只批改你写的部分不批改印好的题目">场景四：损失掩码 —— 老师只批改你"写的部分"，不批改印好的题目</h3>
+<p>前面三个场景讲的是<strong>"别偷看"</strong>。还有另一块完全不同的遮挡板，管的是<strong>"别乱改（别乱学）"</strong>。</p>
+<p>一段 AI 对话长这样：<strong>系统设定</strong> + <strong>用户的提问</strong> + <strong>AI 的回答</strong>。我们只想教会 AI <strong>怎么回答</strong>，
+可<strong>不想</strong>让它去死记硬背用户的问题、或工具返回的一堆数据。</p>
+<p>于是就像老师改卷——<strong>只批改学生手写的答案，卷子上印好的题目不算分</strong>。在代码里，
+这块"不算分"的遮挡板用一个特殊数字 <code>-100</code> 表示：凡是标了 <code>-100</code> 的字，<strong>既不打分、也不用来学</strong>。
+模型的注意力全部集中在"学会怎么当好那个回答问题的 AI"。</p>
+<blockquote>
+<p>一句话：<strong>损失掩码 = 改卷时只批改 AI 该学的"回答"，把用户提问、系统设定标成 <code>-100</code>（不计分）。</strong></p>
+</blockquote>
+<h3 id="把亲戚认全word2vecbertdropout-也都是挖空填空">把亲戚认全：word2vec、BERT、dropout 也都是"挖空—填空"</h3>
+<p>理解了"完形填空"这个祖师爷，很多听起来吓人的名词一下就亲切了——它们都是一家人，只是<strong>挖空的方式不同</strong>：</p>
+<table>
+<thead>
+<tr>
+<th>名字</th>
+<th>通俗说法</th>
+<th>怎么挖空</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><strong>word2vec</strong>（2013）</td>
+<td>给周围一圈词，猜中间挖掉的那个词</td>
+<td>挖中间一个，左右都能看</td>
+</tr>
+<tr>
+<td><strong>BERT</strong>（2018）</td>
+<td>一句话里随机挖掉几个词，让你补</td>
+<td>随机挖几个，左右都能看</td>
+</tr>
+<tr>
+<td><strong>GPT / 本项目</strong></td>
+<td>词语接龙，只能看前面猜下一个</td>
+<td>"空"永远在最右边，只能看左边</td>
+</tr>
+<tr>
+<td><strong>dropout</strong></td>
+<td>训练时随机蒙住自己一些"脑细胞"，逼你别偏科</td>
+<td>挖的不是词，是网络自己的神经元；而且不是为了填空，是为了练"抗干扰"</td>
+</tr>
+</tbody>
+</table>
+<p>前三个是<strong>"挖空让你填"</strong>（挖的是要预测的答案）；<code>dropout</code> 是个远房亲戚——它也"随机蒙住一部分"，
+但目的不是让你填空，而是<strong>逼模型别太依赖某几个神经元</strong>，练出"缺胳膊少腿也能干活"的鲁棒性。
+（有意思的是，<strong>本项目其实没开 dropout</strong>——现代大模型数据够多，不需要它，后面第 8 章会讲。）</p>
+<blockquote>
+<p>一句话：<strong>它们是一个家族——都在"藏一部分、猜一部分"。区别只在"藏什么、能不能看两边、藏了是要你填还是只为抗干扰"。</strong></p>
+</blockquote>
+<h3 id="一张图看全看懂这张就够了">一张图看全（看懂这张就够了）</h3>
+<div class="highlight"><pre><span></span><code>                    完形填空（1953）：藏一部分，猜一部分
+                                  │
+        ┌─────────────────────────┼──────────────────────────┐
+   藏&quot;答案&quot;让你填              藏&quot;信息流&quot;防偷看             藏&quot;神经元&quot;练抗干扰
+   （挖空 = 出题）             （因果掩码 = 词语接龙）        （dropout = 别偏科）
+        │                          │                          │
+   word2vec / BERT            👉 本项目 CodeChat 用这个 👈      本项目没用（=0）
+   （左右都能看）              （只看左边 + 楼梯形三角矩阵）    （靠海量数据代替）
+
+   另外还有一块独立的遮挡板：损失掩码（改卷只批改 AI 的回答，其余标 -100）
+</code></pre></div>
+
+<blockquote>
+<p><strong>读到这里，你已经掌握了这篇文章的灵魂：</strong>
+掩码就是遮挡板；因果掩码是"接龙时不许偷看后面"，遮出来的形状是楼梯（三角矩阵）；
+损失掩码是"改卷只算 AI 写的部分"。<strong>下面带编号的章节，是给想看代码、想搞懂数学细节的人准备的</strong>——
+你可以就此打住，也可以揣着上面这些比喻继续往下读，你会发现那些符号忽然都能对上号了。</p>
+</blockquote>
+<hr />
+<h2 id="0-两种-mask别搞混">0. 两种 mask，别搞混</h2>
+<p>"mask" 这个词在 Transformer 语境里至少指两件毫不相干的事，本仓库两者都用：</p>
+<table>
+<thead>
+<tr>
+<th></th>
+<th>因果掩码 (attention mask)</th>
+<th>损失掩码 (loss mask)</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>作用对象</td>
+<td>注意力分数矩阵 <code>QKᵀ</code>（<code>T×T</code>）</td>
+<td>交叉熵的 <code>targets</code>（<code>T</code>）</td>
+</tr>
+<tr>
+<td>目的</td>
+<td>禁止 token 看见"未来"</td>
+<td>禁止某些 token 参与梯度</td>
+</tr>
+<tr>
+<td>形状</td>
+<td>二维三角矩阵</td>
+<td>一维向量</td>
+</tr>
+<tr>
+<td>本仓库位置</td>
+<td><code>is_causal=True</code>（<code>gpt.py:67</code>）</td>
+<td><code>-100</code> / <code>ignore_index=-100</code>（<code>gpt.py:132</code>、<code>dataloader.py:81</code> 等）</td>
+</tr>
+<tr>
+<td>值语义</td>
+<td><code>0</code>（可见）/ <code>-∞</code>（屏蔽）</td>
+<td>真实 token id（计损）/ <code>-100</code>（忽略）</td>
+</tr>
+</tbody>
+</table>
+<p>前者是<strong>结构性</strong>的、每个序列都一样、是"因果性"这条物理定律的体现；
+后者是<strong>内容性</strong>的、每条样本不同、决定"这句话里哪几个字该被学"。
+本文主体讲前者（因果掩码 + 三角矩阵），第 5 节回到后者，因为它才是本仓库里唯一"看得见"的 mask。</p>
+<hr />
+<h2 id="1-mask-的起源从信号处理到神经网络">1. Mask 的起源：从信号处理到神经网络</h2>
+<p>"mask" 一词并非深度学习发明。它最早来自<strong>摄影制版与信号处理</strong>：一张遮片（mask）挡住一部分光/信号，只让你想要的部分通过。计算领域沿用了这个隐喻：</p>
+<ul>
+<li><strong>位掩码（bitmask）</strong>：<code>x &amp; 0b1010</code> 只保留特定的位，是计算机科学里 mask 最古老的用法，早于神经网络几十年。</li>
+<li><strong>图像处理的卷积掩码 / 核（kernel）</strong>：一个小矩阵滑过图像，"遮住"邻域外的像素。</li>
+<li><strong>序列模型里的 padding mask</strong>：把不等长序列补齐到同一长度后，用 mask 标记"这些位置是填充的、别算进去"。</li>
+</ul>
+<p>到了神经网络时代，mask 演化出两条主线，正好对应第 0 节的两列：</p>
+<ol>
+<li><strong>屏蔽计算</strong>——在 attention 里，把某些位置的分数压到 <code>-∞</code>，softmax 之后权重变 0。这是<strong>因果掩码</strong>的技术手段。</li>
+<li><strong>屏蔽损失</strong>——在 loss 里，把某些位置标记为"不计梯度"。这是<strong>loss mask</strong>，PyTorch 用魔数 <code>-100</code> 实现。</li>
+</ol>
+<p>因果掩码真正成名，是在 2017 年的论文 <strong>《Attention Is All You Need》</strong>（Vaswani et al.）。它把"未来不可见"这一自回归语言模型的根本约束，第一次干净地表达成了一个作用在注意力矩阵上的<strong>下三角遮罩</strong>。原文称之为 <em>"masked self-attention"</em>，并强调："我们通过在缩放点积注意力内部屏蔽（置为 −∞）所有对应非法连接的值来实现这一点。"</p>
+<hr />
+<h2 id="2-三角矩阵一个古老的线性代数工具被重新起用">2. 三角矩阵：一个古老的线性代数工具被重新起用</h2>
+<p><strong>三角矩阵</strong>（triangular matrix）远比深度学习古老，是 19 世纪线性代数的基本对象：</p>
+<ul>
+<li><strong>下三角矩阵（lower triangular）</strong>：主对角线以上全为 0。</li>
+<li><strong>上三角矩阵（upper triangular）</strong>：主对角线以下全为 0。</li>
+</ul>
+<p>它们在数值计算里无处不在——<strong>LU 分解</strong>、<strong>Cholesky 分解</strong>、解线性方程组的前代/回代，都建立在三角矩阵"一个变量只依赖前面已解出的变量"这一性质上。注意这句话：<strong>"只依赖前面的"</strong>——这正是自回归语言模型需要的性质。因果掩码的天才之处，就是发现了"token t 只能依赖 token ≤ t"和"三角矩阵的解耦结构"是同一件事。</p>
+<p>在 PyTorch 里，三角矩阵由两个函数直接生成，名字就来自 <strong>tri</strong>angular：</p>
+<div class="highlight"><pre><span></span><code><span class="kn">import</span><span class="w"> </span><span class="nn">torch</span>
+
+<span class="n">T</span> <span class="o">=</span> <span class="mi">5</span>
+<span class="c1"># torch.tril: 保留下三角（triangular-lower），其余置 0</span>
+<span class="n">mask</span> <span class="o">=</span> <span class="n">torch</span><span class="o">.</span><span class="n">tril</span><span class="p">(</span><span class="n">torch</span><span class="o">.</span><span class="n">ones</span><span class="p">(</span><span class="n">T</span><span class="p">,</span> <span class="n">T</span><span class="p">))</span>
+<span class="c1"># tensor([[1., 0., 0., 0., 0.],</span>
+<span class="c1">#         [1., 1., 0., 0., 0.],</span>
+<span class="c1">#         [1., 1., 1., 0., 0.],</span>
+<span class="c1">#         [1., 1., 1., 1., 0.],</span>
+<span class="c1">#         [1., 1., 1., 1., 1.]])</span>
+</code></pre></div>
+
+<p>第 <code>i</code> 行的含义是：<strong>query 位置 <code>i</code> 允许看哪些 key</strong>。第 0 行只有 1 个 1（只能看自己），第 4 行全是 1（能看前面所有人）。这就是因果性："现在"能看"过去"，不能看"未来"。</p>
+<hr />
+<h2 id="3-因果掩码把三角矩阵接进注意力">3. 因果掩码：把三角矩阵接进注意力</h2>
+<p>标准缩放点积注意力（scaled dot-product attention）是：</p>
+<div class="highlight"><pre><span></span><code>Attention(Q, K, V) = softmax( QKᵀ / √d_k ) · V
+</code></pre></div>
+
+<p><code>QKᵀ</code> 是一个 <code>T×T</code> 的分数矩阵，<code>scores[i][j]</code> = query <code>i</code> 对 key <code>j</code> 的相关度。如果什么都不做，位置 <code>i</code> 会看到全部 <code>j</code>（包括 <code>j &gt; i</code> 的未来），训练时就"作弊"了——模型直接抄答案，学不到真正的语言建模能力。</p>
+<p><strong>因果掩码 = 在 softmax 之前，把上三角（未来）位置加上 <code>-∞</code></strong>：</p>
+<div class="highlight"><pre><span></span><code><span class="kn">import</span><span class="w"> </span><span class="nn">torch</span><span class="o">,</span><span class="w"> </span><span class="nn">math</span>
+<span class="kn">import</span><span class="w"> </span><span class="nn">torch.nn.functional</span><span class="w"> </span><span class="k">as</span><span class="w"> </span><span class="nn">F</span>
+
+<span class="k">def</span><span class="w"> </span><span class="nf">causal_attention</span><span class="p">(</span><span class="n">q</span><span class="p">,</span> <span class="n">k</span><span class="p">,</span> <span class="n">v</span><span class="p">):</span>
+    <span class="c1"># q,k,v: (B, n_head, T, head_dim)</span>
+    <span class="n">T</span> <span class="o">=</span> <span class="n">q</span><span class="o">.</span><span class="n">size</span><span class="p">(</span><span class="o">-</span><span class="mi">2</span><span class="p">)</span>
+    <span class="n">d_k</span> <span class="o">=</span> <span class="n">q</span><span class="o">.</span><span class="n">size</span><span class="p">(</span><span class="o">-</span><span class="mi">1</span><span class="p">)</span>
+    <span class="n">scores</span> <span class="o">=</span> <span class="p">(</span><span class="n">q</span> <span class="o">@</span> <span class="n">k</span><span class="o">.</span><span class="n">transpose</span><span class="p">(</span><span class="o">-</span><span class="mi">2</span><span class="p">,</span> <span class="o">-</span><span class="mi">1</span><span class="p">))</span> <span class="o">/</span> <span class="n">math</span><span class="o">.</span><span class="n">sqrt</span><span class="p">(</span><span class="n">d_k</span><span class="p">)</span>   <span class="c1"># (B, nh, T, T)</span>
+
+    <span class="c1"># 上三角（不含对角线）设为 -inf —— 这就是因果掩码</span>
+    <span class="n">mask</span> <span class="o">=</span> <span class="n">torch</span><span class="o">.</span><span class="n">triu</span><span class="p">(</span><span class="n">torch</span><span class="o">.</span><span class="n">ones</span><span class="p">(</span><span class="n">T</span><span class="p">,</span> <span class="n">T</span><span class="p">,</span> <span class="n">device</span><span class="o">=</span><span class="n">q</span><span class="o">.</span><span class="n">device</span><span class="p">),</span> <span class="n">diagonal</span><span class="o">=</span><span class="mi">1</span><span class="p">)</span><span class="o">.</span><span class="n">bool</span><span class="p">()</span>
+    <span class="n">scores</span> <span class="o">=</span> <span class="n">scores</span><span class="o">.</span><span class="n">masked_fill</span><span class="p">(</span><span class="n">mask</span><span class="p">,</span> <span class="nb">float</span><span class="p">(</span><span class="s2">&quot;-inf&quot;</span><span class="p">))</span>
+
+    <span class="n">attn</span> <span class="o">=</span> <span class="n">F</span><span class="o">.</span><span class="n">softmax</span><span class="p">(</span><span class="n">scores</span><span class="p">,</span> <span class="n">dim</span><span class="o">=-</span><span class="mi">1</span><span class="p">)</span>   <span class="c1"># -inf 经 softmax 后权重变 0</span>
+    <span class="k">return</span> <span class="n">attn</span> <span class="o">@</span> <span class="n">v</span>
+</code></pre></div>
+
+<p>关键点：<code>softmax(-∞) = 0</code>。被屏蔽的未来位置在加权求和时权重恰好为 0，等价于"不存在"。用 <code>-∞</code> 而不是直接把权重设 0，是为了让 softmax 的归一化（分母）也自动排除这些位置，数学上更干净。</p>
+<h3 id="本仓库怎么做的一行-is_causaltrue">本仓库怎么做的：一行 <code>is_causal=True</code></h3>
+<p>CodeChat 没有手写上面那段，而是把整块逻辑交给了 PyTorch 2.x 的融合内核 <code>scaled_dot_product_attention</code>（SDPA）。见 <code>codechat/gpt.py:59-69</code>：</p>
+<div class="highlight"><pre><span></span><code><span class="k">def</span><span class="w"> </span><span class="nf">forward</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">x</span><span class="p">):</span>
+    <span class="n">B</span><span class="p">,</span> <span class="n">T</span><span class="p">,</span> <span class="n">C</span> <span class="o">=</span> <span class="n">x</span><span class="o">.</span><span class="n">shape</span>
+    <span class="n">qkv</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">qkv</span><span class="p">(</span><span class="n">x</span><span class="p">)</span>
+    <span class="n">q</span><span class="p">,</span> <span class="n">k</span><span class="p">,</span> <span class="n">v</span> <span class="o">=</span> <span class="n">qkv</span><span class="o">.</span><span class="n">split</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">n_embd</span><span class="p">,</span> <span class="n">dim</span><span class="o">=</span><span class="mi">2</span><span class="p">)</span>
+    <span class="n">q</span> <span class="o">=</span> <span class="n">q</span><span class="o">.</span><span class="n">view</span><span class="p">(</span><span class="n">B</span><span class="p">,</span> <span class="n">T</span><span class="p">,</span> <span class="bp">self</span><span class="o">.</span><span class="n">n_head</span><span class="p">,</span> <span class="bp">self</span><span class="o">.</span><span class="n">head_dim</span><span class="p">)</span><span class="o">.</span><span class="n">transpose</span><span class="p">(</span><span class="mi">1</span><span class="p">,</span> <span class="mi">2</span><span class="p">)</span>
+    <span class="n">k</span> <span class="o">=</span> <span class="n">k</span><span class="o">.</span><span class="n">view</span><span class="p">(</span><span class="n">B</span><span class="p">,</span> <span class="n">T</span><span class="p">,</span> <span class="bp">self</span><span class="o">.</span><span class="n">n_head</span><span class="p">,</span> <span class="bp">self</span><span class="o">.</span><span class="n">head_dim</span><span class="p">)</span><span class="o">.</span><span class="n">transpose</span><span class="p">(</span><span class="mi">1</span><span class="p">,</span> <span class="mi">2</span><span class="p">)</span>
+    <span class="n">v</span> <span class="o">=</span> <span class="n">v</span><span class="o">.</span><span class="n">view</span><span class="p">(</span><span class="n">B</span><span class="p">,</span> <span class="n">T</span><span class="p">,</span> <span class="bp">self</span><span class="o">.</span><span class="n">n_head</span><span class="p">,</span> <span class="bp">self</span><span class="o">.</span><span class="n">head_dim</span><span class="p">)</span><span class="o">.</span><span class="n">transpose</span><span class="p">(</span><span class="mi">1</span><span class="p">,</span> <span class="mi">2</span><span class="p">)</span>
+    <span class="c1"># Flash attention via SDPA</span>
+    <span class="n">y</span> <span class="o">=</span> <span class="n">F</span><span class="o">.</span><span class="n">scaled_dot_product_attention</span><span class="p">(</span><span class="n">q</span><span class="p">,</span> <span class="n">k</span><span class="p">,</span> <span class="n">v</span><span class="p">,</span> <span class="n">is_causal</span><span class="o">=</span><span class="kc">True</span><span class="p">)</span>   <span class="c1"># ← 因果掩码在这里</span>
+    <span class="n">y</span> <span class="o">=</span> <span class="n">y</span><span class="o">.</span><span class="n">transpose</span><span class="p">(</span><span class="mi">1</span><span class="p">,</span> <span class="mi">2</span><span class="p">)</span><span class="o">.</span><span class="n">contiguous</span><span class="p">()</span><span class="o">.</span><span class="n">view</span><span class="p">(</span><span class="n">B</span><span class="p">,</span> <span class="n">T</span><span class="p">,</span> <span class="n">C</span><span class="p">)</span>
+    <span class="k">return</span> <span class="bp">self</span><span class="o">.</span><span class="n">proj</span><span class="p">(</span><span class="n">y</span><span class="p">)</span>
+</code></pre></div>
+
+<p><code>is_causal=True</code> 这一个参数，替代了"生成三角矩阵 → <code>masked_fill(-inf)</code> → softmax"的全过程。这样做有两个实打实的好处，对本仓库的 8B / FSDP 训练至关重要：</p>
+<ol>
+<li><strong>省显存</strong>：不必真的物化一个 <code>T×T</code>（本仓库 <code>block_size=2048</code>，就是 <code>2048×2048</code>）的 mask 张量。FlashAttention 类内核在分块（tiling）时<strong>隐式</strong>跳过上三角块，<code>-∞</code> 从未在 HBM 里落地。</li>
+<li><strong>省算力</strong>：上三角的一半分数<strong>根本不计算</strong>。朴素实现会算满整个矩阵再屏蔽一半，是纯浪费；融合内核直接不算。</li>
+</ol>
+<p>这也解释了为什么类名叫 <code>CausalSelfAttention</code>（<code>gpt.py:49</code>）却在代码里找不到任何 <code>tril</code>/<code>triu</code>——三角矩阵是概念上的，物理上被内核吸收了。</p>
+<blockquote>
+<p>顺带一提，<code>generate()</code>（<code>gpt.py:136-148</code>）做自回归采样时，每步只取最后一个位置的 logits（<code>logits[:, -1, :]</code>）。这本身就是因果性的推理侧体现：预测第 <code>t+1</code> 个 token 只依赖前 <code>t</code> 个。因果掩码保证了"训练时并行地算 T 个位置"和"推理时逐个生成"这两种模式，学到的是同一个条件分布 <code>P(x_t | x_&lt;t)</code>。</p>
+</blockquote>
+<hr />
+<h2 id="4-对照transformers-库里的因果掩码">4. 对照：<code>transformers</code> 库里的因果掩码</h2>
+<p>HuggingFace <code>transformers</code> 支持从 GPT-2 到 Llama 的一大批模型，还要兼容 padding、左填充、KV-cache、SDPA / eager / FlashAttention 多后端，所以它的因果掩码<strong>不能</strong>只靠 <code>is_causal=True</code>——它必须把因果性和 padding mask 合并成一个显式张量。</p>
+<p><strong>经典 GPT-2（<code>modeling_gpt2.py</code>）</strong> 的做法最能看清三角矩阵的本质。它在建模时预先注册一个下三角 buffer：</p>
+<div class="highlight"><pre><span></span><code><span class="c1"># transformers/models/gpt2/modeling_gpt2.py（精简示意）</span>
+<span class="bp">self</span><span class="o">.</span><span class="n">register_buffer</span><span class="p">(</span>
+    <span class="s2">&quot;bias&quot;</span><span class="p">,</span>
+    <span class="n">torch</span><span class="o">.</span><span class="n">tril</span><span class="p">(</span><span class="n">torch</span><span class="o">.</span><span class="n">ones</span><span class="p">((</span><span class="n">max_positions</span><span class="p">,</span> <span class="n">max_positions</span><span class="p">),</span> <span class="n">dtype</span><span class="o">=</span><span class="n">torch</span><span class="o">.</span><span class="n">bool</span><span class="p">))</span>
+        <span class="o">.</span><span class="n">view</span><span class="p">(</span><span class="mi">1</span><span class="p">,</span> <span class="mi">1</span><span class="p">,</span> <span class="n">max_positions</span><span class="p">,</span> <span class="n">max_positions</span><span class="p">),</span>
+<span class="p">)</span>
+
+<span class="k">def</span><span class="w"> </span><span class="nf">_attn</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">query</span><span class="p">,</span> <span class="n">key</span><span class="p">,</span> <span class="n">value</span><span class="p">,</span> <span class="n">attention_mask</span><span class="o">=</span><span class="kc">None</span><span class="p">):</span>
+    <span class="n">attn_weights</span> <span class="o">=</span> <span class="n">torch</span><span class="o">.</span><span class="n">matmul</span><span class="p">(</span><span class="n">query</span><span class="p">,</span> <span class="n">key</span><span class="o">.</span><span class="n">transpose</span><span class="p">(</span><span class="o">-</span><span class="mi">1</span><span class="p">,</span> <span class="o">-</span><span class="mi">2</span><span class="p">))</span>
+    <span class="n">attn_weights</span> <span class="o">=</span> <span class="n">attn_weights</span> <span class="o">/</span> <span class="p">(</span><span class="n">value</span><span class="o">.</span><span class="n">size</span><span class="p">(</span><span class="o">-</span><span class="mi">1</span><span class="p">)</span> <span class="o">**</span> <span class="mf">0.5</span><span class="p">)</span>
+
+    <span class="n">query_length</span><span class="p">,</span> <span class="n">key_length</span> <span class="o">=</span> <span class="n">query</span><span class="o">.</span><span class="n">size</span><span class="p">(</span><span class="o">-</span><span class="mi">2</span><span class="p">),</span> <span class="n">key</span><span class="o">.</span><span class="n">size</span><span class="p">(</span><span class="o">-</span><span class="mi">2</span><span class="p">)</span>
+    <span class="n">causal_mask</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">bias</span><span class="p">[:,</span> <span class="p">:,</span> <span class="n">key_length</span> <span class="o">-</span> <span class="n">query_length</span> <span class="p">:</span> <span class="n">key_length</span><span class="p">,</span> <span class="p">:</span><span class="n">key_length</span><span class="p">]</span>
+    <span class="n">mask_value</span> <span class="o">=</span> <span class="n">torch</span><span class="o">.</span><span class="n">finfo</span><span class="p">(</span><span class="n">attn_weights</span><span class="o">.</span><span class="n">dtype</span><span class="p">)</span><span class="o">.</span><span class="n">min</span>      <span class="c1"># 该 dtype 能表示的最小值，充当 -inf</span>
+    <span class="n">attn_weights</span> <span class="o">=</span> <span class="n">torch</span><span class="o">.</span><span class="n">where</span><span class="p">(</span><span class="n">causal_mask</span><span class="p">,</span> <span class="n">attn_weights</span><span class="p">,</span> <span class="n">mask_value</span><span class="p">)</span>
+
+    <span class="k">if</span> <span class="n">attention_mask</span> <span class="ow">is</span> <span class="ow">not</span> <span class="kc">None</span><span class="p">:</span>      <span class="c1"># 这是 padding mask，与因果 mask 相加</span>
+        <span class="n">attn_weights</span> <span class="o">=</span> <span class="n">attn_weights</span> <span class="o">+</span> <span class="n">attention_mask</span>
+
+    <span class="n">attn_weights</span> <span class="o">=</span> <span class="n">F</span><span class="o">.</span><span class="n">softmax</span><span class="p">(</span><span class="n">attn_weights</span><span class="p">,</span> <span class="n">dim</span><span class="o">=-</span><span class="mi">1</span><span class="p">)</span>
+    <span class="k">return</span> <span class="n">torch</span><span class="o">.</span><span class="n">matmul</span><span class="p">(</span><span class="n">attn_weights</span><span class="p">,</span> <span class="n">value</span><span class="p">)</span>
+</code></pre></div>
+
+<p>对照本仓库，可以看到三点差异：</p>
+<ul>
+<li><strong><code>torch.tril(...)</code> 是显式的</strong>：GPT-2 把三角矩阵真真切切地物化成一个 buffer，本仓库靠 <code>is_causal=True</code> 把它藏进内核。</li>
+<li><strong>用 <code>torch.finfo(dtype).min</code> 而非 <code>-inf</code></strong>：数值稳定，避免 <code>-inf</code> 在混合精度下产生 <code>NaN</code>。</li>
+<li><strong>两种 mask 相加</strong>：<code>causal_mask</code>（结构）与 <code>attention_mask</code>（哪些是 padding，内容）通过加法叠加，一次 softmax 同时满足两个约束。</li>
+</ul>
+<p><strong>现代 Llama 系</strong> 则把这套逻辑抽象成了 <code>_prepare_4d_causal_attention_mask</code>（及其新版 <code>create_causal_mask</code> / <code>AttentionMaskConverter</code>）：它根据 <code>is_causal</code>、<code>sliding_window</code>、<code>padding_mask</code> 动态合成一个 <code>(B, 1, T, T)</code> 的 4D float mask，再喂给统一的 attention 接口；当后端是 SDPA 且没有 padding 时，它会<strong>退化成直接传 <code>is_causal=True</code></strong>——绕一圈又回到了本仓库那一行。</p>
+<p>结论：<strong>因果掩码的语义在所有实现里完全一致（下三角可见、上三角屏蔽），差异只在"物化 vs. 内核隐式"和"是否要和 padding mask 合并"。</strong> 本仓库因为预训练/SFT 用等长打包（packing），几乎不需要 padding mask，所以能享受最简洁的 <code>is_causal=True</code>。</p>
+<hr />
+<h2 id="5-另一种-mask本仓库真正显式写出来的-loss-mask">5. 另一种 mask：本仓库真正显式写出来的 loss mask</h2>
+<p>回到第 0 节的表格右列。因果掩码在本仓库是隐式的，但<strong>损失掩码是显式且无处不在的</strong>，它用的是 PyTorch 交叉熵的魔数 <code>-100</code>。</p>
+<p>在模型前向里（<code>codechat/gpt.py:129-133</code>）：</p>
+<div class="highlight"><pre><span></span><code><span class="n">loss</span> <span class="o">=</span> <span class="n">F</span><span class="o">.</span><span class="n">cross_entropy</span><span class="p">(</span>
+    <span class="n">logits</span><span class="o">.</span><span class="n">view</span><span class="p">(</span><span class="o">-</span><span class="mi">1</span><span class="p">,</span> <span class="n">logits</span><span class="o">.</span><span class="n">size</span><span class="p">(</span><span class="o">-</span><span class="mi">1</span><span class="p">))</span><span class="o">.</span><span class="n">float</span><span class="p">(),</span>
+    <span class="n">targets</span><span class="o">.</span><span class="n">view</span><span class="p">(</span><span class="o">-</span><span class="mi">1</span><span class="p">),</span>
+    <span class="n">ignore_index</span><span class="o">=-</span><span class="mi">100</span><span class="p">,</span>          <span class="c1"># ← 目标为 -100 的位置不产生任何梯度</span>
+<span class="p">)</span>
+</code></pre></div>
+
+<p><code>ignore_index=-100</code> 是 <code>nn.CrossEntropyLoss</code> 的默认值，历史上选 <code>-100</code> 是因为它绝不可能与任何合法的类别索引（0..vocab_size-1）冲突，是个安全的"哨兵值"。语义是：<strong>凡是 target == -100 的位置，既不计入 loss，也不回传梯度。</strong></p>
+<p>这在 SFT（监督微调）里是核心机制。看 <code>codechat/dataloader.py</code> 的 funcall SFT 分词逻辑（<code>:208-234</code>）：</p>
+<div class="highlight"><pre><span></span><code><span class="n">labels</span><span class="p">:</span> <span class="nb">list</span><span class="p">[</span><span class="nb">int</span><span class="p">]</span> <span class="o">=</span> <span class="p">[]</span>
+<span class="o">...</span>
+<span class="n">labels</span><span class="o">.</span><span class="n">extend</span><span class="p">([</span><span class="o">-</span><span class="mi">100</span><span class="p">]</span> <span class="o">*</span> <span class="nb">len</span><span class="p">(</span><span class="n">prefix_ids</span><span class="p">))</span>    <span class="c1"># system/user/角色标签 → 不学</span>
+<span class="o">...</span>
+<span class="n">labels</span><span class="o">.</span><span class="n">extend</span><span class="p">(</span><span class="n">body_ids</span> <span class="o">+</span> <span class="n">suffix_ids</span><span class="p">)</span>       <span class="c1"># assistant 正文 → 要学</span>
+<span class="o">...</span>
+<span class="n">labels</span><span class="o">.</span><span class="n">extend</span><span class="p">([</span><span class="o">-</span><span class="mi">100</span><span class="p">]</span> <span class="o">*</span> <span class="nb">len</span><span class="p">(</span><span class="n">span</span><span class="p">))</span>          <span class="c1"># function_response → 不学</span>
+<span class="c1"># 结尾：若最后一句是 assistant，保留 EOT 让模型学会&quot;停&quot;，否则也 mask</span>
+<span class="n">labels</span><span class="o">.</span><span class="n">append</span><span class="p">(</span><span class="n">EOT</span> <span class="k">if</span> <span class="n">last_role</span> <span class="o">==</span> <span class="s2">&quot;assistant&quot;</span> <span class="k">else</span> <span class="o">-</span><span class="mi">100</span><span class="p">)</span>
+</code></pre></div>
+
+<p>以及定长打包 / padding 时的补齐（<code>dataloader.py:79-81</code>、<code>:243-244</code>）：</p>
+<div class="highlight"><pre><span></span><code><span class="k">if</span> <span class="nb">len</span><span class="p">(</span><span class="n">labels</span><span class="p">)</span> <span class="o">&lt;</span> <span class="bp">self</span><span class="o">.</span><span class="n">block_size</span> <span class="o">+</span> <span class="mi">1</span><span class="p">:</span>
+    <span class="n">pad</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">block_size</span> <span class="o">+</span> <span class="mi">1</span> <span class="o">-</span> <span class="nb">len</span><span class="p">(</span><span class="n">labels</span><span class="p">)</span>
+    <span class="n">labels</span> <span class="o">=</span> <span class="n">labels</span> <span class="o">+</span> <span class="p">[</span><span class="o">-</span><span class="mi">100</span><span class="p">]</span> <span class="o">*</span> <span class="n">pad</span>          <span class="c1"># padding 位置 → 不学</span>
+</code></pre></div>
+
+<p><strong>为什么要 loss mask？</strong> 一段对话里包含系统提示、用户提问、工具返回、助手回答。我们只想让模型学会"在正确时机生成助手回答（以及何时发起 <code>&lt;functioncall&gt;</code>）"，而<strong>不该</strong>去背诵用户的问题或工具的返回值。于是把非助手片段的 label 全设成 <code>-100</code>，梯度只从助手 token 流出。这正是 <code>CLAUDE.md</code> 里写的那条约定：</p>
+<blockquote>
+<p><strong>Loss masking</strong> in funcall SFT: only assistant-segment tokens get gradients; system / user / function_response tokens are <code>-100</code>.</p>
+</blockquote>
+<p><strong>它和因果掩码正交，缺一不可</strong>：因果掩码保证"预测第 t 个 token 时只用前 t-1 个"（结构约束，每条样本都一样）；loss mask 保证"只有助手片段的预测被计入损失"（内容约束，每条样本不同）。一个管<strong>能看见什么</strong>，一个管<strong>要学什么</strong>。</p>
+<hr />
+<h2 id="6-跑起来看一个可视化-demo">6. 跑起来看：一个可视化 demo</h2>
+<p>前面全是文字，容易停留在抽象。仓库里放了一个<strong>能直接跑、会出图</strong>的最小例子：
+<code>docs/examples/causal_mask_demo.py</code>（只依赖 <code>torch</code> + <code>matplotlib</code>，无头环境也能跑，
+同时在终端打印 ASCII 版）。</p>
+<div class="highlight"><pre><span></span><code>python<span class="w"> </span>docs/examples/causal_mask_demo.py
+<span class="c1"># -&gt; docs/images/causal_mask.png / attention_masked.png / causal_dag.png</span>
+</code></pre></div>
+
+<p>它用一小段"代码 token" <code>["def","add","(","a",",","b"]</code> 演示三件事。</p>
+<h3 id="61-掩码本身就是一个下三角">6.1 掩码本身就是一个下三角</h3>
+<p>终端会打印出这张表（行=query，列=key，1=能看见）：</p>
+<div class="highlight"><pre><span></span><code>        def  add    (    a    ,    b
+  def   1    0    0    0    0    0
+  add   1    1    0    0    0    0
+    (   1    1    1    0    0    0
+    a   1    1    1    1    0    0
+    ,   1    1    1    1    1    0
+    b   1    1    1    1    1    1
+</code></pre></div>
+
+<p>一眼看出：第 0 行（<code>def</code>）只能看自己，最后一行（<code>b</code>）能看全部——这就是"现在能看过去、不能看未来"。</p>
+<h3 id="62-掩码如何改变注意力-softmax-0">6.2 掩码如何改变注意力：−∞ → softmax → 0</h3>
+<p><img alt="掩码前后的注意力" src="images/attention_masked.png" /></p>
+<p>三连图从左到右：<strong>①原始分数</strong> <code>QKᵀ/√d</code>（满矩阵，上三角也有值）→ <strong>②加掩码</strong>（上三角被置 −∞，图中留白）
+→ <strong>③softmax 权重</strong>（上三角恰好变 0，每行归一化后和为 1）。终端同步打印数值，可见未来位置权重全是 <code>0.00</code>：</p>
+<div class="highlight"><pre><span></span><code>       def   add     (     a     ,     b
+  add 0.36  0.64  0.00  0.00  0.00  0.00
+    ( 0.26  0.65  0.09  0.00  0.00  0.00
+</code></pre></div>
+
+<p>这就是第 3 节 <code>softmax(-∞)=0</code> 那句话的实物。</p>
+<h3 id="63-掩码-一张有向图dag">6.3 掩码 ⇔ 一张有向图（DAG）</h3>
+<p><img alt="自回归 DAG" src="images/causal_dag.png" /></p>
+<p>同一件事换个视角：每个 token 的预测<strong>依赖它左边所有 token</strong>，画成有向图就是上面这张——
+箭头 <code>j→i</code>（<code>j&lt;i</code>）密密麻麻地指向右边。这张图的邻接矩阵，正是 6.1 那个下三角。
+把它写成概率就是<strong>自回归分解</strong>：</p>
+<div class="highlight"><pre><span></span><code>P(seq) = P(def|∅)·P(add|def)·P( ( |def,add)·P(a|def,add,()·P( , |…)·P(b|…)
+</code></pre></div>
+
+<p><strong>下三角掩码、注意力权重、这张 DAG、这个连乘式——是同一个东西的四种画法。</strong> 这正好把我们引向下一个问题:
+这张 DAG 里的"箭头"和因果推断里的"因果箭头",是一回事吗?</p>
+<hr />
+<h2 id="7-因果推理-因果掩码同名不同物">7. 因果推理 ≠ 因果掩码：同名，不同物</h2>
+<p>用户会很自然地问:贝叶斯网络、有向无环图(DAG)、do-算子那一套"因果推断",
+和 Transformer 的"因果掩码"是什么关系?毕竟都叫 <strong>causal</strong>,都画成有向图。</p>
+<p><strong>结论先行:它们共享"有向图 + 拓扑序"这套数学外壳,但"因果"二字的含义完全不同。
+Transformer 的 causal mask 里的 "causal" 指的是"时间先后"(temporal / autoregressive),
+不是 Judea Pearl 意义上的"因果机制"(mechanism / intervention)。更准确的名字其实是"自回归掩码"。</strong></p>
+<h3 id="71-两种因果图的对照">7.1 两种"因果图"的对照</h3>
+<table>
+<thead>
+<tr>
+<th></th>
+<th>因果推断的 DAG(Pearl / 贝叶斯网络)</th>
+<th>Transformer 的"因果"掩码</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>节点</td>
+<td>随机变量(吸烟、焦油、癌症)</td>
+<td>序列位置上的 token</td>
+</tr>
+<tr>
+<td>边 <code>X→Y</code></td>
+<td><strong>因果机制</strong>:干预 X 会改变 Y</td>
+<td><strong>时间在先</strong>:位置 j 在 i 左边</td>
+</tr>
+<tr>
+<td>图结构</td>
+<td>由领域知识/因果发现得到,<strong>稀疏、任意</strong></td>
+<td><strong>固定的全连下三角</strong>,与内容无关</td>
+</tr>
+<tr>
+<td>核心问题</td>
+<td><code>P(Y \| do(X))</code>——<strong>干预</strong>后会怎样</td>
+<td><code>P(x_t \| x_&lt;t)</code>——<strong>观测</strong>到前文后下一个是什么</td>
+</tr>
+<tr>
+<td>支持反事实</td>
+<td>是(倒数第三层:若当初不吸烟?)</td>
+<td>否(只建模观测分布)</td>
+</tr>
+<tr>
+<td>边的方向可翻转吗</td>
+<td>不能,翻转就改变因果论断</td>
+<td>可选(BERT 就用双向,去掉下三角)</td>
+</tr>
+</tbody>
+</table>
+<p>一句话:<strong>因果推断问的是"改变原因,结果会不会变";因果掩码只是保证"算第 t 个词时别偷看后面的词"。</strong>
+后者是一条工程约束(防止训练作弊 + 让训练/推理一致),不是关于世界的因果论断。</p>
+<h3 id="72-但它们确实在一个点上接壤概率的链式法则">7.2 但它们确实在一个点上接壤:概率的链式法则</h3>
+<p>联系不是巧合。任何联合分布都能按<strong>任意</strong>变量顺序做链式分解:</p>
+<div class="highlight"><pre><span></span><code>P(x1,…,xT) = ∏_t P(x_t | x_1,…,x_{t-1})
+</code></pre></div>
+
+<p>这本身就是一个贝叶斯网络——一个<strong>全连接的下三角 DAG</strong>(第 6.3 节那张图)。
+自回归语言模型选定了"从左到右"这一个顺序,并用因果掩码把这个 DAG 的结构<strong>焊死在注意力计算里</strong>:
+位置 <code>i</code> 的注意力只允许连到 <code>j≤i</code>,等价于"节点 i 的父节点 = 它前面所有节点"。</p>
+<p>所以这层关系是:<strong>因果掩码 = 一个特定(全连、下三角、按 token 顺序)贝叶斯网络的邻接结构在计算图里的实现。</strong>
+它借用了贝叶斯网络的<strong>数学形式</strong>(有向、无环、拓扑序 → 可分解、可并行),
+但<strong>没有借用</strong>其<strong>因果语义</strong>(边不代表机制,模型学到的是相关性 <code>P(next|context)</code>,而非 <code>P(·|do(·))</code>)。</p>
+<h3 id="73-那本项目的大模型里因果到底体现在哪">7.3 那本项目的大模型里,"因果"到底体现在哪?</h3>
+<p>回到 CodeChat 自己的代码,把上面的抽象落到实处:</p>
+<ul>
+<li>
+<p><strong>结构层面</strong>——因果掩码就是 <code>codechat/gpt.py:67</code> 的 <code>is_causal=True</code>。它在每一层、每个注意力头里,
+  强制实现 7.2 里那个下三角 DAG。模型有 40 层(<code>8b</code> preset),但<strong>每一层用的都是同一张下三角图</strong>;
+  深度带来的是表示能力,不是更复杂的依赖图——依赖图永远是那个固定的三角。</p>
+</li>
+<li>
+<p><strong>概率层面</strong>——训练目标 <code>F.cross_entropy(logits, targets)</code>(<code>gpt.py:129</code>)最小化的就是
+  <code>-∑ log P(x_t | x_&lt;t)</code>,即 7.2 那个连乘式的负对数。模型学的是<strong>观测条件分布</strong>,
+  是"给定前文,下一个 token 的经验频率",<strong>不是</strong>"干预某个 token 会如何改变后文"。
+  这就是为什么 LLM 会有"相关≠因果"的经典毛病:它没被训练去回答 <code>do()</code> 问题。</p>
+</li>
+<li>
+<p><strong>"推理链"是什么?</strong>——当模型做 chain-of-thought、一步步推导时,那条"推理链"看起来很像因果链,
+  但它在机制上仍然是<strong>自回归采样</strong>:每一步 <code>generate()</code>(<code>gpt.py:136</code>)都只是从 <code>P(x_t|x_&lt;t)</code> 采样。
+  "链"之所以看着有因果性,是因为<strong>训练数据里的人类推理本身有因果结构</strong>,模型把这种结构当作
+  统计规律学了进来——它是在<strong>模仿</strong>因果推理的文本表现,而不是在图上跑 do-算子。
+  换句话说:<strong>因果掩码提供的是"时间箭头",Pearl 意义上的"因果箭头"(如果有的话)是从数据里学来的软知识,
+  不由掩码保证、也不受掩码约束。</strong></p>
+</li>
+<li>
+<p><strong>反过来印证</strong>——funcall 场景(<code>codechat/funcall_reward.py</code>、<code>dataloader.py</code> 的 loss mask)也一样:
+  模型学会"用户问天气 → 发 <code>&lt;functioncall&gt;</code>",这是数据里的<strong>条件相关</strong>被 SFT 固化,
+  不是模型"理解"了调用天气 API 会导致得到天气。它不需要理解因果,只需要拟合 <code>P(下一段 | 前文)</code>。</p>
+</li>
+</ul>
+<h3 id="74-一句话记住">7.4 一句话记住</h3>
+<blockquote>
+<p><strong>贝叶斯网络的 DAG 用有向边编码"谁导致谁"(机制),回答干预与反事实;
+Transformer 的因果掩码用下三角编码"谁在谁之前"(时间),只回答"下一个词是什么"。
+二者共享"有向无环 + 拓扑序 → 可分解"的数学骨架,这也是"因果掩码"这个名字的来处——
+但它建模的是概率的链式法则,不是 Pearl 的因果阶梯。本项目的大模型自始至终工作在观测分布 <code>P(x_t|x_&lt;t)</code> 上,
+"因果掩码"给的是时间序,不是因果性。</strong></p>
+</blockquote>
+<hr />
+<h2 id="8-掩码的本质word2vecdropout完形填空是同一种思想吗">8. 掩码的本质:word2vec、dropout、完形填空是同一种思想吗?</h2>
+<p>用户问得很到位:word2vec 的词袋模型(给一堆词猜中间填空)、dropout、以及"完形填空式"地训练"预测空缺"的能力——
+这些和因果掩码是不是一回事?</p>
+<p><strong>答案:在最高的哲学层面"是"——它们都属于"藏一部分、猜一部分"的自监督(self-supervision)家族;
+但往下一层,掩码在其中扮演了三种本质不同的角色,不能一锅烩。</strong> 先给结论表:</p>
+<table>
+<thead>
+<tr>
+<th>方法</th>
+<th>藏什么</th>
+<th>上下文方向</th>
+<th>mask 的角色</th>
+<th>预测目标是被藏的东西吗?</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><strong>word2vec CBOW</strong></td>
+<td>中心词(1 个)</td>
+<td>双向(词袋,无序)</td>
+<td>定义任务:留出"空"</td>
+<td>✅ 是</td>
+</tr>
+<tr>
+<td><strong>BERT MLM</strong></td>
+<td>随机 15% token</td>
+<td>双向</td>
+<td>定义任务:<code>[MASK]</code> 造"空"</td>
+<td>✅ 是</td>
+</tr>
+<tr>
+<td><strong>GPT / 本仓库</strong></td>
+<td>右边全部(未来)</td>
+<td>单向(只看左)</td>
+<td>约束信息流:防偷看</td>
+<td>✅ 是(但"空"永远在最右端)</td>
+</tr>
+<tr>
+<td><strong>Dropout</strong></td>
+<td>随机隐藏单元</td>
+<td>——</td>
+<td>正则化:逼出冗余</td>
+<td>❌ 否,被藏的不是预测目标</td>
+</tr>
+</tbody>
+</table>
+<h3 id="81-完形填空cloze这条思想的源头">8.1 完形填空(cloze):这条思想的源头</h3>
+<p>"完形填空"不是深度学习发明的。1953 年心理语言学家 <strong>Wilson Taylor</strong> 提出 <em>cloze procedure</em>:
+删掉文章里的词,让人根据上下文补全,以此测量文本可读性。核心假设是——
+<strong>"能填对空,说明你真的理解了上下文。"</strong> 后来整个自监督预训练,本质上都是把这个测人的方法反过来拿去训机器:
+<strong>从无标注文本里,靠"挖空—补全"凭空造出监督信号。</strong> 这就是"掩码本质"的那句话:</p>
+<blockquote>
+<p><strong>掩码 = 一台从数据结构里凭空生产监督信号的机器。</strong> 你不需要人工标注,只要把数据的一部分藏起来,
+"该被藏的部分"自己就成了标签。藏法不同,就长出了 word2vec / BERT / GPT / dropout 这些不同的枝叶。</p>
+</blockquote>
+<h3 id="82-word2vec-cbow一次浅层的双向的完形填空">8.2 word2vec CBOW:一次浅层的、双向的完形填空</h3>
+<p>CBOW(Continuous Bag-of-Words)就是最朴素的神经完形填空:拿窗口内的上下文词,
+<strong>把它们的词向量加起来求平均(这就是"词袋"——丢掉词序)</strong>,去预测正中间被挖掉的那个词。</p>
+<div class="highlight"><pre><span></span><code><span class="c1"># CBOW 的精神(示意):给定上下文,预测中心词</span>
+<span class="n">context</span> <span class="o">=</span> <span class="p">[</span><span class="s2">&quot;the&quot;</span><span class="p">,</span> <span class="s2">&quot;cat&quot;</span><span class="p">,</span> <span class="s2">&quot;___&quot;</span><span class="p">,</span> <span class="s2">&quot;on&quot;</span><span class="p">,</span> <span class="s2">&quot;the&quot;</span><span class="p">,</span> <span class="s2">&quot;mat&quot;</span><span class="p">]</span>   <span class="c1"># 挖掉 &quot;sat&quot;</span>
+<span class="n">h</span> <span class="o">=</span> <span class="n">mean</span><span class="p">([</span><span class="n">embedding</span><span class="p">[</span><span class="n">w</span><span class="p">]</span> <span class="k">for</span> <span class="n">w</span> <span class="ow">in</span> <span class="n">context</span> <span class="k">if</span> <span class="n">w</span> <span class="o">!=</span> <span class="s2">&quot;___&quot;</span><span class="p">])</span>  <span class="c1"># 词袋:求和平均,无序</span>
+<span class="n">logits</span> <span class="o">=</span> <span class="n">h</span> <span class="o">@</span> <span class="n">W_out</span>                                        <span class="c1"># 预测填空</span>
+<span class="n">loss</span> <span class="o">=</span> <span class="n">cross_entropy</span><span class="p">(</span><span class="n">logits</span><span class="p">,</span> <span class="n">target</span><span class="o">=</span><span class="s2">&quot;sat&quot;</span><span class="p">)</span>
+</code></pre></div>
+
+<p>它和本仓库的关系比看上去更近:<strong>word2vec 训练完,真正留下来被使用的只有那张 <code>embedding</code> 表。</strong>
+而本仓库 <code>codechat/gpt.py:100</code> 的 <code>self.tok_emb = nn.Embedding(vocab_size, n_embd)</code> 正是这张表的直系后代——
+只不过 CBOW 用"双向词袋 + 浅层线性"来训它,GPT 用"单向因果掩码 + 40 层 Transformer"来训它。
+<strong>词向量的血统是一样的,变的是产生监督信号的"挖空方式"和上面堆的算力。</strong></p>
+<p>区别也在这里:CBOW 是<strong>双向</strong>的(能同时看左右),而且<strong>无序</strong>(词袋);
+本仓库的因果掩码是<strong>单向有序</strong>的。所以严格说,GPT 不是"挖中间的空",而是"空永远在最右端"的退化完形填空——
+BERT 的 MLM(随机挖中间的 token、双向补全)才是 CBOW 在深层网络里的正统续作。</p>
+<h3 id="83-dropout形似而神不同的挖空">8.3 Dropout:形似而神不同的"挖空"</h3>
+<p>Dropout(Hinton 2012 / Srivastava 2014)训练时随机把一部分<strong>隐藏单元</strong>置 0。
+形式上它也是"随机挖空 + 用 mask 乘一下",所以直觉上很像完形填空。但它的<strong>目的完全不同</strong>:</p>
+<ul>
+<li><strong>CBOW / BERT / GPT 的掩码定义了"要预测什么"</strong>——被藏的 token 就是标签,mask 制造任务。</li>
+<li><strong>Dropout 的掩码不制造任何预测目标</strong>——被丢掉的单元不是要去预测的东西。它的目的是<strong>正则化</strong>:
+  逼着网络不要依赖任何单一特征,从而学到冗余、鲁棒的表示。Hinton 的解释是<strong>隐式集成</strong>——
+  每个 mini-batch 相当于训练一个不同的子网络,推理时再把它们"平均"起来。</li>
+</ul>
+<p>真正把两者接上的桥,是<strong>去噪自编码器(Denoising Autoencoder,Vincent 2008)</strong>:
+故意往输入里加噪声(比如随机置零一些输入),再让网络重建干净的原始输入。
+- 从这个视角看,<strong>BERT 的 MLM 就是一个"噪声=遮盖 token"的去噪自编码器</strong>——挖空是加噪,补全是去噪。
+- 而 <strong>dropout 是加在隐藏层的噪声</strong>,不要求重建、只要求"扛得住噪声还能干活"。</p>
+<p>所以三者的关系可以这样收束:</p>
+<div class="highlight"><pre><span></span><code>                  &quot;藏一部分,逼网络处理&quot;
+                          │
+        ┌─────────────────┼─────────────────┐
+   藏的是&quot;标签&quot;        藏的是&quot;输入&quot;         藏的是&quot;隐藏单元&quot;
+   → 完形填空          → 去噪自编码          → dropout
+   (CBOW/BERT/GPT)     (DAE, =MLM 的框架)   (正则化,无预测目标)
+   目的:学预测        目的:学重建          目的:学鲁棒
+</code></pre></div>
+
+<h3 id="84-那本仓库到底站在哪一支">8.4 那本仓库到底站在哪一支?</h3>
+<p>把上面的抽象落到 CodeChat 的代码上:</p>
+<ul>
+<li>
+<p><strong>它是 GPT 那一支</strong>:纯单向因果 LM,<code>is_causal=True</code>(<code>gpt.py:67</code>)。"空"永远在序列最右端,
+  训练目标 <code>-∑ log P(x_t | x_&lt;t)</code> 就是"永远在填最后一个空"。它<strong>不做</strong> BERT 式的中间挖空,
+  也<strong>不是</strong>词袋——因果掩码恰恰是为了<strong>保住词序</strong>(词袋丢序,因果掩码严格定序)。</p>
+</li>
+<li>
+<p><strong>词向量是 word2vec 的后代</strong>:<code>tok_emb</code>(<code>gpt.py:100</code>)与输出头权重共享(<code>gpt.py:106</code> 的 weight tying),
+  这张 embedding 表就是 word2vec 那张表在大模型时代的样子——只是训练它的完形填空从"双向浅层"换成了"单向深层"。</p>
+</li>
+<li>
+<p><strong>dropout 在本仓库其实没启用</strong>:<code>GPTConfig.dropout</code> 有这个字段(<code>gpt.py:24</code>,默认 <code>0.0</code>),
+  但<strong>代码里没有任何一处真正读取/施加它</strong>(注意力、MLP、embedding 全无 dropout;SDPA 的 <code>dropout_p</code> 也用默认 0)。
+  这是刻意的:这类大规模预训练靠<strong>海量数据本身</strong>做正则化,dropout 往往有害无益,现代 LLM(GPT-3 之后)大多关掉。
+  —— 顺带一提,这个 <code>dropout</code> 字段属于<strong>未接线的遗留配置</strong>,按仓库规范我不擅自删除,仅在此指出。</p>
+</li>
+</ul>
+<h3 id="85-一句话回答是否是一致的思想">8.5 一句话回答"是否是一致的思想"</h3>
+<blockquote>
+<p><strong>是,也不是。</strong> 说"是"——CBOW、BERT、GPT、dropout、去噪自编码,骨子里都是<strong>"藏起一部分,逼网络去补"</strong>
+这一个自监督母题,cloze(完形填空)是它们共同的祖先。说"不是"——掩码在其中干三种不同的活:
+<strong>① 造预测目标</strong>(CBOW 挖中心词、BERT 挖随机 token、GPT 把空钉在最右端);
+<strong>② 约束信息流</strong>(因果掩码防止偷看未来,本仓库正是这一种);
+<strong>③ 做正则化</strong>(dropout 挖隐藏单元,不为预测、只为鲁棒)。
+<strong>本仓库同时用了 ① 和 ②(空在右端 + 因果约束),继承了 word2vec 的词向量血统,却主动放弃了 ③(dropout=0)。</strong>
+把这三种活分清楚,"完形填空训练预测能力"这条直觉就能准确落到每一种掩码上,而不至于把它们混成一团。</p>
+</blockquote>
+<hr />
+<h2 id="9-小结">9. 小结</h2>
+<table>
+<thead>
+<tr>
+<th>概念</th>
+<th>起源</th>
+<th>数学形态</th>
+<th>本仓库位置</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><strong>mask（广义）</strong></td>
+<td>信号处理 / 位运算的"遮片"隐喻</td>
+<td>逐元素 0/1 或 0/−∞</td>
+<td>贯穿全仓</td>
+</tr>
+<tr>
+<td><strong>三角矩阵</strong></td>
+<td>19 世纪线性代数（LU/Cholesky/前代回代）</td>
+<td>下三角 <code>tril</code> / 上三角 <code>triu</code></td>
+<td>概念上存在，被 SDPA 内核吸收</td>
+</tr>
+<tr>
+<td><strong>因果掩码</strong></td>
+<td>《Attention Is All You Need》(2017) 的 masked self-attention</td>
+<td>下三角可见、上三角置 −∞</td>
+<td><code>is_causal=True</code>（<code>gpt.py:67</code>）</td>
+</tr>
+<tr>
+<td><strong>loss mask</strong></td>
+<td>PyTorch <code>CrossEntropyLoss</code> 的 <code>ignore_index=-100</code></td>
+<td>一维哨兵向量</td>
+<td><code>-100</code>（<code>gpt.py:132</code>、<code>dataloader.py</code>）</td>
+</tr>
+</tbody>
+</table>
+<p>三条线索最终汇成一句话：</p>
+<blockquote>
+<p><strong>自回归语言模型 = 用一个"下三角形状"的约束，把"未来不可见"这条因果律写进注意力（因果掩码 / 三角矩阵）；再用一个"哨兵向量"的约束，把"哪些 token 值得学"写进损失（loss mask）。</strong>
+前者在本仓库被 <code>is_causal=True</code> 一行浓缩，后者被 <code>-100</code> 显式铺陈——理解它们的分工，就理解了从 <code>codechat/gpt.py</code> 到 <code>codechat/dataloader.py</code> 整条训练管线的骨架。</p>
+</blockquote>
+<h3 id="参考">参考</h3>
+<ul>
+<li>Vaswani et al., <em>Attention Is All You Need</em>, NeurIPS 2017.</li>
+<li>Taylor, <em>"Cloze Procedure": A New Tool for Measuring Readability</em>, 1953（完形填空的源头）。</li>
+<li>Mikolov et al., <em>Efficient Estimation of Word Representations in Vector Space</em>, 2013（word2vec / CBOW / Skip-gram）。</li>
+<li>Vincent et al., <em>Extracting and Composing Robust Features with Denoising Autoencoders</em>, ICML 2008（去噪自编码）。</li>
+<li>Srivastava et al., <em>Dropout: A Simple Way to Prevent Neural Networks from Overfitting</em>, JMLR 2014。</li>
+<li>Devlin et al., <em>BERT: Pre-training of Deep Bidirectional Transformers</em>, 2018（MLM = 深层双向完形填空）。</li>
+<li>Pearl, <em>Causality: Models, Reasoning, and Inference</em>, 2009（因果推断 / do-算子 / 因果阶梯）。</li>
+<li>PyTorch 文档：<code>torch.nn.functional.scaled_dot_product_attention</code>、<code>torch.tril</code> / <code>torch.triu</code>、<code>torch.nn.CrossEntropyLoss</code>。</li>
+<li>HuggingFace <code>transformers</code>：<code>models/gpt2/modeling_gpt2.py</code>、<code>modeling_attn_mask_utils.py</code>（<code>AttentionMaskConverter</code> / <code>create_causal_mask</code>）。</li>
+<li>本仓库：<code>codechat/gpt.py</code>、<code>codechat/dataloader.py</code>、<code>CLAUDE.md</code>（loss-masking 约定）。</li>
+</ul>
+    </div>
+  </article>
+
+</main>
+
+<!-- Floating Ask-AI chat widget -->
+<button class="ai-fab" id="ai-fab" aria-label="Ask AI about this article" title="Ask AI about this article">
+  <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+    <path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"/>
+  </svg>
+  <span class="ai-fab-label">Ask AI</span>
+</button>
+
+<div class="ai-panel" id="ai-panel" role="dialog" aria-labelledby="ai-panel-title" aria-hidden="true">
+  <header class="ai-panel-head">
+    <div class="ai-panel-title-wrap">
+      <span class="ai-dot"></span>
+      <h3 id="ai-panel-title">Ask AI about this post</h3>
+    </div>
+    <div class="ai-panel-actions">
+      <button class="ai-icon-btn" id="ai-clear" title="Clear conversation" aria-label="Clear">
+        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><polyline points="3 6 5 6 21 6"/><path d="M19 6l-1 14a2 2 0 0 1-2 2H8a2 2 0 0 1-2-2L5 6"/><path d="M10 11v6M14 11v6"/><path d="M9 6V4a1 1 0 0 1 1-1h4a1 1 0 0 1 1 1v2"/></svg>
+      </button>
+      <button class="ai-icon-btn" id="ai-close" title="Minimize" aria-label="Minimize">
+        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><polyline points="6 9 12 15 18 9"/></svg>
+      </button>
+    </div>
+  </header>
+
+  <div class="ai-messages" id="ai-messages">
+    <div class="ai-empty" id="ai-empty">
+      <p class="ai-empty-title">On-device AI · Gemini Nano</p>
+      <p class="ai-empty-sub">Ask anything about this article. Runs in your browser — nothing leaves your device.</p>
+    </div>
+  </div>
+
+  <div class="ai-status" id="ai-status" hidden></div>
+
+  <form class="ai-composer" id="ai-form">
+    <textarea id="ai-input" rows="1" placeholder="Ask about this post…" autocomplete="off"></textarea>
+    <button type="submit" id="ai-send" class="ai-send" aria-label="Send" disabled>
+      <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><line x1="22" y1="2" x2="11" y2="13"/><polygon points="22 2 15 22 11 13 2 9 22 2"/></svg>
+    </button>
+  </form>
+</div>
+
+<script>
+(function () {
+  const POST_TITLE = "Mask\u3001\u4e09\u89d2\u77e9\u9635\u4e0e\u56e0\u679c\u63a9\u7801\uff1a\u5386\u53f2\u3001\u8d77\u6e90\u4e0e\u539f\u7406";
+  const contentEl = document.querySelector('article .content');
+
+  const fab = document.getElementById('ai-fab');
+  const panel = document.getElementById('ai-panel');
+  const closeBtn = document.getElementById('ai-close');
+  const clearBtn = document.getElementById('ai-clear');
+  const msgsEl = document.getElementById('ai-messages');
+  const emptyEl = document.getElementById('ai-empty');
+  const statusEl = document.getElementById('ai-status');
+  const formEl = document.getElementById('ai-form');
+  const inputEl = document.getElementById('ai-input');
+  const sendBtn = document.getElementById('ai-send');
+
+  function articleText() {
+    if (!contentEl) return '';
+    return (contentEl.innerText || contentEl.textContent || '')
+      .replace(/[ \t]+\n/g, '\n')
+      .replace(/\n{3,}/g, '\n\n')
+      .trim();
+  }
+
+  function setStatus(msg, cls) {
+    if (!msg) { statusEl.hidden = true; statusEl.textContent = ''; statusEl.className = 'ai-status'; return; }
+    statusEl.hidden = false;
+    statusEl.textContent = msg;
+    statusEl.className = 'ai-status' + (cls ? ' ' + cls : '');
+  }
+
+  function hideEmpty() { if (emptyEl) emptyEl.style.display = 'none'; }
+
+  function appendBubble(role, text) {
+    hideEmpty();
+    const wrap = document.createElement('div');
+    wrap.className = 'ai-msg ai-msg-' + role;
+    const bubble = document.createElement('div');
+    bubble.className = 'ai-bubble';
+    bubble.textContent = text;
+    wrap.appendChild(bubble);
+    msgsEl.appendChild(wrap);
+    msgsEl.scrollTop = msgsEl.scrollHeight;
+    return bubble;
+  }
+
+  function appendTyping() {
+    hideEmpty();
+    const wrap = document.createElement('div');
+    wrap.className = 'ai-msg ai-msg-assistant ai-typing';
+    wrap.innerHTML = '<div class="ai-bubble"><span class="ai-dots"><i></i><i></i><i></i></span></div>';
+    msgsEl.appendChild(wrap);
+    msgsEl.scrollTop = msgsEl.scrollHeight;
+    return wrap;
+  }
+
+  function autoSize() {
+    inputEl.style.height = 'auto';
+    inputEl.style.height = Math.min(inputEl.scrollHeight, 140) + 'px';
+  }
+
+  function openPanel() {
+    panel.classList.add('open');
+    panel.setAttribute('aria-hidden', 'false');
+    fab.classList.add('hidden');
+    setTimeout(() => inputEl.focus(), 50);
+  }
+  function closePanel() {
+    panel.classList.remove('open');
+    panel.setAttribute('aria-hidden', 'true');
+    fab.classList.remove('hidden');
+  }
+
+  fab.addEventListener('click', openPanel);
+  closeBtn.addEventListener('click', closePanel);
+  document.addEventListener('keydown', e => {
+    if (e.key === 'Escape' && panel.classList.contains('open')) closePanel();
+  });
+
+  // ---- LanguageModel session ----
+  let session = null;
+  let creating = null;
+  let history = [];
+
+  function buildSystemPrompt() {
+    // Keep article context modest — Gemini Nano's input quota is small.
+    const article = articleText().slice(0, 4000);
+    return (
+      'You are a concise, helpful assistant answering questions about a blog post. ' +
+      'Use the article below as your primary source. If the answer is not in it, say so briefly and answer generally. ' +
+      'Reply in the same language as the user\'s question. Keep answers short unless asked for detail.\n\n' +
+      '=== ARTICLE TITLE ===\n' + POST_TITLE + '\n\n' +
+      '=== ARTICLE CONTENT ===\n' + article
+    );
+  }
+
+  async function ensureSession() {
+    if (session) return session;
+    if (creating) return creating;
+
+    if (!('LanguageModel' in self)) {
+      throw new Error(
+        'On-device AI not available. Use Chrome 138+ on desktop, or enable ' +
+        '"Prompt API for Gemini Nano" in chrome://flags.'
+      );
+    }
+
+    setStatus('Checking model…', 'info');
+    const status = await LanguageModel.availability();
+    if (status === 'unavailable') {
+      throw new Error('Model unavailable on this device.');
+    }
+
+    creating = (async () => {
+      // Only show download UI when the model isn't already there.
+      const willDownload = (status !== 'available');
+      if (willDownload) setStatus('Preparing model (first run downloads ~2GB)…', 'info');
+      else setStatus('Warming up…', 'info');
+
+      const s = await LanguageModel.create({
+        initialPrompts: [{ role: 'system', content: buildSystemPrompt() }],
+        monitor(m) {
+          m.addEventListener('downloadprogress', e => {
+            // Skip the spurious 0% event Chrome fires for cached models.
+            if (!willDownload && e.loaded === 0) return;
+            const pct = (e.loaded * 100).toFixed(1);
+            setStatus('Downloading model: ' + pct + '%', 'info');
+          });
+        }
+      });
+      session = s;
+      setStatus('');
+      return s;
+    })();
+
+    try { return await creating; }
+    finally { creating = null; }
+  }
+
+  async function ask(q) {
+    appendBubble('user', q);
+    history.push({ role: 'user', content: q });
+
+    sendBtn.disabled = true;
+    inputEl.disabled = true;
+    const typing = appendTyping();
+
+    let answerBubble = null;
+    let acc = '';
+    try {
+      const s = await ensureSession();
+      const stream = s.promptStreaming(q);
+      for await (const chunk of stream) {
+        if (!answerBubble) {
+          typing.remove();
+          const wrap = document.createElement('div');
+          wrap.className = 'ai-msg ai-msg-assistant';
+          answerBubble = document.createElement('div');
+          answerBubble.className = 'ai-bubble';
+          wrap.appendChild(answerBubble);
+          msgsEl.appendChild(wrap);
+        }
+        acc += chunk;
+        answerBubble.textContent = acc;
+        msgsEl.scrollTop = msgsEl.scrollHeight;
+      }
+      if (acc) history.push({ role: 'assistant', content: acc });
+      else { typing.remove(); appendBubble('assistant', '(no response)'); }
+    } catch (e) {
+      if (typing && typing.parentNode) typing.remove();
+      const err = document.createElement('div');
+      err.className = 'ai-msg ai-msg-error';
+      err.innerHTML = '<div class="ai-bubble">⚠ ' + (e && e.message ? e.message : String(e)) + '</div>';
+      msgsEl.appendChild(err);
+      msgsEl.scrollTop = msgsEl.scrollHeight;
+    } finally {
+      sendBtn.disabled = !inputEl.value.trim();
+      inputEl.disabled = false;
+      inputEl.focus();
+    }
+  }
+
+  formEl.addEventListener('submit', e => {
+    e.preventDefault();
+    const q = inputEl.value.trim();
+    if (!q) return;
+    inputEl.value = '';
+    autoSize();
+    sendBtn.disabled = true;
+    ask(q);
+  });
+
+  inputEl.addEventListener('input', () => {
+    autoSize();
+    sendBtn.disabled = !inputEl.value.trim();
+  });
+  inputEl.addEventListener('keydown', e => {
+    if (e.key === 'Enter' && !e.shiftKey) {
+      e.preventDefault();
+      formEl.requestSubmit();
+    }
+  });
+
+  clearBtn.addEventListener('click', () => {
+    msgsEl.innerHTML = '';
+    msgsEl.appendChild(emptyEl);
+    emptyEl.style.display = '';
+    history = [];
+    if (session && session.destroy) { try { session.destroy(); } catch (_) {} }
+    session = null;
+    setStatus('');
+  });
+
+  if (!('LanguageModel' in self)) {
+    fab.addEventListener('click', () => {
+      openPanel();
+      setStatus('On-device AI not detected. Use Chrome 138+ desktop, or enable "Prompt API for Gemini Nano" in chrome://flags.', 'bad');
+    }, { once: true });
+  }
+})();
+</script>
+
+<!-- Outline notes / comments — DataScript + IndexedDB -->
+<script src="https://github.com/tonsky/datascript/releases/download/1.7.8/datascript-1.7.8.min.js"></script>
+<script src="../notes.js?v=6"></script>
+<script src="../theme.js"></script>
+<script src="../wechat-copy.js?v=3"></script>
+
+</body>
+</html>
