@@ -52,7 +52,7 @@ window.MathJax = {
   <article>
     <header class="post-header">
       <h1>训练写权重，推理用权重 + 脚手架：SFT / RL 训完之后到底是怎么生效的</h1>
-      <p class="meta">2026-04-20 · Steve Chan</p>
+      <p class="meta">2026-07-23 · Steve Chan</p>
     </header>
 
     <div class="content">
@@ -76,8 +76,10 @@ window.MathJax = {
 <li><a href="#6-停止条件rl-训练给模型的闭嘴信号如何生效">停止条件：RL 训练给模型的"闭嘴信号"如何生效</a></li>
 <li><a href="#7-采样参数推理时对-w-的温度调节">采样参数：推理时对 W 的"温度调节"</a></li>
 <li><a href="#8-w-装不下的东西tool-use--rag--memory-必须靠外部代码">W 装不下的东西：tool use / RAG / memory 必须靠外部代码</a></li>
-<li><a href="#9-回到-codegpt当前代码里哪些就是脚手架">回到 CodeGPT：当前代码里哪些就是"脚手架"</a></li>
-<li><a href="#10-小结一张训练推理对齐表">小结：一张"训练—推理"对齐表</a></li>
+<li><a href="#9-rl-的策略梯度参数怎么体现在推理中">RL 的策略梯度参数怎么体现在推理中</a></li>
+<li><a href="#10-语义拟合的参数子空间从点积到答案的可视化">语义拟合的参数子空间：从点积到答案的可视化</a></li>
+<li><a href="#11-回到-codegpt当前代码里哪些就是脚手架">回到 CodeGPT：当前代码里哪些就是"脚手架"</a></li>
+<li><a href="#12-小结一张训练推理对齐表">小结：一张"训练—推理"对齐表</a></li>
 </ol>
 <hr />
 <h2 id="1-核心二分知识住在-w-里协议住在代码里">1. 核心二分：知识住在 W 里，协议住在代码里</h2>
@@ -154,7 +156,7 @@ RLHF 偏好对:     10^4 ~ 10^6  pair     （人类排序的偏好）
 <tr>
 <td>RLHF</td>
 <td>人类对"两个回答"的偏好排序</td>
-<td><code>-log σ(r_good - r_bad)</code> 或 DPO loss</td>
+<td><span class="arithmatex">\(-\log \sigma(r_\text{good} - r_\text{bad})\)</span> 或 DPO loss</td>
 <td>"好/不好"的品味、拒答、安全边界</td>
 </tr>
 </tbody>
@@ -201,9 +203,9 @@ RLHF 偏好对:     10^4 ~ 10^6  pair     （人类排序的偏好）
 </ul>
 <h3 id="33-rl-dpo改动所有参数但有-kl-锚定">3.3 RL / DPO:改动所有参数，但有 KL 锚定</h3>
 <p>RL 阶段有一项<strong>KL 散度约束</strong>（见 RLHF 文档 5.3 节）：</p>
-<div class="highlight"><pre><span></span><code>L_RL = -reward + β · KL(π_RL ‖ π_SFT)
-</code></pre></div>
-
+<div class="arithmatex">\[
+L_{RL} = -\,\text{reward} + \beta \cdot \mathrm{KL}(\pi_{RL} \,\|\, \pi_{SFT})
+\]</div>
 <p>这一项的作用是<strong>不允许 <code>W</code> 偏离 SFT 之后的版本太远</strong>。所以 RL 阶段改的参数量比 SFT 还小——它只负责"微调回答风格"和"学会拒绝某些请求"，不负责重新教模型写代码。</p>
 <h3 id="34-所以纯靠参数这句话对一半">3.4 所以"纯靠参数"这句话对一半</h3>
 <p>对的那一半：</p>
@@ -437,7 +439,269 @@ top_p=0.9 + temperature=0.7 → 当前行业默认的&quot;兼顾质量和多样
 </ul>
 <p>生产系统通常是 <strong>模型 <code>W</code> × 代码规则</strong> 的"双保险"。</p>
 <hr />
-<h2 id="9-回到-codegpt当前代码里哪些就是脚手架">9. 回到 CodeGPT：当前代码里哪些就是"脚手架"</h2>
+<h2 id="9-rl-的策略梯度参数怎么体现在推理中">9. RL 的策略梯度参数怎么体现在推理中</h2>
+<p>前面第 3 节说"RL 的成果都在 <code>W</code> 里"，但这个说法太笼统了。策略梯度（policy gradient）里有一大堆东西——奖励模型、优势函数 <span class="arithmatex">\(A\)</span>、价值头 <span class="arithmatex">\(V\)</span>、重要性采样比 <span class="arithmatex">\(\text{ratio}\)</span>、clip 系数 <span class="arithmatex">\(\varepsilon\)</span>、KL 系数 <span class="arithmatex">\(\beta\)</span>——<strong>它们到底哪一个进了 <code>W</code>？推理时又是怎么"生效"的？</strong></p>
+<p>答案短得让人意外：<strong>除了 actor 网络本身的参数，其余全部在训练结束的那一刻被扔掉。策略梯度在推理中唯一的痕迹，就是 <code>model.py:278</code> 那一行输出的 logits 向量被重新排过序。</strong></p>
+<p>下面把这句话拆开。</p>
+<h3 id="91-策略梯度就是带权重的交叉熵">9.1 策略梯度就是"带权重的交叉熵"</h3>
+<p>先看策略梯度的形式。REINFORCE 的目标是最大化期望回报，梯度是：</p>
+<div class="arithmatex">\[
+\nabla_\theta J(\theta) = \mathbb{E}\big[\, \nabla_\theta \log \pi_\theta(a \mid s) \cdot A \,\big]
+\]</div>
+<p>在语言模型里，这些符号有非常朴素的对应：</p>
+<table>
+<thead>
+<tr>
+<th>符号</th>
+<th>RL 术语</th>
+<th>在 LM 里是什么</th>
+<th>对应代码</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><span class="arithmatex">\(s\)</span></td>
+<td>状态 state</td>
+<td>已生成的前缀 <code>idx[:, :t]</code></td>
+<td><code>model.py:278</code> 的 <code>idx_cond</code></td>
+</tr>
+<tr>
+<td><span class="arithmatex">\(a\)</span></td>
+<td>动作 action</td>
+<td>下一个 token</td>
+<td><code>model.py:302</code> 的 <code>idx_next</code></td>
+</tr>
+<tr>
+<td><span class="arithmatex">\(\pi_\theta(a \mid s)\)</span></td>
+<td>策略 policy</td>
+<td><code>softmax(logits)</code></td>
+<td><code>model.py:301</code></td>
+</tr>
+<tr>
+<td><span class="arithmatex">\(A\)</span></td>
+<td>优势 advantage</td>
+<td>奖励模型打分 <span class="arithmatex">\(-\)</span> baseline</td>
+<td>训练期才存在</td>
+</tr>
+<tr>
+<td><span class="arithmatex">\(\theta\)</span></td>
+<td>策略参数</td>
+<td>就是 <code>W</code> 本身</td>
+<td><code>model.py</code> 里全部 <code>nn.Linear</code></td>
+</tr>
+</tbody>
+</table>
+<p><strong>关键：<span class="arithmatex">\(\pi_\theta\)</span> 不是一个额外的网络，它就是 CodeGPT 自己</strong>。<code>generate()</code> 里的 <code>F.softmax(logits, dim=-1)</code> 就是策略函数本体。所以"策略梯度更新策略参数"这句话翻译过来就是——<strong>它更新的就是 <code>model.py</code> 里那些矩阵，和预训练更新的是同一批参数</strong>。</p>
+<p>把上面的梯度反推成一个 loss，会得到和 <code>train.py</code> 里几乎一样的东西：</p>
+<div class="highlight"><pre><span></span><code><span class="c1"># 预训练 / SFT —— 每个目标 token 的权重都是 1</span>
+<span class="n">loss</span> <span class="o">=</span> <span class="n">F</span><span class="o">.</span><span class="n">cross_entropy</span><span class="p">(</span><span class="n">logits</span><span class="o">.</span><span class="n">view</span><span class="p">(</span><span class="o">-</span><span class="mi">1</span><span class="p">,</span> <span class="n">logits</span><span class="o">.</span><span class="n">size</span><span class="p">(</span><span class="o">-</span><span class="mi">1</span><span class="p">)),</span>
+                       <span class="n">targets</span><span class="o">.</span><span class="n">view</span><span class="p">(</span><span class="o">-</span><span class="mi">1</span><span class="p">),</span> <span class="n">ignore_index</span><span class="o">=-</span><span class="mi">1</span><span class="p">)</span>
+
+<span class="c1"># 策略梯度 —— 每个采样出的 token 的权重是它的 advantage</span>
+<span class="n">logp</span> <span class="o">=</span> <span class="o">-</span><span class="n">F</span><span class="o">.</span><span class="n">cross_entropy</span><span class="p">(</span><span class="n">logits</span><span class="p">,</span> <span class="n">actions</span><span class="p">,</span> <span class="n">reduction</span><span class="o">=</span><span class="s1">&#39;none&#39;</span><span class="p">)</span>   <span class="c1"># 这就是 log π(a|s)</span>
+<span class="n">loss</span> <span class="o">=</span> <span class="o">-</span><span class="p">(</span><span class="n">logp</span> <span class="o">*</span> <span class="n">advantage</span><span class="p">)</span><span class="o">.</span><span class="n">mean</span><span class="p">()</span>
+</code></pre></div>
+
+<p><strong>这两行 loss 的差别只有一个 <code>advantage</code> 乘子。</strong> 所以：</p>
+<blockquote>
+<p><strong>SFT 是 advantage <span class="arithmatex">\(\equiv +1\)</span> 的策略梯度特例；策略梯度是 advantage 可正可负的一般情形。</strong></p>
+</blockquote>
+<h3 id="92-负梯度rl-能做而-sft-做不到的唯一一件事">9.2 负梯度：RL 能做而 SFT 做不到的唯一一件事</h3>
+<p><code>advantage</code> 可以是负数——这是整个 RL 阶段的价值所在。下面这段 20 行代码可以直接跑，把差别看得一清二楚：</p>
+<div class="highlight"><pre><span></span><code><span class="kn">import</span><span class="w"> </span><span class="nn">torch</span><span class="o">,</span><span class="w"> </span><span class="nn">torch.nn.functional</span><span class="w"> </span><span class="k">as</span><span class="w"> </span><span class="nn">F</span>
+<span class="n">VOCAB</span> <span class="o">=</span> <span class="p">[</span><span class="s2">&quot;安全回答&quot;</span><span class="p">,</span> <span class="s2">&quot;有用回答&quot;</span><span class="p">,</span> <span class="s2">&quot;啰嗦回答&quot;</span><span class="p">,</span> <span class="s2">&quot;有害回答&quot;</span><span class="p">]</span>
+
+<span class="k">def</span><span class="w"> </span><span class="nf">show</span><span class="p">(</span><span class="n">tag</span><span class="p">,</span> <span class="n">logits</span><span class="p">):</span>
+    <span class="n">p</span> <span class="o">=</span> <span class="n">F</span><span class="o">.</span><span class="n">softmax</span><span class="p">(</span><span class="n">logits</span><span class="p">,</span> <span class="o">-</span><span class="mi">1</span><span class="p">)</span>
+    <span class="nb">print</span><span class="p">(</span><span class="sa">f</span><span class="s2">&quot;</span><span class="si">{</span><span class="n">tag</span><span class="si">:</span><span class="s2">12s</span><span class="si">}</span><span class="s2"> &quot;</span> <span class="o">+</span> <span class="s2">&quot;  &quot;</span><span class="o">.</span><span class="n">join</span><span class="p">(</span><span class="sa">f</span><span class="s2">&quot;</span><span class="si">{</span><span class="n">n</span><span class="si">}</span><span class="s2">=</span><span class="si">{</span><span class="n">v</span><span class="si">:</span><span class="s2">.3f</span><span class="si">}</span><span class="s2">&quot;</span> <span class="k">for</span> <span class="n">n</span><span class="p">,</span> <span class="n">v</span> <span class="ow">in</span> <span class="nb">zip</span><span class="p">(</span><span class="n">VOCAB</span><span class="p">,</span> <span class="n">p</span><span class="o">.</span><span class="n">tolist</span><span class="p">())))</span>
+
+<span class="n">base</span> <span class="o">=</span> <span class="n">torch</span><span class="o">.</span><span class="n">tensor</span><span class="p">([</span><span class="mf">0.0</span><span class="p">,</span> <span class="mf">0.0</span><span class="p">,</span> <span class="mf">0.0</span><span class="p">,</span> <span class="mf">0.0</span><span class="p">])</span>
+<span class="n">show</span><span class="p">(</span><span class="s2">&quot;初始&quot;</span><span class="p">,</span> <span class="n">base</span><span class="p">)</span>
+
+<span class="c1"># SFT：只能&quot;照着写&quot;，目标 token 权重恒为 +1</span>
+<span class="n">w</span> <span class="o">=</span> <span class="n">base</span><span class="o">.</span><span class="n">clone</span><span class="p">()</span><span class="o">.</span><span class="n">requires_grad_</span><span class="p">(</span><span class="kc">True</span><span class="p">)</span>
+<span class="n">F</span><span class="o">.</span><span class="n">cross_entropy</span><span class="p">(</span><span class="n">w</span><span class="p">[</span><span class="kc">None</span><span class="p">,</span> <span class="p">:],</span> <span class="n">torch</span><span class="o">.</span><span class="n">tensor</span><span class="p">([</span><span class="mi">1</span><span class="p">]))</span><span class="o">.</span><span class="n">backward</span><span class="p">()</span>
+<span class="n">show</span><span class="p">(</span><span class="s2">&quot;SFT 一步&quot;</span><span class="p">,</span> <span class="p">(</span><span class="n">w</span> <span class="o">-</span> <span class="mf">1.0</span> <span class="o">*</span> <span class="n">w</span><span class="o">.</span><span class="n">grad</span><span class="p">)</span><span class="o">.</span><span class="n">detach</span><span class="p">())</span>
+
+<span class="c1"># 策略梯度：advantage 可正可负</span>
+<span class="n">w</span> <span class="o">=</span> <span class="n">base</span><span class="o">.</span><span class="n">clone</span><span class="p">()</span><span class="o">.</span><span class="n">requires_grad_</span><span class="p">(</span><span class="kc">True</span><span class="p">)</span>
+<span class="n">actions</span>   <span class="o">=</span> <span class="n">torch</span><span class="o">.</span><span class="n">tensor</span><span class="p">([</span><span class="mi">1</span><span class="p">,</span> <span class="mi">3</span><span class="p">])</span>        <span class="c1"># 采样出的两个 token</span>
+<span class="n">advantage</span> <span class="o">=</span> <span class="n">torch</span><span class="o">.</span><span class="n">tensor</span><span class="p">([</span><span class="o">+</span><span class="mf">1.0</span><span class="p">,</span> <span class="o">-</span><span class="mf">1.0</span><span class="p">])</span>  <span class="c1"># 奖励模型：一个好，一个有害</span>
+<span class="n">logp</span> <span class="o">=</span> <span class="o">-</span><span class="n">F</span><span class="o">.</span><span class="n">cross_entropy</span><span class="p">(</span><span class="n">w</span><span class="p">[</span><span class="kc">None</span><span class="p">,</span> <span class="p">:]</span><span class="o">.</span><span class="n">expand</span><span class="p">(</span><span class="mi">2</span><span class="p">,</span> <span class="o">-</span><span class="mi">1</span><span class="p">),</span> <span class="n">actions</span><span class="p">,</span> <span class="n">reduction</span><span class="o">=</span><span class="s1">&#39;none&#39;</span><span class="p">)</span>
+<span class="p">(</span><span class="o">-</span><span class="p">(</span><span class="n">logp</span> <span class="o">*</span> <span class="n">advantage</span><span class="p">)</span><span class="o">.</span><span class="n">mean</span><span class="p">())</span><span class="o">.</span><span class="n">backward</span><span class="p">()</span>
+<span class="n">show</span><span class="p">(</span><span class="s2">&quot;PG 一步&quot;</span><span class="p">,</span> <span class="p">(</span><span class="n">w</span> <span class="o">-</span> <span class="mf">2.0</span> <span class="o">*</span> <span class="n">w</span><span class="o">.</span><span class="n">grad</span><span class="p">)</span><span class="o">.</span><span class="n">detach</span><span class="p">())</span>
+</code></pre></div>
+
+<p>实际输出：</p>
+<div class="highlight"><pre><span></span><code>初始           安全回答=0.250  有用回答=0.250  啰嗦回答=0.250  有害回答=0.250
+SFT 一步       安全回答=0.175  有用回答=0.475  啰嗦回答=0.175  有害回答=0.175
+PG 一步        安全回答=0.197  有用回答=0.534  啰嗦回答=0.197  有害回答=0.072
+</code></pre></div>
+
+<p>看第四列：</p>
+<ul>
+<li><strong>SFT 之后</strong>，"有害回答" 的概率是 0.175——和"安全回答""啰嗦回答"<strong>完全一样</strong>。SFT 只会说"照着好答案写"，它对坏答案没有任何意见，坏答案掉下去纯粹是 softmax 归一化的副作用。</li>
+<li><strong>PG 之后</strong>，"有害回答" 掉到 0.072，而两个中性选项还留在 0.197。<strong>模型被明确地告知了"别走这条路"。</strong></li>
+</ul>
+<p>这就是为什么 RLHF 之后模型会"拒答"、会"不啰嗦"——<strong>这些行为无法用 SFT 表达，因为你没法给模型看"不该写的答案"并让它学会不写</strong>（给它看，它就学会写了）。只有带负号的 advantage 能把概率质量从特定 token 上<strong>抽走</strong>。</p>
+<p>推理时你看到的现象是：某些续写方向"就是不出现"，哪怕 <code>temperature=1.5</code> 也很难采样到。<strong>那块概率质量在训练时被策略梯度抽干了。</strong></p>
+<h3 id="93-训练期存在推理期消失的一切">9.3 训练期存在、推理期消失的一切</h3>
+<p>PPO / GRPO 那些复杂的组件，推理时一个都不剩：</p>
+<table>
+<thead>
+<tr>
+<th>组件</th>
+<th>训练期作用</th>
+<th>推理期还在吗</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>actor <span class="arithmatex">\(\pi_\theta\)</span></td>
+<td>被优化的策略</td>
+<td><strong>在</strong> —— 它就是 <code>ckpt.pt</code> 里的 <code>W</code></td>
+</tr>
+<tr>
+<td>reference model <span class="arithmatex">\(\pi_{sft}\)</span></td>
+<td>算 KL 惩罚的锚点</td>
+<td>丢弃（冻结副本，训完删掉）</td>
+</tr>
+<tr>
+<td>reward model <span class="arithmatex">\(r_\phi\)</span></td>
+<td>给整条回答打分</td>
+<td>丢弃（是另一个网络，不参与 forward）</td>
+</tr>
+<tr>
+<td>value head <span class="arithmatex">\(V_\psi\)</span></td>
+<td>算 baseline / GAE</td>
+<td>丢弃（PPO 专用的额外线性头）</td>
+</tr>
+<tr>
+<td>advantage <span class="arithmatex">\(A\)</span></td>
+<td>每个 token 的权重</td>
+<td>丢弃（是训练期的一个张量，不是参数）</td>
+</tr>
+<tr>
+<td>ratio / clip <span class="arithmatex">\(\varepsilon\)</span></td>
+<td>限制单步更新幅度</td>
+<td>丢弃（纯优化技巧）</td>
+</tr>
+<tr>
+<td>KL 系数 <span class="arithmatex">\(\beta\)</span></td>
+<td>不让 <code>W</code> 跑太远</td>
+<td>丢弃（它的效果已经烧进 <code>W</code> 了）</td>
+</tr>
+</tbody>
+</table>
+<blockquote>
+<p><strong>一句话：RLHF 是一套四个网络的训练系统，交付物却只有一个网络。推理时 <code>sample.py</code> 加载的 <code>ckpt.pt</code> 里只有 actor。</strong></p>
+</blockquote>
+<p>这正好回答了用户的问题"策略梯度参数怎么体现在推理中"——<strong>它不以"参数"的形式体现，它以"actor 权重被改动过"的形式体现</strong>。策略梯度是一个<strong>动词</strong>（一种更新 <code>W</code> 的方式），不是一个<strong>名词</strong>（一组要在推理时读取的参数）。</p>
+<h3 id="94-生效点modelpy278-那一行">9.4 生效点：<code>model.py:278</code> 那一行</h3>
+<p>具体到 CodeGPT 的推理循环，RL 的全部效果都汇聚到一个点：</p>
+<div class="highlight"><pre><span></span><code><span class="c1"># model.py:275-302 —— RL 影响的是第 278 行输出的 logits 数值，其余每一行都不知道 RL 存在</span>
+<span class="k">for</span> <span class="n">_</span> <span class="ow">in</span> <span class="nb">range</span><span class="p">(</span><span class="n">max_new_tokens</span><span class="p">):</span>
+    <span class="n">idx_cond</span> <span class="o">=</span> <span class="n">idx</span> <span class="k">if</span> <span class="n">idx</span><span class="o">.</span><span class="n">size</span><span class="p">(</span><span class="mi">1</span><span class="p">)</span> <span class="o">&lt;=</span> <span class="bp">self</span><span class="o">.</span><span class="n">config</span><span class="o">.</span><span class="n">block_size</span> <span class="k">else</span> <span class="n">idx</span><span class="p">[:,</span> <span class="o">-</span><span class="bp">self</span><span class="o">.</span><span class="n">config</span><span class="o">.</span><span class="n">block_size</span><span class="p">:]</span>
+    <span class="n">logits</span><span class="p">,</span> <span class="n">_</span> <span class="o">=</span> <span class="bp">self</span><span class="p">(</span><span class="n">idx_cond</span><span class="p">)</span>          <span class="c1"># ←←← RL 唯一的生效点：这个 (1, 1, 50304) 向量变了</span>
+    <span class="n">logits</span> <span class="o">=</span> <span class="n">logits</span><span class="p">[:,</span> <span class="o">-</span><span class="mi">1</span><span class="p">,</span> <span class="p">:]</span> <span class="o">/</span> <span class="n">temperature</span>
+    <span class="o">...</span>                                  <span class="c1"># top-k / top-p / repetition_penalty 完全不变</span>
+    <span class="n">probs</span> <span class="o">=</span> <span class="n">F</span><span class="o">.</span><span class="n">softmax</span><span class="p">(</span><span class="n">logits</span><span class="p">,</span> <span class="n">dim</span><span class="o">=-</span><span class="mi">1</span><span class="p">)</span>
+    <span class="n">idx_next</span> <span class="o">=</span> <span class="n">torch</span><span class="o">.</span><span class="n">multinomial</span><span class="p">(</span><span class="n">probs</span><span class="p">,</span> <span class="n">num_samples</span><span class="o">=</span><span class="mi">1</span><span class="p">)</span>
+</code></pre></div>
+
+<p>这有一个很实际的推论：</p>
+<blockquote>
+<p><strong>做完 RL / DPO，推理代码一行都不用改。</strong> 第 2 节说过 SFT 加新 special token 时必须同步改 <code>tokenizer.py</code> 和 <code>stop_tokens</code>——但 DPO/PPO 不引入新 token、不改变格式协议，它只把同一个 50304 维输出重新排了序。所以第 11 节的表格里，DPO 那一条写的是"推理侧不需要任何改动"。</p>
+</blockquote>
+<h3 id="95-rl-到底把-logits-改成了什么样">9.5 RL 到底把 logits 改成了什么样</h3>
+<p>RL 对 <code>W</code> 的改动，最终就体现在推理时那个 <code>(1, 1, 50304)</code> 的 logits 向量上。有三个可观察的变化，都能用 <a href="../visualize_semantics.py"><code>visualize_semantics.py</code></a> 的第 5 节（最终分布）量出来：</p>
+<ul>
+<li><strong>(1) top-1 换人。</strong> RL 的奖励是<strong>整条回答级别</strong>的，通过 advantage 广播回每一个 token，所以模型学到"从第一个 token 就选一条通向高分的路"。同一个 prompt，SFT 模型的 top-1 可能是一段冗长的客套，RL 之后 top-1 直接变成切题的第一句。</li>
+<li><strong>(2) 分布变尖，熵下降。</strong> 好答案的概率被抬高、坏答案被压低之后，整个分布更集中。这就是为什么 RL 之后的模型即使 <code>temperature=0</code>（永远选 top-1）也能给出流畅回答，而预训练模型 <code>temperature=0</code> 常常退化成"我 我 我"的死循环（见第 7 节）。</li>
+<li><strong>(3) 某些 token 概率被"抽干"。</strong> 被负 advantage 惩罚过的方向（有害续写、越权请求的配合）概率被抽到极低，哪怕 <code>temperature=1.5</code> 也很难采样到——第 9.2 节那段实验里"有害回答"从 0.175 掉到 0.072 就是这个效应的缩影。</li>
+</ul>
+<p>这三点合起来就是"RL 生效"的全部可观测证据：<strong>没有新参数、没有新代码，只有同一次 <code>lm_head</code> 点积输出的那个概率分布，形状被训练重塑过了。</strong></p>
+<hr />
+<h2 id="10-语义拟合的参数子空间从点积到答案的可视化">10. 语义拟合的参数子空间：从点积到答案的可视化</h2>
+<blockquote>
+<p><strong>用户追问：语义拟合的参数子空间是怎样一个过程？能不能把"从点积拟合，到最终回答问题"中间发生的事可视化出来？</strong></p>
+</blockquote>
+<p>能。本仓库配了一个可跑的脚本 <a href="../visualize_semantics.py"><code>visualize_semantics.py</code></a>，把一条 prompt 从"裸点积"到"最终答案分布"的<strong>五个阶段</strong>逐个打印成 ASCII 热力图。先讲清楚"语义拟合的参数子空间"到底指什么，再看每一阶段的画面。</p>
+<h3 id="101-什么叫语义拟合的参数子空间">10.1 什么叫"语义拟合的参数子空间"</h3>
+<p>一句话：<strong><code>W</code> 里的每个大矩阵，本质都是把高维语义向量投影到一个更低维的"子空间"里去比相似度——训练就是在拟合这些子空间的朝向。</strong></p>
+<p>以注意力为例。<code>c_attn</code>（<code>model.py:36</code>）把 <code>n_embd</code> 维向量一次算出 Q/K/V，然后<strong>切成 <code>n_head</code> 份</strong>，每份只有 <code>head_dim = n_embd / n_head</code>（124M 版是 <span class="arithmatex">\(768/12 = 64\)</span>）维。于是每个 head 的注意力打分是：</p>
+<div class="arithmatex">\[
+\text{score}(i, j) = x_i^\top \underbrace{(W_{q,h}^\top W_{k,h})}_{\text{秩} \le 64 \text{ 的矩阵}} x_j
+\]</div>
+<p>中间那个 <span class="arithmatex">\(W_{q,h}^\top W_{k,h}\)</span> 是一个 <span class="arithmatex">\(n_\text{embd} \times n_\text{embd}\)</span> 但<strong>秩最多 64</strong> 的矩阵——它定义了一个 64 维子空间，这个 head <strong>只在这 64 维里比较两个 token 像不像</strong>。12 个 head 就是 12 个不同朝向的 64 维子空间，各自负责一种"语义关系"（有的看句法邻接、有的看变量名呼应、有的看括号配对）。脚本第 2 段把这件事打印出来：</p>
+<div class="highlight"><pre><span></span><code>  head |  rank(Wq_h Wk_h^T)  |  该 head 关心的子空间维数
+     0 |                 64 |  64 / 384
+     1 |                 64 |  64 / 384
+     ...
+  attention score(i,j) = x_i^T (Wq_h^T Wk_h) x_j  —— 秩 ≤ 64，每个 head 只在 64 维子空间里比相似度
+</code></pre></div>
+
+<p><strong>"语义拟合"就是训练用梯度下降不断旋转这些子空间的朝向</strong>，直到点积能把"该关注的 token"排到高分。这是从"点积"到"语义"的桥。</p>
+<h3 id="102-五个阶段的可视化">10.2 五个阶段的可视化</h3>
+<p>运行（没有 checkpoint 就用 <code>scratch</code> 看管道结构，或用 <code>gpt2</code> / 自己的权重看真实语义）：</p>
+<div class="highlight"><pre><span></span><code><span class="c1"># 用随机权重看&quot;管道&quot;长什么样（数值无意义，但能看清结构）</span>
+python<span class="w"> </span>visualize_semantics.py<span class="w"> </span>--init_from<span class="o">=</span>scratch<span class="w"> </span>--prompt<span class="o">=</span><span class="s2">&quot;def add(a, b):</span>
+<span class="s2">    return a&quot;</span>
+
+<span class="c1"># 用真实权重看语义</span>
+python<span class="w"> </span>visualize_semantics.py<span class="w"> </span>--init_from<span class="o">=</span>gpt2<span class="w">   </span>--prompt<span class="o">=</span><span class="s2">&quot;def add(a, b):&quot;</span>
+python<span class="w"> </span>visualize_semantics.py<span class="w"> </span>--out_dir<span class="o">=</span>out-codegpt-small<span class="w">   </span><span class="c1"># 用自己训练的 checkpoint</span>
+</code></pre></div>
+
+<p><strong>阶段 1 — 裸点积：语义空间最原始的相似度。</strong> 直接拿 <code>wte[token]</code>（<code>model.py:145</code>）两两做归一化点积 = 余弦相似度。这是"还没经过任何注意力"的、纯词嵌入层面的语义。对角线永远最亮（自己和自己最像），相关 token（如两个变量名 <code>a</code>）会有次亮格：</p>
+<div class="highlight"><pre><span></span><code>1. 词嵌入的点积：语义空间里最原始的相似度
+           0  1  2  3  4 ...
+      def  .  .  @  .  .        ← @ = 和自己最像
+      add  .  .  .  @  .
+        a  .  .  :  .  .  %     ← a 和后面的 a 有呼应
+</code></pre></div>
+
+<p><strong>阶段 2 — 参数子空间：</strong> 就是 10.1 讲的 <code>c_attn</code> 切分，打印每个 head 的子空间秩。这是"点积将在哪些维度里发生"的地图。</p>
+<p><strong>阶段 3 — 点积检索：注意力矩阵。</strong> 每个 head 在自己的 64 维子空间里做 <code>q·k</code>，softmax 后得到"每个 token 从前文检索了谁"。因果掩码让它是下三角。这一步把阶段 1 的"静态相似度"变成<strong>上下文相关的动态检索</strong>——同一个词在不同上下文里会去注意不同前文：</p>
+<div class="highlight"><pre><span></span><code>3. 点积检索：layer N 各 head 的注意力矩阵
+  head 0:
+             0  1  2 ...
+        add  :  :  :  :        ← add 这一行：它在从 def / ( 等前文取信息
+</code></pre></div>
+
+<p><strong>阶段 4 — Logit Lens：答案怎么逐层长出来。</strong> 这是最能回答"中间发生了什么"的一段。把<strong>每一层</strong> Block 输出的残差流，都借用最终的 <code>ln_f</code> + <code>lm_head</code> 投影回 vocab（相当于 <code>model.py:188-195</code> 的提前版本），看它此刻"想输出什么"、熵是多少：</p>
+<div class="highlight"><pre><span></span><code>4. Logit Lens：把每一层的残差流直接投到 vocab，看答案怎么长出来
+  层 |   熵   | 该层残差流解码出的 top-k
+   0 | 10.75 | (几乎均匀，还没想法)
+   3 |  8.20 | (开始聚焦到一批相关 token)
+   6 |  4.10 | ·return(0.31) ·a(0.12) ...   ← 答案逐渐成形，熵下降
+</code></pre></div>
+
+<p><strong>熵从接近 <code>log(vocab)=10.83</code>（完全懵）一路下降</strong>，就是"语义拟合"在层与层之间把不确定性一点点挤掉、把答案聚焦出来的过程——这正是把"点积相似度"层层组合、最终坍缩成"一个答案"的可视化。</p>
+<p><strong>阶段 5 — 最终输出：</strong> 最后一层残差流做最后一次点积 <code>x · wte[v]</code>（因为权重绑定 <code>model.py:153</code>，<code>lm_head</code> 就是 <code>wte</code>），得到 <code>generate()</code> 真正拿到的那个 vocab 维分布，打印 top-10 和熵：</p>
+<div class="highlight"><pre><span></span><code>5. 最终输出：generate() 拿到的那个 vocab 维向量
+  rank |   p    | token
+     0 | 0.31 | ·return   ############
+     1 | 0.12 | ·a        ####
+  ↑ RL / SFT 训练改变的就是这一列 p —— 协议、采样参数都在这之后才起作用。
+</code></pre></div>
+
+<h3 id="103-把两个问题接起来">10.3 把两个问题接起来</h3>
+<p>第 9 节说"RL 的成果全体现在最后 softmax 的分布形状里"，本节阶段 5 就是那个分布；而阶段 1→4 展示的是<strong>这个分布怎么从一堆点积、经过一层层子空间投影被"拟合"出来的</strong>。合起来是一条完整的因果链：</p>
+<div class="highlight"><pre><span></span><code>wte 点积(阶段1)
+   → 切进 head 子空间(阶段2)
+   → 子空间里做点积检索 = attention(阶段3)
+   → 残差流逐层聚焦、熵下降(阶段4)
+   → 最后一次 lm_head 点积 → 概率分布(阶段5)   ← SFT/RL 改的就是这一步的形状
+   → 采样参数 + stop_tokens 脚手架(第 5-7 节)
+   → 吐出 token
+</code></pre></div>
+
+<blockquote>
+<p>一句话：<strong>"语义"不是存在某个格子里的符号，而是"哪些方向的点积会得高分"这件事——训练拟合的就是这些方向（子空间的朝向）。<code>visualize_semantics.py</code> 让你亲眼看到点积如何一层层被组织成一个越来越确定的答案分布。</strong></p>
+</blockquote>
+<hr />
+<h2 id="11-回到-codegpt当前代码里哪些就是脚手架">11. 回到 CodeGPT：当前代码里哪些就是"脚手架"</h2>
 <p>本项目只完成了预训练（见 <a href="RLHF_AND_PLATONIC_REPRESENTATION.md">RLHF 文档</a> 第 7 节）——但推理侧的"脚手架"已经相当完整。把它们列出来，就能清楚地看到"W + 代码 = 可用系统"是怎么组装的：</p>
 <table>
 <thead>
@@ -519,7 +783,7 @@ top_p=0.9 + temperature=0.7 → 当前行业默认的&quot;兼顾质量和多样
 </ol>
 <p>注意第 3 条——<strong>光训练完不够，推理侧的 stop_tokens 必须同步更新，否则模型会"停不下来"</strong>，这正是前面第 6 节讲的"训练-推理对齐"要求。</p>
 <hr />
-<h2 id="10-小结一张训练推理对齐表">10. 小结：一张"训练—推理"对齐表</h2>
+<h2 id="12-小结一张训练推理对齐表">12. 小结：一张"训练—推理"对齐表</h2>
 <p>回到用户最初的问题：</p>
 <blockquote>
 <p>使用大模型做 QA / 对话时，是纯靠 transformer 里的参数来预测，还是需要代码配合？</p>
