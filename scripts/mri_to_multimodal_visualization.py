@@ -11,7 +11,12 @@
     中下  ：相干度 / 点积都只依赖相对距离，两条曲线严丝合缝地重合
     右下  ：只采低频 = 只有轮廓；病灶边缘和血管细线全藏在高频里
 
-图二（动画）：第三幕——多角度采样
+图二（静态，三格）：插曲——FFT 的原始任务是听地球对面的核爆
+    左  ：核爆与天然地震的波形叠在一起，时域峰值几乎一样，肉眼分不出
+    中  ：换到频域，一个高频丰富、一个全是长周期面波 —— 能量比差 150 倍
+    右  ：埋在噪声里的信号，√N 相干积累 + √m 台站叠加，把它从雪花里挖出来
+
+图三（动画）：第三幕——多角度采样
     左  ：频域被一条条"投影切片"逐渐填满（1 个角度只占 0.8%）
     中  ：对应的重建图像，从一片条纹糊影慢慢长成真实世界
     右  ：还原误差随视角数单调下降，永不饱和 —— 多模态的数学理由
@@ -168,11 +173,83 @@ fig1.suptitle("第一幕 · 核磁共振把世界写进震动     |     第二�
 fig1.tight_layout(rect=[0, 0, 1, 0.96])
 
 
-# ================================================================ 图二（动画）
+# ================================================================ 图二（插曲：核爆监测）
+
+rng = np.random.default_rng(5)   # 这个种子下两条波形的峰值几乎相同，最能说明"时域分不出"
+fs_s, T_s = 40.0, 120.0
+ts = np.arange(int(fs_s * T_s)) / fs_s
+
+
+def seismic_burst(t0, f, tau, amp):
+    env = np.where(ts >= t0, np.exp(-(ts - t0) / tau), 0.0)
+    return amp * env * np.sin(2 * np.pi * f * (ts - t0))
+
+
+# 核爆：各向同性挤压，短、脆、高频丰富；地震：断层错动，拖着长周期面波
+boom = seismic_burst(20, 4.0, 1.5, 1.0) + seismic_burst(20, 7.0, 0.8, 0.6)
+quake = (seismic_burst(20, 3.0, 1.2, 0.5) + seismic_burst(24, 0.08, 25.0, 1.0)
+         + seismic_burst(26, 0.05, 30.0, 0.8))
+boom_n = boom + 0.15 * rng.standard_normal(len(ts))
+quake_n = quake + 0.15 * rng.standard_normal(len(ts))
+
+
+def band_ratio(x):                                   # 高频能量 / 低频能量（mb:Ms 判据的玩具版）
+    spec = np.abs(np.fft.rfft(x)) ** 2
+    f = np.fft.rfftfreq(len(x), 1 / fs_s)
+    return spec[(f > 1) & (f < 10)].sum() / spec[(f > 0.02) & (f < 0.5)].sum()
+
+
+fig2, cx = plt.subplots(1, 3, figsize=(16, 4.6))
+
+cx[0].plot(ts, quake_n, color="#1f77b4", lw=0.8, label=f"天然地震（峰值 {np.abs(quake_n).max():.2f}）")
+cx[0].plot(ts, boom_n - 3.2, color="#d62728", lw=0.8, label=f"核爆（峰值 {np.abs(boom_n).max():.2f}）")
+cx[0].set_xlabel("时间 (s)")
+cx[0].set_yticks([])
+cx[0].set_title(f"① 时域：峰值 {np.abs(quake_n).max():.2f} vs {np.abs(boom_n).max():.2f}\n几千公里外传来，肉眼分不出谁是谁")
+cx[0].legend(fontsize=8, loc="upper right")
+
+fq = np.fft.rfftfreq(len(ts), 1 / fs_s)
+for x, col, name in [(quake_n, "#1f77b4", "天然地震"), (boom_n, "#d62728", "核爆")]:
+    cx[1].loglog(fq[1:], np.abs(np.fft.rfft(x))[1:], color=col, lw=0.9, alpha=0.85, label=name)
+cx[1].axvspan(0.02, 0.5, color="#1f77b4", alpha=0.10)
+cx[1].axvspan(1.0, 10.0, color="#d62728", alpha=0.10)
+cx[1].set_ylim(0.15, None)
+cx[1].text(0.1, 0.22, "低频带（面波）", fontsize=8, color="#1f77b4", ha="center")
+cx[1].text(3.0, 0.22, "高频带（爆炸）", fontsize=8, color="#d62728", ha="center")
+cx[1].set_xlabel("频率 (Hz)")
+cx[1].set_title(f"② 频域：一刀两断\n高/低频能量比 {band_ratio(boom_n):.1f} vs {band_ratio(quake_n):.2f}"
+                f"（差 {band_ratio(boom_n) / band_ratio(quake_n):.0f} 倍）")
+cx[1].legend(fontsize=8)
+
+Nq, f0 = 16384, 137
+sig = 0.05 * np.sin(2 * np.pi * f0 * np.arange(Nq) / Nq)     # 振幅只有噪声的 1/20
+
+
+def peak_snr(x):
+    spec = np.abs(np.fft.rfft(x))
+    return spec[f0] / np.median(np.concatenate([spec[:f0 - 3], spec[f0 + 4:]]))
+
+
+ms = [1, 4, 16, 64, 256]
+snrs = [peak_snr(sum(sig + rng.standard_normal(Nq) for _ in range(m)) / m) for m in ms]
+cx[2].plot(ms, snrs, color="#d62728", lw=2, marker="o")
+cx[2].axhline(1.0, color="gray", ls="--", lw=1)
+cx[2].text(1.2, 1.15, "噪底（时域信噪比只有 0.035）", fontsize=8, color="gray")
+cx[2].set_xscale("log", base=2)
+cx[2].set_xlabel("台站数 m（第三幕里它叫「模态数」）")
+cx[2].set_ylabel("频域峰信噪比")
+cx[2].set_title("③ 时域一片雪花，频域立起一个峰\n每多一个台站，信噪比涨 √m")
+cx[2].grid(alpha=0.25)
+
+fig2.suptitle("插曲 · FFT 的原始任务：从整个地球的噪声里，挖出一次核爆", fontsize=13)
+fig2.tight_layout(rect=[0, 0, 1, 0.92])
+
+
+# ================================================================ 图三（动画）
 
 ANGLES = [1, 2, 3, 4, 8, 12, 16, 24, 32, 48, 64, 96, 128]
 
-fig2, bx = plt.subplots(1, 3, figsize=(15, 5))
+fig3, bx = plt.subplots(1, 3, figsize=(15, 5))
 covers, errs = [], []
 for n in ANGLES:
     m = radial_mask(N, n)
@@ -208,13 +285,14 @@ def draw(i):
     bx[2].set_title("单调下降，永不饱和\n这就是「多模态」的数学理由，不是产品功能")
 
 
-anim = FuncAnimation(fig2, draw, frames=len(ANGLES), interval=700, repeat=True)
-fig2.suptitle("第三幕 · 一个角度只能拿到世界的 0.8%：投影切片定理 → 柏拉图表征假说", fontsize=13)
-fig2.tight_layout(rect=[0, 0.05, 1, 0.94])
+anim = FuncAnimation(fig3, draw, frames=len(ANGLES), interval=700, repeat=True)
+fig3.suptitle("第三幕 · 一个角度只能拿到世界的 0.8%：投影切片定理 → 柏拉图表征假说", fontsize=13)
+fig3.tight_layout(rect=[0, 0.05, 1, 0.94])
 
 if SAVE:
     os.makedirs(OUT, exist_ok=True)
     fig1.savefig(os.path.join(OUT, "mri_rope_static.png"), dpi=130)
+    fig2.savefig(os.path.join(OUT, "fft_nuclear_detection.png"), dpi=130)
     anim.save(os.path.join(OUT, "mri_multimodal_angles.gif"), writer="pillow", fps=2)
     print("已保存到", OUT)
 else:
