@@ -1,0 +1,854 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>医院那台核磁共振，和大模型的位置编码、多模态，是同一件事 · Steve Chan — xlisp</title>
+<meta name="description" content="如果只能留一句话，那就是这句：">
+<meta name="author" content="Steve Chan">
+<link rel="icon" type="image/jpeg" href="../icon.jpeg">
+<link rel="apple-touch-icon" href="../icon.jpeg">
+<meta property="og:type" content="article">
+<meta property="og:title" content="医院那台核磁共振，和大模型的位置编码、多模态，是同一件事">
+<meta property="og:description" content="如果只能留一句话，那就是这句：">
+<meta property="og:image" content="../icon.jpeg">
+<meta property="og:site_name" content="Steve Chan — xlisp">
+<meta name="twitter:card" content="summary_large_image">
+<meta name="twitter:title" content="医院那台核磁共振，和大模型的位置编码、多模态，是同一件事">
+<meta name="twitter:description" content="如果只能留一句话，那就是这句：">
+<meta name="twitter:image" content="../icon.jpeg">
+<link rel="stylesheet" href="../style.css?v=light1">
+<script>(function(){try{if(localStorage.getItem('theme')==='light')document.documentElement.setAttribute('data-theme','light');}catch(e){}})();</script>
+<!-- Math formula rendering via MathJax -->
+<script>
+window.MathJax = {
+  tex: {
+    // arithmatex emits \(...\) / \[...\] markup, so only these delimiters
+    // are needed; plain `$` is left alone (avoids currency false positives).
+    inlineMath: [['\\(', '\\)']],
+    displayMath: [['\\[', '\\]']],
+    processEscapes: true
+  },
+  svg: {
+    // Each formula gets its own self-contained <defs>, so the copy script can
+    // serialize one <svg> and rasterize it to a PNG for WeChat.
+    fontCache: 'local'
+  },
+  options: {
+    skipHtmlTags: ['script', 'noscript', 'style', 'textarea', 'pre', 'code'],
+    ignoreHtmlClass: 'highlight'
+  }
+};
+</script>
+<script src="https://cdn.jsdelivr.net/npm/mathjax@3/es5/tex-svg.js" async></script>
+</head>
+<body>
+<main class="wrap post">
+
+  <nav class="topnav">
+    <a href="../index.html">← home</a>
+  </nav>
+
+  <article>
+    <header class="post-header">
+      <h1>医院那台核磁共振，和大模型的位置编码、多模态，是同一件事</h1>
+      <p class="meta">2026-07-27 · Steve Chan</p>
+    </header>
+
+    <div class="content">
+<blockquote>
+<p>尼古拉·特斯拉留下过一句被引用烂了的话：<strong>"想搞懂宇宙，就去思考能量、频率和振动。"</strong>
+大多数人把它当玄学，因为没人告诉你：<strong>这句话在医院的核磁共振室里，每天都在被严格地执行。</strong></p>
+<p>核磁共振（MRI）不拍照、不开刀、不用 X 光，只是"听"你身体里几万亿个质子的震动，
+就能把你的大脑一层一层还原出来——<strong>它证明了一件事：世界可以被震动完整地编码，也可以从震动里完整地还原回来。</strong></p>
+<p>这篇文章要把三件看起来毫不相干的事，用一根线串起来：</p>
+<ol>
+<li><strong>核磁共振怎么把"震动"还原成世界</strong>（傅里叶、k 空间、相位编码）</li>
+<li><strong>同一套 sin/cos 序列，怎么变成大模型记住词序的 RoPE</strong>（一段代码，两个名字）</li>
+<li><strong>为什么"多模态"不是堆功能，而是数学上的必需品</strong>（投影切片定理 → 柏拉图表征假说）</li>
+</ol>
+<p>全文不背公式、不证定理，每一段都是能直接跑的 PyTorch 代码。</p>
+</blockquote>
+<hr />
+<h2 id="0-一句话主线">0. 一句话主线</h2>
+<p>如果只能留一句话，那就是这句：</p>
+<blockquote>
+<p><strong>世界可以被一堆"旋转的指针"编码；只要你采够了角度，世界就能被完整地还原回来。</strong></p>
+</blockquote>
+<ul>
+<li>核磁共振做的：让身体里的质子变成旋转指针，采够角度 → 还原出你的大脑。</li>
+<li>RoPE 做的：让每个位置的词向量变成旋转指针，转出角度 → 还原出"谁先谁后"。</li>
+<li>多模态做的：让每个模态当一个观察角度，采够角度 → 还原出<strong>世界本身</strong>。</li>
+</ul>
+<p>三件事，同一个数学。下面一幕一幕拆开。</p>
+<hr />
+<h1 id="第一幕核磁共振世界真的可以被震动记下来">第一幕：核磁共振——世界真的可以被"震动"记下来</h1>
+<h2 id="1-它测到的不是照片是一群旋转指针的合唱">1. 它测到的不是照片，是一群旋转指针的合唱</h2>
+<p>先破除一个最大的误解：<strong>核磁共振机器里没有"相机"，它从来没有"看见"过你的身体。</strong></p>
+<p>它做的事情是：</p>
+<div class="highlight"><pre><span></span><code>1. 用强磁场（1.5T / 3T）把你体内水分子里的氢质子&quot;排队&quot;
+2. 每个质子像陀螺一样绕磁场方向旋转（进动），转速 = 拉莫尔频率
+   —— 转速由它所在位置的磁场强度决定
+3. 打一发射频脉冲，把这群陀螺&quot;推歪&quot;
+4. 陀螺们一边转一边发出电磁信号，线圈把它们的信号&quot;加起来&quot;收进来
+</code></pre></div>
+
+<p>注意第 4 步：线圈收到的<strong>只有一个数</strong>——所有质子信号的<strong>总和</strong>。就像你把一个话筒扔进合唱团，
+录下来的是一条乱糟糟的波形，里面没有任何一个人的位置信息。</p>
+<p>那怎么把每个人拆出来？<strong>傅里叶变换。</strong> 不同频率的指针叠在一起，
+听起来是一团混沌，但只要做一次 FFT，每根指针的频率和强度就原封不动地掉出来：</p>
+<div class="highlight"><pre><span></span><code><span class="kn">import</span><span class="w"> </span><span class="nn">torch</span>
+
+<span class="c1"># 三个&quot;质子&quot;，各自以不同频率旋转（拉莫尔进动），线圈只收到它们的合唱</span>
+<span class="n">fs</span><span class="p">,</span> <span class="n">T</span> <span class="o">=</span> <span class="mi">256</span><span class="p">,</span> <span class="mf">1.0</span>                                   <span class="c1"># 采样率、总时长</span>
+<span class="n">t</span> <span class="o">=</span> <span class="n">torch</span><span class="o">.</span><span class="n">arange</span><span class="p">(</span><span class="mi">0</span><span class="p">,</span> <span class="n">fs</span> <span class="o">*</span> <span class="n">T</span><span class="p">)</span> <span class="o">/</span> <span class="n">fs</span>                   <span class="c1"># 时间轴</span>
+<span class="n">freqs</span><span class="p">,</span> <span class="n">amps</span> <span class="o">=</span> <span class="p">[</span><span class="mf">3.0</span><span class="p">,</span> <span class="mf">6.0</span><span class="p">,</span> <span class="mf">9.0</span><span class="p">],</span> <span class="p">[</span><span class="mf">1.0</span><span class="p">,</span> <span class="mf">0.6</span><span class="p">,</span> <span class="mf">0.3</span><span class="p">]</span>     <span class="c1"># 频率 &amp; 各自的&quot;质子数量&quot;</span>
+
+<span class="n">signal</span> <span class="o">=</span> <span class="nb">sum</span><span class="p">(</span><span class="n">a</span> <span class="o">*</span> <span class="n">torch</span><span class="o">.</span><span class="n">cos</span><span class="p">(</span><span class="mi">2</span> <span class="o">*</span> <span class="n">torch</span><span class="o">.</span><span class="n">pi</span> <span class="o">*</span> <span class="n">f</span> <span class="o">*</span> <span class="n">t</span><span class="p">)</span> <span class="k">for</span> <span class="n">f</span><span class="p">,</span> <span class="n">a</span> <span class="ow">in</span> <span class="nb">zip</span><span class="p">(</span><span class="n">freqs</span><span class="p">,</span> <span class="n">amps</span><span class="p">))</span>
+<span class="nb">print</span><span class="p">(</span><span class="s2">&quot;线圈实际测到的只是一条乱七八糟的曲线:&quot;</span><span class="p">,</span> <span class="n">signal</span><span class="p">[:</span><span class="mi">5</span><span class="p">]</span><span class="o">.</span><span class="n">round</span><span class="p">(</span><span class="n">decimals</span><span class="o">=</span><span class="mi">3</span><span class="p">))</span>
+
+<span class="n">spec</span> <span class="o">=</span> <span class="n">torch</span><span class="o">.</span><span class="n">fft</span><span class="o">.</span><span class="n">rfft</span><span class="p">(</span><span class="n">signal</span><span class="p">)</span><span class="o">.</span><span class="n">abs</span><span class="p">()</span> <span class="o">/</span> <span class="p">(</span><span class="nb">len</span><span class="p">(</span><span class="n">t</span><span class="p">)</span> <span class="o">/</span> <span class="mi">2</span><span class="p">)</span>  <span class="c1"># 傅里叶：把合唱拆回独唱</span>
+<span class="n">peaks</span> <span class="o">=</span> <span class="n">torch</span><span class="o">.</span><span class="n">nonzero</span><span class="p">(</span><span class="n">spec</span> <span class="o">&gt;</span> <span class="mf">0.05</span><span class="p">)</span><span class="o">.</span><span class="n">flatten</span><span class="p">()</span>
+<span class="k">for</span> <span class="n">k</span> <span class="ow">in</span> <span class="n">peaks</span><span class="p">:</span>
+    <span class="nb">print</span><span class="p">(</span><span class="sa">f</span><span class="s2">&quot;  找回频率 </span><span class="si">{</span><span class="n">k</span><span class="o">.</span><span class="n">item</span><span class="p">()</span><span class="si">:</span><span class="s2">&gt;2d</span><span class="si">}</span><span class="s2"> Hz, 强度 </span><span class="si">{</span><span class="n">spec</span><span class="p">[</span><span class="n">k</span><span class="p">]</span><span class="o">.</span><span class="n">item</span><span class="p">()</span><span class="si">:</span><span class="s2">.2f</span><span class="si">}</span><span class="s2">&quot;</span><span class="p">)</span>
+<span class="nb">print</span><span class="p">(</span><span class="s2">&quot;原始强度:&quot;</span><span class="p">,</span> <span class="n">amps</span><span class="p">)</span>
+</code></pre></div>
+
+<p>输出：</p>
+<div class="highlight"><pre><span></span><code>线圈实际测到的只是一条乱七八糟的曲线: tensor([1.9000, 1.8840, 1.8350, 1.7550, 1.6460])
+  找回频率  3 Hz, 强度 1.00
+  找回频率  6 Hz, 强度 0.60
+  找回频率  9 Hz, 强度 0.30
+原始强度: [1.0, 0.6, 0.3]
+</code></pre></div>
+
+<p>三个频率、三个强度，<strong>一个不差地被找回来了</strong>。（顺便，我随手挑的频率正好是 3、6、9——
+特斯拉那个被神化的"369"，去掉神秘主义之后，剩下的就是这么一件朴素的事：
+<strong>频率是可分离的，所以震动可以承载信息。</strong>）</p>
+<blockquote>
+<p><strong>第一幕的第一个结论：把世界编码成震动，是不丢信息的。混在一起，还能原样拆开。</strong></p>
+</blockquote>
+<hr />
+<h2 id="疑惑点一可是频率只有一个数mri-怎么知道信号来自身体的哪个位置">🤔 疑惑点一：可是频率只有一个数，MRI 怎么知道信号来自身体的哪个位置？</h2>
+<p><strong>答案是整台机器最天才的一步：用梯度磁场，让不同位置的质子转不同的角度——把"空间位置"编码成"旋转相位"。</strong></p>
+<p>机器在主磁场上叠加一个<strong>沿空间线性变化的梯度磁场</strong>。于是：</p>
+<div class="highlight"><pre><span></span><code>位置 x 处的磁场   = B0 + G·x
+→ 该处质子的转速 = 正比于 (B0 + G·x)
+→ 扫描一段时间后，位置 x 处的质子比中心多转了  k·x  的角度
+                                              ↑
+                                    k 由梯度强度和时间决定，机器说了算
+</code></pre></div>
+
+<p>线圈收到的，是全身质子<strong>带着各自相位</strong>的求和：</p>
+<div class="arithmatex">\[S(k) = \int \rho(x)\, e^{-i k x}\, dx\]</div>
+<p>看清楚这个式子——<strong>它就是傅里叶变换本人。</strong> 机器换一个 <code>k</code> 再测一次，就多拿到一个采样点；
+把所有 <code>k</code> 测完，存下来的这一整排复数叫 <strong>k 空间（k-space）</strong>。
+k 空间不是图像，是图像的频域。最后做一次逆傅里叶，你的身体就回来了：</p>
+<div class="highlight"><pre><span></span><code><span class="kn">import</span><span class="w"> </span><span class="nn">torch</span>
+
+<span class="n">N</span> <span class="o">=</span> <span class="mi">64</span>
+<span class="n">x</span> <span class="o">=</span> <span class="n">torch</span><span class="o">.</span><span class="n">arange</span><span class="p">(</span><span class="n">N</span><span class="p">)</span><span class="o">.</span><span class="n">float</span><span class="p">()</span>
+<span class="n">body</span> <span class="o">=</span> <span class="n">torch</span><span class="o">.</span><span class="n">zeros</span><span class="p">(</span><span class="n">N</span><span class="p">);</span> <span class="n">body</span><span class="p">[</span><span class="mi">20</span><span class="p">:</span><span class="mi">30</span><span class="p">]</span> <span class="o">=</span> <span class="mf">1.0</span><span class="p">;</span> <span class="n">body</span><span class="p">[</span><span class="mi">40</span><span class="p">:</span><span class="mi">45</span><span class="p">]</span> <span class="o">=</span> <span class="mf">0.6</span>   <span class="c1"># 一维&quot;人体&quot;：两块组织</span>
+
+<span class="c1"># 采一条 k 空间：第 k 步梯度让位置 x 的质子多转 2*pi*k*x/N 的相位，线圈把全身加起来</span>
+<span class="k">def</span><span class="w"> </span><span class="nf">acquire</span><span class="p">(</span><span class="n">body</span><span class="p">,</span> <span class="n">k</span><span class="p">):</span>
+    <span class="n">phase</span> <span class="o">=</span> <span class="o">-</span><span class="mi">2</span> <span class="o">*</span> <span class="n">torch</span><span class="o">.</span><span class="n">pi</span> <span class="o">*</span> <span class="n">k</span> <span class="o">*</span> <span class="n">x</span> <span class="o">/</span> <span class="n">N</span>
+    <span class="k">return</span> <span class="p">(</span><span class="n">body</span> <span class="o">*</span> <span class="n">torch</span><span class="o">.</span><span class="n">exp</span><span class="p">(</span><span class="mi">1</span><span class="n">j</span> <span class="o">*</span> <span class="n">phase</span><span class="p">))</span><span class="o">.</span><span class="n">sum</span><span class="p">()</span>      <span class="c1"># 一个复数 = 一个采样点</span>
+
+<span class="n">ks</span> <span class="o">=</span> <span class="n">torch</span><span class="o">.</span><span class="n">arange</span><span class="p">(</span><span class="n">N</span><span class="p">)</span>
+<span class="n">kspace</span> <span class="o">=</span> <span class="n">torch</span><span class="o">.</span><span class="n">stack</span><span class="p">([</span><span class="n">acquire</span><span class="p">(</span><span class="n">body</span><span class="p">,</span> <span class="n">k</span><span class="p">)</span> <span class="k">for</span> <span class="n">k</span> <span class="ow">in</span> <span class="n">ks</span><span class="p">])</span>  <span class="c1"># 扫描仪真正存下来的东西</span>
+<span class="nb">print</span><span class="p">(</span><span class="s2">&quot;k 空间前 4 个采样点:&quot;</span><span class="p">,</span> <span class="p">[</span><span class="sa">f</span><span class="s2">&quot;</span><span class="si">{</span><span class="n">c</span><span class="si">:</span><span class="s2">.2f</span><span class="si">}</span><span class="s2">&quot;</span> <span class="k">for</span> <span class="n">c</span> <span class="ow">in</span> <span class="n">kspace</span><span class="p">[:</span><span class="mi">4</span><span class="p">]</span><span class="o">.</span><span class="n">tolist</span><span class="p">()])</span>
+
+<span class="n">recon</span> <span class="o">=</span> <span class="n">torch</span><span class="o">.</span><span class="n">fft</span><span class="o">.</span><span class="n">ifft</span><span class="p">(</span><span class="n">kspace</span><span class="p">)</span><span class="o">.</span><span class="n">real</span>                   <span class="c1"># 逆傅里叶 = 还原图像</span>
+<span class="nb">print</span><span class="p">(</span><span class="s2">&quot;还原误差:&quot;</span><span class="p">,</span> <span class="p">(</span><span class="n">recon</span> <span class="o">-</span> <span class="n">body</span><span class="p">)</span><span class="o">.</span><span class="n">abs</span><span class="p">()</span><span class="o">.</span><span class="n">max</span><span class="p">()</span><span class="o">.</span><span class="n">item</span><span class="p">())</span>
+<span class="nb">print</span><span class="p">(</span><span class="s2">&quot;还原出的身体:&quot;</span><span class="p">,</span> <span class="n">recon</span><span class="o">.</span><span class="n">round</span><span class="p">(</span><span class="n">decimals</span><span class="o">=</span><span class="mi">2</span><span class="p">)[</span><span class="mi">18</span><span class="p">:</span><span class="mi">32</span><span class="p">])</span>
+</code></pre></div>
+
+<p>输出：</p>
+<div class="highlight"><pre><span></span><code>k 空间前 4 个采样点: [&#39;13.00+0.00j&#39;, &#39;-8.77-3.98j&#39;, &#39;-0.27+5.78j&#39;, &#39;6.73-4.91j&#39;]
+还原误差: 3.346924586367095e-06
+还原出的身体: tensor([0., 0., 1., 1., 1., 1., 1., 1., 1., 1., 1., 1., -0., 0.])
+</code></pre></div>
+
+<p><strong>误差 3e-06——浮点误差级别，等于完美还原。</strong> 这就是核磁共振的全部原理：</p>
+<blockquote>
+<p><strong>把位置编码成角度 → 收集一堆复数 → 逆变换 → 世界回来了。</strong></p>
+</blockquote>
+<p>请把这句话记牢。因为下一幕，一模一样的话会从大模型嘴里再说一遍。</p>
+<hr />
+<h1 id="第二幕sin-cos-序列同一段代码换个名字就是大模型的位置编码">第二幕：sin / cos 序列——同一段代码，换个名字就是大模型的位置编码</h1>
+<h2 id="2-eikx-和-eimθmri-的相位编码就是-rope">2. <code>e^{ikx}</code> 和 <code>e^{imθ}</code>：MRI 的相位编码，就是 RoPE</h2>
+<p>上一节 MRI 干的事是：<strong>给位置 <code>x</code> 的质子，转 <code>k·x</code> 的角度。</strong></p>
+<p>今天每一个大模型（LLaMA、Qwen、GPT、DeepSeek）记住词序用的 RoPE 干的事是：
+<strong>给位置 <code>m</code> 的词向量，转 <code>m·θ</code> 的角度。</strong></p>
+<p>这不是"类似"，这是<strong>同一个算子换了个变量名</strong>：</p>
+<table>
+<thead>
+<tr>
+<th></th>
+<th>核磁共振</th>
+<th>RoPE</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>被编码的东西</td>
+<td>空间位置 <code>x</code></td>
+<td>序列位置 <code>m</code></td>
+</tr>
+<tr>
+<td>编码方式</td>
+<td>乘上 <code>e^{i k x}</code></td>
+<td>乘上 <code>e^{i m θ}</code></td>
+</tr>
+<tr>
+<td>谁提供角度</td>
+<td>梯度磁场 <code>k</code></td>
+<td>频率参数 <code>θ</code></td>
+</tr>
+<tr>
+<td>编码后的量</td>
+<td>k 空间采样点</td>
+<td>带位置信息的 q / k 向量</td>
+</tr>
+<tr>
+<td>关键性质</td>
+<td>只改相位、不改幅度</td>
+<td>只改方向、不改长度</td>
+</tr>
+</tbody>
+</table>
+<p>而且，两边最重要的性质<strong>是同一条</strong>：转完之后，两个东西的"配合程度"只取决于它们的<strong>相对距离</strong>。</p>
+<div class="highlight"><pre><span></span><code><span class="kn">import</span><span class="w"> </span><span class="nn">torch</span>
+
+<span class="k">def</span><span class="w"> </span><span class="nf">spin</span><span class="p">(</span><span class="n">z</span><span class="p">,</span> <span class="n">angle</span><span class="p">):</span>                      <span class="c1"># 把复数 z 转 angle 弧度：z * e^{i*angle}</span>
+    <span class="k">return</span> <span class="n">z</span> <span class="o">*</span> <span class="n">torch</span><span class="o">.</span><span class="n">exp</span><span class="p">(</span><span class="mi">1</span><span class="n">j</span> <span class="o">*</span> <span class="n">torch</span><span class="o">.</span><span class="n">tensor</span><span class="p">(</span><span class="n">angle</span><span class="p">))</span>
+
+<span class="k">def</span><span class="w"> </span><span class="nf">mri_phase</span><span class="p">(</span><span class="n">rho</span><span class="p">,</span> <span class="n">x</span><span class="p">,</span> <span class="n">k</span><span class="p">):</span>                <span class="c1"># MRI：位置 x 的质子，在第 k 步梯度下转 k*x 度</span>
+    <span class="k">return</span> <span class="n">spin</span><span class="p">(</span><span class="n">rho</span><span class="p">,</span> <span class="n">k</span> <span class="o">*</span> <span class="n">x</span><span class="p">)</span>
+
+<span class="k">def</span><span class="w"> </span><span class="nf">rope</span><span class="p">(</span><span class="n">vec</span><span class="p">,</span> <span class="n">m</span><span class="p">,</span> <span class="n">theta</span><span class="o">=</span><span class="mf">1.0</span><span class="p">):</span>             <span class="c1"># RoPE：第 m 个位置的词向量，转 m*theta 度</span>
+    <span class="k">return</span> <span class="n">spin</span><span class="p">(</span><span class="n">vec</span><span class="p">,</span> <span class="n">m</span> <span class="o">*</span> <span class="n">theta</span><span class="p">)</span>
+
+<span class="n">a</span> <span class="o">=</span> <span class="n">torch</span><span class="o">.</span><span class="n">tensor</span><span class="p">(</span><span class="mf">1.0</span> <span class="o">+</span> <span class="mi">0</span><span class="n">j</span><span class="p">)</span>               <span class="c1"># 一个&quot;质子&quot; / 一个词向量</span>
+<span class="k">for</span> <span class="p">(</span><span class="n">m</span><span class="p">,</span> <span class="n">n</span><span class="p">)</span> <span class="ow">in</span> <span class="p">[(</span><span class="mi">0</span><span class="p">,</span> <span class="mi">3</span><span class="p">),</span> <span class="p">(</span><span class="mi">2</span><span class="p">,</span> <span class="mi">5</span><span class="p">),</span> <span class="p">(</span><span class="mi">10</span><span class="p">,</span> <span class="mi">13</span><span class="p">)]:</span>
+    <span class="n">mri</span>  <span class="o">=</span> <span class="p">(</span><span class="n">mri_phase</span><span class="p">(</span><span class="n">a</span><span class="p">,</span> <span class="nb">float</span><span class="p">(</span><span class="n">m</span><span class="p">),</span> <span class="mf">1.0</span><span class="p">)</span><span class="o">.</span><span class="n">conj</span><span class="p">()</span> <span class="o">*</span> <span class="n">mri_phase</span><span class="p">(</span><span class="n">a</span><span class="p">,</span> <span class="nb">float</span><span class="p">(</span><span class="n">n</span><span class="p">),</span> <span class="mf">1.0</span><span class="p">))</span><span class="o">.</span><span class="n">real</span>
+    <span class="n">rp</span>   <span class="o">=</span> <span class="p">(</span><span class="n">rope</span><span class="p">(</span><span class="n">a</span><span class="p">,</span> <span class="n">m</span><span class="p">)</span><span class="o">.</span><span class="n">conj</span><span class="p">()</span> <span class="o">*</span> <span class="n">rope</span><span class="p">(</span><span class="n">a</span><span class="p">,</span> <span class="n">n</span><span class="p">))</span><span class="o">.</span><span class="n">real</span>
+    <span class="nb">print</span><span class="p">(</span><span class="sa">f</span><span class="s2">&quot;位置对 (</span><span class="si">{</span><span class="n">m</span><span class="si">:</span><span class="s2">2d</span><span class="si">}</span><span class="s2">,</span><span class="si">{</span><span class="n">n</span><span class="si">:</span><span class="s2">2d</span><span class="si">}</span><span class="s2">)  距离=</span><span class="si">{</span><span class="n">n</span><span class="o">-</span><span class="n">m</span><span class="si">}</span><span class="s2">  MRI相干度=</span><span class="si">{</span><span class="n">mri</span><span class="o">.</span><span class="n">item</span><span class="p">()</span><span class="si">:</span><span class="s2">.4f</span><span class="si">}</span><span class="s2">  RoPE点积=</span><span class="si">{</span><span class="n">rp</span><span class="o">.</span><span class="n">item</span><span class="p">()</span><span class="si">:</span><span class="s2">.4f</span><span class="si">}</span><span class="s2">&quot;</span><span class="p">)</span>
+</code></pre></div>
+
+<p>输出：</p>
+<div class="highlight"><pre><span></span><code>位置对 ( 0, 3)  距离=3  MRI相干度=-0.9900  RoPE点积=-0.9900
+位置对 ( 2, 5)  距离=3  MRI相干度=-0.9900  RoPE点积=-0.9900
+位置对 (10,13)  距离=3  MRI相干度=-0.9900  RoPE点积=-0.9900
+</code></pre></div>
+
+<p><strong>三行数字完全一样，左右两列也完全一样。</strong></p>
+<ul>
+<li>在 MRI 里，这条性质叫"相位相干"：两个质子的信号能不能叠加增强，只看它们的<strong>位置差</strong>——
+  这正是为什么梯度回波、自旋回波能把信号"重聚"回来。</li>
+<li>在大模型里，这条性质叫"相对位置编码"：注意力分数只看两个词的<strong>距离差</strong>，
+  不关心这句话从文档第几行开始。</li>
+</ul>
+<p><strong>同一条数学性质，一边支撑起了整个现代影像医学，一边支撑起了整个现代大模型。</strong></p>
+<p>（RoPE 这条线的完整推导——从单位圆上那根转动的指针，到 <code>10000^(2i/d)</code> 到底在干嘛——
+在这篇里讲透了：<a href="trigonometry_to_rope.md">高中背了三年的 sin 和 cos，原来是大模型记住"谁先谁后"的秘密</a>。
+复数版的写法在 <a href="complex_numbers_to_rope.md">虚数 i 与 RoPE</a>。）</p>
+<hr />
+<h2 id="疑惑点二为什么非要一整套不同频率采一个频率不行吗">🤔 疑惑点二：为什么非要一整套不同频率？采一个频率不行吗？</h2>
+<p><strong>不行。一个频率只能告诉你"有多少东西"，告诉不了你"东西长什么样"。低频给轮廓，高频给细节，缺一个都不完整。</strong></p>
+<p>这件事在 MRI 里是有名的："k 空间中心决定对比度，k 空间边缘决定锐利度"。
+用代码把它量出来——造一张断层图，只保留中心低频，看还原成什么样：</p>
+<div class="highlight"><pre><span></span><code><span class="kn">import</span><span class="w"> </span><span class="nn">torch</span>
+
+<span class="c1"># 造一张 64x64 的&quot;断层图&quot;：一个大圆（器官）+ 一个小圆（病灶）+ 一条细线（血管）</span>
+<span class="n">N</span> <span class="o">=</span> <span class="mi">64</span>
+<span class="n">yy</span><span class="p">,</span> <span class="n">xx</span> <span class="o">=</span> <span class="n">torch</span><span class="o">.</span><span class="n">meshgrid</span><span class="p">(</span><span class="n">torch</span><span class="o">.</span><span class="n">arange</span><span class="p">(</span><span class="n">N</span><span class="p">)</span><span class="o">.</span><span class="n">float</span><span class="p">(),</span> <span class="n">torch</span><span class="o">.</span><span class="n">arange</span><span class="p">(</span><span class="n">N</span><span class="p">)</span><span class="o">.</span><span class="n">float</span><span class="p">(),</span> <span class="n">indexing</span><span class="o">=</span><span class="s1">&#39;ij&#39;</span><span class="p">)</span>
+<span class="n">img</span> <span class="o">=</span> <span class="p">((</span><span class="n">xx</span> <span class="o">-</span> <span class="mi">32</span><span class="p">)</span> <span class="o">**</span> <span class="mi">2</span> <span class="o">+</span> <span class="p">(</span><span class="n">yy</span> <span class="o">-</span> <span class="mi">32</span><span class="p">)</span> <span class="o">**</span> <span class="mi">2</span> <span class="o">&lt;</span> <span class="mi">20</span> <span class="o">**</span> <span class="mi">2</span><span class="p">)</span><span class="o">.</span><span class="n">float</span><span class="p">()</span> <span class="o">*</span> <span class="mf">0.5</span>
+<span class="n">img</span> <span class="o">+=</span> <span class="p">((</span><span class="n">xx</span> <span class="o">-</span> <span class="mi">40</span><span class="p">)</span> <span class="o">**</span> <span class="mi">2</span> <span class="o">+</span> <span class="p">(</span><span class="n">yy</span> <span class="o">-</span> <span class="mi">26</span><span class="p">)</span> <span class="o">**</span> <span class="mi">2</span> <span class="o">&lt;</span> <span class="mi">5</span> <span class="o">**</span> <span class="mi">2</span><span class="p">)</span><span class="o">.</span><span class="n">float</span><span class="p">()</span> <span class="o">*</span> <span class="mf">0.5</span>
+<span class="n">img</span><span class="p">[</span><span class="mi">30</span><span class="p">:</span><span class="mi">34</span><span class="p">,</span> <span class="mi">12</span><span class="p">:</span><span class="mi">52</span><span class="p">]</span> <span class="o">+=</span> <span class="mf">0.4</span>
+
+<span class="n">K</span> <span class="o">=</span> <span class="n">torch</span><span class="o">.</span><span class="n">fft</span><span class="o">.</span><span class="n">fftshift</span><span class="p">(</span><span class="n">torch</span><span class="o">.</span><span class="n">fft</span><span class="o">.</span><span class="n">fft2</span><span class="p">(</span><span class="n">img</span><span class="p">))</span>          <span class="c1"># 全部 k 空间</span>
+<span class="n">r</span> <span class="o">=</span> <span class="p">((</span><span class="n">xx</span> <span class="o">-</span> <span class="n">N</span> <span class="o">//</span> <span class="mi">2</span><span class="p">)</span> <span class="o">**</span> <span class="mi">2</span> <span class="o">+</span> <span class="p">(</span><span class="n">yy</span> <span class="o">-</span> <span class="n">N</span> <span class="o">//</span> <span class="mi">2</span><span class="p">)</span> <span class="o">**</span> <span class="mi">2</span><span class="p">)</span><span class="o">.</span><span class="n">sqrt</span><span class="p">()</span>
+
+<span class="k">for</span> <span class="n">radius</span> <span class="ow">in</span> <span class="p">[</span><span class="mi">2</span><span class="p">,</span> <span class="mi">4</span><span class="p">,</span> <span class="mi">8</span><span class="p">,</span> <span class="mi">16</span><span class="p">,</span> <span class="mi">32</span><span class="p">]:</span>                      <span class="c1"># 只保留半径 radius 内的低频</span>
+    <span class="n">kept</span> <span class="o">=</span> <span class="n">K</span> <span class="o">*</span> <span class="p">(</span><span class="n">r</span> <span class="o">&lt;=</span> <span class="n">radius</span><span class="p">)</span>
+    <span class="n">rec</span> <span class="o">=</span> <span class="n">torch</span><span class="o">.</span><span class="n">fft</span><span class="o">.</span><span class="n">ifft2</span><span class="p">(</span><span class="n">torch</span><span class="o">.</span><span class="n">fft</span><span class="o">.</span><span class="n">ifftshift</span><span class="p">(</span><span class="n">kept</span><span class="p">))</span><span class="o">.</span><span class="n">real</span>
+    <span class="n">energy</span> <span class="o">=</span> <span class="p">(</span><span class="n">kept</span><span class="o">.</span><span class="n">abs</span><span class="p">()</span> <span class="o">**</span> <span class="mi">2</span><span class="p">)</span><span class="o">.</span><span class="n">sum</span><span class="p">()</span> <span class="o">/</span> <span class="p">(</span><span class="n">K</span><span class="o">.</span><span class="n">abs</span><span class="p">()</span> <span class="o">**</span> <span class="mi">2</span><span class="p">)</span><span class="o">.</span><span class="n">sum</span><span class="p">()</span>
+    <span class="n">err</span> <span class="o">=</span> <span class="p">(</span><span class="n">rec</span> <span class="o">-</span> <span class="n">img</span><span class="p">)</span><span class="o">.</span><span class="n">abs</span><span class="p">()</span><span class="o">.</span><span class="n">mean</span><span class="p">()</span>
+    <span class="nb">print</span><span class="p">(</span><span class="sa">f</span><span class="s2">&quot;只采半径 </span><span class="si">{</span><span class="n">radius</span><span class="si">:</span><span class="s2">2d</span><span class="si">}</span><span class="s2"> 的中心低频 -&gt; 占总能量 </span><span class="si">{</span><span class="n">energy</span><span class="si">:</span><span class="s2">.4%</span><span class="si">}</span><span class="s2">, 图像误差 </span><span class="si">{</span><span class="n">err</span><span class="si">:</span><span class="s2">.4f</span><span class="si">}</span><span class="s2">&quot;</span><span class="p">)</span>
+</code></pre></div>
+
+<p>输出：</p>
+<div class="highlight"><pre><span></span><code>只采半径  2 的中心低频 -&gt; 占总能量 83.4581%, 图像误差 0.0940
+只采半径  4 的中心低频 -&gt; 占总能量 90.0067%, 图像误差 0.0707
+只采半径  8 的中心低频 -&gt; 占总能量 95.2790%, 图像误差 0.0449
+只采半径 16 的中心低频 -&gt; 占总能量 97.9025%, 图像误差 0.0258
+只采半径 32 的中心低频 -&gt; 占总能量 99.7135%, 图像误差 0.0104
+</code></pre></div>
+
+<p>读一下这组数字，非常反直觉：</p>
+<blockquote>
+<p><strong>半径 2 的一小撮低频就占了 83% 的能量，但图像误差仍有 0.094。</strong>
+能量几乎都在低频，信息却大量藏在那 0.3% 的高频里——<strong>病灶的边缘、血管的细线，全在高频。</strong></p>
+</blockquote>
+<p>这就是为什么 MRI 要老老实实把 k 空间从中心扫到边缘，一个频率都不能少。
+而这，恰恰也是 RoPE 里 <code>10000^(2i/d)</code> 那一坨的意义：</p>
+<div class="highlight"><pre><span></span><code>MRI:   k 空间中心的低频 → 器官的大致轮廓
+       k 空间边缘的高频 → 病灶边界、血管细节
+
+RoPE:  转得慢的维度对   → 记住&quot;隔了几十上百个词&quot;的远距离关系
+       转得快的维度对   → 分辨&quot;相邻词&quot;的细微先后
+
+同一个设计哲学：一根针不够，得配一整套时针、分针、秒针。
+</code></pre></div>
+
+<blockquote>
+<p><strong>第二幕的结论：sin/cos 序列不是"一个技巧"，是一套完备的坐标系。
+医学影像用它编码空间，大模型用它编码时间（词序），用法一样，理由一样。</strong></p>
+</blockquote>
+<hr />
+<h1 id="第三幕多模态为什么一个角度永远还原不出世界">第三幕：多模态——为什么"一个角度"永远还原不出世界</h1>
+<p>前两幕都在讲"编码 → 还原"。第三幕问一个更狠的问题：</p>
+<blockquote>
+<p><strong>要还原出完整的世界，最少需要多少个观察角度？</strong></p>
+</blockquote>
+<p>这个问题在 CT/MRI 里有一个精确的答案，而这个答案，恰好就是多模态大模型的数学基础。</p>
+<h2 id="3-投影切片定理任意一个角度都能穿越出去">3. 投影切片定理：任意一个角度，都能"穿越出去"</h2>
+<p>CT 是这么工作的：X 光从某个角度打过去，穿透身体，得到的是一条<strong>投影</strong>——
+沿着那条射线方向，把整个身体"压扁"成一条线。一个角度，一条线。</p>
+<p><strong>投影切片定理（Fourier Slice Theorem）</strong> 说了一件极其漂亮的事：</p>
+<blockquote>
+<p><strong>从角度 θ 拍到的那条投影，做一次一维傅里叶变换，
+得到的正好是完整二维频域里，过原点、方向为 θ 的那一条直线。</strong></p>
+</blockquote>
+<p>换句话说：<strong>你从任意一个角度看过去，看到的都不是"垃圾"，
+而是频域这个"世界底稿"上一条精确的、可用的切片。</strong> 任意一个角度，都能穿越到世界的本体上去。</p>
+<p>代码验证（把一张图从不同角度压扁，再和二维频域里对应的那条线比对）：</p>
+<div class="highlight"><pre><span></span><code><span class="kn">import</span><span class="w"> </span><span class="nn">torch</span><span class="o">,</span><span class="w"> </span><span class="nn">math</span>
+<span class="kn">import</span><span class="w"> </span><span class="nn">torch.nn.functional</span><span class="w"> </span><span class="k">as</span><span class="w"> </span><span class="nn">F</span>
+
+<span class="n">N</span> <span class="o">=</span> <span class="mi">127</span><span class="p">;</span> <span class="n">C</span> <span class="o">=</span> <span class="n">N</span> <span class="o">//</span> <span class="mi">2</span>                                  <span class="c1"># 用奇数边长，让&quot;中心&quot;正好落在一个像素上</span>
+<span class="n">yy</span><span class="p">,</span> <span class="n">xx</span> <span class="o">=</span> <span class="n">torch</span><span class="o">.</span><span class="n">meshgrid</span><span class="p">(</span><span class="n">torch</span><span class="o">.</span><span class="n">arange</span><span class="p">(</span><span class="n">N</span><span class="p">)</span><span class="o">.</span><span class="n">float</span><span class="p">(),</span> <span class="n">torch</span><span class="o">.</span><span class="n">arange</span><span class="p">(</span><span class="n">N</span><span class="p">)</span><span class="o">.</span><span class="n">float</span><span class="p">(),</span> <span class="n">indexing</span><span class="o">=</span><span class="s1">&#39;ij&#39;</span><span class="p">)</span>
+<span class="n">img</span> <span class="o">=</span> <span class="n">torch</span><span class="o">.</span><span class="n">exp</span><span class="p">(</span><span class="o">-</span><span class="p">((</span><span class="n">xx</span> <span class="o">-</span> <span class="n">C</span><span class="p">)</span> <span class="o">**</span> <span class="mi">2</span> <span class="o">/</span> <span class="mi">450</span> <span class="o">+</span> <span class="p">(</span><span class="n">yy</span> <span class="o">-</span> <span class="n">C</span><span class="p">)</span> <span class="o">**</span> <span class="mi">2</span> <span class="o">/</span> <span class="mi">72</span><span class="p">))</span>   <span class="c1"># 一团沿 x 拉长的组织</span>
+
+<span class="k">def</span><span class="w"> </span><span class="nf">project</span><span class="p">(</span><span class="n">img</span><span class="p">,</span> <span class="n">deg</span><span class="p">):</span>                               <span class="c1"># 站在 deg 角度看过去，把整块图压成一条线</span>
+    <span class="n">a</span> <span class="o">=</span> <span class="n">math</span><span class="o">.</span><span class="n">radians</span><span class="p">(</span><span class="n">deg</span><span class="p">)</span>
+    <span class="n">R</span> <span class="o">=</span> <span class="n">torch</span><span class="o">.</span><span class="n">tensor</span><span class="p">([[</span><span class="n">math</span><span class="o">.</span><span class="n">cos</span><span class="p">(</span><span class="n">a</span><span class="p">),</span> <span class="o">-</span><span class="n">math</span><span class="o">.</span><span class="n">sin</span><span class="p">(</span><span class="n">a</span><span class="p">),</span> <span class="mf">0.</span><span class="p">],</span>
+                      <span class="p">[</span><span class="n">math</span><span class="o">.</span><span class="n">sin</span><span class="p">(</span><span class="n">a</span><span class="p">),</span>  <span class="n">math</span><span class="o">.</span><span class="n">cos</span><span class="p">(</span><span class="n">a</span><span class="p">),</span> <span class="mf">0.</span><span class="p">]])[</span><span class="kc">None</span><span class="p">]</span>
+    <span class="n">grid</span> <span class="o">=</span> <span class="n">F</span><span class="o">.</span><span class="n">affine_grid</span><span class="p">(</span><span class="n">R</span><span class="p">,</span> <span class="p">(</span><span class="mi">1</span><span class="p">,</span> <span class="mi">1</span><span class="p">,</span> <span class="n">N</span><span class="p">,</span> <span class="n">N</span><span class="p">),</span> <span class="n">align_corners</span><span class="o">=</span><span class="kc">True</span><span class="p">)</span>
+    <span class="k">return</span> <span class="n">F</span><span class="o">.</span><span class="n">grid_sample</span><span class="p">(</span><span class="n">img</span><span class="p">[</span><span class="kc">None</span><span class="p">,</span> <span class="kc">None</span><span class="p">],</span> <span class="n">grid</span><span class="p">,</span> <span class="n">align_corners</span><span class="o">=</span><span class="kc">True</span><span class="p">)[</span><span class="mi">0</span><span class="p">,</span> <span class="mi">0</span><span class="p">]</span><span class="o">.</span><span class="n">sum</span><span class="p">(</span><span class="n">dim</span><span class="o">=</span><span class="mi">0</span><span class="p">)</span>
+
+<span class="n">K2</span> <span class="o">=</span> <span class="n">torch</span><span class="o">.</span><span class="n">fft</span><span class="o">.</span><span class="n">fftshift</span><span class="p">(</span><span class="n">torch</span><span class="o">.</span><span class="n">fft</span><span class="o">.</span><span class="n">fft2</span><span class="p">(</span><span class="n">torch</span><span class="o">.</span><span class="n">fft</span><span class="o">.</span><span class="n">ifftshift</span><span class="p">(</span><span class="n">img</span><span class="p">)))</span>   <span class="c1"># 完整的二维频域</span>
+<span class="n">t</span> <span class="o">=</span> <span class="n">torch</span><span class="o">.</span><span class="n">arange</span><span class="p">(</span><span class="n">N</span><span class="p">)</span><span class="o">.</span><span class="n">float</span><span class="p">()</span> <span class="o">-</span> <span class="n">C</span>
+
+<span class="k">for</span> <span class="n">deg</span> <span class="ow">in</span> <span class="p">[</span><span class="mi">0</span><span class="p">,</span> <span class="mi">30</span><span class="p">,</span> <span class="mi">45</span><span class="p">,</span> <span class="mi">90</span><span class="p">]:</span>
+    <span class="n">p</span> <span class="o">=</span> <span class="n">project</span><span class="p">(</span><span class="n">img</span><span class="p">,</span> <span class="n">deg</span><span class="p">)</span>
+    <span class="n">P</span> <span class="o">=</span> <span class="n">torch</span><span class="o">.</span><span class="n">fft</span><span class="o">.</span><span class="n">fftshift</span><span class="p">(</span><span class="n">torch</span><span class="o">.</span><span class="n">fft</span><span class="o">.</span><span class="n">fft</span><span class="p">(</span><span class="n">torch</span><span class="o">.</span><span class="n">fft</span><span class="o">.</span><span class="n">ifftshift</span><span class="p">(</span><span class="n">p</span><span class="p">)))</span>   <span class="c1"># 投影的一维傅里叶</span>
+    <span class="n">a</span> <span class="o">=</span> <span class="n">math</span><span class="o">.</span><span class="n">radians</span><span class="p">(</span><span class="n">deg</span><span class="p">)</span>
+    <span class="n">iy</span> <span class="o">=</span> <span class="p">(</span><span class="n">t</span> <span class="o">*</span> <span class="n">math</span><span class="o">.</span><span class="n">sin</span><span class="p">(</span><span class="n">a</span><span class="p">)</span> <span class="o">+</span> <span class="n">C</span><span class="p">)</span><span class="o">.</span><span class="n">round</span><span class="p">()</span><span class="o">.</span><span class="n">long</span><span class="p">()</span>        <span class="c1"># 频域中过原点、方向为 deg 的那条线</span>
+    <span class="n">ix</span> <span class="o">=</span> <span class="p">(</span><span class="n">t</span> <span class="o">*</span> <span class="n">math</span><span class="o">.</span><span class="n">cos</span><span class="p">(</span><span class="n">a</span><span class="p">)</span> <span class="o">+</span> <span class="n">C</span><span class="p">)</span><span class="o">.</span><span class="n">round</span><span class="p">()</span><span class="o">.</span><span class="n">long</span><span class="p">()</span>
+    <span class="n">line</span> <span class="o">=</span> <span class="n">K2</span><span class="p">[</span><span class="n">iy</span><span class="p">,</span> <span class="n">ix</span><span class="p">]</span>
+    <span class="n">corr</span> <span class="o">=</span> <span class="p">(</span><span class="n">P</span><span class="o">.</span><span class="n">conj</span><span class="p">()</span> <span class="o">*</span> <span class="n">line</span><span class="p">)</span><span class="o">.</span><span class="n">sum</span><span class="p">()</span><span class="o">.</span><span class="n">abs</span><span class="p">()</span> <span class="o">/</span> <span class="p">(</span><span class="n">P</span><span class="o">.</span><span class="n">norm</span><span class="p">()</span> <span class="o">*</span> <span class="n">line</span><span class="o">.</span><span class="n">norm</span><span class="p">())</span>
+    <span class="nb">print</span><span class="p">(</span><span class="sa">f</span><span class="s2">&quot;</span><span class="si">{</span><span class="n">deg</span><span class="si">:</span><span class="s2">3d</span><span class="si">}</span><span class="s2">° 投影的一维FFT  ==  二维频域里同角度的那条线 ?  相似度 = </span><span class="si">{</span><span class="n">corr</span><span class="si">:</span><span class="s2">.4f</span><span class="si">}</span><span class="s2">&quot;</span><span class="p">)</span>
+</code></pre></div>
+
+<p>输出：</p>
+<div class="highlight"><pre><span></span><code>  0° 投影的一维FFT  ==  二维频域里同角度的那条线 ?  相似度 = 1.0000
+ 30° 投影的一维FFT  ==  二维频域里同角度的那条线 ?  相似度 = 0.9947
+ 45° 投影的一维FFT  ==  二维频域里同角度的那条线 ?  相似度 = 0.9822
+ 90° 投影的一维FFT  ==  二维频域里同角度的那条线 ?  相似度 = 1.0000
+</code></pre></div>
+
+<p>（斜角上的 0.98/0.99 是像素网格离散化的插值误差，连续情形下严格等于 1。）</p>
+<p>定理成立。这意味着：<strong>每一个观察角度，都是对同一个"世界底稿"的一次合法采样。
+不同角度采到的不是不同的世界，是同一个世界的不同切片。</strong></p>
+<hr />
+<h2 id="4-采够角度世界才回来一个视角只能给你-08">4. 采够角度，世界才回来：一个视角只能给你 0.8%</h2>
+<p>既然一个角度只贡献频域里的<strong>一条线</strong>，那问题就变得很直白了：
+一条线在整个平面里，占比几乎为零。<strong>所以一个角度，必然还原不出世界。</strong></p>
+<p>不是"还原得差一点"，是<strong>根本上不可能</strong>。用代码把这个残酷的事实量出来：</p>
+<div class="highlight"><pre><span></span><code><span class="kn">import</span><span class="w"> </span><span class="nn">torch</span><span class="o">,</span><span class="w"> </span><span class="nn">math</span>
+
+<span class="n">N</span> <span class="o">=</span> <span class="mi">128</span><span class="p">;</span> <span class="n">C</span> <span class="o">=</span> <span class="n">N</span> <span class="o">//</span> <span class="mi">2</span>
+<span class="n">yy</span><span class="p">,</span> <span class="n">xx</span> <span class="o">=</span> <span class="n">torch</span><span class="o">.</span><span class="n">meshgrid</span><span class="p">(</span><span class="n">torch</span><span class="o">.</span><span class="n">arange</span><span class="p">(</span><span class="n">N</span><span class="p">)</span><span class="o">.</span><span class="n">float</span><span class="p">(),</span> <span class="n">torch</span><span class="o">.</span><span class="n">arange</span><span class="p">(</span><span class="n">N</span><span class="p">)</span><span class="o">.</span><span class="n">float</span><span class="p">(),</span> <span class="n">indexing</span><span class="o">=</span><span class="s1">&#39;ij&#39;</span><span class="p">)</span>
+<span class="n">img</span> <span class="o">=</span> <span class="p">((</span><span class="n">xx</span> <span class="o">-</span> <span class="n">C</span><span class="p">)</span> <span class="o">**</span> <span class="mi">2</span> <span class="o">+</span> <span class="p">(</span><span class="n">yy</span> <span class="o">-</span> <span class="n">C</span><span class="p">)</span> <span class="o">**</span> <span class="mi">2</span> <span class="o">&lt;</span> <span class="mi">40</span> <span class="o">**</span> <span class="mi">2</span><span class="p">)</span><span class="o">.</span><span class="n">float</span><span class="p">()</span> <span class="o">*</span> <span class="mf">0.5</span>      <span class="c1"># 器官</span>
+<span class="n">img</span> <span class="o">+=</span> <span class="p">((</span><span class="n">xx</span> <span class="o">-</span> <span class="mi">80</span><span class="p">)</span> <span class="o">**</span> <span class="mi">2</span> <span class="o">+</span> <span class="p">(</span><span class="n">yy</span> <span class="o">-</span> <span class="mi">52</span><span class="p">)</span> <span class="o">**</span> <span class="mi">2</span> <span class="o">&lt;</span> <span class="mi">10</span> <span class="o">**</span> <span class="mi">2</span><span class="p">)</span><span class="o">.</span><span class="n">float</span><span class="p">()</span> <span class="o">*</span> <span class="mf">0.5</span>   <span class="c1"># 病灶</span>
+<span class="n">img</span><span class="p">[</span><span class="mi">60</span><span class="p">:</span><span class="mi">68</span><span class="p">,</span> <span class="mi">24</span><span class="p">:</span><span class="mi">104</span><span class="p">]</span> <span class="o">+=</span> <span class="mf">0.4</span>                                          <span class="c1"># 血管</span>
+
+<span class="n">K</span> <span class="o">=</span> <span class="n">torch</span><span class="o">.</span><span class="n">fft</span><span class="o">.</span><span class="n">fftshift</span><span class="p">(</span><span class="n">torch</span><span class="o">.</span><span class="n">fft</span><span class="o">.</span><span class="n">fft2</span><span class="p">(</span><span class="n">img</span><span class="p">))</span>          <span class="c1"># 上帝视角：完整的世界</span>
+<span class="n">t</span> <span class="o">=</span> <span class="n">torch</span><span class="o">.</span><span class="n">arange</span><span class="p">(</span><span class="o">-</span><span class="n">C</span><span class="p">,</span> <span class="n">C</span><span class="p">)</span><span class="o">.</span><span class="n">float</span><span class="p">()</span>
+
+<span class="k">def</span><span class="w"> </span><span class="nf">mask_of</span><span class="p">(</span><span class="n">n_angles</span><span class="p">):</span>                                <span class="c1"># n 个角度，各自在频域里划一条过原点的线</span>
+    <span class="n">m</span> <span class="o">=</span> <span class="n">torch</span><span class="o">.</span><span class="n">zeros</span><span class="p">(</span><span class="n">N</span><span class="p">,</span> <span class="n">N</span><span class="p">,</span> <span class="n">dtype</span><span class="o">=</span><span class="n">torch</span><span class="o">.</span><span class="n">bool</span><span class="p">)</span>
+    <span class="k">for</span> <span class="n">a</span> <span class="ow">in</span> <span class="p">[</span><span class="n">math</span><span class="o">.</span><span class="n">pi</span> <span class="o">*</span> <span class="n">i</span> <span class="o">/</span> <span class="n">n_angles</span> <span class="k">for</span> <span class="n">i</span> <span class="ow">in</span> <span class="nb">range</span><span class="p">(</span><span class="n">n_angles</span><span class="p">)]:</span>
+        <span class="n">iy</span> <span class="o">=</span> <span class="p">(</span><span class="n">t</span> <span class="o">*</span> <span class="n">math</span><span class="o">.</span><span class="n">sin</span><span class="p">(</span><span class="n">a</span><span class="p">)</span> <span class="o">+</span> <span class="n">C</span><span class="p">)</span><span class="o">.</span><span class="n">round</span><span class="p">()</span><span class="o">.</span><span class="n">long</span><span class="p">()</span><span class="o">.</span><span class="n">clamp</span><span class="p">(</span><span class="mi">0</span><span class="p">,</span> <span class="n">N</span> <span class="o">-</span> <span class="mi">1</span><span class="p">)</span>
+        <span class="n">ix</span> <span class="o">=</span> <span class="p">(</span><span class="n">t</span> <span class="o">*</span> <span class="n">math</span><span class="o">.</span><span class="n">cos</span><span class="p">(</span><span class="n">a</span><span class="p">)</span> <span class="o">+</span> <span class="n">C</span><span class="p">)</span><span class="o">.</span><span class="n">round</span><span class="p">()</span><span class="o">.</span><span class="n">long</span><span class="p">()</span><span class="o">.</span><span class="n">clamp</span><span class="p">(</span><span class="mi">0</span><span class="p">,</span> <span class="n">N</span> <span class="o">-</span> <span class="mi">1</span><span class="p">)</span>
+        <span class="n">m</span><span class="p">[</span><span class="n">iy</span><span class="p">,</span> <span class="n">ix</span><span class="p">]</span> <span class="o">=</span> <span class="kc">True</span>
+    <span class="k">return</span> <span class="n">m</span>
+
+<span class="k">for</span> <span class="n">n</span> <span class="ow">in</span> <span class="p">[</span><span class="mi">1</span><span class="p">,</span> <span class="mi">2</span><span class="p">,</span> <span class="mi">4</span><span class="p">,</span> <span class="mi">8</span><span class="p">,</span> <span class="mi">16</span><span class="p">,</span> <span class="mi">32</span><span class="p">,</span> <span class="mi">64</span><span class="p">,</span> <span class="mi">128</span><span class="p">]:</span>
+    <span class="n">m</span> <span class="o">=</span> <span class="n">mask_of</span><span class="p">(</span><span class="n">n</span><span class="p">)</span>
+    <span class="n">rec</span> <span class="o">=</span> <span class="n">torch</span><span class="o">.</span><span class="n">fft</span><span class="o">.</span><span class="n">ifft2</span><span class="p">(</span><span class="n">torch</span><span class="o">.</span><span class="n">fft</span><span class="o">.</span><span class="n">ifftshift</span><span class="p">(</span><span class="n">K</span> <span class="o">*</span> <span class="n">m</span><span class="p">))</span><span class="o">.</span><span class="n">real</span>
+    <span class="n">cover</span> <span class="o">=</span> <span class="n">m</span><span class="o">.</span><span class="n">float</span><span class="p">()</span><span class="o">.</span><span class="n">mean</span><span class="p">()</span>
+    <span class="n">err</span> <span class="o">=</span> <span class="p">(</span><span class="n">rec</span> <span class="o">-</span> <span class="n">img</span><span class="p">)</span><span class="o">.</span><span class="n">abs</span><span class="p">()</span><span class="o">.</span><span class="n">mean</span><span class="p">()</span> <span class="o">/</span> <span class="n">img</span><span class="o">.</span><span class="n">abs</span><span class="p">()</span><span class="o">.</span><span class="n">mean</span><span class="p">()</span>
+    <span class="nb">print</span><span class="p">(</span><span class="sa">f</span><span class="s2">&quot;</span><span class="si">{</span><span class="n">n</span><span class="si">:</span><span class="s2">3d</span><span class="si">}</span><span class="s2"> 个视角 -&gt; 频域覆盖 </span><span class="si">{</span><span class="n">cover</span><span class="si">:</span><span class="s2">6.1%</span><span class="si">}</span><span class="s2">, 还原误差 </span><span class="si">{</span><span class="n">err</span><span class="si">:</span><span class="s2">6.1%</span><span class="si">}</span><span class="s2">&quot;</span><span class="p">)</span>
+</code></pre></div>
+
+<p>输出：</p>
+<div class="highlight"><pre><span></span><code>  1 个视角 -&gt; 频域覆盖   0.8%, 还原误差  94.3%
+  2 个视角 -&gt; 频域覆盖   1.6%, 还原误差  80.3%
+  4 个视角 -&gt; 频域覆盖   2.7%, 还原误差  47.4%
+  8 个视角 -&gt; 频域覆盖   5.7%, 还原误差  36.3%
+ 16 个视角 -&gt; 频域覆盖  11.4%, 还原误差  24.0%
+ 32 个视角 -&gt; 频域覆盖  21.7%, 还原误差  16.6%
+ 64 个视角 -&gt; 频域覆盖  40.0%, 还原误差  10.6%
+128 个视角 -&gt; 频域覆盖  65.0%, 还原误差   6.2%
+</code></pre></div>
+
+<p>把这张表读三遍，它几乎是一句人生格言：</p>
+<blockquote>
+<p><strong>一个视角：拿到了世界的 0.8%，错 94%。</strong>
+<strong>翻倍再翻倍：没有任何一次翻倍能让你"突然懂了"，但每一次都在实打实地降错误率。</strong>
+<strong>128 个视角：错误率 6.2%——世界基本回来了。</strong></p>
+</blockquote>
+<p>而且注意曲线的形状：<strong>它是单调下降、永不饱和的。</strong>
+这就是"CT 为什么要转一圈"的全部原因——每转一度，就多穿透一次世界。</p>
+<hr />
+<h2 id="5-把角度换成模态这就是柏拉图表征假说">5. 把"角度"换成"模态"：这就是柏拉图表征假说</h2>
+<p>现在做最后一步替换。上面那张表里的"视角"，换成"模态"，故事一字不改：</p>
+<div class="highlight"><pre><span></span><code>文本   = 从&quot;语言&quot;这个角度对世界做的一次投影
+图像   = 从&quot;视觉&quot;这个角度对世界做的一次投影
+音频   = 从&quot;听觉&quot;这个角度对世界做的一次投影
+代码   = 从&quot;可执行逻辑&quot;这个角度对世界做的一次投影
+视频   = 从&quot;时间连续性&quot;这个角度对世界做的一次投影
+动作/触觉 = 从&quot;物理交互&quot;这个角度对世界做的一次投影
+</code></pre></div>
+
+<p><strong>每个模态都不是完整的世界，都是频域上的一条线。</strong>
+一个纯文本模型，就是那个"1 个视角、覆盖 0.8%、错 94%"的重建——
+它不是"笨"，是<strong>数学上就拿不到那些信息</strong>。</p>
+<p>MIT 在 2024 年提出的 <strong>柏拉图表征假说（Platonic Representation Hypothesis）</strong> 说的正是这件事：
+<strong>不同模态、不同数据、不同目标训练出的模型，内部表征正在收敛到同一个统计结构。</strong>
+翻译成这篇文章的语言：<strong>大家都在往同一张 k 空间上填线，填得越满，重建出的世界越接近同一个。</strong></p>
+<p>这件事同样可以跑出来。造一个"真实世界" <code>Z</code>，让每个模态只能看到它的一个低维投影，
+看融合越多模态，表征离真实世界有多近：</p>
+<div class="highlight"><pre><span></span><code><span class="kn">import</span><span class="w"> </span><span class="nn">torch</span>
+<span class="n">torch</span><span class="o">.</span><span class="n">manual_seed</span><span class="p">(</span><span class="mi">0</span><span class="p">)</span>
+
+<span class="n">n</span><span class="p">,</span> <span class="n">D</span><span class="p">,</span> <span class="n">d</span> <span class="o">=</span> <span class="mi">200</span><span class="p">,</span> <span class="mi">32</span><span class="p">,</span> <span class="mi">4</span>                      <span class="c1"># 200 个&quot;事物&quot;，真实世界 32 维，每个模态只能看到 4 维</span>
+<span class="n">Z</span> <span class="o">=</span> <span class="n">torch</span><span class="o">.</span><span class="n">randn</span><span class="p">(</span><span class="n">n</span><span class="p">,</span> <span class="n">D</span><span class="p">)</span>                     <span class="c1"># 柏拉图理想型：世界本身</span>
+<span class="k">def</span><span class="w"> </span><span class="nf">kernel</span><span class="p">(</span><span class="n">X</span><span class="p">):</span>                            <span class="c1"># 用&quot;两两相似度&quot;来刻画一个表征空间的形状</span>
+    <span class="n">Xn</span> <span class="o">=</span> <span class="n">X</span> <span class="o">/</span> <span class="n">X</span><span class="o">.</span><span class="n">norm</span><span class="p">(</span><span class="n">dim</span><span class="o">=</span><span class="mi">1</span><span class="p">,</span> <span class="n">keepdim</span><span class="o">=</span><span class="kc">True</span><span class="p">)</span>
+    <span class="k">return</span> <span class="n">Xn</span> <span class="o">@</span> <span class="n">Xn</span><span class="o">.</span><span class="n">T</span>
+
+<span class="k">def</span><span class="w"> </span><span class="nf">align</span><span class="p">(</span><span class="n">A</span><span class="p">,</span> <span class="n">B</span><span class="p">):</span>                          <span class="c1"># 两个表征空间的形状有多像</span>
+    <span class="n">a</span><span class="p">,</span> <span class="n">b</span> <span class="o">=</span> <span class="n">A</span><span class="o">.</span><span class="n">flatten</span><span class="p">(),</span> <span class="n">B</span><span class="o">.</span><span class="n">flatten</span><span class="p">()</span>
+    <span class="n">a</span><span class="p">,</span> <span class="n">b</span> <span class="o">=</span> <span class="n">a</span> <span class="o">-</span> <span class="n">a</span><span class="o">.</span><span class="n">mean</span><span class="p">(),</span> <span class="n">b</span> <span class="o">-</span> <span class="n">b</span><span class="o">.</span><span class="n">mean</span><span class="p">()</span>
+    <span class="k">return</span> <span class="p">(</span><span class="n">a</span> <span class="o">@</span> <span class="n">b</span> <span class="o">/</span> <span class="p">(</span><span class="n">a</span><span class="o">.</span><span class="n">norm</span><span class="p">()</span> <span class="o">*</span> <span class="n">b</span><span class="o">.</span><span class="n">norm</span><span class="p">()))</span><span class="o">.</span><span class="n">item</span><span class="p">()</span>
+
+<span class="n">K_world</span> <span class="o">=</span> <span class="n">kernel</span><span class="p">(</span><span class="n">Z</span><span class="p">)</span>
+<span class="n">mods</span> <span class="o">=</span> <span class="p">[</span><span class="n">Z</span> <span class="o">@</span> <span class="n">torch</span><span class="o">.</span><span class="n">randn</span><span class="p">(</span><span class="n">D</span><span class="p">,</span> <span class="n">d</span><span class="p">)</span> <span class="k">for</span> <span class="n">_</span> <span class="ow">in</span> <span class="nb">range</span><span class="p">(</span><span class="mi">16</span><span class="p">)]</span>      <span class="c1"># 16 个模态：各自是世界的一次投影</span>
+<span class="nb">print</span><span class="p">(</span><span class="sa">f</span><span class="s2">&quot;单个模态 vs 世界: </span><span class="si">{</span><span class="n">align</span><span class="p">(</span><span class="n">kernel</span><span class="p">(</span><span class="n">mods</span><span class="p">[</span><span class="mi">0</span><span class="p">]),</span><span class="w"> </span><span class="n">K_world</span><span class="p">)</span><span class="si">:</span><span class="s2">.4f</span><span class="si">}</span><span class="s2">&quot;</span><span class="p">)</span>
+<span class="k">for</span> <span class="n">m</span> <span class="ow">in</span> <span class="p">[</span><span class="mi">1</span><span class="p">,</span> <span class="mi">2</span><span class="p">,</span> <span class="mi">4</span><span class="p">,</span> <span class="mi">8</span><span class="p">,</span> <span class="mi">16</span><span class="p">]:</span>
+    <span class="n">fused</span> <span class="o">=</span> <span class="nb">sum</span><span class="p">(</span><span class="n">kernel</span><span class="p">(</span><span class="n">x</span><span class="p">)</span> <span class="k">for</span> <span class="n">x</span> <span class="ow">in</span> <span class="n">mods</span><span class="p">[:</span><span class="n">m</span><span class="p">])</span> <span class="o">/</span> <span class="n">m</span>       <span class="c1"># 把 m 个模态的&quot;形状&quot;叠起来</span>
+    <span class="nb">print</span><span class="p">(</span><span class="sa">f</span><span class="s2">&quot;融合 </span><span class="si">{</span><span class="n">m</span><span class="si">:</span><span class="s2">2d</span><span class="si">}</span><span class="s2"> 个模态 -&gt; 与真实世界的表征对齐度 </span><span class="si">{</span><span class="n">align</span><span class="p">(</span><span class="n">fused</span><span class="p">,</span><span class="w"> </span><span class="n">K_world</span><span class="p">)</span><span class="si">:</span><span class="s2">.4f</span><span class="si">}</span><span class="s2">&quot;</span><span class="p">)</span>
+</code></pre></div>
+
+<p>输出：</p>
+<div class="highlight"><pre><span></span><code>单个模态 vs 世界: 0.3126
+融合  1 个模态 -&gt; 与真实世界的表征对齐度 0.3126
+融合  2 个模态 -&gt; 与真实世界的表征对齐度 0.4336
+融合  4 个模态 -&gt; 与真实世界的表征对齐度 0.5653
+融合  8 个模态 -&gt; 与真实世界的表征对齐度 0.6972
+融合 16 个模态 -&gt; 与真实世界的表征对齐度 0.8067
+</code></pre></div>
+
+<p>（把模态数放到 64，对齐度是 0.9383——<strong>和 CT 那张表是同一条曲线。</strong>）</p>
+<p><strong>注意：没有任何一个模态自己能超过 0.32。
+但把它们叠起来，对齐度一路爬到 0.94。</strong> 这不是工程调优，这是<strong>投影几何的必然</strong>。</p>
+<p>所以"多模态"根本不是产品经理拍脑袋加的功能列表，它是：</p>
+<blockquote>
+<p><strong>要逼近真实世界的表征，你在数学上被迫需要更多的观察角度。没有捷径。</strong></p>
+</blockquote>
+<hr />
+<h2 id="6-顺便一个模型内部也在做同一件事">6. 顺便：一个模型内部，也在做同一件事</h2>
+<p>有意思的是，Transformer 内部早就在偷偷执行这套"多角度采样"：</p>
+<div class="highlight"><pre><span></span><code><span class="c1"># 多头注意力：768 维 → 12 个头 × 64 维</span>
+<span class="n">k</span> <span class="o">=</span> <span class="n">k</span><span class="o">.</span><span class="n">view</span><span class="p">(</span><span class="n">B</span><span class="p">,</span> <span class="n">T</span><span class="p">,</span> <span class="bp">self</span><span class="o">.</span><span class="n">n_head</span><span class="p">,</span> <span class="n">C</span> <span class="o">//</span> <span class="bp">self</span><span class="o">.</span><span class="n">n_head</span><span class="p">)</span><span class="o">.</span><span class="n">transpose</span><span class="p">(</span><span class="mi">1</span><span class="p">,</span> <span class="mi">2</span><span class="p">)</span>
+<span class="c1"># 每个头只&quot;看&quot;768 维空间中的一个 64 维切片 —— 一个头 = 一个角度</span>
+<span class="n">y</span> <span class="o">=</span> <span class="n">y</span><span class="o">.</span><span class="n">transpose</span><span class="p">(</span><span class="mi">1</span><span class="p">,</span> <span class="mi">2</span><span class="p">)</span><span class="o">.</span><span class="n">contiguous</span><span class="p">()</span><span class="o">.</span><span class="n">view</span><span class="p">(</span><span class="n">B</span><span class="p">,</span> <span class="n">T</span><span class="p">,</span> <span class="n">C</span><span class="p">)</span>   <span class="c1"># 12 个角度的观察拼回完整重建</span>
+</code></pre></div>
+
+<ul>
+<li><strong>12 个注意力头</strong> = 12 个角度同时投影，拼起来才是完整表征</li>
+<li><strong>12 层 Block</strong> = 从表面纹理到全局语义，逐层增加观察维度</li>
+<li><strong>残差连接 <code>x + ...</code></strong> = 保证每一层采到的"那条线"都不会被后面覆盖掉，全部保留进最终重建</li>
+</ul>
+<p>（这条线索的展开在这篇：<a href="RLHF_AND_PLATONIC_REPRESENTATION.md">强化学习对齐与柏拉图表征</a>。）</p>
+<p><strong>从质子到注意力头，从 CT 机转一圈到多模态训练，做的都是一件事：换角度，采样，重建。</strong></p>
+<hr />
+<h2 id="缝合把三幕接起来">缝合：把三幕接起来</h2>
+<table>
+<thead>
+<tr>
+<th>概念</th>
+<th>在核磁共振里</th>
+<th>在 sin/cos 序列里</th>
+<th>在多模态大模型里</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><strong>旋转指针</strong></td>
+<td>质子进动，<code>e^{ikx}</code></td>
+<td>RoPE 转角，<code>e^{imθ}</code></td>
+<td>每个模态编码器的表征基</td>
+</tr>
+<tr>
+<td><strong>位置 → 角度</strong></td>
+<td>梯度磁场把空间编码成相位</td>
+<td>第 m 个位置转 mθ 度</td>
+<td>位置/时间/空间的统一编码</td>
+</tr>
+<tr>
+<td><strong>只依赖相对量</strong></td>
+<td>相位相干、回波重聚</td>
+<td>注意力只看词距</td>
+<td>跨模态对齐的可迁移性</td>
+</tr>
+<tr>
+<td><strong>多个频率</strong></td>
+<td>k 空间中心给轮廓，边缘给细节</td>
+<td>时针分针秒针，<code>10000^(2i/d)</code></td>
+<td>不同层级、不同粒度的语义</td>
+</tr>
+<tr>
+<td><strong>一个角度 = 一条线</strong></td>
+<td>投影切片定理</td>
+<td>——</td>
+<td>单模态天然信息不完备</td>
+</tr>
+<tr>
+<td><strong>采够角度才有世界</strong></td>
+<td>CT 转一圈，128 视角误差 6%</td>
+<td>——</td>
+<td>柏拉图表征假说，模态越多越收敛</td>
+</tr>
+</tbody>
+</table>
+<p>三句话总结全文：</p>
+<blockquote>
+<p><strong>第一，世界可以被震动完整编码</strong>——MRI 用 <code>e^{ikx}</code> 把你的身体写进 k 空间，逆变换误差 3e-06（第一幕）。
+<strong>第二，同一套 sin/cos 换个名字就是大模型的位置编码</strong>——<code>e^{ikx}</code> 和 <code>e^{imθ}</code> 是同一个算子，
+连"只依赖相对距离"这条性质都一模一样（第二幕）。
+<strong>第三，一个角度永远还原不出世界</strong>——投影切片定理规定了每个视角只是频域的一条线，
+于是"多模态"不是功能堆砌，是数学上的强制要求（第三幕）。</p>
+</blockquote>
+<hr />
+<h2 id="结语无穷角度">结语：无穷角度</h2>
+<p>回到开头特斯拉那句话。去掉神秘主义外壳，它剩下的内核其实非常硬：</p>
+<blockquote>
+<p><strong>能量、频率、振动——不是宇宙的装饰，是宇宙的编码格式。</strong></p>
+</blockquote>
+<p>核磁共振是人类第一次大规模、工业化地兑现这句话：<strong>不切开身体，只靠听震动，把人还原出来。</strong>
+而大模型正在做同一件事的放大版：<strong>不接触世界，只靠一层层投影，把世界还原出来。</strong></p>
+<p>所以最后留一句我认为最重要的话：</p>
+<blockquote>
+<p><strong>一个视角只能拿到世界的 0.8%。</strong>
+<strong>真正的能力，不是把一个角度钻到极致，而是拥有"从任意一个角度都能穿越进去"的本事——
+因为投影切片定理保证了：任意一个角度，都直通世界的本体。</strong>
+<strong>人是这样，模型也是这样。多模态最强的地方，从来不是它会看图，
+而是它握着无穷多个角度的入口。</strong></p>
+</blockquote>
+<p>把上面七段代码跑一遍。你会亲眼看到那条曲线：
+<strong>每多一个角度，误差就掉一截，从来不会停。</strong></p>
+<hr />
+<blockquote>
+<p><strong>相关阅读：</strong>
+- <a href="trigonometry_to_rope.md">高中背了三年的 sin 和 cos，原来是大模型记住"谁先谁后"的秘密</a> —— RoPE 的完整推导
+- <a href="complex_numbers_to_rope.md">高中觉得最没用的"虚数 i"，其实是 RoPE 最优雅的写法</a> —— <code>e^{iθ}</code> 那条线
+- <a href="RLHF_AND_PLATONIC_REPRESENTATION.md">强化学习对齐与柏拉图表征</a> —— 柏拉图表征假说的展开
+- <a href="COMPRESSION_IS_INTELLIGENCE.md">压缩即智能</a> —— 为什么"还原世界"就是智能本身</p>
+<p><strong>参考：</strong>
+Lauterbur (1973), <em>Image Formation by Induced Local Interactions</em> —— MRI 的梯度编码，1973 年；
+Bracewell (1956), <em>Strip Integration in Radio Astronomy</em> —— 投影切片定理；
+Su et al. (2021), <em>RoFormer: Enhanced Transformer with Rotary Position Embedding</em> —— RoPE；
+Huh et al. (2024), <em>The Platonic Representation Hypothesis</em> —— 多模态表征收敛。</p>
+</blockquote>
+    </div>
+  </article>
+
+</main>
+
+<!-- Floating Ask-AI chat widget -->
+<button class="ai-fab" id="ai-fab" aria-label="Ask AI about this article" title="Ask AI about this article">
+  <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+    <path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"/>
+  </svg>
+  <span class="ai-fab-label">Ask AI</span>
+</button>
+
+<div class="ai-panel" id="ai-panel" role="dialog" aria-labelledby="ai-panel-title" aria-hidden="true">
+  <header class="ai-panel-head">
+    <div class="ai-panel-title-wrap">
+      <span class="ai-dot"></span>
+      <h3 id="ai-panel-title">Ask AI about this post</h3>
+    </div>
+    <div class="ai-panel-actions">
+      <button class="ai-icon-btn" id="ai-clear" title="Clear conversation" aria-label="Clear">
+        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><polyline points="3 6 5 6 21 6"/><path d="M19 6l-1 14a2 2 0 0 1-2 2H8a2 2 0 0 1-2-2L5 6"/><path d="M10 11v6M14 11v6"/><path d="M9 6V4a1 1 0 0 1 1-1h4a1 1 0 0 1 1 1v2"/></svg>
+      </button>
+      <button class="ai-icon-btn" id="ai-close" title="Minimize" aria-label="Minimize">
+        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><polyline points="6 9 12 15 18 9"/></svg>
+      </button>
+    </div>
+  </header>
+
+  <div class="ai-messages" id="ai-messages">
+    <div class="ai-empty" id="ai-empty">
+      <p class="ai-empty-title">On-device AI · Gemini Nano</p>
+      <p class="ai-empty-sub">Ask anything about this article. Runs in your browser — nothing leaves your device.</p>
+    </div>
+  </div>
+
+  <div class="ai-status" id="ai-status" hidden></div>
+
+  <form class="ai-composer" id="ai-form">
+    <textarea id="ai-input" rows="1" placeholder="Ask about this post…" autocomplete="off"></textarea>
+    <button type="submit" id="ai-send" class="ai-send" aria-label="Send" disabled>
+      <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><line x1="22" y1="2" x2="11" y2="13"/><polygon points="22 2 15 22 11 13 2 9 22 2"/></svg>
+    </button>
+  </form>
+</div>
+
+<script>
+(function () {
+  const POST_TITLE = "\u533b\u9662\u90a3\u53f0\u6838\u78c1\u5171\u632f\uff0c\u548c\u5927\u6a21\u578b\u7684\u4f4d\u7f6e\u7f16\u7801\u3001\u591a\u6a21\u6001\uff0c\u662f\u540c\u4e00\u4ef6\u4e8b";
+  const contentEl = document.querySelector('article .content');
+
+  const fab = document.getElementById('ai-fab');
+  const panel = document.getElementById('ai-panel');
+  const closeBtn = document.getElementById('ai-close');
+  const clearBtn = document.getElementById('ai-clear');
+  const msgsEl = document.getElementById('ai-messages');
+  const emptyEl = document.getElementById('ai-empty');
+  const statusEl = document.getElementById('ai-status');
+  const formEl = document.getElementById('ai-form');
+  const inputEl = document.getElementById('ai-input');
+  const sendBtn = document.getElementById('ai-send');
+
+  function articleText() {
+    if (!contentEl) return '';
+    return (contentEl.innerText || contentEl.textContent || '')
+      .replace(/[ \t]+\n/g, '\n')
+      .replace(/\n{3,}/g, '\n\n')
+      .trim();
+  }
+
+  function setStatus(msg, cls) {
+    if (!msg) { statusEl.hidden = true; statusEl.textContent = ''; statusEl.className = 'ai-status'; return; }
+    statusEl.hidden = false;
+    statusEl.textContent = msg;
+    statusEl.className = 'ai-status' + (cls ? ' ' + cls : '');
+  }
+
+  function hideEmpty() { if (emptyEl) emptyEl.style.display = 'none'; }
+
+  function appendBubble(role, text) {
+    hideEmpty();
+    const wrap = document.createElement('div');
+    wrap.className = 'ai-msg ai-msg-' + role;
+    const bubble = document.createElement('div');
+    bubble.className = 'ai-bubble';
+    bubble.textContent = text;
+    wrap.appendChild(bubble);
+    msgsEl.appendChild(wrap);
+    msgsEl.scrollTop = msgsEl.scrollHeight;
+    return bubble;
+  }
+
+  function appendTyping() {
+    hideEmpty();
+    const wrap = document.createElement('div');
+    wrap.className = 'ai-msg ai-msg-assistant ai-typing';
+    wrap.innerHTML = '<div class="ai-bubble"><span class="ai-dots"><i></i><i></i><i></i></span></div>';
+    msgsEl.appendChild(wrap);
+    msgsEl.scrollTop = msgsEl.scrollHeight;
+    return wrap;
+  }
+
+  function autoSize() {
+    inputEl.style.height = 'auto';
+    inputEl.style.height = Math.min(inputEl.scrollHeight, 140) + 'px';
+  }
+
+  function openPanel() {
+    panel.classList.add('open');
+    panel.setAttribute('aria-hidden', 'false');
+    fab.classList.add('hidden');
+    setTimeout(() => inputEl.focus(), 50);
+  }
+  function closePanel() {
+    panel.classList.remove('open');
+    panel.setAttribute('aria-hidden', 'true');
+    fab.classList.remove('hidden');
+  }
+
+  fab.addEventListener('click', openPanel);
+  closeBtn.addEventListener('click', closePanel);
+  document.addEventListener('keydown', e => {
+    if (e.key === 'Escape' && panel.classList.contains('open')) closePanel();
+  });
+
+  // ---- LanguageModel session ----
+  let session = null;
+  let creating = null;
+  let history = [];
+
+  function buildSystemPrompt() {
+    // Keep article context modest — Gemini Nano's input quota is small.
+    const article = articleText().slice(0, 4000);
+    return (
+      'You are a concise, helpful assistant answering questions about a blog post. ' +
+      'Use the article below as your primary source. If the answer is not in it, say so briefly and answer generally. ' +
+      'Reply in the same language as the user\'s question. Keep answers short unless asked for detail.\n\n' +
+      '=== ARTICLE TITLE ===\n' + POST_TITLE + '\n\n' +
+      '=== ARTICLE CONTENT ===\n' + article
+    );
+  }
+
+  async function ensureSession() {
+    if (session) return session;
+    if (creating) return creating;
+
+    if (!('LanguageModel' in self)) {
+      throw new Error(
+        'On-device AI not available. Use Chrome 138+ on desktop, or enable ' +
+        '"Prompt API for Gemini Nano" in chrome://flags.'
+      );
+    }
+
+    setStatus('Checking model…', 'info');
+    const status = await LanguageModel.availability();
+    if (status === 'unavailable') {
+      throw new Error('Model unavailable on this device.');
+    }
+
+    creating = (async () => {
+      // Only show download UI when the model isn't already there.
+      const willDownload = (status !== 'available');
+      if (willDownload) setStatus('Preparing model (first run downloads ~2GB)…', 'info');
+      else setStatus('Warming up…', 'info');
+
+      const s = await LanguageModel.create({
+        initialPrompts: [{ role: 'system', content: buildSystemPrompt() }],
+        monitor(m) {
+          m.addEventListener('downloadprogress', e => {
+            // Skip the spurious 0% event Chrome fires for cached models.
+            if (!willDownload && e.loaded === 0) return;
+            const pct = (e.loaded * 100).toFixed(1);
+            setStatus('Downloading model: ' + pct + '%', 'info');
+          });
+        }
+      });
+      session = s;
+      setStatus('');
+      return s;
+    })();
+
+    try { return await creating; }
+    finally { creating = null; }
+  }
+
+  async function ask(q) {
+    appendBubble('user', q);
+    history.push({ role: 'user', content: q });
+
+    sendBtn.disabled = true;
+    inputEl.disabled = true;
+    const typing = appendTyping();
+
+    let answerBubble = null;
+    let acc = '';
+    try {
+      const s = await ensureSession();
+      const stream = s.promptStreaming(q);
+      for await (const chunk of stream) {
+        if (!answerBubble) {
+          typing.remove();
+          const wrap = document.createElement('div');
+          wrap.className = 'ai-msg ai-msg-assistant';
+          answerBubble = document.createElement('div');
+          answerBubble.className = 'ai-bubble';
+          wrap.appendChild(answerBubble);
+          msgsEl.appendChild(wrap);
+        }
+        acc += chunk;
+        answerBubble.textContent = acc;
+        msgsEl.scrollTop = msgsEl.scrollHeight;
+      }
+      if (acc) history.push({ role: 'assistant', content: acc });
+      else { typing.remove(); appendBubble('assistant', '(no response)'); }
+    } catch (e) {
+      if (typing && typing.parentNode) typing.remove();
+      const err = document.createElement('div');
+      err.className = 'ai-msg ai-msg-error';
+      err.innerHTML = '<div class="ai-bubble">⚠ ' + (e && e.message ? e.message : String(e)) + '</div>';
+      msgsEl.appendChild(err);
+      msgsEl.scrollTop = msgsEl.scrollHeight;
+    } finally {
+      sendBtn.disabled = !inputEl.value.trim();
+      inputEl.disabled = false;
+      inputEl.focus();
+    }
+  }
+
+  formEl.addEventListener('submit', e => {
+    e.preventDefault();
+    const q = inputEl.value.trim();
+    if (!q) return;
+    inputEl.value = '';
+    autoSize();
+    sendBtn.disabled = true;
+    ask(q);
+  });
+
+  inputEl.addEventListener('input', () => {
+    autoSize();
+    sendBtn.disabled = !inputEl.value.trim();
+  });
+  inputEl.addEventListener('keydown', e => {
+    if (e.key === 'Enter' && !e.shiftKey) {
+      e.preventDefault();
+      formEl.requestSubmit();
+    }
+  });
+
+  clearBtn.addEventListener('click', () => {
+    msgsEl.innerHTML = '';
+    msgsEl.appendChild(emptyEl);
+    emptyEl.style.display = '';
+    history = [];
+    if (session && session.destroy) { try { session.destroy(); } catch (_) {} }
+    session = null;
+    setStatus('');
+  });
+
+  if (!('LanguageModel' in self)) {
+    fab.addEventListener('click', () => {
+      openPanel();
+      setStatus('On-device AI not detected. Use Chrome 138+ desktop, or enable "Prompt API for Gemini Nano" in chrome://flags.', 'bad');
+    }, { once: true });
+  }
+})();
+</script>
+
+<!-- Outline notes / comments — DataScript + IndexedDB -->
+<script src="https://github.com/tonsky/datascript/releases/download/1.7.8/datascript-1.7.8.min.js"></script>
+<script src="../notes.js?v=6"></script>
+<script src="../theme.js"></script>
+<script src="../wechat-copy.js?v=3"></script>
+
+</body>
+</html>
