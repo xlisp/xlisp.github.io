@@ -63,9 +63,11 @@ window.MathJax = {
 就能把你的大脑一层一层还原出来——<strong>它证明了一件事：世界可以被震动完整地编码，也可以从震动里完整地还原回来。</strong></p>
 <p>这篇文章要把三件看起来毫不相干的事，用一根线串起来：</p>
 <ol>
-<li><strong>核磁共振怎么把"震动"还原成世界</strong>（傅里叶、k 空间、相位编码）</li>
+<li><strong>核磁共振怎么把"震动"还原成世界</strong>（傅里叶、k 空间、相位编码）
+   —— 顺带一个插曲：<strong>FFT 这个算法当年被推上台面，是为了听出地球对面有没有偷偷核试验。
+   跟那件事比，"测一个人体"简直是核弹打蚊子。</strong></li>
 <li><strong>同一套 sin/cos 序列，怎么变成大模型记住词序的 RoPE</strong>（一段代码，两个名字）</li>
-<li><strong>为什么"多模态"不是堆功能，而是数学上的必需品</strong>（投影切片定理 → 柏拉图表征假说）</li>
+<li><strong>为什么"多模态"不是堆功能，而是数学上的必需品</strong>（投影切片定理 → 地球 CT → 柏拉图表征假说）</li>
 </ol>
 <p>全文不背公式、不证定理，每一段都是能直接跑的 PyTorch 代码。</p>
 </blockquote>
@@ -175,6 +177,157 @@ k 空间不是图像，是图像的频域。最后做一次逆傅里叶，你的
 <p><strong>把位置编码成角度 → 收集一堆复数 → 逆变换 → 世界回来了。</strong></p>
 </blockquote>
 <p>请把这句话记牢。因为下一幕，一模一样的话会从大模型嘴里再说一遍。</p>
+<hr />
+<h2 id="插曲这套工具的原始任务是听出地球对面的一次核爆">插曲：这套工具的原始任务，是听出地球对面的一次核爆</h2>
+<p>讲到这里必须插一段历史，否则你会低估手上这把锤子有多重。</p>
+<p><strong>傅里叶本人（1768–1830）研究的是热。</strong> 1822 年那本《热的解析理论》里，
+他为了算清楚一块铁里的热怎么扩散，提出了一个当时被拉格朗日等人激烈质疑的主张：
+<strong>任何一个函数，都可以拆成一堆 sin 和 cos 的叠加。</strong> 他没想过身体，没想过语言，更没想过核弹。</p>
+<p><strong>而把傅里叶变成工业级武器的那一步，直接动力就是"监测核试验"。</strong>
+1965 年 Cooley 和 Tukey 发表了快速傅里叶变换（FFT）。按 Cooley 自己后来的回忆，
+这件事的推手是这样的：Tukey 当时在美国总统科学顾问委员会开会，议题之一是
+<strong>如何在不进入苏联境内的前提下，核查对方是否偷偷做了核试验</strong>——办法是在境外布地震台阵，
+从地震波里把"爆炸"和"天然地震"分开。这需要海量的傅里叶计算，而当时的算法是 <code>O(N²)</code>，算不动。
+Tukey 在会上写下了那个分治的想法，Garwin 把它带回 IBM 交给了 Cooley。</p>
+<p><code>O(N²)</code> 变成 <code>O(N log N)</code> 意味着什么：</p>
+<div class="highlight"><pre><span></span><code>N = 1,000,000 个采样点
+  朴素算法: 10^12 次运算
+  FFT:      2 × 10^7 次运算
+  ——— 快了 5 万倍。算不动的事，变成了实时能干的事。
+</code></pre></div>
+
+<p><strong>所以：你手机里的每一次语音识别、医院里的每一台核磁共振，用的都是当年为了"数地球对面的核弹"而被逼出来的算法。</strong>
+（更早的历史是：高斯在 1805 年就写下过同样的分治思路，比傅里叶发表还早，但被埋在拉丁文遗稿里没人看见。）</p>
+<h3 id="核爆和地震时域上长得一样频域上一眼分开">核爆和地震，时域上长得一样，频域上一眼分开</h3>
+<p>核查的核心难题是：地震台记录到一次震动，<strong>怎么知道它是天然地震，还是一次地下核爆？</strong>
+两者传到几千公里外时，波形幅度可能完全一样。但它们的<strong>震源机制</strong>不同：</p>
+<div class="highlight"><pre><span></span><code>核爆:     一瞬间的各向同性挤压 → 短、脆、高频丰富、几乎没有长周期面波
+天然地震: 断层错动（双力偶）    → 有拖很久的低频面波列
+</code></pre></div>
+
+<p>这个差别在时域上被噪声糊掉了，在频域里却是一刀两断（下面是真实判据 mb:Ms 的玩具版）：</p>
+<div class="highlight"><pre><span></span><code><span class="kn">import</span><span class="w"> </span><span class="nn">torch</span>
+<span class="n">torch</span><span class="o">.</span><span class="n">manual_seed</span><span class="p">(</span><span class="mi">0</span><span class="p">)</span>
+
+<span class="n">fs</span><span class="p">,</span> <span class="n">T</span> <span class="o">=</span> <span class="mf">40.0</span><span class="p">,</span> <span class="mf">120.0</span>                                   <span class="c1"># 地震台：40 Hz 采样，记录 2 分钟</span>
+<span class="n">t</span> <span class="o">=</span> <span class="n">torch</span><span class="o">.</span><span class="n">arange</span><span class="p">(</span><span class="nb">int</span><span class="p">(</span><span class="n">fs</span> <span class="o">*</span> <span class="n">T</span><span class="p">))</span> <span class="o">/</span> <span class="n">fs</span>
+
+<span class="k">def</span><span class="w"> </span><span class="nf">burst</span><span class="p">(</span><span class="n">t0</span><span class="p">,</span> <span class="n">f</span><span class="p">,</span> <span class="n">tau</span><span class="p">,</span> <span class="n">amp</span><span class="p">):</span>                           <span class="c1"># 一段从 t0 开始、衰减时长 tau 的振动</span>
+    <span class="n">env</span> <span class="o">=</span> <span class="n">torch</span><span class="o">.</span><span class="n">where</span><span class="p">(</span><span class="n">t</span> <span class="o">&gt;=</span> <span class="n">t0</span><span class="p">,</span> <span class="n">torch</span><span class="o">.</span><span class="n">exp</span><span class="p">(</span><span class="o">-</span><span class="p">(</span><span class="n">t</span> <span class="o">-</span> <span class="n">t0</span><span class="p">)</span> <span class="o">/</span> <span class="n">tau</span><span class="p">),</span> <span class="n">torch</span><span class="o">.</span><span class="n">zeros_like</span><span class="p">(</span><span class="n">t</span><span class="p">))</span>
+    <span class="k">return</span> <span class="n">amp</span> <span class="o">*</span> <span class="n">env</span> <span class="o">*</span> <span class="n">torch</span><span class="o">.</span><span class="n">sin</span><span class="p">(</span><span class="mi">2</span> <span class="o">*</span> <span class="n">torch</span><span class="o">.</span><span class="n">pi</span> <span class="o">*</span> <span class="n">f</span> <span class="o">*</span> <span class="p">(</span><span class="n">t</span> <span class="o">-</span> <span class="n">t0</span><span class="p">))</span>
+
+<span class="c1"># 核爆：一次性挤压，短、脆、高频丰富，几乎没有长周期面波</span>
+<span class="n">boom</span> <span class="o">=</span> <span class="n">burst</span><span class="p">(</span><span class="mi">20</span><span class="p">,</span> <span class="mf">4.0</span><span class="p">,</span> <span class="mf">1.5</span><span class="p">,</span> <span class="mf">1.0</span><span class="p">)</span> <span class="o">+</span> <span class="n">burst</span><span class="p">(</span><span class="mi">20</span><span class="p">,</span> <span class="mf">7.0</span><span class="p">,</span> <span class="mf">0.8</span><span class="p">,</span> <span class="mf">0.6</span><span class="p">)</span>
+<span class="c1"># 天然地震：断层错动，有 P 波，更有拖很久的低频面波</span>
+<span class="n">quake</span> <span class="o">=</span> <span class="n">burst</span><span class="p">(</span><span class="mi">20</span><span class="p">,</span> <span class="mf">3.0</span><span class="p">,</span> <span class="mf">1.2</span><span class="p">,</span> <span class="mf">0.5</span><span class="p">)</span> <span class="o">+</span> <span class="n">burst</span><span class="p">(</span><span class="mi">24</span><span class="p">,</span> <span class="mf">0.08</span><span class="p">,</span> <span class="mf">25.0</span><span class="p">,</span> <span class="mf">1.0</span><span class="p">)</span> <span class="o">+</span> <span class="n">burst</span><span class="p">(</span><span class="mi">26</span><span class="p">,</span> <span class="mf">0.05</span><span class="p">,</span> <span class="mf">30.0</span><span class="p">,</span> <span class="mf">0.8</span><span class="p">)</span>
+
+<span class="k">def</span><span class="w"> </span><span class="nf">band_ratio</span><span class="p">(</span><span class="n">x</span><span class="p">):</span>                                    <span class="c1"># 高频能量 / 低频能量（mb:Ms 判据的玩具版）</span>
+    <span class="n">spec</span> <span class="o">=</span> <span class="n">torch</span><span class="o">.</span><span class="n">fft</span><span class="o">.</span><span class="n">rfft</span><span class="p">(</span><span class="n">x</span><span class="p">)</span><span class="o">.</span><span class="n">abs</span><span class="p">()</span> <span class="o">**</span> <span class="mi">2</span>
+    <span class="n">f</span> <span class="o">=</span> <span class="n">torch</span><span class="o">.</span><span class="n">fft</span><span class="o">.</span><span class="n">rfftfreq</span><span class="p">(</span><span class="nb">len</span><span class="p">(</span><span class="n">x</span><span class="p">),</span> <span class="mi">1</span> <span class="o">/</span> <span class="n">fs</span><span class="p">)</span>
+    <span class="n">hi</span> <span class="o">=</span> <span class="n">spec</span><span class="p">[(</span><span class="n">f</span> <span class="o">&gt;</span> <span class="mf">1.0</span><span class="p">)</span> <span class="o">&amp;</span> <span class="p">(</span><span class="n">f</span> <span class="o">&lt;</span> <span class="mf">10.0</span><span class="p">)]</span><span class="o">.</span><span class="n">sum</span><span class="p">()</span>
+    <span class="n">lo</span> <span class="o">=</span> <span class="n">spec</span><span class="p">[(</span><span class="n">f</span> <span class="o">&gt;</span> <span class="mf">0.02</span><span class="p">)</span> <span class="o">&amp;</span> <span class="p">(</span><span class="n">f</span> <span class="o">&lt;</span> <span class="mf">0.5</span><span class="p">)]</span><span class="o">.</span><span class="n">sum</span><span class="p">()</span>
+    <span class="k">return</span> <span class="p">(</span><span class="n">hi</span> <span class="o">/</span> <span class="n">lo</span><span class="p">)</span><span class="o">.</span><span class="n">item</span><span class="p">()</span>
+
+<span class="k">for</span> <span class="n">name</span><span class="p">,</span> <span class="n">wave</span> <span class="ow">in</span> <span class="p">[(</span><span class="s2">&quot;核爆&quot;</span><span class="p">,</span> <span class="n">boom</span><span class="p">),</span> <span class="p">(</span><span class="s2">&quot;天然地震&quot;</span><span class="p">,</span> <span class="n">quake</span><span class="p">)]:</span>
+    <span class="n">noise</span> <span class="o">=</span> <span class="mf">0.15</span> <span class="o">*</span> <span class="n">torch</span><span class="o">.</span><span class="n">randn</span><span class="p">(</span><span class="nb">len</span><span class="p">(</span><span class="n">t</span><span class="p">))</span>
+    <span class="n">x</span> <span class="o">=</span> <span class="n">wave</span> <span class="o">+</span> <span class="n">noise</span>
+    <span class="nb">print</span><span class="p">(</span><span class="sa">f</span><span class="s2">&quot;</span><span class="si">{</span><span class="n">name</span><span class="si">}</span><span class="s2">: 时域峰值 </span><span class="si">{</span><span class="n">x</span><span class="o">.</span><span class="n">abs</span><span class="p">()</span><span class="o">.</span><span class="n">max</span><span class="p">()</span><span class="si">:</span><span class="s2">.2f</span><span class="si">}</span><span class="s2">  |  高频/低频能量比 = </span><span class="si">{</span><span class="n">band_ratio</span><span class="p">(</span><span class="n">x</span><span class="p">)</span><span class="si">:</span><span class="s2">9.2f</span><span class="si">}</span><span class="s2">&quot;</span><span class="p">)</span>
+</code></pre></div>
+
+<p>输出：</p>
+<div class="highlight"><pre><span></span><code>核爆: 时域峰值 1.46  |  高频/低频能量比 =     22.05
+天然地震: 时域峰值 1.47  |  高频/低频能量比 =      0.15
+</code></pre></div>
+
+<p><strong>时域峰值 1.46 vs 1.47——完全分不出来。频域能量比 22.05 vs 0.15——差了 150 倍。</strong>
+这就是 CTBTO（全面禁核试验条约组织）全球台网每天在干的事：
+170 个地震台、11 个水声台、60 个次声台，全部靠这类频域判据，
+把地球另一端一次几公里深的地下爆炸，从每天成千上万次天然地震里挑出来。</p>
+<h3 id="更狠的是信号根本不需要看得见">更狠的是：信号根本不需要"看得见"</h3>
+<p>地球对面传来的震动，到你这儿早已比背景噪声小几十上百倍——时域上是一条纯噪声。
+但傅里叶变换会做一件事：<strong>把 N 个采样点里的信号相干地累加起来，而噪声只能按 √N 增长。</strong>
+于是信噪比凭空涨了 √N 倍。多个台站再一叠加，又是一个 √m：</p>
+<div class="highlight"><pre><span></span><code><span class="kn">import</span><span class="w"> </span><span class="nn">torch</span>
+<span class="n">torch</span><span class="o">.</span><span class="n">manual_seed</span><span class="p">(</span><span class="mi">0</span><span class="p">)</span>
+
+<span class="n">N</span><span class="p">,</span> <span class="n">f0</span> <span class="o">=</span> <span class="mi">16384</span><span class="p">,</span> <span class="mi">137</span>                                    <span class="c1"># 16384 个采样点，地球对面传来的一丝震动</span>
+<span class="n">n</span> <span class="o">=</span> <span class="n">torch</span><span class="o">.</span><span class="n">arange</span><span class="p">(</span><span class="n">N</span><span class="p">)</span><span class="o">.</span><span class="n">float</span><span class="p">()</span>
+<span class="n">signal</span> <span class="o">=</span> <span class="mf">0.05</span> <span class="o">*</span> <span class="n">torch</span><span class="o">.</span><span class="n">sin</span><span class="p">(</span><span class="mi">2</span> <span class="o">*</span> <span class="n">torch</span><span class="o">.</span><span class="n">pi</span> <span class="o">*</span> <span class="n">f0</span> <span class="o">*</span> <span class="n">n</span> <span class="o">/</span> <span class="n">N</span><span class="p">)</span>  <span class="c1"># 振幅 0.05：比噪声小 20 倍</span>
+
+<span class="k">def</span><span class="w"> </span><span class="nf">peak_snr</span><span class="p">(</span><span class="n">x</span><span class="p">):</span>                                      <span class="c1"># 频域里，目标频率的峰 比 周围噪底 高多少倍</span>
+    <span class="n">spec</span> <span class="o">=</span> <span class="n">torch</span><span class="o">.</span><span class="n">fft</span><span class="o">.</span><span class="n">rfft</span><span class="p">(</span><span class="n">x</span><span class="p">)</span><span class="o">.</span><span class="n">abs</span><span class="p">()</span>
+    <span class="n">peak</span> <span class="o">=</span> <span class="n">spec</span><span class="p">[</span><span class="n">f0</span><span class="p">]</span>
+    <span class="n">floor</span> <span class="o">=</span> <span class="n">torch</span><span class="o">.</span><span class="n">cat</span><span class="p">([</span><span class="n">spec</span><span class="p">[:</span><span class="n">f0</span> <span class="o">-</span> <span class="mi">3</span><span class="p">],</span> <span class="n">spec</span><span class="p">[</span><span class="n">f0</span> <span class="o">+</span> <span class="mi">4</span><span class="p">:]])</span><span class="o">.</span><span class="n">median</span><span class="p">()</span>
+    <span class="k">return</span> <span class="p">(</span><span class="n">peak</span> <span class="o">/</span> <span class="n">floor</span><span class="p">)</span><span class="o">.</span><span class="n">item</span><span class="p">()</span>
+
+<span class="n">x1</span> <span class="o">=</span> <span class="n">signal</span> <span class="o">+</span> <span class="n">torch</span><span class="o">.</span><span class="n">randn</span><span class="p">(</span><span class="n">N</span><span class="p">)</span>                          <span class="c1"># 单个台站：信号被噪声彻底淹没</span>
+<span class="nb">print</span><span class="p">(</span><span class="sa">f</span><span class="s2">&quot;时域信噪比        : </span><span class="si">{</span><span class="n">signal</span><span class="o">.</span><span class="n">std</span><span class="p">()</span><span class="w"> </span><span class="o">/</span><span class="w"> </span><span class="mf">1.0</span><span class="si">:</span><span class="s2">.4f</span><span class="si">}</span><span class="s2">   （示波器上什么都看不到）&quot;</span><span class="p">)</span>
+<span class="nb">print</span><span class="p">(</span><span class="sa">f</span><span class="s2">&quot;单台站频域峰信噪比: </span><span class="si">{</span><span class="n">peak_snr</span><span class="p">(</span><span class="n">x1</span><span class="p">)</span><span class="si">:</span><span class="s2">8.1f</span><span class="si">}</span><span class="s2"> 倍&quot;</span><span class="p">)</span>
+
+<span class="k">for</span> <span class="n">m</span> <span class="ow">in</span> <span class="p">[</span><span class="mi">1</span><span class="p">,</span> <span class="mi">4</span><span class="p">,</span> <span class="mi">16</span><span class="p">,</span> <span class="mi">64</span><span class="p">,</span> <span class="mi">256</span><span class="p">]:</span>                         <span class="c1"># m 个台站：同一个信号 + 各自独立的噪声</span>
+    <span class="n">stack</span> <span class="o">=</span> <span class="nb">sum</span><span class="p">(</span><span class="n">signal</span> <span class="o">+</span> <span class="n">torch</span><span class="o">.</span><span class="n">randn</span><span class="p">(</span><span class="n">N</span><span class="p">)</span> <span class="k">for</span> <span class="n">_</span> <span class="ow">in</span> <span class="nb">range</span><span class="p">(</span><span class="n">m</span><span class="p">))</span> <span class="o">/</span> <span class="n">m</span>
+    <span class="nb">print</span><span class="p">(</span><span class="sa">f</span><span class="s2">&quot;  </span><span class="si">{</span><span class="n">m</span><span class="si">:</span><span class="s2">3d</span><span class="si">}</span><span class="s2"> 个台站叠加 -&gt; 频域峰信噪比 </span><span class="si">{</span><span class="n">peak_snr</span><span class="p">(</span><span class="n">stack</span><span class="p">)</span><span class="si">:</span><span class="s2">8.1f</span><span class="si">}</span><span class="s2"> 倍&quot;</span><span class="p">)</span>
+</code></pre></div>
+
+<p>输出：</p>
+<div class="highlight"><pre><span></span><code>时域信噪比        : 0.0354   （示波器上什么都看不到）
+单台站频域峰信噪比:      4.7 倍
+    1 个台站叠加 -&gt; 频域峰信噪比      5.6 倍
+    4 个台站叠加 -&gt; 频域峰信噪比      7.2 倍
+   16 个台站叠加 -&gt; 频域峰信噪比     15.5 倍
+   64 个台站叠加 -&gt; 频域峰信噪比     31.2 倍
+  256 个台站叠加 -&gt; 频域峰信噪比     61.3 倍
+</code></pre></div>
+
+<p><strong>时域信噪比 0.035，肉眼、示波器、任何"直接看"的办法都是一片雪花噪声。
+换到频域，一个 4.7 倍的峰直接立起来；256 个台站一叠，61 倍——铁证。</strong></p>
+<p>（顺便记住最后那五行：<strong>每多一个台站，信噪比就涨 √m。</strong>
+这个数字第三幕会以另一个名字回来——那时候"台站"叫"模态"。）</p>
+<h3 id="所以测人体真的是核弹打蚊子">所以，测人体真的是"核弹打蚊子"</h3>
+<p>把两件事摆在一起对比，你就知道 MRI 那个 <code>3e-06</code> 的还原误差是怎么来的了：</p>
+<table>
+<thead>
+<tr>
+<th></th>
+<th>监测地球对面的核爆</th>
+<th>给你做一次核磁共振</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>信号源</td>
+<td>别人放的，<strong>你不能控制</strong></td>
+<td>你自己打的射频脉冲，想打几次打几次</td>
+</tr>
+<tr>
+<td>传播介质</td>
+<td>整个地球内部，<strong>结构本身就是未知数</strong></td>
+<td>就在眼前那 30 厘米</td>
+</tr>
+<tr>
+<td>采样角度</td>
+<td>台站在哪就是哪，<strong>求不来</strong></td>
+<td>梯度磁场想给哪个角度就给哪个角度</td>
+</tr>
+<tr>
+<td>能否重复</td>
+<td><strong>一次爆炸只发生一次</strong></td>
+<td>躺着别动，再扫一遍就是了</td>
+</tr>
+<tr>
+<td>信噪比</td>
+<td>比噪声小几十上百倍，要靠 √N 挖</td>
+<td>信号本来就在，几十次平均就干净了</td>
+</tr>
+</tbody>
+</table>
+<blockquote>
+<p><strong>同一把锤子：一头砸的是"从整个地球的噪声里挖出一次爆炸"，
+另一头砸的是"给一个躺着不动、随便你怎么打脉冲的人体成像"。</strong>
+傅里叶那套东西能把人体还原到浮点误差级别，<strong>不是因为人体简单，
+而是因为在人体上，你可以主动选择采样角度。</strong></p>
+</blockquote>
+<p>请把最后半句记住。它是第三幕的全部主题：<strong>能不能自己选角度，决定了你能还原出多少世界。</strong></p>
 <hr />
 <h1 id="第二幕sin-cos-序列同一段代码换个名字就是大模型的位置编码">第二幕：sin / cos 序列——同一段代码，换个名字就是大模型的位置编码</h1>
 <h2 id="2-eikx-和-eimθmri-的相位编码就是-rope">2. <code>e^{ikx}</code> 和 <code>e^{imθ}</code>：MRI 的相位编码，就是 RoPE</h2>
@@ -415,7 +568,31 @@ RoPE:  转得慢的维度对   → 记住&quot;隔了几十上百个词&quot;的
 <p>而且注意曲线的形状：<strong>它是单调下降、永不饱和的。</strong>
 这就是"CT 为什么要转一圈"的全部原因——每转一度，就多穿透一次世界。</p>
 <hr />
-<h2 id="5-把角度换成模态这就是柏拉图表征假说">5. 把"角度"换成"模态"：这就是柏拉图表征假说</h2>
+<h2 id="5-同一个定理对内还原你的大脑对外还原地球内部">5. 同一个定理：对内还原你的大脑，对外还原地球内部</h2>
+<p>在跳到大模型之前，先看这个定理最震撼的一次应用——<strong>人类从没有进入过地心，却"看见"了它。</strong></p>
+<p>回到插曲里那个地震台网。每一次地震，都会向四面八方发出穿透地球的波；
+每一个"震源—台站"的组合，就是<strong>一条穿过地球内部的射线</strong>。</p>
+<div class="highlight"><pre><span></span><code>一条射线的走时 = 沿途所有介质速度的&quot;积分&quot;
+              ↑
+        这就是一次投影！（第 3 节那个&quot;把整块图压扁成一条线&quot;）
+
+全球几千个台站 × 每年几万次地震 = 几百万条不同角度的射线
+              ↓
+        角度够多 → 反演出地球内部的三维速度结构
+</code></pre></div>
+
+<p><strong>这就是地震层析成像（Seismic Tomography）——字面意义上的"地球 CT"。</strong>
+它用的就是第 3、4 节那套东西：投影 → 采够角度 → 重建。人类靠它"看到"了
+俯冲到地幔深处的板块、非洲和太平洋底下巨大的低速异常区。</p>
+<p>而这条线上最漂亮的一次胜利发生在 1936 年：丹麦地震学家 <strong>Inge Lehmann</strong>
+盯着地球"阴影区"里那些本不该出现的 P 波到时记录，推断出
+<strong>地核内部还有一个固态的内核</strong>。她没有钻头，没有探针，只有一堆震动记录和傅里叶。</p>
+<blockquote>
+<p><strong>同一个数学：往里，把你的大脑一层层还原；往外，把 6371 公里深的地心还原。</strong>
+<strong>两边的区别只有一个——你能拿到多少个角度。</strong></p>
+</blockquote>
+<hr />
+<h2 id="6-把角度换成模态这就是柏拉图表征假说">6. 把"角度"换成"模态"：这就是柏拉图表征假说</h2>
 <p>现在做最后一步替换。上面那张表里的"视角"，换成"模态"，故事一字不改：</p>
 <div class="highlight"><pre><span></span><code>文本   = 从&quot;语言&quot;这个角度对世界做的一次投影
 图像   = 从&quot;视觉&quot;这个角度对世界做的一次投影
@@ -472,7 +649,7 @@ RoPE:  转得慢的维度对   → 记住&quot;隔了几十上百个词&quot;的
 <p><strong>要逼近真实世界的表征，你在数学上被迫需要更多的观察角度。没有捷径。</strong></p>
 </blockquote>
 <hr />
-<h2 id="6-顺便一个模型内部也在做同一件事">6. 顺便：一个模型内部，也在做同一件事</h2>
+<h2 id="7-顺便一个模型内部也在做同一件事">7. 顺便：一个模型内部，也在做同一件事</h2>
 <p>有意思的是，Transformer 内部早就在偷偷执行这套"多角度采样"：</p>
 <div class="highlight"><pre><span></span><code><span class="c1"># 多头注意力：768 维 → 12 个头 × 64 维</span>
 <span class="n">k</span> <span class="o">=</span> <span class="n">k</span><span class="o">.</span><span class="n">view</span><span class="p">(</span><span class="n">B</span><span class="p">,</span> <span class="n">T</span><span class="p">,</span> <span class="bp">self</span><span class="o">.</span><span class="n">n_head</span><span class="p">,</span> <span class="n">C</span> <span class="o">//</span> <span class="bp">self</span><span class="o">.</span><span class="n">n_head</span><span class="p">)</span><span class="o">.</span><span class="n">transpose</span><span class="p">(</span><span class="mi">1</span><span class="p">,</span> <span class="mi">2</span><span class="p">)</span>
@@ -499,7 +676,10 @@ RoPE:  转得慢的维度对   → 记住&quot;隔了几十上百个词&quot;的
 下排是 MRI 的 <code>e^{ikx}</code> 与 RoPE 的 <code>e^{imθ}</code>——<strong>蓝箭头和红箭头在单位圆上完全重合</strong>，
 两条"只依赖相对距离"的曲线也完全重合；最后一格并排放着半径 2 / 8 / 32 / 完整 的重建，
 你会亲眼看到低频只给出一团模糊轮廓，病灶和血管是在高频里一点点长出来的。</p>
-<p><strong>图二（动画）</strong>：频域上的线一条条被点亮，从 1 个视角到 128 个视角。
+<p><strong>图二（插曲三格）</strong>：核爆与天然地震的两条波形——<strong>时域峰值 1.50 vs 1.49，肉眼、示波器都分不出</strong>；
+换到频域，一个把能量堆在 1–10 Hz，一个全是 0.02–0.5 Hz 的长周期面波，能量比差一百多倍；
+第三格是那条 √m 曲线：从噪底里立起来的峰，随台站数一路往上爬。</p>
+<p><strong>图三（动画）</strong>：频域上的线一条条被点亮，从 1 个视角到 128 个视角。
 第一帧最震撼——<strong>只有一个角度时，重建出的"世界"是一片竖条纹糊影</strong>，
 那正是单模态模型眼里的世界。右边那条误差曲线一路往下掉，永远没有停下来的意思。</p>
 </blockquote>
@@ -541,25 +721,34 @@ RoPE:  转得慢的维度对   → 记住&quot;隔了几十上百个词&quot;的
 </tr>
 <tr>
 <td><strong>一个角度 = 一条线</strong></td>
-<td>投影切片定理</td>
+<td>投影切片定理；一次地震一条射线</td>
 <td>——</td>
 <td>单模态天然信息不完备</td>
 </tr>
 <tr>
 <td><strong>采够角度才有世界</strong></td>
-<td>CT 转一圈，128 视角误差 6%</td>
+<td>CT 转一圈，128 视角误差 6%；地球 CT 反演地幔</td>
 <td>——</td>
 <td>柏拉图表征假说，模态越多越收敛</td>
 </tr>
+<tr>
+<td><strong>√N 的礼物</strong></td>
+<td>相干积累把埋在噪声里的核爆挖出来</td>
+<td>——</td>
+<td>每多一个台站/模态，信噪比涨 √m</td>
+</tr>
 </tbody>
 </table>
-<p>三句话总结全文：</p>
+<p>四句话总结全文：</p>
 <blockquote>
 <p><strong>第一，世界可以被震动完整编码</strong>——MRI 用 <code>e^{ikx}</code> 把你的身体写进 k 空间，逆变换误差 3e-06（第一幕）。
-<strong>第二，同一套 sin/cos 换个名字就是大模型的位置编码</strong>——<code>e^{ikx}</code> 和 <code>e^{imθ}</code> 是同一个算子，
+<strong>第二，这把锤子本来是用来砸核弹的</strong>——FFT 因核试验监测而被推上台面，
+时域上一模一样的波形，频域里能量比差 150 倍；能把人体还原到浮点误差，
+不是因为人体简单，而是因为在人体上你可以<strong>主动选角度</strong>（插曲）。
+<strong>第三，同一套 sin/cos 换个名字就是大模型的位置编码</strong>——<code>e^{ikx}</code> 和 <code>e^{imθ}</code> 是同一个算子，
 连"只依赖相对距离"这条性质都一模一样（第二幕）。
-<strong>第三，一个角度永远还原不出世界</strong>——投影切片定理规定了每个视角只是频域的一条线，
-于是"多模态"不是功能堆砌，是数学上的强制要求（第三幕）。</p>
+<strong>第四，一个角度永远还原不出世界</strong>——投影切片定理规定了每个视角只是频域的一条线；
+往外它让人类看见了地心，往里它逼出了多模态：这不是功能堆砌，是数学上的强制要求（第三幕）。</p>
 </blockquote>
 <hr />
 <h2 id="结语无穷角度">结语：无穷角度</h2>
@@ -567,7 +756,11 @@ RoPE:  转得慢的维度对   → 记住&quot;隔了几十上百个词&quot;的
 <blockquote>
 <p><strong>能量、频率、振动——不是宇宙的装饰，是宇宙的编码格式。</strong></p>
 </blockquote>
-<p>核磁共振是人类第一次大规模、工业化地兑现这句话：<strong>不切开身体，只靠听震动，把人还原出来。</strong>
+<p>傅里叶为了算一块铁里的热，写下了那套"万物皆可拆成 sin 和 cos"的主张；
+一百四十年后，人类用它的加速版去听地球对面有没有人偷偷引爆核弹；
+再过十年，同一套东西被装进医院，变成了不用开刀就能看见你大脑的机器。</p>
+<p>核磁共振是人类第一次大规模、工业化地兑现特斯拉那句话：<strong>不切开身体，只靠听震动，把人还原出来。</strong>
+地震层析成像把同一件事做到了 6371 公里深：<strong>没人去过地心，但我们把它画出来了。</strong>
 而大模型正在做同一件事的放大版：<strong>不接触世界，只靠一层层投影，把世界还原出来。</strong></p>
 <p>所以最后留一句我认为最重要的话：</p>
 <blockquote>
@@ -577,7 +770,7 @@ RoPE:  转得慢的维度对   → 记住&quot;隔了几十上百个词&quot;的
 <strong>人是这样，模型也是这样。多模态最强的地方，从来不是它会看图，
 而是它握着无穷多个角度的入口。</strong></p>
 </blockquote>
-<p>把上面七段代码跑一遍。你会亲眼看到那条曲线：
+<p>把上面九段代码跑一遍。你会亲眼看到那条曲线：
 <strong>每多一个角度，误差就掉一截，从来不会停。</strong></p>
 <hr />
 <blockquote>
@@ -587,8 +780,13 @@ RoPE:  转得慢的维度对   → 记住&quot;隔了几十上百个词&quot;的
 - <a href="RLHF_AND_PLATONIC_REPRESENTATION.md">强化学习对齐与柏拉图表征</a> —— 柏拉图表征假说的展开
 - <a href="COMPRESSION_IS_INTELLIGENCE.md">压缩即智能</a> —— 为什么"还原世界"就是智能本身</p>
 <p><strong>参考：</strong>
-Lauterbur (1973), <em>Image Formation by Induced Local Interactions</em> —— MRI 的梯度编码，1973 年；
+Fourier (1822), <em>Théorie analytique de la chaleur</em> —— 万物皆可拆成 sin/cos，起点是"热"；
+Cooley &amp; Tukey (1965), <em>An Algorithm for the Machine Calculation of Complex Fourier Series</em> —— FFT；
+Cooley (1987), <em>How the FFT Gained Acceptance</em> —— FFT 与核试验监测那段渊源的当事人回忆；
+Heideman, Johnson &amp; Burrus (1984), <em>Gauss and the History of the FFT</em> —— 高斯 1805 年的先手；
+Lehmann (1936), <em>P'</em> —— 靠地震波发现地球内核；
 Bracewell (1956), <em>Strip Integration in Radio Astronomy</em> —— 投影切片定理；
+Lauterbur (1973), <em>Image Formation by Induced Local Interactions</em> —— MRI 的梯度编码；
 Su et al. (2021), <em>RoFormer: Enhanced Transformer with Rotary Position Embedding</em> —— RoPE；
 Huh et al. (2024), <em>The Platonic Representation Hypothesis</em> —— 多模态表征收敛。</p>
 </blockquote>
