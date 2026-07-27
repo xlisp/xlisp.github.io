@@ -488,6 +488,22 @@ RoPE:  转得慢的维度对   → 记住&quot;隔了几十上百个词&quot;的
 <p>（这条线索的展开在这篇：<a href="RLHF_AND_PLATONIC_REPRESENTATION.md">强化学习对齐与柏拉图表征</a>。）</p>
 <p><strong>从质子到注意力头，从 CT 机转一圈到多模态训练，做的都是一件事：换角度，采样，重建。</strong></p>
 <hr />
+<h2 id="动手把三幕画出来">🎬 动手：把三幕画出来</h2>
+<p>仓库里的可视化脚本把上面全部三幕画成了图和动画：</p>
+<div class="highlight"><pre><span></span><code>python<span class="w"> </span>scripts/mri_to_multimodal_visualization.py
+</code></pre></div>
+
+<blockquote>
+<p><strong>图一（静态六格）</strong>：三个质子（3/6/9 Hz）的合唱波形 → 一次 FFT 把它们原样拆开 →
+一维人体经 k 空间往返，红色还原曲线严丝合缝地压在黑色真值上（误差 1e-15 级）；
+下排是 MRI 的 <code>e^{ikx}</code> 与 RoPE 的 <code>e^{imθ}</code>——<strong>蓝箭头和红箭头在单位圆上完全重合</strong>，
+两条"只依赖相对距离"的曲线也完全重合；最后一格并排放着半径 2 / 8 / 32 / 完整 的重建，
+你会亲眼看到低频只给出一团模糊轮廓，病灶和血管是在高频里一点点长出来的。</p>
+<p><strong>图二（动画）</strong>：频域上的线一条条被点亮，从 1 个视角到 128 个视角。
+第一帧最震撼——<strong>只有一个角度时，重建出的"世界"是一片竖条纹糊影</strong>，
+那正是单模态模型眼里的世界。右边那条误差曲线一路往下掉，永远没有停下来的意思。</p>
+</blockquote>
+<hr />
 <h2 id="缝合把三幕接起来">缝合：把三幕接起来</h2>
 <table>
 <thead>
