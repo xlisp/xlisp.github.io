@@ -91,7 +91,7 @@ ax[0, 1].stem(fr[:20], spec[:20], basefmt=" ")
 for f, a in zip(freqs, amps):
     ax[0, 1].annotate(f"{int(f)} Hz\n强度 {a}", xy=(f, a), xytext=(f + 0.8, a + 0.06),
                       fontsize=8, arrowprops=dict(arrowstyle="->", lw=0.8))
-ax[0, 1].set_title("② 傅里叶：频率与强度一个不差地被找回\n（特斯拉的 369，说的就是频率可分离）")
+ax[0, 1].set_title("② 傅里叶：频率与强度一个不差地被找回\n（挑 3/6/9 Hz 只是好读，与特斯拉的「369」无关）")
 ax[0, 1].set_xlabel("频率 (Hz)")
 ax[0, 1].set_ylim(0, 1.25)
 ax[0, 1].grid(alpha=0.25)
