@@ -1,94 +1,129 @@
 # 公众号发表记录抓取（标题 / 链接 / 阅读数）
 
-`fetch_mp_articles.js` 在 Chrome 里跑，抓取公众号后台「发表记录」页的所有文章，自动点「下一页」翻到底。
+抓公众号后台「发表记录」页的所有文章，结果**自动下载成 `mp_articles.json`**，不用手动复制。
 
-抓取字段：
+两个脚本，**先用 API 模式**：
 
-| 字段 | 说明 |
-| --- | --- |
-| `time` | 发表时间（如 `星期二 20:58` / `07月23日`） |
-| `title` | 文章标题（已剔除「原创」「已修改」标签，`&nbsp;` 转普通空格） |
-| `url` | `https://mp.weixin.qq.com/s/xxx` 永久链接 |
-| `read` | 阅读人数 |
-| `like` / `share` / `rec` / `comment` | 点赞 / 分享 / 推荐 / 留言数 |
+| 脚本 | 原理 | 翻页 |
+| --- | --- | --- |
+| `fetch_mp_articles.js` | **API 模式（推荐）** 直接请求接口，不点按钮 | 页面不刷新，一次跑完 |
+| `fetch_mp_articles_click.js` | 点击模式（兜底） 点「下一页」抓 DOM | 每页会刷新，需手动重跑续抓 |
 
-## 一、打开目标页面
+> 这个后台点「下一页」是**整页刷新**，内存里的变量全丢。所以两个脚本都不靠内存攒数据：
+> API 模式压根不翻页；点击模式每抓完一页就写进 `localStorage`，刷新后接着抓。
 
-1. 登录 <https://mp.weixin.qq.com>
-2. 左侧菜单：**内容与互动 → 发表记录**（页面上有「发表记录」标题和底部分页条 `1 2 3 4 5 下一页`）
-3. 确认停在**第 1 页**再运行脚本（脚本从当前页往后翻，不会往前翻）
+抓取字段：`time`（发表时间）、`title`（标题）、`url`（永久链接）、`read`（阅读数）、
+`like` / `share` / `comment`，API 模式还多给 `digest`（摘要）、`cover`（封面图）。
 
-## 二、运行脚本（推荐：Snippets，不会有粘贴报错）
+---
 
-Chrome 控制台默认会拦截粘贴的代码，而且从终端/网页复制时容易混进不可见字符，导致
-`Uncaught SyntaxError: Invalid or unexpected token`。用 Sources → Snippets 最稳：
+## 一、API 模式（推荐）
 
-1. `F12` 打开 DevTools → 顶部 **Sources** 面板
-2. 左侧栏 **Snippets**（若没看到，点 `»` 展开）→ **+ New snippet**
-3. 用编辑器打开本目录的 `fetch_mp_articles.js`，**全选复制**，粘到 snippet 里
-4. `Cmd + Enter`（Windows：`Ctrl + Enter`）运行
+### 1. 打开页面
 
-脚本存成 snippet 后可反复使用，下次直接选中按 `Cmd + Enter`。
+登录 <https://mp.weixin.qq.com> → 左侧 **内容与互动 → 发表记录**。
+地址栏应该是 `.../cgi-bin/appmsgpublish?...&token=xxx`（脚本会检查，不对会直接提示）。
+停在第几页都行，API 模式从头抓。
 
-### 备选：直接在 Console 粘贴
+### 2. 运行
 
-1. `F12` → **Console**
-2. 如果提示 *"Warning: Don't paste code into the DevTools Console…"*，先在输入框手打
-   `allow pasting` 回车，解除粘贴限制
-3. 再粘贴 `fetch_mp_articles.js` 全文，回车
+用 **Sources → Snippets** 跑，别直接往 Console 粘（见下面「粘贴报错」）：
 
-## 三、运行过程与结果
+1. `F12` → **Sources** 面板 → 左栏 **Snippets**（没看到就点 `»` 展开）→ **+ New snippet**
+2. 打开 `fetch_mp_articles.js`，全选复制，粘进去
+3. `Cmd + Enter`（Win：`Ctrl + Enter`）运行
 
-控制台会逐页打印进度：
+### 3. 过程与结果
 
 ```
-page 1: +10, total 10
-page 2: +10, total 20
+total articles reported by the server: 45
+fields available per article: aid, appmsgid, title, link, read_num, like_num, ...
+begin=0: +10, total 10
+begin=10: +10, total 20
 ...
-no more pages
-done: 45 articles, saved to window.__articles
+reached total, done
+done: 45 articles
 ```
 
-同时用 `console.table` 展示全部结果。跑完后可用：
+每次请求间隔 **5 秒**，45 篇 5 页大概 25 秒。跑完**自动弹出 `mp_articles.json` 下载**。
 
 | 命令 | 作用 |
 | --- | --- |
-| `window.__articles` | 结果数组（对象列表） |
-| `copy(window.__articles)` | 复制 JSON 到剪贴板（`copy` 是 DevTools 内置函数，需在 Console 里手敲） |
-| `__downloadCSV()` | 下载 `mp_articles.csv`（带 BOM，Excel 打开不乱码） |
-| `__downloadJSON()` | 下载 `mp_articles.json` |
-| `__markdown()` | 返回 `- [标题](链接) - 阅读数` 的 Markdown 列表字符串 |
+| `__saveJSON()` | 再下一次 JSON |
+| `__saveCSV()` | 下载 CSV（带 BOM，Excel 不乱码） |
+| `__markdown()` | 返回 `- [标题](链接) - 阅读数` 的 Markdown 列表 |
+| `window.__articles` | 内存里的结果数组 |
 
-翻页期间**不要切走标签页或手动点分页**，页面是 Vue 异步渲染，手动干预会打乱翻页判断。
-45 篇 5 页大约 5 秒跑完。
+第一次跑会打印 `fields available per article: ...`，即接口真实返回的字段名。
+如果 `read` 全是 0，把这行贴出来，按真实字段名改 `rowsFrom()` 里的映射即可。
 
-## 四、实现要点
+---
 
-- **文章条目**：`.weui-desktop-mass-appmsg`，逐条抓取，一次群发多图文也能全部拿到
-- **标题**：取 `<a class="weui-desktop-mass-appmsg__title">` 的**直接 `<span>` 子节点**。
-  同一个 `<a>` 里还塞着 `原创`、`已修改` 标签，直接用 `innerText` 会把它们拼进标题
-- **阅读数**：`.appmsg-view .weui-desktop-mass-media__data__inner`，`2,249` 这类带千分位
-  的文本已转成数字
-- **翻页**：按文本匹配分页条里的 `下一页` 链接，点击后**轮询
-  `.weui-desktop-pagination__num_current` 的页码变化**来确认新页渲染完成（比死等
-  `setTimeout` 稳），最多等 10 秒，超时就停
-- **去重**：按 `url` 去重，翻页异常时不会重复累积
-- **保险丝**：`MAX_PAGES = 100`，防止死循环
-- 源码全部是 ASCII 字符（中文写成 `\uXXXX` 转义），避免复制粘贴时被编码问题弄坏
+## 二、点击模式（API 模式失败时用）
 
-## 五、常见问题
+因为翻页会刷新页面，流程是「跑一次 = 抓一页」，需要你在每次刷新后再按一下 `Cmd+Enter`：
+
+1. 停在**第 1 页**
+2. Snippets 里新建 snippet，粘 `fetch_mp_articles_click.js`，`Cmd + Enter`
+3. 控制台打印 `page 1/5: +10, stored 10 articles`，然后 **5 秒后自动点「下一页」**，页面刷新
+4. 刷新后回到 Snippets，**再按一次 `Cmd + Enter`**，它会自动接着第 2 页抓
+5. 重复到最后一页，脚本自己停下并**下载 `mp_articles.json`**
+
+数据全程存在 `localStorage['mp_articles_state']`，刷新、关标签页都不会丢。
+
+| 命令 | 作用 |
+| --- | --- |
+| `__mpSaveJSON()` | 随时下载已抓到的 JSON |
+| `__mpSaveCSV()` | 随时下载 CSV |
+| `__mpData()` | 查看已存数据 |
+| `__mpReset()` | 清空进度，**重新抓之前必须先执行** |
+
+5 秒的等待时间在脚本开头 `var DELAY = 5000;`，嫌慢/嫌快自己改。
+
+---
+
+## 三、实现要点
+
+**API 模式**
+
+- 拿当前页面 URL（含 `token`），改写 `begin` / `count`，加 `f=json&ajax=1` 再 `fetch`，
+  `credentials: 'include'` 带上登录 cookie
+- 返回体里 `publish_page` 是个 **JSON 字符串**，需要二次 `JSON.parse`；里面
+  `publish_list[].publish_info` 又是 JSON 字符串，第三次 `JSON.parse` 才拿到 `appmsgex` 数组
+- 一次群发多图文 → `appmsgex` 有多条，全部展开
+- 按 `total_count` 判断结束，`MAX_PAGES = 100` 兜底防死循环
+- 每页写一次 `localStorage` 存档
+
+**点击模式**
+
+- 文章条目 `.weui-desktop-mass-appmsg`
+- 标题取 `<a class="weui-desktop-mass-appmsg__title">` 的**直接 `<span>` 子节点** ——
+  同一个 `<a>` 里还塞着 `原创`、`已修改` 标签，直接 `innerText` 会把它们拼进标题
+- 阅读数 `.appmsg-view .weui-desktop-mass-media__data__inner`，`2,249` 转成数字
+- 靠分页条最大页码 `.weui-desktop-pagination__num` 判断是否最后一页
+
+两个脚本源码都是**纯 ASCII**（中文写成 `\uXXXX` 转义），避免复制粘贴被编码问题弄坏。
+
+---
+
+## 四、常见问题
 
 **`Uncaught SyntaxError: Invalid or unexpected token`**
-复制时混入了全角空格 / 不间断空格 / 智能引号。用上面的 Snippets 方式，从
-`fetch_mp_articles.js` 文件本身复制，不要从渲染后的网页或终端输出里复制。
+复制时混进了全角空格 / 不间断空格 / 弯引号。用 Snippets 方式，**从 `.js` 文件本体复制**，
+不要从渲染后的网页或终端输出里复制。Console 直接粘还会被拦截，需要先手打 `allow pasting`。
 
-**只抓到当前页就停了**
-分页条 DOM 变了，或「下一页」按钮的文案不同。改 `NEXT_PAGE` 常量，或看
-`nextBtn()` 的选择器 `.weui-desktop-pagination a` 是否还匹配。
+**`you are not on the publish-records page`**
+当前不在 `cgi-bin/appmsgpublish` 页面。从左侧菜单点进「发表记录」再跑。
 
-**`paging timed out, stopping`**
-网络慢，页码 10 秒没变。调大 `while (curPage() === before && waited < 10000)`
-里的 10000，或把翻页后的 `await sleep(600)` 调大。
+**`server returned ret=xxx` / `session expired`**
+登录态过期，刷新页面重新登录后再跑。
 
-**标题里带了「原创」「已修改」**
-说明 `:scope > span` 没匹配到，微信改了 DOM 结构。检查 `grabPage()` 里的 `titleEl`。
+**`no publish_page in response`**
+接口结构变了。控制台会打印返回体的顶层字段名，按那个改 `fetch_mp_articles.js` 的解析；
+或者直接改用点击模式。
+
+**点击模式「翻页后忘了重跑」**
+不影响数据，已抓的都在 `localStorage`。回到 snippet 再按 `Cmd + Enter` 就从当前页继续。
+
+**想重新抓一遍**
+先 `__mpReset()` 清掉旧进度，否则会和上次的结果合并（按 url 去重，不会重复，但会混入旧数据）。
