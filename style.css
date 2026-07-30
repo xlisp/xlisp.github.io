@@ -12,6 +12,10 @@
   /* faint overlay used for subtle hover fills */
   --overlay: rgba(255, 255, 255, 0.04);
   --danger: #ff8a80;
+  /* WeChat badge on the post list */
+  --wechat: #52d17f;
+  --wechat-soft: rgba(82, 209, 127, 0.10);
+  --wechat-line: rgba(82, 209, 127, 0.38);
   --shadow-strong: 0 24px 60px rgba(0, 0, 0, 0.55), 0 6px 14px rgba(0, 0, 0, 0.35);
   --shadow-soft: 0 8px 24px rgba(0, 0, 0, 0.45);
   --serif: ui-serif, Georgia, "Times New Roman", serif;
@@ -32,6 +36,9 @@
   --on-accent: #fffaf0;   /* light text on the green/blue accents */
   --overlay: rgba(91, 74, 38, 0.06);
   --danger: #c0392b;
+  --wechat: #1a9e52;
+  --wechat-soft: rgba(26, 158, 82, 0.10);
+  --wechat-line: rgba(26, 158, 82, 0.35);
   --shadow-strong: 0 20px 48px rgba(120, 96, 50, 0.22), 0 5px 12px rgba(120, 96, 50, 0.16);
   --shadow-soft: 0 8px 22px rgba(120, 96, 50, 0.18);
   color-scheme: light;
@@ -197,6 +204,29 @@ section h2 {
 .post-summary {
   color: var(--fg-dim);
   font-size: 0.92rem;
+}
+/* "微信" badge linking a post to its 公众号 version */
+.post-wechat {
+  margin-left: auto;
+  flex: none;
+  font-family: var(--mono);
+  font-size: 0.72rem;
+  line-height: 1;
+  letter-spacing: 0.02em;
+  padding: 0.28em 0.6em;
+  border: 1px solid var(--wechat-line);
+  border-radius: 999px;
+  color: var(--wechat);
+  background: var(--wechat-soft);
+  white-space: nowrap;
+  transition: background-color 0.18s ease, border-color 0.18s ease, color 0.18s ease;
+}
+.post-wechat:hover,
+.post-wechat:focus-visible {
+  color: var(--on-accent);
+  background: var(--wechat);
+  border-color: var(--wechat);
+  text-decoration: none;
 }
 .empty {
   color: var(--fg-dim);
@@ -616,6 +646,8 @@ footer {
   .banner { font-size: 0.6rem; }
   .post-list li { flex-direction: column; gap: 0.1rem; }
   .post-date { min-width: 0; }
+  /* stacked layout: keep the badge under the title, not floated to the edge */
+  .post-wechat { margin-left: 0; align-self: flex-start; margin-top: 0.25rem; }
 }
 
 /* ---------- Outline notes / comments ---------- */

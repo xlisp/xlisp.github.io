@@ -15,6 +15,13 @@
 抓取字段：`time`（发表时间）、`title`（标题）、`url`（永久链接）、`read`（阅读数）、
 `like` / `share` / `comment`，API 模式还多给 `digest`（摘要）、`cover`（封面图）。
 
+> ⚠️ API 模式的 `read` / `like` / `share` / `comment` **实测都返回 0**：`appmsgex`
+> 里不带阅读数，这些数字是页面另外调统计接口拿的。**需要真实阅读数就用点击模式**
+> （直接读页面上渲染出来的数字）。链接和标题两种模式都准。
+
+抓完的结果留了一份在 `mp_articles.json`，用来生成首页的微信按钮，见
+[「三、更新到网站首页」](#三更新到网站首页)。
+
 ---
 
 ## 一、API 模式（推荐）
@@ -82,7 +89,58 @@ done: 45 articles
 
 ---
 
-## 三、实现要点
+## 三、更新到网站首页
+
+首页 `index.html` 每篇文章右侧有一个 **微信** 徽章，点开就是公众号版本。整条链路：
+
+```
+mp_help/mp_articles.json   抓下来的原始数据（把新下载的覆盖进来）
+        │  python mp_help/match_wechat.py --write
+        ▼
+wechat.json                slug -> 公众号链接（build.py 读它）
+        │  python build.py
+        ▼
+index.html                 <a class="post-wechat"> 徽章
+```
+
+### 有新文章时
+
+```bash
+cp ~/Downloads/mp_articles.json mp_help/mp_articles.json
+python mp_help/match_wechat.py          # 先干跑，看它想加什么
+python mp_help/match_wechat.py --write  # 确认没问题再写
+python build.py                         # 重新生成 index.html
+```
+
+### 标题对齐
+
+公众号标题和站内标题基本都改过（`ChatGPT` ↔ `Claude`、`数学家` ↔ `物理学家`、
+换了个说法重发……），所以不能按标题精确匹配。`match_wechat.py` 的做法：
+
+1. 先算**标题相似度**（`difflib`，去掉标点空格后比）
+2. 再算**摘要 vs 正文的字符二元组重合度**（公众号 `digest` 对 `docs/*.md` 前 3000 字）
+3. 两者任一够高就认；都不够就**不猜**，打印出候选让你手工填 `wechat.json`
+
+**已有的映射永远不会被覆盖**，手工改过的条目安全。一篇站内文章只会绑一个公众号链接。
+
+当前 45 篇公众号文章 → 37 篇对上了站内文章。剩下 8 篇站内没有对应文章（可计算性/欧美底层理论、
+Loop & Graph Engineering、1958 年的 Lisp、LangGraph 教程、物理学家版（数学家版的改写重发）、
+Fable 5 发布、微积分 PyTorch、神经网络数学 PyTorch）；另有 12 篇站内文章没发过公众号，
+它们就不显示徽章。
+
+手工加一条：直接编辑 `wechat.json`，key 是 `posts/<slug>.html` 里的 slug：
+
+```json
+{
+  "mri-to-multimodal": "https://mp.weixin.qq.com/s/zP1tk1ZcwYgtWFn6nf77fw"
+}
+```
+
+然后 `python build.py`。
+
+---
+
+## 四、实现要点
 
 **API 模式**
 
@@ -106,7 +164,7 @@ done: 45 articles
 
 ---
 
-## 四、常见问题
+## 五、常见问题
 
 **`Uncaught SyntaxError: Invalid or unexpected token`**
 复制时混进了全角空格 / 不间断空格 / 弯引号。用 Snippets 方式，**从 `.js` 文件本体复制**，

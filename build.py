@@ -48,6 +48,7 @@ POSTS = ROOT / "posts"
 TEMPLATES = ROOT / "templates"
 ASSETS = ROOT / "assets"
 IGNORE_FILE = ROOT / ".build-ignore"
+WECHAT_FILE = ROOT / "wechat.json"
 
 SITE_TITLE = "Steve Chan — xlisp"
 AUTHOR = "Steve Chan"
@@ -180,6 +181,22 @@ def render_post(info: dict, body_html: str, post_tpl: str) -> None:
     write(POSTS / f"{info['slug']}.html", page)
 
 
+def load_wechat_links() -> dict[str, str]:
+    """slug -> WeChat article url, from wechat.json.
+
+    Refresh it with `python mp_help/match_wechat.py --write` after scraping the
+    公众号 publish records; see mp_help/README.md.
+    """
+    if not WECHAT_FILE.exists():
+        return {}
+    try:
+        data = json.loads(WECHAT_FILE.read_text(encoding="utf-8"))
+    except json.JSONDecodeError as e:
+        sys.stderr.write(f"warning: {WECHAT_FILE.name} is not valid JSON ({e}); ignoring\n")
+        return {}
+    return {k: v for k, v in data.items() if v}
+
+
 def parse_existing_index() -> list[dict]:
     """Recover post info from the previously rendered index.html, if present."""
     f = ROOT / "index.html"
@@ -190,6 +207,7 @@ def parse_existing_index() -> list[dict]:
     for li in re.finditer(
         r'<li><span class="post-date">([^<]+)</span>\s*'
         r'<a href="([^"]+)">(.*?)</a>'
+        r'(?:\s*<a class="post-wechat"[^>]*>[^<]*</a>)?'
         r'(?:\s*<span class="post-summary">—\s*(.*?)</span>)?\s*</li>',
         text,
         re.S,
@@ -210,12 +228,22 @@ def parse_existing_index() -> list[dict]:
 
 def render_index(posts: list[dict], index_tpl: str) -> None:
     posts = sorted(posts, key=lambda p: p["date"], reverse=True)
+    wechat = load_wechat_links()
     if posts:
-        items = "\n".join(
-            f'        <li><span class="post-date">{p["date"]}</span> '
-            f'<a href="{p["href"]}">{html.escape(p["title"])}</a></li>'
-            for p in posts
-        )
+        lines = []
+        for p in posts:
+            url = wechat.get(p["slug"])
+            badge = (
+                f' <a class="post-wechat" href="{html.escape(url, quote=True)}" '
+                f'target="_blank" rel="noopener" title="在微信公众号阅读">微信</a>'
+                if url
+                else ""
+            )
+            lines.append(
+                f'        <li><span class="post-date">{p["date"]}</span> '
+                f'<a href="{p["href"]}">{html.escape(p["title"])}</a>{badge}</li>'
+            )
+        items = "\n".join(lines)
         post_list = f'      <ul class="post-list">\n{items}\n      </ul>'
     else:
         post_list = (
