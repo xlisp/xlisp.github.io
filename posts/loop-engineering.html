@@ -1,0 +1,494 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>AI圈突然都在聊 Loop、Graph Engineering，炒作还是新东西？ · Steve Chan — xlisp</title>
+<meta name="description" content="最近有几个词轮番刷屏：先是 Claude Code 作者提的 Loop Engineering，接着又冒出 Graph Engineering。听起来像是每隔几个月就有一个&quot;新范式&quot;。">
+<meta name="author" content="Steve Chan">
+<link rel="icon" type="image/jpeg" href="../icon.jpeg">
+<link rel="apple-touch-icon" href="../icon.jpeg">
+<meta property="og:type" content="article">
+<meta property="og:title" content="AI圈突然都在聊 Loop、Graph Engineering，炒作还是新东西？">
+<meta property="og:description" content="最近有几个词轮番刷屏：先是 Claude Code 作者提的 Loop Engineering，接着又冒出 Graph Engineering。听起来像是每隔几个月就有一个&quot;新范式&quot;。">
+<meta property="og:image" content="../icon.jpeg">
+<meta property="og:site_name" content="Steve Chan — xlisp">
+<meta name="twitter:card" content="summary_large_image">
+<meta name="twitter:title" content="AI圈突然都在聊 Loop、Graph Engineering，炒作还是新东西？">
+<meta name="twitter:description" content="最近有几个词轮番刷屏：先是 Claude Code 作者提的 Loop Engineering，接着又冒出 Graph Engineering。听起来像是每隔几个月就有一个&quot;新范式&quot;。">
+<meta name="twitter:image" content="../icon.jpeg">
+<link rel="stylesheet" href="../style.css?v=light1">
+<script>(function(){try{if(localStorage.getItem('theme')==='light')document.documentElement.setAttribute('data-theme','light');}catch(e){}})();</script>
+<!-- Math formula rendering via MathJax -->
+<script>
+window.MathJax = {
+  tex: {
+    // arithmatex emits \(...\) / \[...\] markup, so only these delimiters
+    // are needed; plain `$` is left alone (avoids currency false positives).
+    inlineMath: [['\\(', '\\)']],
+    displayMath: [['\\[', '\\]']],
+    processEscapes: true
+  },
+  svg: {
+    // Each formula gets its own self-contained <defs>, so the copy script can
+    // serialize one <svg> and rasterize it to a PNG for WeChat.
+    fontCache: 'local'
+  },
+  options: {
+    skipHtmlTags: ['script', 'noscript', 'style', 'textarea', 'pre', 'code'],
+    ignoreHtmlClass: 'highlight'
+  }
+};
+</script>
+<script src="https://cdn.jsdelivr.net/npm/mathjax@3/es5/tex-svg.js" async></script>
+</head>
+<body>
+<main class="wrap post">
+
+  <nav class="topnav">
+    <a href="../index.html">← home</a>
+  </nav>
+
+  <article>
+    <header class="post-header">
+      <h1>AI圈突然都在聊 Loop、Graph Engineering，炒作还是新东西？</h1>
+      <p class="meta">2026-07-30 · Steve Chan</p>
+    </header>
+
+    <div class="content">
+<h2 id="写在前面这篇文章想带你走一条什么路">写在前面：这篇文章想带你走一条什么路</h2>
+<p>最近有几个词轮番刷屏：先是 Claude Code 作者提的 <strong>Loop Engineering</strong>，接着又冒出 <strong>Graph Engineering</strong>。听起来像是每隔几个月就有一个"新范式"。</p>
+<p>这篇文章不想跟着起哄，也不想一味唱衰。我想带你走一条很具体的路径来判断真伪——<strong>从本仓库自己的代码出发</strong>。因为 autoresearch 这个项目，恰好把 "Loop" 这件事做成了最纯粹的样子；而隔壁的 <code>code-hacker</code> 项目，又恰好暴露了 "Loop 之外" 真正花力气的地方在哪。</p>
+<p>我们会依次回答四个问题，它们是层层递进的一条线，不是四个并列的点：</p>
+<ol>
+<li>Loop Engineering 是新东西，还是老概念换皮？</li>
+<li>如果它不新，那 autoresearch 凭什么 work？（答案会引出真正的关键）</li>
+<li>顺着上一问，真正稀缺、真正值钱的工程到底是哪一层？</li>
+<li>那最近的 Graph Engineering，是这条线的延伸，还是又一次换皮？</li>
+</ol>
+<p>读完你会得到一个能反复复用的判断框架：<strong>循环、脚手架、图，这三层里，价值的重心永远在中间那一层。</strong> 下面一步步说清楚为什么。</p>
+<hr />
+<h2 id="一问loop-engineering-是新概念还是旧骨架换了个名字">一问：Loop Engineering 是新概念，还是旧骨架换了个名字？</h2>
+<p>先说直觉。任何写过训练脚本、爬虫、CI、控制系统的人，脑子里都装着同一个骨架：</p>
+<div class="highlight"><pre><span></span><code>while not done:
+    act()        # 做一个动作
+    observe()    # 看结果
+    evaluate()   # 判断好坏
+    update()     # 保留 / 丢弃 / 调整
+</code></pre></div>
+
+<p><code>for epoch in range(...)</code>、<code>while True:</code>、event loop、控制论的反馈回路——全是它。所以老工程师第一反应很合理："这不就是我天天写的 loop 吗，凭什么算新范式？"</p>
+<p>而且 loop 思想在程序员的日常里实在太常见了，常见到我们会顺手用<strong>批处理</strong>的方式去优化它，一次解决一大类问题。举个最贴近的例子：你想摸清一个平台<strong>有哪些特性可用</strong>——笨办法是一个 API 一个 API 地测，一次一个来回，效率很慢；聪明办法是<strong>批处理测试</strong>，一轮把所有 API 打包问一遍，一次拿回"哪些可用、哪些不可用"的全表。同一个"攒成一批、一次处理"的直觉，能套到批量导入导出、<code>IN (...)</code> 顶掉单条查询、消息攒批 flush 等无数场景上。这套东西程序员早就当呼吸一样在用了，根本不觉得是什么"范式"。</p>
+<p><strong>这个直觉对了一半。</strong> 循环本身确实不新，把它包装成"新发明"确实有炒作成分。</p>
+<p>但被这个词真正命名的，不是循环，而是循环体的<strong>性质变了</strong>。经典循环里，<code>act()</code> 是一个你亲手写的、确定性的函数——难点在算法本身。而现在，<code>act()</code> 变成了一个<strong>会自己改代码、会调工具、输出不确定的 LLM Agent</strong>。循环体从"你写的代码"变成了"一个给定但不可靠的黑箱"。</p>
+<p>这一变，工程的难点整个搬家了：不再是"循环体怎么写得聪明"，而是"围着一个不可靠的循环体，怎么搭一圈约束，让它稳定产出价值"。</p>
+<p><strong>小结：</strong> Loop Engineering 命名的不是 loop，而是"围绕不可靠循环体的约束系统"。词是新的，循环是旧的——但它指向的问题是真的。记住这个"约束系统"，它是后面所有问题的答案。</p>
+<hr />
+<h2 id="一问延伸构建场景解释器这还能叫-loop-吗">一问·延伸：构建"场景解释器"——这还能叫 loop 吗？</h2>
+<p>顺着一问再往深走一步，会碰到一个真问题。当执行模式反复出现，你不会满足于写更快的循环，你会想把它<strong>抽象成一个引擎</strong>：让别人用声明式的"场景"描述要做什么，引擎负责解释、执行。这就是<strong>场景解释器</strong>。</p>
+<p>那它还算 loop 吗？<strong>关键的分辨是：不算——解释器的核心是递归，不是循环。</strong></p>
+<p>这里得先纠正一个常见的含混。REPL 全称是 read-eval-print-<strong>loop</strong>，容易让人以为解释器就是个循环。但那个 loop 只是外层的<strong>壳</strong>（不停读入下一条输入）。真正干活的 <code>eval</code> 是<strong>递归</strong>的：求一个表达式的值，要先求它子表达式的值，子表达式里还有子表达式……<code>eval</code> 调 <code>apply</code>、<code>apply</code> 回头调 <code>eval</code>，顺着场景的<strong>嵌套树结构</strong>自相似地展开。这是递归，不是平铺的迭代。</p>
+<p>循环和递归的差别，不只是写法，是<strong>表达的形状不同</strong>：</p>
+<ul>
+<li><strong>循环 = 一条路径。</strong> 平铺、尾位置、栈深恒定。适合"对序列里每个元素做一遍""重复 N 次"。autoresearch 那个 <code>while True:</code> 就是这种——一条直线走到底。</li>
+<li><strong>递归 = 一棵树。</strong> 顺着嵌套结构展开，会长出调用栈，形状和它所解释的东西<strong>同构</strong>。适合"解释这个场景，而它内部还含着子场景"。</li>
+</ul>
+<p>两者在图灵意义上可以互相转换（尾递归就是循环；一般递归可以用"显式栈 + 循环"或蹦床/CPS 压平）——但那是<strong>实现技巧</strong>，是把树硬塞进一根循环里跑。就<strong>语义的自然形状</strong>而言，解释嵌套场景这件事，天生是递归的。</p>
+<p>所以你纠正得对：一旦目标是"构建场景解释器"，我们讨论的就已经不是 loop 了。而这恰好补上了本文阶梯里缺的一环——</p>
+<blockquote>
+<p><strong>循环（一条路径） → 递归（一棵树） → 图（任意拓扑）。</strong></p>
+</blockquote>
+<p>每一级都是上一级的推广：循环是最退化的递归（尾、无分叉），递归树又是最规整的图（有向、无环、单根）。四问要讲的 Graph，其实是这条线的终点，而递归是循环通向图的<strong>中间那一级</strong>。</p>
+<p>回到本仓库：autoresearch 停在最左端——它就是一根平铺循环，因为它的任务够窄，一条路径足矣。而真正的 Agent 系统会往右走：Claude Code 用 subagent 派生 subagent、code-hacker 的主 agent 调度 4 个子 agent，那是<strong>agent 的递归</strong>——一棵调用树，不是一根循环。你写的 <code>program.md</code>（README 称它"超轻量 skill"）就是喂给这台解释器的<strong>场景</strong>，Agent + harness 就是那台<strong>递归的解释器</strong>。</p>
+<p><strong>小结：</strong> "构建场景解释器"是一次<strong>换形状</strong>——从循环（路径）跳到了递归（树）。这既纠正了"解释器 = loop"的含混，也接上了全文主线：真正花力气去<em>构建</em>那台解释器的动作，已经不叫 Loop Engineering，而是造引擎、造语言——也就是三问的 <strong>Harness Engineering</strong>。至于递归再往上推广成图，留到四问。</p>
+<hr />
+<h2 id="二问autoresearch-凭什么-work它就是-loop-目标-trainpy">二问：autoresearch 凭什么 work？——它就是 loop + 目标 + train.py</h2>
+<p>要验证上面的说法，不用看别人，本仓库自己就是最干净的样本。</p>
+<p><code>README.md</code> 这样描述 autoresearch：给 AI Agent 一个真实的 LLM 训练环境，让它整夜自主实验——<strong>改代码、训 5 分钟、看结果是否变好、保留或丢弃、重复</strong>。</p>
+<p>把这句话写成伪代码，你会发现一件有意思的事：它和 <code>train.py</code> 里的训练循环，是<strong>同一个形状</strong>。</p>
+<p>外层，是 Agent 在跑的实验循环：</p>
+<div class="highlight"><pre><span></span><code>while 还有时间:
+    edit(train.py)           # 动作：改架构 / 优化器 / 超参
+    val_bpb = run(train.py)  # 观测：跑 5 分钟，量一个数
+    if val_bpb 更低: git commit    # 变好 → 保留
+    else:            git checkout  # 变差 → 丢弃
+</code></pre></div>
+
+<p>内层，是模型在跑的梯度下降循环（<code>train.py:543</code>）：</p>
+<div class="highlight"><pre><span></span><code><span class="k">while</span> <span class="kc">True</span><span class="p">:</span>
+    <span class="n">loss</span> <span class="o">=</span> <span class="n">model</span><span class="p">(</span><span class="n">x</span><span class="p">,</span> <span class="n">y</span><span class="p">)</span>       <span class="c1"># 动作</span>
+    <span class="n">loss</span><span class="o">.</span><span class="n">backward</span><span class="p">()</span>          <span class="c1"># 观测误差</span>
+    <span class="n">optimizer</span><span class="o">.</span><span class="n">step</span><span class="p">()</span>         <span class="c1"># 改进</span>
+    <span class="k">if</span> <span class="n">total_training_time</span> <span class="o">&gt;=</span> <span class="n">TIME_BUDGET</span><span class="p">:</span> <span class="k">break</span>   <span class="c1"># 5 分钟到，停</span>
+</code></pre></div>
+
+<p>两层<strong>同构</strong>。差别只在"被优化的东西"和"梯度从哪来"：内层优化的是模型权重，梯度来自反向传播；外层优化的是 <code>train.py</code> 的源代码，"梯度"来自 LLM 的判断加实验反馈。<code>git commit</code> 就是外层的 <code>optimizer.step()</code>。</p>
+<p>所以你的判断成立：<strong>autoresearch = loop + 一个标量目标 + 一个可编辑的 train.py</strong>，它和"训练"是同一个思想——<strong>把梯度下降套到了源代码这一层</strong>。</p>
+<p>但这一问真正的收获，不是"它们长得像",而是<strong>它为什么没跑飞</strong>。答案藏在两个不起眼的设计里：</p>
+<ul>
+<li><strong>固定 5 分钟预算</strong>（<code>TIME_BUDGET</code>，<code>train.py:603</code> 强制停）。没有它，Agent 只要把模型调大就能刷低 loss——循环立刻退化成作弊。有了它，每次实验都是"5 分钟内能做到的最优"，<strong>可比</strong>。</li>
+<li><strong>不可篡改的度量</strong> <code>val_bpb</code>。<code>program.md</code> 白纸黑字规定 <code>prepare.py</code> 里的 <code>evaluate_bpb</code> 是 ground truth，Agent 不许碰。循环体不可靠，度量就必须可靠，否则 Agent 会去优化"看起来变好"。</li>
+</ul>
+<p><strong>小结：</strong> autoresearch 能 work，靠的不是循环写得巧，而是<strong>可比的预算 + 不可作弊的度量</strong>这一圈约束。这正是一问里说的"约束系统"。循环是骨架，约束才是让骨架站得住的肌腱。这就自然引出了下一问。</p>
+<hr />
+<h2 id="三问那真正值钱的工程是哪一层是-harness不是-loop">三问：那真正值钱的工程，是哪一层？——是 Harness，不是 Loop</h2>
+<p>autoresearch 的约束很薄（一个 <code>program.md</code> 加一个评测函数），因为它的目标窄——只优化一个标量。那如果目标是开放的软件工程任务呢？约束会厚到什么程度？</p>
+<p>隔壁的 <code>code-hacker</code> 项目给了答案。它的 README 开宗明义：Claude Code 的强大不在于聊天窗口，而在于它是一个带<strong>完整工具链的自主闭环</strong>——能读、能改、能搜、能跑命令、能管 Git、能记上下文。code-hacker 做的就是把这个闭环显式地工程化：</p>
+<ul>
+<li><strong>6 个 MCP Server / 62+ 工具</strong>——循环每一轮里 <code>act()</code> 的动作空间；</li>
+<li><strong>4 个专职 subagent</strong>（Git 考古、代码扫描、代码审查、工作区协调）——把"观测"和"评估"拆成角色；</li>
+<li><strong>安全沙箱</strong>（路径检查、命令黑名单、文件白名单）——防止循环跑飞的护栏；</li>
+<li><strong>memory store</strong>——跨轮次的记忆，让循环有状态而非每轮归零。</li>
+</ul>
+<p>请注意一个反差：<strong>这里面几乎没有一行是"循环"本身</strong>。真正的 <code>while</code> 就是 deepagents 那一句 <code>create_deep_agent</code>。工作量和价值，全压在<strong>循环体能看到什么（context）、能做什么（tools）、被什么拦住（sandbox）、记得住什么（memory）</strong>上面。</p>
+<p>这一层有个通用的名字：<strong>harness（脚手架）</strong>。把三问和前两问接起来，一句话就说透了：</p>
+<blockquote>
+<p><strong>Loop 是免费的，Harness 是昂贵的。</strong>
+<code>while True:</code> 谁都会写；让里面那个不可靠的 LLM，在真实代码库上稳定、安全、可度量、可记忆地干活——这才是工程。</p>
+</blockquote>
+<p>再回头看，autoresearch 的 harness 薄、code-hacker 的 harness 厚，差别不在谁高级，而在<strong>目标的开放程度</strong>：目标越开放，harness 越厚。这也解释了为什么"通用编程 Agent"远难于"自动调参 Agent"——不是循环更难，是 harness 更难。</p>
+<p><strong>小结：</strong> 三层里，价值重心落在 <strong>Harness</strong>。一问的"约束系统"、二问的"预算+度量"，其实都是 harness 的具体形态。抓住这一点，就能拿它去照最后一个新词了。</p>
+<hr />
+<h2 id="四问graph-engineering-是延伸还是又一次换皮顺便说-langgraph">四问：Graph Engineering 是延伸，还是又一次换皮？——顺便说 LangGraph</h2>
+<p>最近有人开始讲 Graph Engineering：把 Agent 从"一根循环"升级成"一张图"。你的质疑很准：<strong>这不就是 LangGraph 一直在做的吗？</strong></p>
+<p>先承认它有真东西，而且它正是延伸段那条阶梯的终点：<strong>循环（路径）→ 递归（树）→ 图（任意拓扑）</strong>。循环是图最退化的特例（一个节点、一条自环边），递归树是最规整的图（有向、无环、单根）。当任务需要多角色（规划者/执行者/审查者）、条件分支（"测试挂了就回到修复节点"）、并行扇出再汇总（4 个 subagent 同时跑再合并）、甚至节点间回边成环时，连递归树都不够画了，你自然会把它画成一张任意有向图。code-hacker 那个"1 主 agent + 4 subagent + 条件路由"的结构，画出来本来就是一张图。所以"用图组织 Agent"是成立的，它是这条阶梯在拓扑上走到头的自然结果。</p>
+<p><strong>但作为一个"新范式"来卖，它的炒作成分比 Loop 还重</strong>，三条理由，正好对应前三问建立的框架：</p>
+<ol>
+<li>
+<p><strong>它不新。</strong> LangGraph 2023 年的核心抽象就是 <code>StateGraph</code>——节点、边、条件边、共享 state、检查点。"把 agent 工作流建模成状态图"这件事，一个成熟框架已经做了两三年。再往前，计算图、Airflow 的 DAG、状态机、Actor 模型……"用图组织计算"在软件史上被发明过无数次。</p>
+</li>
+<li>
+<p><strong>它不碰真正的难点。</strong> 用三问的结论去照：难的从来不是控制流的拓扑，而是每个节点里的 harness。把一根循环拆成十个节点，你只是把"一个难题"变成"十个难题 + 它们之间的状态一致性"。<strong>图解决表达力，不解决可靠性。</strong></p>
+</li>
+<li>
+<p><strong>拓扑不是瓶颈，节点质量才是。</strong> autoresearch 用最朴素的单循环就能整夜自主做研究，因为它节点里的度量可靠。反过来,节点里的 Agent 会作弊，你连成再漂亮的图也只是放大噪声。</p>
+</li>
+</ol>
+<p><strong>小结：</strong> Graph 是循环在表达力上的合理延伸，但它既不新（LangGraph 早有），也不触及价值重心（harness）。需要多角色/分支/并行时就用它——而且直接上 LangGraph 这类成熟框架，别自己发明词。</p>
+<hr />
+<h2 id="总结两条轴一个重心">总结：两条轴，一个重心</h2>
+<p>把四问连起来会看到，那些被轮流炒的词其实分属<strong>两条正交的轴</strong>，别把它们摆成一排比高低。</p>
+<p><strong>第一条轴：拓扑——计算的形状。</strong> 这条轴回答"控制流长什么样"，是一条推广阶梯：</p>
+<table>
+<thead>
+<tr>
+<th>拓扑</th>
+<th>形状</th>
+<th>适合</th>
+<th>本仓库对应</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><strong>循环 Loop</strong></td>
+<td>一条路径</td>
+<td>重复、遍历序列</td>
+<td>autoresearch 的 <code>while True:</code></td>
+</tr>
+<tr>
+<td><strong>递归 Recursion</strong></td>
+<td>一棵树</td>
+<td>解释嵌套场景、agent 派生 subagent</td>
+<td>场景解释器 / subagent 调用树</td>
+</tr>
+<tr>
+<td><strong>图 Graph</strong></td>
+<td>任意拓扑</td>
+<td>多角色、条件分支、并行汇总、回边成环</td>
+<td>code-hacker 的 agent 编排</td>
+</tr>
+</tbody>
+</table>
+<p>越往下表达力越强，但<strong>这条轴上没有一格是稀缺的</strong>——循环谁都会写，递归是基本功，图 LangGraph 早就给好了。换形状不解决可靠性。</p>
+<p><strong>第二条轴：Harness——节点里装什么。</strong> 这条轴和拓扑正交，回答的是"每个节点/循环体，能看到什么上下文、能调什么工具、被什么护栏拦着、记得住什么"。autoresearch 的"5 分钟预算 + 不可作弊的 <code>val_bpb</code>"、code-hacker 的"62 工具 + 沙箱 + memory"，都在这条轴上。</p>
+<blockquote>
+<p><strong>拓扑决定你能表达多复杂的流程，Harness 决定这流程到底靠不靠谱。</strong>
+前者便宜且早有现成的，后者昂贵且稀缺——<strong>价值重心从头到尾都压在 Harness 这条轴上，和你用循环、递归还是图无关。</strong></p>
+</blockquote>
+<h2 id="给动手的人照重心排优先级">给动手的人：照重心排优先级</h2>
+<p>不必追新词，照着"价值重心"排事情就行：</p>
+<ol>
+<li><strong>先把度量做到不可作弊</strong>（像 <code>val_bpb</code> + 只读的 <code>evaluate_bpb</code>）——没有可靠度量，循环和图都在优化幻觉。</li>
+<li><strong>再把预算/停止条件定死</strong>（像固定 5 分钟 <code>TIME_BUDGET</code>）——让每轮可比，循环才有意义。</li>
+<li><strong>把力气投在 harness 上</strong>，而不是拓扑：更好的上下文、更对的工具、更硬的护栏、更持久的记忆。投产比最高。</li>
+<li><strong>只在一根循环真表达不了时</strong>（多角色、分支、并行）才升级成图，且直接用成熟框架。</li>
+<li><strong>把新概念当路标，别当图腾</strong>——你写 <code>train.py</code> 那句 <code>while True:</code> 时，其实已经在做 Loop Engineering 了。</li>
+</ol>
+<hr />
+<p><em>本文基于本仓库 <code>README.md</code>、<code>program.md</code>、<code>train.py</code>（训练循环见 <code>train.py:543</code>）及同级 <code>code-hacker</code> 项目的 README 与架构整理而成。</em></p>
+    </div>
+  </article>
+
+</main>
+
+<!-- Floating Ask-AI chat widget -->
+<button class="ai-fab" id="ai-fab" aria-label="Ask AI about this article" title="Ask AI about this article">
+  <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+    <path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"/>
+  </svg>
+  <span class="ai-fab-label">Ask AI</span>
+</button>
+
+<div class="ai-panel" id="ai-panel" role="dialog" aria-labelledby="ai-panel-title" aria-hidden="true">
+  <header class="ai-panel-head">
+    <div class="ai-panel-title-wrap">
+      <span class="ai-dot"></span>
+      <h3 id="ai-panel-title">Ask AI about this post</h3>
+    </div>
+    <div class="ai-panel-actions">
+      <button class="ai-icon-btn" id="ai-clear" title="Clear conversation" aria-label="Clear">
+        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><polyline points="3 6 5 6 21 6"/><path d="M19 6l-1 14a2 2 0 0 1-2 2H8a2 2 0 0 1-2-2L5 6"/><path d="M10 11v6M14 11v6"/><path d="M9 6V4a1 1 0 0 1 1-1h4a1 1 0 0 1 1 1v2"/></svg>
+      </button>
+      <button class="ai-icon-btn" id="ai-close" title="Minimize" aria-label="Minimize">
+        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><polyline points="6 9 12 15 18 9"/></svg>
+      </button>
+    </div>
+  </header>
+
+  <div class="ai-messages" id="ai-messages">
+    <div class="ai-empty" id="ai-empty">
+      <p class="ai-empty-title">On-device AI · Gemini Nano</p>
+      <p class="ai-empty-sub">Ask anything about this article. Runs in your browser — nothing leaves your device.</p>
+    </div>
+  </div>
+
+  <div class="ai-status" id="ai-status" hidden></div>
+
+  <form class="ai-composer" id="ai-form">
+    <textarea id="ai-input" rows="1" placeholder="Ask about this post…" autocomplete="off"></textarea>
+    <button type="submit" id="ai-send" class="ai-send" aria-label="Send" disabled>
+      <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><line x1="22" y1="2" x2="11" y2="13"/><polygon points="22 2 15 22 11 13 2 9 22 2"/></svg>
+    </button>
+  </form>
+</div>
+
+<script>
+(function () {
+  const POST_TITLE = "AI\u5708\u7a81\u7136\u90fd\u5728\u804a Loop\u3001Graph Engineering\uff0c\u7092\u4f5c\u8fd8\u662f\u65b0\u4e1c\u897f\uff1f";
+  const contentEl = document.querySelector('article .content');
+
+  const fab = document.getElementById('ai-fab');
+  const panel = document.getElementById('ai-panel');
+  const closeBtn = document.getElementById('ai-close');
+  const clearBtn = document.getElementById('ai-clear');
+  const msgsEl = document.getElementById('ai-messages');
+  const emptyEl = document.getElementById('ai-empty');
+  const statusEl = document.getElementById('ai-status');
+  const formEl = document.getElementById('ai-form');
+  const inputEl = document.getElementById('ai-input');
+  const sendBtn = document.getElementById('ai-send');
+
+  function articleText() {
+    if (!contentEl) return '';
+    return (contentEl.innerText || contentEl.textContent || '')
+      .replace(/[ \t]+\n/g, '\n')
+      .replace(/\n{3,}/g, '\n\n')
+      .trim();
+  }
+
+  function setStatus(msg, cls) {
+    if (!msg) { statusEl.hidden = true; statusEl.textContent = ''; statusEl.className = 'ai-status'; return; }
+    statusEl.hidden = false;
+    statusEl.textContent = msg;
+    statusEl.className = 'ai-status' + (cls ? ' ' + cls : '');
+  }
+
+  function hideEmpty() { if (emptyEl) emptyEl.style.display = 'none'; }
+
+  function appendBubble(role, text) {
+    hideEmpty();
+    const wrap = document.createElement('div');
+    wrap.className = 'ai-msg ai-msg-' + role;
+    const bubble = document.createElement('div');
+    bubble.className = 'ai-bubble';
+    bubble.textContent = text;
+    wrap.appendChild(bubble);
+    msgsEl.appendChild(wrap);
+    msgsEl.scrollTop = msgsEl.scrollHeight;
+    return bubble;
+  }
+
+  function appendTyping() {
+    hideEmpty();
+    const wrap = document.createElement('div');
+    wrap.className = 'ai-msg ai-msg-assistant ai-typing';
+    wrap.innerHTML = '<div class="ai-bubble"><span class="ai-dots"><i></i><i></i><i></i></span></div>';
+    msgsEl.appendChild(wrap);
+    msgsEl.scrollTop = msgsEl.scrollHeight;
+    return wrap;
+  }
+
+  function autoSize() {
+    inputEl.style.height = 'auto';
+    inputEl.style.height = Math.min(inputEl.scrollHeight, 140) + 'px';
+  }
+
+  function openPanel() {
+    panel.classList.add('open');
+    panel.setAttribute('aria-hidden', 'false');
+    fab.classList.add('hidden');
+    setTimeout(() => inputEl.focus(), 50);
+  }
+  function closePanel() {
+    panel.classList.remove('open');
+    panel.setAttribute('aria-hidden', 'true');
+    fab.classList.remove('hidden');
+  }
+
+  fab.addEventListener('click', openPanel);
+  closeBtn.addEventListener('click', closePanel);
+  document.addEventListener('keydown', e => {
+    if (e.key === 'Escape' && panel.classList.contains('open')) closePanel();
+  });
+
+  // ---- LanguageModel session ----
+  let session = null;
+  let creating = null;
+  let history = [];
+
+  function buildSystemPrompt() {
+    // Keep article context modest — Gemini Nano's input quota is small.
+    const article = articleText().slice(0, 4000);
+    return (
+      'You are a concise, helpful assistant answering questions about a blog post. ' +
+      'Use the article below as your primary source. If the answer is not in it, say so briefly and answer generally. ' +
+      'Reply in the same language as the user\'s question. Keep answers short unless asked for detail.\n\n' +
+      '=== ARTICLE TITLE ===\n' + POST_TITLE + '\n\n' +
+      '=== ARTICLE CONTENT ===\n' + article
+    );
+  }
+
+  async function ensureSession() {
+    if (session) return session;
+    if (creating) return creating;
+
+    if (!('LanguageModel' in self)) {
+      throw new Error(
+        'On-device AI not available. Use Chrome 138+ on desktop, or enable ' +
+        '"Prompt API for Gemini Nano" in chrome://flags.'
+      );
+    }
+
+    setStatus('Checking model…', 'info');
+    const status = await LanguageModel.availability();
+    if (status === 'unavailable') {
+      throw new Error('Model unavailable on this device.');
+    }
+
+    creating = (async () => {
+      // Only show download UI when the model isn't already there.
+      const willDownload = (status !== 'available');
+      if (willDownload) setStatus('Preparing model (first run downloads ~2GB)…', 'info');
+      else setStatus('Warming up…', 'info');
+
+      const s = await LanguageModel.create({
+        initialPrompts: [{ role: 'system', content: buildSystemPrompt() }],
+        monitor(m) {
+          m.addEventListener('downloadprogress', e => {
+            // Skip the spurious 0% event Chrome fires for cached models.
+            if (!willDownload && e.loaded === 0) return;
+            const pct = (e.loaded * 100).toFixed(1);
+            setStatus('Downloading model: ' + pct + '%', 'info');
+          });
+        }
+      });
+      session = s;
+      setStatus('');
+      return s;
+    })();
+
+    try { return await creating; }
+    finally { creating = null; }
+  }
+
+  async function ask(q) {
+    appendBubble('user', q);
+    history.push({ role: 'user', content: q });
+
+    sendBtn.disabled = true;
+    inputEl.disabled = true;
+    const typing = appendTyping();
+
+    let answerBubble = null;
+    let acc = '';
+    try {
+      const s = await ensureSession();
+      const stream = s.promptStreaming(q);
+      for await (const chunk of stream) {
+        if (!answerBubble) {
+          typing.remove();
+          const wrap = document.createElement('div');
+          wrap.className = 'ai-msg ai-msg-assistant';
+          answerBubble = document.createElement('div');
+          answerBubble.className = 'ai-bubble';
+          wrap.appendChild(answerBubble);
+          msgsEl.appendChild(wrap);
+        }
+        acc += chunk;
+        answerBubble.textContent = acc;
+        msgsEl.scrollTop = msgsEl.scrollHeight;
+      }
+      if (acc) history.push({ role: 'assistant', content: acc });
+      else { typing.remove(); appendBubble('assistant', '(no response)'); }
+    } catch (e) {
+      if (typing && typing.parentNode) typing.remove();
+      const err = document.createElement('div');
+      err.className = 'ai-msg ai-msg-error';
+      err.innerHTML = '<div class="ai-bubble">⚠ ' + (e && e.message ? e.message : String(e)) + '</div>';
+      msgsEl.appendChild(err);
+      msgsEl.scrollTop = msgsEl.scrollHeight;
+    } finally {
+      sendBtn.disabled = !inputEl.value.trim();
+      inputEl.disabled = false;
+      inputEl.focus();
+    }
+  }
+
+  formEl.addEventListener('submit', e => {
+    e.preventDefault();
+    const q = inputEl.value.trim();
+    if (!q) return;
+    inputEl.value = '';
+    autoSize();
+    sendBtn.disabled = true;
+    ask(q);
+  });
+
+  inputEl.addEventListener('input', () => {
+    autoSize();
+    sendBtn.disabled = !inputEl.value.trim();
+  });
+  inputEl.addEventListener('keydown', e => {
+    if (e.key === 'Enter' && !e.shiftKey) {
+      e.preventDefault();
+      formEl.requestSubmit();
+    }
+  });
+
+  clearBtn.addEventListener('click', () => {
+    msgsEl.innerHTML = '';
+    msgsEl.appendChild(emptyEl);
+    emptyEl.style.display = '';
+    history = [];
+    if (session && session.destroy) { try { session.destroy(); } catch (_) {} }
+    session = null;
+    setStatus('');
+  });
+
+  if (!('LanguageModel' in self)) {
+    fab.addEventListener('click', () => {
+      openPanel();
+      setStatus('On-device AI not detected. Use Chrome 138+ desktop, or enable "Prompt API for Gemini Nano" in chrome://flags.', 'bad');
+    }, { once: true });
+  }
+})();
+</script>
+
+<!-- Outline notes / comments — DataScript + IndexedDB -->
+<script src="https://github.com/tonsky/datascript/releases/download/1.7.8/datascript-1.7.8.min.js"></script>
+<script src="../notes.js?v=6"></script>
+<script src="../theme.js"></script>
+<script src="../wechat-copy.js?v=3"></script>
+
+</body>
+</html>
