@@ -1008,6 +1008,10 @@ footer {
 }
 .notes-btn-secondary:hover { color: var(--fg); border-color: var(--accent-2); }
 
+.wechat-copy-btn {
+  display: none;
+}
+
 .notes-toast {
   position: fixed;
   bottom: 1.5rem;
