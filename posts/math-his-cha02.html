@@ -1,0 +1,659 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>为什么 AI、数学、物理的底层理论，总是诞生在欧美？原因出现在这！ · Steve Chan — xlisp</title>
+<meta name="description" content="Chapter 0.9 停在了丘奇 1936 年的 λ 演算：一切可计算的东西都是函数。这一章把那句话推到它的宇宙学极限：一切真实发生的东西都是计算。一旦戴上&quot;可计算性&quot;这副眼镜，很多原本要死记硬背的数学约定会突然变得明朗 —— 为什么函数可以随便复合？为什么神经网络输出层非要套一个 softmax？为什么有些问题&quot;…">
+<meta name="author" content="Steve Chan">
+<link rel="icon" type="image/jpeg" href="../icon.jpeg">
+<link rel="apple-touch-icon" href="../icon.jpeg">
+<meta property="og:type" content="article">
+<meta property="og:title" content="为什么 AI、数学、物理的底层理论，总是诞生在欧美？原因出现在这！">
+<meta property="og:description" content="Chapter 0.9 停在了丘奇 1936 年的 λ 演算：一切可计算的东西都是函数。这一章把那句话推到它的宇宙学极限：一切真实发生的东西都是计算。一旦戴上&quot;可计算性&quot;这副眼镜，很多原本要死记硬背的数学约定会突然变得明朗 —— 为什么函数可以随便复合？为什么神经网络输出层非要套一个 softmax？为什么有些问题&quot;…">
+<meta property="og:image" content="../icon.jpeg">
+<meta property="og:site_name" content="Steve Chan — xlisp">
+<meta name="twitter:card" content="summary_large_image">
+<meta name="twitter:title" content="为什么 AI、数学、物理的底层理论，总是诞生在欧美？原因出现在这！">
+<meta name="twitter:description" content="Chapter 0.9 停在了丘奇 1936 年的 λ 演算：一切可计算的东西都是函数。这一章把那句话推到它的宇宙学极限：一切真实发生的东西都是计算。一旦戴上&quot;可计算性&quot;这副眼镜，很多原本要死记硬背的数学约定会突然变得明朗 —— 为什么函数可以随便复合？为什么神经网络输出层非要套一个 softmax？为什么有些问题&quot;…">
+<meta name="twitter:image" content="../icon.jpeg">
+<link rel="stylesheet" href="../style.css?v=light1">
+<script>(function(){try{if(localStorage.getItem('theme')==='light')document.documentElement.setAttribute('data-theme','light');}catch(e){}})();</script>
+<!-- Math formula rendering via MathJax -->
+<script>
+window.MathJax = {
+  tex: {
+    // arithmatex emits \(...\) / \[...\] markup, so only these delimiters
+    // are needed; plain `$` is left alone (avoids currency false positives).
+    inlineMath: [['\\(', '\\)']],
+    displayMath: [['\\[', '\\]']],
+    processEscapes: true
+  },
+  svg: {
+    // Each formula gets its own self-contained <defs>, so the copy script can
+    // serialize one <svg> and rasterize it to a PNG for WeChat.
+    fontCache: 'local'
+  },
+  options: {
+    skipHtmlTags: ['script', 'noscript', 'style', 'textarea', 'pre', 'code'],
+    ignoreHtmlClass: 'highlight'
+  }
+};
+</script>
+<script src="https://cdn.jsdelivr.net/npm/mathjax@3/es5/tex-svg.js" async></script>
+</head>
+<body>
+<main class="wrap post">
+
+  <nav class="topnav">
+    <a href="../index.html">← home</a>
+  </nav>
+
+  <article>
+    <header class="post-header">
+      <h1>为什么 AI、数学、物理的底层理论，总是诞生在欧美？原因出现在这！</h1>
+      <p class="meta">2026-07-31 · Steve Chan</p>
+    </header>
+
+    <div class="content">
+<blockquote>
+<p>可计算性，是现代 AI、数学、物理最重要却最容易被忽略的思想。从 λ 演算、图灵机、Rule30 到 Claude/GPT，你会发现：真正存在的东西，本质上都是一段能够运行的程序。</p>
+<p>"如果一个东西不能被计算，那它在物理宇宙里就不会真正发生。" —— 丘奇–图灵论题的宇宙学版本</p>
+<p>"简单的规则也能产生不可约的复杂。你无法抄近路，只能让它跑。" —— Stephen Wolfram，《一种新科学》(2002)</p>
+</blockquote>
+<p>Chapter 0.9 停在了丘奇 1936 年的 λ 演算：<strong>一切可计算的东西都是函数</strong>。这一章把那句话推到它的宇宙学极限：<strong>一切真实发生的东西都是计算</strong>。一旦戴上"可计算性"这副眼镜，很多原本要死记硬背的数学约定会突然变得<strong>明朗</strong> —— 为什么函数可以随便复合？为什么神经网络输出层非要套一个 softmax？为什么有些问题"原理上"就是算不出来？答案都指向同一件事：<strong>数学不是漂浮在空中的符号游戏，而是宇宙这台计算机能真正跑起来的那部分</strong>。</p>
+<p>这一章和 Chapter 0、0.5、0.7、0.8、0.9、0.95 一起，是本项目"如何学"的元章节群。前面几章教你换视角、读公式、追物理、看高阶函数；这一章给你最后一副眼镜：<strong>把每一个数学对象都看成"一段能在某台机器上跑完的程序"</strong>，看不能跑完的就画出它的边界。</p>
+<h4 id="0961-三个-1936可计算性被同时发现了三次">0.96.1 三个 1936：可计算性被同时发现了三次</h4>
+<p>物理学里最深刻的时刻，往往是<strong>三个人从三个完全不同的方向，走到同一个答案</strong>。1936 年就是这样一年 —— 三个人各自定义了"什么叫可计算"，事后发现三套定义<strong>计算能力完全相等</strong>：</p>
+<table>
+<thead>
+<tr>
+<th>定义者</th>
+<th>模型</th>
+<th>"计算"是什么</th>
+<th>现代化身</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><strong>丘奇</strong> (Church 1936)</td>
+<td>λ 演算</td>
+<td>函数的抽象与应用（Chapter 0.9）</td>
+<td>函数式编程、<code>lambda</code></td>
+</tr>
+<tr>
+<td><strong>图灵</strong> (Turing 1936)</td>
+<td>图灵机</td>
+<td>读写纸带 + 状态转移</td>
+<td>冯·诺依曼计算机、CPU</td>
+</tr>
+<tr>
+<td><strong>哥德尔 / 克莱尼</strong> (Gödel 1934, Kleene)</td>
+<td>一般递归函数</td>
+<td>从零、后继、复合、递归、极小化搭出来</td>
+<td>递归、<code>for</code>/<code>while</code></td>
+</tr>
+</tbody>
+</table>
+<p>三条路殊途同归，凝成一句 <strong>丘奇–图灵论题</strong>：</p>
+<blockquote>
+<p><strong>凡"可被任何机械过程计算"的函数，恰好就是这三套模型能计算的函数。</strong></p>
+</blockquote>
+<p>这不是一个能证明的定理（"机械过程"没有形式定义），而是一个<strong>关于物理世界的经验断言</strong> —— 八十多年过去，没有任何物理可实现的计算模型超出过这个类。量子计算机也没有：它可能更<strong>快</strong>，但能算的函数集合一模一样。</p>
+<p>这件事的教学意义极大：<strong>"可计算"不是某种编程语言的偶然特性，而是一个绝对的、语言无关的自然类</strong>。就像"能量"跨越力学/电磁/热学是同一个守恒量，"可计算"跨越 λ / 图灵机 / 递归函数是同一个集合。你在 Chapter 0.9 用 Clojure 玩的 lambda，和 CPU 里跑的机器码，是<strong>同一个数学对象的两张脸</strong>。</p>
+<div class="highlight"><pre><span></span><code><span class="c1"># 同一个函数（阶乘），三种 1936 定义各写一遍，输出必然逐位相等</span>
+<span class="c1"># —— 这就是&quot;丘奇-图灵论题&quot;在你屏幕上的实证</span>
+<span class="k">def</span><span class="w"> </span><span class="nf">fact_recursive</span><span class="p">(</span><span class="n">n</span><span class="p">):</span>                    <span class="c1"># 哥德尔/克莱尼：原始递归</span>
+    <span class="k">return</span> <span class="mi">1</span> <span class="k">if</span> <span class="n">n</span> <span class="o">==</span> <span class="mi">0</span> <span class="k">else</span> <span class="n">n</span> <span class="o">*</span> <span class="n">fact_recursive</span><span class="p">(</span><span class="n">n</span> <span class="o">-</span> <span class="mi">1</span><span class="p">)</span>
+
+<span class="n">fact_lambda</span> <span class="o">=</span> <span class="p">(</span><span class="k">lambda</span> <span class="n">f</span><span class="p">:</span> <span class="p">(</span><span class="k">lambda</span> <span class="n">x</span><span class="p">:</span> <span class="n">x</span><span class="p">(</span><span class="n">x</span><span class="p">))(</span><span class="k">lambda</span> <span class="n">x</span><span class="p">:</span> <span class="n">f</span><span class="p">(</span><span class="k">lambda</span> <span class="o">*</span><span class="n">a</span><span class="p">:</span> <span class="n">x</span><span class="p">(</span><span class="n">x</span><span class="p">)(</span><span class="o">*</span><span class="n">a</span><span class="p">))))(</span>  <span class="c1"># 丘奇：Y 组合子</span>
+    <span class="k">lambda</span> <span class="bp">self</span><span class="p">:</span> <span class="k">lambda</span> <span class="n">n</span><span class="p">:</span> <span class="mi">1</span> <span class="k">if</span> <span class="n">n</span> <span class="o">==</span> <span class="mi">0</span> <span class="k">else</span> <span class="n">n</span> <span class="o">*</span> <span class="bp">self</span><span class="p">(</span><span class="n">n</span> <span class="o">-</span> <span class="mi">1</span><span class="p">))</span>
+
+<span class="k">def</span><span class="w"> </span><span class="nf">fact_turing</span><span class="p">(</span><span class="n">n</span><span class="p">):</span>                       <span class="c1"># 图灵：只用读写&quot;纸带&quot;和状态转移（while + 状态）</span>
+    <span class="n">tape</span><span class="p">,</span> <span class="n">acc</span> <span class="o">=</span> <span class="n">n</span><span class="p">,</span> <span class="mi">1</span>
+    <span class="k">while</span> <span class="n">tape</span> <span class="o">&gt;</span> <span class="mi">0</span><span class="p">:</span>                       <span class="c1"># 状态转移，直到停机</span>
+        <span class="n">acc</span><span class="p">,</span> <span class="n">tape</span> <span class="o">=</span> <span class="n">acc</span> <span class="o">*</span> <span class="n">tape</span><span class="p">,</span> <span class="n">tape</span> <span class="o">-</span> <span class="mi">1</span>
+    <span class="k">return</span> <span class="n">acc</span>
+
+<span class="k">assert</span> <span class="n">fact_recursive</span><span class="p">(</span><span class="mi">6</span><span class="p">)</span> <span class="o">==</span> <span class="n">fact_lambda</span><span class="p">(</span><span class="mi">6</span><span class="p">)</span> <span class="o">==</span> <span class="n">fact_turing</span><span class="p">(</span><span class="mi">6</span><span class="p">)</span> <span class="o">==</span> <span class="mi">720</span>
+</code></pre></div>
+
+<h4 id="0962-万物皆可计算从楚泽的计算空间到-wolfram-的计算宇宙">0.96.2 万物皆可计算：从楚泽的"计算空间"到 Wolfram 的计算宇宙</h4>
+<p>丘奇–图灵论题说的是"函数"。但 20 世纪下半叶有一群人把它推得更狠：<strong>如果连宇宙本身的演化都是一种计算呢？</strong></p>
+<ul>
+<li><strong>1969，康拉德·楚泽</strong>（Konrad Zuse，造出世界第一台可编程计算机 Z3 的人）写下《Rechnender Raum》（<em>Calculating Space</em>，计算空间）：<strong>宇宙是一台巨大的元胞自动机</strong>，物理定律就是它的更新规则，空间的每一格在每一"时钟滴答"按同一条局部规则刷新。这是"数字物理学"的开山之作。</li>
+<li><strong>1980s–2002，斯蒂芬·沃尔夫勒姆</strong>（Stephen Wolfram）用二十年做了一件事：<strong>系统地跑遍最简单的程序，看它们能长出什么</strong>。结论震撼 —— 一条只看"左邻、自己、右邻"三格、只有 8 行真值表的一维规则（<strong>Rule 30</strong>），能生成<strong>在统计上无法与真随机区分</strong>的花纹。简单规则 → 不可约的复杂。他把这写成《A New Kind of Science》(2002)。</li>
+<li><strong>2020，Wolfram 物理项目</strong>：进一步猜测时空、引力、量子力学都从一个"超图不断重写"的计算过程里涌现。</li>
+</ul>
+<p>这套世界观的<strong>硬核</strong>是沃尔夫勒姆的 <strong>计算等价原理</strong>（Principle of Computational Equivalence）：</p>
+<blockquote>
+<p>几乎所有"看起来不太简单"的过程，在计算能力上都是<strong>等价的、图灵完备的</strong>。天气、流体、大脑、Rule 30、你的 Python 解释器 —— 复杂度一旦越过一个很低的门槛，就都到顶了，没有谁比谁"更能算"。</p>
+</blockquote>
+<p>由此得到一个反直觉但极其有用的推论 —— <strong>计算不可约性</strong>（Computational Irreducibility）：对这类系统，<strong>没有比"老老实实一步步跑完"更快的预测捷径</strong>。这正好解释了 Chapter 0.8 那个口号"求解留给下一个"为什么是普遍现象：<strong>大多数微分方程没有解析解，不是因为我们不够聪明，而是因为宇宙这段程序本身就不可约</strong> —— 你只能积分（<code>reduce</code>），不能跳步。</p>
+<div class="highlight"><pre><span></span><code><span class="c1"># Rule 30：一维元胞自动机，8 位规则号 = 00011110 = 30</span>
+<span class="c1"># 一条&quot;左中右三格 → 中心新值&quot;的查找表，就能从单个 1 长出乱花</span>
+<span class="k">def</span><span class="w"> </span><span class="nf">rule30_step</span><span class="p">(</span><span class="n">row</span><span class="p">,</span> <span class="n">rule</span><span class="o">=</span><span class="mi">30</span><span class="p">):</span>
+    <span class="n">out</span> <span class="o">=</span> <span class="p">[]</span>
+    <span class="k">for</span> <span class="n">i</span> <span class="ow">in</span> <span class="nb">range</span><span class="p">(</span><span class="nb">len</span><span class="p">(</span><span class="n">row</span><span class="p">)):</span>
+        <span class="n">left</span><span class="p">,</span> <span class="n">mid</span><span class="p">,</span> <span class="n">right</span> <span class="o">=</span> <span class="n">row</span><span class="p">[</span><span class="n">i</span><span class="o">-</span><span class="mi">1</span><span class="p">],</span> <span class="n">row</span><span class="p">[</span><span class="n">i</span><span class="p">],</span> <span class="n">row</span><span class="p">[(</span><span class="n">i</span><span class="o">+</span><span class="mi">1</span><span class="p">)</span> <span class="o">%</span> <span class="nb">len</span><span class="p">(</span><span class="n">row</span><span class="p">)]</span>
+        <span class="n">idx</span> <span class="o">=</span> <span class="p">(</span><span class="n">left</span> <span class="o">&lt;&lt;</span> <span class="mi">2</span><span class="p">)</span> <span class="o">|</span> <span class="p">(</span><span class="n">mid</span> <span class="o">&lt;&lt;</span> <span class="mi">1</span><span class="p">)</span> <span class="o">|</span> <span class="n">right</span>     <span class="c1"># 3 位邻域 → 0..7</span>
+        <span class="n">out</span><span class="o">.</span><span class="n">append</span><span class="p">((</span><span class="n">rule</span> <span class="o">&gt;&gt;</span> <span class="n">idx</span><span class="p">)</span> <span class="o">&amp;</span> <span class="mi">1</span><span class="p">)</span>              <span class="c1"># 查规则号的第 idx 位</span>
+    <span class="k">return</span> <span class="n">out</span>
+
+<span class="n">row</span> <span class="o">=</span> <span class="p">[</span><span class="mi">0</span><span class="p">]</span><span class="o">*</span><span class="mi">40</span> <span class="o">+</span> <span class="p">[</span><span class="mi">1</span><span class="p">]</span> <span class="o">+</span> <span class="p">[</span><span class="mi">0</span><span class="p">]</span><span class="o">*</span><span class="mi">40</span>                        <span class="c1"># 一颗种子</span>
+<span class="k">for</span> <span class="n">_</span> <span class="ow">in</span> <span class="nb">range</span><span class="p">(</span><span class="mi">40</span><span class="p">):</span>
+    <span class="n">row</span> <span class="o">=</span> <span class="n">rule30_step</span><span class="p">(</span><span class="n">row</span><span class="p">)</span>                         <span class="c1"># 计算不可约：只能一步步跑</span>
+<span class="c1"># 中心那一列的比特流可以直接当伪随机数发生器 —— Mathematica 真的这么用过</span>
+</code></pre></div>
+
+<blockquote>
+<p>一句话：<strong>"万物皆可计算"不是玄学，是一个可以在 20 行代码里亲手复现的实验事实。</strong> 你不需要相信"宇宙是模拟"，只需要接受一个更弱也更有用的版本：<strong>凡是物理上能发生的过程，都落在丘奇–图灵那个圈里</strong> —— 所以用程序去建模它们，原则上永远不会"力所不及"。</p>
+</blockquote>
+<h4 id="0963-为什么函数组合是合理的-因为计算就是组合">0.96.3 为什么函数组合是合理的？—— 因为计算就是组合</h4>
+<p>中学生第一次见到 <span class="arithmatex">\((f\circ g)(x)=f(g(x))\)</span> 时会有个隐隐的疑问：<strong>凭什么两个函数拼一起还是个"正当"的函数？</strong> 可计算性给出的答案干净利落：</p>
+<blockquote>
+<p><strong>可计算函数在"复合"下是封闭的</strong> —— 把两段能跑完的程序首尾接起来，结果还是一段能跑完的程序。</p>
+</blockquote>
+<p>这不是约定，是<strong>计算的定义本身</strong>。图灵机的一步是一次状态转移；一个程序就是转移的<strong>顺序复合</strong>。哥德尔的递归函数把"复合"直接列为构造可计算函数的五条原语之一。所以 Chapter 0.9 里 Clojure 的 <code>comp</code>、数学里的 <span class="arithmatex">\(\circ\)</span>、CPU 里的"下一条指令"，是同一件事：<strong>计算 = 把小的可计算步骤组合成大的</strong>。函数组合"合理"，是因为它就是计算这个动作的原子。</p>
+<div class="highlight"><pre><span></span><code><span class="c1"># 可计算函数在 comp 下封闭：拼起来还能跑完 —— 这就是&quot;函数组合合理&quot;的全部理由</span>
+<span class="k">def</span><span class="w"> </span><span class="nf">compose</span><span class="p">(</span><span class="o">*</span><span class="n">fns</span><span class="p">):</span>                        <span class="c1"># comp：数学的 ∘，也是&quot;程序 = 步骤的顺序拼接&quot;</span>
+    <span class="k">def</span><span class="w"> </span><span class="nf">composed</span><span class="p">(</span><span class="n">x</span><span class="p">):</span>
+        <span class="k">for</span> <span class="n">f</span> <span class="ow">in</span> <span class="nb">reversed</span><span class="p">(</span><span class="n">fns</span><span class="p">):</span>
+            <span class="n">x</span> <span class="o">=</span> <span class="n">f</span><span class="p">(</span><span class="n">x</span><span class="p">)</span>                       <span class="c1"># 每一步都停机 ⇒ 整条链停机 ⇒ 结果仍可计算</span>
+        <span class="k">return</span> <span class="n">x</span>
+    <span class="k">return</span> <span class="n">composed</span>
+
+<span class="c1"># 一个神经网络前向传播 = 一串 lambda 的 comp（呼应 Chapter 0.9.4）</span>
+<span class="n">layer1</span> <span class="o">=</span> <span class="k">lambda</span> <span class="n">x</span><span class="p">:</span> <span class="p">[</span><span class="nb">max</span><span class="p">(</span><span class="mi">0</span><span class="p">,</span> <span class="n">v</span><span class="p">)</span> <span class="k">for</span> <span class="n">v</span> <span class="ow">in</span> <span class="n">x</span><span class="p">]</span>          <span class="c1"># ReLU 层</span>
+<span class="n">layer2</span> <span class="o">=</span> <span class="k">lambda</span> <span class="n">x</span><span class="p">:</span> <span class="nb">sum</span><span class="p">(</span><span class="n">x</span><span class="p">)</span>                           <span class="c1"># 汇聚层</span>
+<span class="n">net</span> <span class="o">=</span> <span class="n">compose</span><span class="p">(</span><span class="n">layer2</span><span class="p">,</span> <span class="n">layer1</span><span class="p">)</span>                       <span class="c1"># net = layer2 ∘ layer1</span>
+</code></pre></div>
+
+<p>这也解释了 Chapter 0.9.4 的"神经网络 = lambda 的塔"为什么是<strong>合法</strong>的：堆 100 层不会跳出可计算的圈，因为<strong>复合是可计算类的封闭运算</strong>。深度学习之所以能"想堆多深就堆多深"，底层许可证就是这条封闭性。</p>
+<h4 id="0964-为什么输出层要套-softmax-让决策变成可被梯度计算的东西">0.96.4 为什么输出层要套 softmax？—— 让"决策"变成可被梯度计算的东西</h4>
+<p>这是全章最实用的一节，也是可计算性视角最漂亮的一次兑现。</p>
+<p>神经网络最终要做的往往是一个<strong>离散决策</strong>：这张图是猫还是狗？下一个词是哪一个？最诚实的写法是 <code>argmax</code> —— 挑分数最高的那个类。但 <code>argmax</code> 有一个致命问题：</p>
+<div class="highlight"><pre><span></span><code><span class="c1"># argmax 是一个阶梯函数：分数微微变化，输出要么纹丝不动，要么突然跳变</span>
+<span class="c1"># 它的导数几乎处处为 0，跳变点不可导 —— 梯度无处可流</span>
+<span class="kn">import</span><span class="w"> </span><span class="nn">numpy</span><span class="w"> </span><span class="k">as</span><span class="w"> </span><span class="nn">np</span>
+<span class="k">def</span><span class="w"> </span><span class="nf">argmax_onehot</span><span class="p">(</span><span class="n">scores</span><span class="p">):</span>
+    <span class="n">out</span> <span class="o">=</span> <span class="n">np</span><span class="o">.</span><span class="n">zeros_like</span><span class="p">(</span><span class="n">scores</span><span class="p">)</span>
+    <span class="n">out</span><span class="p">[</span><span class="n">np</span><span class="o">.</span><span class="n">argmax</span><span class="p">(</span><span class="n">scores</span><span class="p">)]</span> <span class="o">=</span> <span class="mf">1.0</span>
+    <span class="k">return</span> <span class="n">out</span>                            <span class="c1"># 台阶：∂out/∂scores = 0 (a.e.)</span>
+</code></pre></div>
+
+<p>回忆本项目的主线（Chapter 0.9.4）：<strong>训练 = 在权重空间里找 <span class="arithmatex">\(\nabla L=0\)</span> 的不动点</strong>。而找不动点靠的是梯度下降 —— 一个<strong>沿着导数一步步走的计算过程</strong>。如果损失对参数的导数处处是 0，这个计算<strong>根本跑不起来</strong>：没有信号告诉你往哪挪。</p>
+<p>于是问题的本质是一句可计算性的话：<strong>"离散的 argmax 决策，对梯度这台机器来说是不可计算的。"</strong> 解决办法不是换机器，而是<strong>把决策改写成一个连续、可微、因而可被梯度计算的版本</strong> —— 这就是 softmax：</p>
+<div class="arithmatex">\[\mathrm{softmax}(z)_i = \frac{e^{z_i/\tau}}{\sum_j e^{z_j/\tau}}\]</div>
+<div class="highlight"><pre><span></span><code><span class="k">def</span><span class="w"> </span><span class="nf">softmax</span><span class="p">(</span><span class="n">z</span><span class="p">,</span> <span class="n">tau</span><span class="o">=</span><span class="mf">1.0</span><span class="p">):</span>                  <span class="c1"># argmax 的&quot;连续松弛&quot;：可微 ⇒ 梯度可计算</span>
+    <span class="n">z</span> <span class="o">=</span> <span class="n">np</span><span class="o">.</span><span class="n">asarray</span><span class="p">(</span><span class="n">z</span><span class="p">)</span> <span class="o">/</span> <span class="n">tau</span>
+    <span class="n">e</span> <span class="o">=</span> <span class="n">np</span><span class="o">.</span><span class="n">exp</span><span class="p">(</span><span class="n">z</span> <span class="o">-</span> <span class="n">z</span><span class="o">.</span><span class="n">max</span><span class="p">())</span>               <span class="c1"># 减最大值只为数值稳定</span>
+    <span class="k">return</span> <span class="n">e</span> <span class="o">/</span> <span class="n">e</span><span class="o">.</span><span class="n">sum</span><span class="p">()</span>
+
+<span class="c1"># 关键：温度 τ → 0 时，softmax 连续地退化回 argmax（那个不可导的台阶）</span>
+<span class="n">z</span> <span class="o">=</span> <span class="n">np</span><span class="o">.</span><span class="n">array</span><span class="p">([</span><span class="mf">2.0</span><span class="p">,</span> <span class="mf">1.0</span><span class="p">,</span> <span class="mf">0.1</span><span class="p">])</span>
+<span class="k">for</span> <span class="n">tau</span> <span class="ow">in</span> <span class="p">[</span><span class="mf">3.0</span><span class="p">,</span> <span class="mf">1.0</span><span class="p">,</span> <span class="mf">0.3</span><span class="p">,</span> <span class="mf">0.05</span><span class="p">]:</span>
+    <span class="nb">print</span><span class="p">(</span><span class="n">tau</span><span class="p">,</span> <span class="n">np</span><span class="o">.</span><span class="n">round</span><span class="p">(</span><span class="n">softmax</span><span class="p">(</span><span class="n">z</span><span class="p">,</span> <span class="n">tau</span><span class="p">),</span> <span class="mi">3</span><span class="p">))</span>
+<span class="c1"># τ 越小越&quot;尖&quot;，越像 one-hot；τ→0 就是 argmax。softmax = argmax 的可微家族</span>
+</code></pre></div>
+
+<p>看穿了这一层，很多"输出层的玄学"就都<strong>明朗</strong>了，它们全是同一句话的变体 —— <strong>把一个离散/不连续的东西，换成它的可微松弛，好让梯度这台计算机能继续跑</strong>：</p>
+<table>
+<thead>
+<tr>
+<th>想要的离散决策</th>
+<th>不可微的诚实写法</th>
+<th>可微松弛（能被梯度计算）</th>
+<th>松弛参数</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>选最大类（分类）</td>
+<td><code>argmax</code> → one-hot</td>
+<td><strong>softmax</strong></td>
+<td>温度 <span class="arithmatex">\(\tau\to 0\)</span> 恢复 argmax</td>
+</tr>
+<tr>
+<td>开 / 关（阈值神经元，McCulloch–Pitts 1943）</td>
+<td>阶跃 <code>step</code></td>
+<td><strong>sigmoid</strong></td>
+<td>陡度 <span class="arithmatex">\(\to\infty\)</span> 恢复阶跃</td>
+</tr>
+<tr>
+<td>硬性取正（稀疏）</td>
+<td><code>x&gt;0 ? x : 0</code> 的硬门</td>
+<td>ReLU / <strong>softplus</strong> <span class="arithmatex">\(\log(1+e^x)\)</span></td>
+<td>softplus 平滑掉折点</td>
+</tr>
+<tr>
+<td>采样一个类别</td>
+<td>从类别分布<strong>硬采样</strong>（不可导）</td>
+<td><strong>Gumbel-softmax</strong></td>
+<td>温度控制离散程度</td>
+</tr>
+<tr>
+<td>排序 / 取 top-k</td>
+<td><code>sort</code> / <code>topk</code>（阶梯）</td>
+<td>可微排序（如 SoftSort）</td>
+<td>温度控制平滑度</td>
+</tr>
+<tr>
+<td>注意力"聚焦到某一格"</td>
+<td>硬指针（不可导）</td>
+<td>softmax 注意力权重</td>
+<td>缩放 <span class="arithmatex">\(\sqrt{d}\)</span> 控制锐度</td>
+</tr>
+</tbody>
+</table>
+<blockquote>
+<p>一句话：<strong>连续性和可微性，不是数学家的洁癖，而是"让梯度下降这台计算机能跑起来"的工程前提。</strong> 每一处 softmax / sigmoid / softplus，都是在离散决策外面裹一层可微外衣 —— 本质是把一个"梯度算不了"的函数，翻译成一个"梯度算得了"的近亲。这正是可计算性视角对深度学习最实用的一次照亮。</p>
+</blockquote>
+<p>这也回扣了 Chapter 0.5.3 的 <span class="arithmatex">\(\log\)</span> 和 <span class="arithmatex">\(e^x\)</span>：softmax 里的 <span class="arithmatex">\(e^{z}\)</span> 保证了处处可导且恒正，配上归一化就成了概率 —— <strong>"可微"和"可当概率"在指数函数这里合二为一</strong>，绝非巧合。</p>
+<h4 id="0965-计算的边界有些东西宇宙自己也算不出来">0.96.5 计算的边界：有些东西，宇宙自己也算不出来</h4>
+<p>可计算性视角最深的礼物，是它同时画出了<strong>地图的边缘</strong> —— 明确告诉你哪些问题"原理上"无解。这让数学从"我不够聪明"的焦虑，变成"这里是自然律禁区"的清醒。</p>
+<ul>
+<li><strong>停机问题</strong>（图灵 1936）：不存在一个程序，能对<strong>任意</strong>程序判断它是否会停机。证明就是 Chapter 0.9 的<strong>自指/对角线</strong> —— 让程序把自己喂给自己，逼出矛盾（和 Y 组合子、康托对角线、哥德尔句子是同一招）。</li>
+<li><strong>哥德尔不完备</strong>（1931）：任何足够强的形式系统里，都有<strong>真但不可证</strong>的命题。本质上，"可证"是一种可计算的枚举，而真理超出了任何单一枚举。</li>
+<li><strong>莱斯定理</strong>（Rice 1953）：程序的任何<strong>非平凡语义性质</strong>（"这段代码会不会崩""它算的是不是排序"）都不可判定。这就是为什么静态分析、类型检查、病毒查杀永远只能近似。</li>
+</ul>
+<p>这些"算不出来"的边界，在实践里天天撞见：</p>
+<div class="highlight"><pre><span></span><code><span class="c1"># Collatz（3n+1）：规则简单到小学生能懂，却没人知道是否对所有 n 都停机</span>
+<span class="c1"># —— 这是&quot;计算不可约 + 停机不可判定&quot;活生生的日常样本</span>
+<span class="k">def</span><span class="w"> </span><span class="nf">collatz_steps</span><span class="p">(</span><span class="n">n</span><span class="p">,</span> <span class="n">cap</span><span class="o">=</span><span class="mi">10_000</span><span class="p">):</span>
+    <span class="n">steps</span> <span class="o">=</span> <span class="mi">0</span>
+    <span class="k">while</span> <span class="n">n</span> <span class="o">!=</span> <span class="mi">1</span> <span class="ow">and</span> <span class="n">steps</span> <span class="o">&lt;</span> <span class="n">cap</span><span class="p">:</span>         <span class="c1"># 只能真跑；没有已知捷径能预言步数</span>
+        <span class="n">n</span> <span class="o">=</span> <span class="n">n</span> <span class="o">//</span> <span class="mi">2</span> <span class="k">if</span> <span class="n">n</span> <span class="o">%</span> <span class="mi">2</span> <span class="o">==</span> <span class="mi">0</span> <span class="k">else</span> <span class="mi">3</span> <span class="o">*</span> <span class="n">n</span> <span class="o">+</span> <span class="mi">1</span>
+        <span class="n">steps</span> <span class="o">+=</span> <span class="mi">1</span>
+    <span class="k">return</span> <span class="n">steps</span>                          <span class="c1"># 每个 n 的步数杂乱无章 —— 复杂从简单里涌现</span>
+</code></pre></div>
+
+<p>把这份"边界地图"叠到本项目上，很多事情豁然开朗：</p>
+<table>
+<thead>
+<tr>
+<th>现象</th>
+<th>可计算性给的解释</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>大多数 ODE/PDE 没有解析解（Ch 0.8）</td>
+<td>计算不可约：只能数值积分，不能跳步求闭式</td>
+</tr>
+<tr>
+<td>五次方程无根式解（Ch 3，伽罗瓦）</td>
+<td>"根式"是一类受限的计算；有些数超出它，但仍可<strong>数值</strong>计算</td>
+</tr>
+<tr>
+<td>训练神经网络没有"直接求最优权重"的公式</td>
+<td>找不动点是不可约的迭代过程，只能一步步 <code>recur</code></td>
+</tr>
+<tr>
+<td>停不下来的死循环 / 训练不收敛</td>
+<td>停机不可判定：无法先验保证任意配置一定收敛</td>
+</tr>
+<tr>
+<td>形式化验证、bug 检测永远做不到 100%</td>
+<td>莱斯定理：非平凡语义性质不可判定</td>
+</tr>
+</tbody>
+</table>
+<blockquote>
+<p>一句话：<strong>可计算性既是许可证，也是禁令。</strong> 它一边说"凡物理能发生的，程序都能建模"（放心大胆写代码去逼近世界），一边说"有些问题没有捷径、甚至没有答案"（别浪费生命找不存在的解析解）。分清这两侧，是把力气花在刀刃上的前提。</p>
+</blockquote>
+<h4 id="0966-可计算性-数学-深度学习字典">0.96.6 可计算性 ↔ 数学 / 深度学习字典</h4>
+<table>
+<thead>
+<tr>
+<th>可计算性概念</th>
+<th>数学里的对应</th>
+<th>深度学习里的对应</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>丘奇–图灵论题</td>
+<td>λ 演算 ≡ 图灵机 ≡ 递归函数</td>
+<td>"任何可微程序都能被自动微分"</td>
+</tr>
+<tr>
+<td>复合封闭性</td>
+<td>函数组合 <span class="arithmatex">\(f\circ g\)</span> 合法</td>
+<td><code>nn.Sequential</code> 想堆多深堆多深</td>
+</tr>
+<tr>
+<td>可微松弛</td>
+<td>用连续函数逼近不连续函数</td>
+<td>softmax / sigmoid / Gumbel-softmax</td>
+</tr>
+<tr>
+<td>不动点（Ch 0.9）</td>
+<td>Picard 迭代、Banach 不动点</td>
+<td>SGD 收敛到 <span class="arithmatex">\(\nabla L=0\)</span></td>
+</tr>
+<tr>
+<td>计算不可约</td>
+<td>大多数 ODE 无解析解</td>
+<td>训练必须真跑，不能预言最终权重</td>
+</tr>
+<tr>
+<td>停机不可判定</td>
+<td>对角线 / 自指</td>
+<td>无法先验保证收敛 / 不死循环</td>
+</tr>
+<tr>
+<td>元胞自动机（Rule 30）</td>
+<td>简单规则 → 复杂涌现</td>
+<td>简单算子堆叠 → 涌现能力</td>
+</tr>
+<tr>
+<td>计算等价原理</td>
+<td>"复杂度到顶就都图灵完备"</td>
+<td>足够大的网络都是通用逼近器</td>
+</tr>
+</tbody>
+</table>
+<h4 id="0967-可视化与代码">0.96.7 可视化与代码</h4>
+<ul>
+<li><strong>可视化</strong>（每个脚本都先给出"能跑起来的程序"，再揭示它对应的数学观念）：</li>
+<li><strong>三个 1936 殊途同归</strong>：λ 演算 / 图灵机 / 递归函数三种实现算同一个函数，输出逐位对齐的对照表</li>
+<li><strong>Rule 30 计算宇宙</strong>：从单颗种子长出的乱花图，旁边叠上"中心列比特流"当伪随机数——简单规则里涌现的复杂</li>
+<li><strong>argmax vs softmax</strong>：一维分数扫描下，<code>argmax</code> 的台阶（导数处处为 0）与不同温度 softmax 的平滑曲线并排，动画展示 <span class="arithmatex">\(\tau\to 0\)</span> 如何连续地退回 argmax</li>
+<li><strong>可微松弛全家福</strong>：step→sigmoid、hard-max→softmax、hinge→softplus 三组"硬 vs 软"并排，标注各自的梯度</li>
+<li><strong>复合封闭性</strong>：把一段程序拆成基本步骤的 <code>comp</code>，可视化"每步都停机 ⇒ 整体停机"</li>
+<li><strong>计算不可约</strong>：Collatz 步数散点图 + Rule 30，展示"没有捷径，只能跑"</li>
+<li><strong>停机边界</strong>：对角线论证的图示，与 Chapter 0.9 的 Y 组合子自指同框</li>
+<li><strong>代码</strong>：<code>ch00_96_computability/</code></li>
+<li><code>three_1936.py</code> —— λ / 图灵机 / 递归函数三写阶乘，断言输出相等，画"殊途同归"对照表</li>
+<li><code>rule30_universe.py</code> —— Rule 30 元胞自动机演化图 + 中心列伪随机比特流可视化</li>
+<li><code>argmax_vs_softmax.py</code> —— softmax 作为 argmax 的可微松弛，温度扫描动画（本章核心脚本）</li>
+<li><code>differentiable_relaxations.py</code> —— step/sigmoid、max/softmax、relu/softplus 三组硬软对照及其梯度</li>
+<li><code>composition_is_computation.py</code> —— 可计算函数在 <code>comp</code> 下封闭：把网络前向写成 lambda 的复合</li>
+<li><code>computational_irreducibility.py</code> —— Collatz 步数 + Rule 30，"只能一步步跑"的实证</li>
+<li><code>halting_diagonal.py</code> —— 停机问题的对角线论证图解（呼应 0.9 的自指与 Y 组合子）</li>
+<li><code>turing_lambda_equiv.clj</code> —— Clojure 版：同一个函数用 λ 与"纸带 + 状态"两种写法，实证丘奇-图灵论题</li>
+</ul>
+<blockquote>
+<p><strong>元教学意义</strong>：本章是元章节群的收束。Chapter 0.9 说"一切可计算的都是函数"，本章说"一切真实发生的都是计算"，于是每学一个新数学对象，都自动多问三句：
+1. 它是<strong>可计算</strong>的吗？（能不能写成一段跑得完的程序？）
+2. 如果要用<strong>梯度</strong>去优化它，它<strong>可微</strong>吗？不可微就找它的<strong>软化身</strong>（softmax 家族）。
+3. 它落在<strong>计算不可约 / 不可判定</strong>的哪一侧？——决定了该去找闭式解，还是老老实实迭代。</p>
+<p>把这三问内化，你就把"数学"彻底翻译成了"在宇宙这台计算机上能跑的程序"——这正是从牛顿的流数走到 PyTorch 自动微分的那条暗线的<strong>终点站</strong>。</p>
+</blockquote>
+    </div>
+  </article>
+
+</main>
+
+<!-- Floating Ask-AI chat widget -->
+<button class="ai-fab" id="ai-fab" aria-label="Ask AI about this article" title="Ask AI about this article">
+  <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+    <path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"/>
+  </svg>
+  <span class="ai-fab-label">Ask AI</span>
+</button>
+
+<div class="ai-panel" id="ai-panel" role="dialog" aria-labelledby="ai-panel-title" aria-hidden="true">
+  <header class="ai-panel-head">
+    <div class="ai-panel-title-wrap">
+      <span class="ai-dot"></span>
+      <h3 id="ai-panel-title">Ask AI about this post</h3>
+    </div>
+    <div class="ai-panel-actions">
+      <button class="ai-icon-btn" id="ai-clear" title="Clear conversation" aria-label="Clear">
+        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><polyline points="3 6 5 6 21 6"/><path d="M19 6l-1 14a2 2 0 0 1-2 2H8a2 2 0 0 1-2-2L5 6"/><path d="M10 11v6M14 11v6"/><path d="M9 6V4a1 1 0 0 1 1-1h4a1 1 0 0 1 1 1v2"/></svg>
+      </button>
+      <button class="ai-icon-btn" id="ai-close" title="Minimize" aria-label="Minimize">
+        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><polyline points="6 9 12 15 18 9"/></svg>
+      </button>
+    </div>
+  </header>
+
+  <div class="ai-messages" id="ai-messages">
+    <div class="ai-empty" id="ai-empty">
+      <p class="ai-empty-title">On-device AI · Gemini Nano</p>
+      <p class="ai-empty-sub">Ask anything about this article. Runs in your browser — nothing leaves your device.</p>
+    </div>
+  </div>
+
+  <div class="ai-status" id="ai-status" hidden></div>
+
+  <form class="ai-composer" id="ai-form">
+    <textarea id="ai-input" rows="1" placeholder="Ask about this post…" autocomplete="off"></textarea>
+    <button type="submit" id="ai-send" class="ai-send" aria-label="Send" disabled>
+      <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><line x1="22" y1="2" x2="11" y2="13"/><polygon points="22 2 15 22 11 13 2 9 22 2"/></svg>
+    </button>
+  </form>
+</div>
+
+<script>
+(function () {
+  const POST_TITLE = "\u4e3a\u4ec0\u4e48 AI\u3001\u6570\u5b66\u3001\u7269\u7406\u7684\u5e95\u5c42\u7406\u8bba\uff0c\u603b\u662f\u8bde\u751f\u5728\u6b27\u7f8e\uff1f\u539f\u56e0\u51fa\u73b0\u5728\u8fd9\uff01";
+  const contentEl = document.querySelector('article .content');
+
+  const fab = document.getElementById('ai-fab');
+  const panel = document.getElementById('ai-panel');
+  const closeBtn = document.getElementById('ai-close');
+  const clearBtn = document.getElementById('ai-clear');
+  const msgsEl = document.getElementById('ai-messages');
+  const emptyEl = document.getElementById('ai-empty');
+  const statusEl = document.getElementById('ai-status');
+  const formEl = document.getElementById('ai-form');
+  const inputEl = document.getElementById('ai-input');
+  const sendBtn = document.getElementById('ai-send');
+
+  function articleText() {
+    if (!contentEl) return '';
+    return (contentEl.innerText || contentEl.textContent || '')
+      .replace(/[ \t]+\n/g, '\n')
+      .replace(/\n{3,}/g, '\n\n')
+      .trim();
+  }
+
+  function setStatus(msg, cls) {
+    if (!msg) { statusEl.hidden = true; statusEl.textContent = ''; statusEl.className = 'ai-status'; return; }
+    statusEl.hidden = false;
+    statusEl.textContent = msg;
+    statusEl.className = 'ai-status' + (cls ? ' ' + cls : '');
+  }
+
+  function hideEmpty() { if (emptyEl) emptyEl.style.display = 'none'; }
+
+  function appendBubble(role, text) {
+    hideEmpty();
+    const wrap = document.createElement('div');
+    wrap.className = 'ai-msg ai-msg-' + role;
+    const bubble = document.createElement('div');
+    bubble.className = 'ai-bubble';
+    bubble.textContent = text;
+    wrap.appendChild(bubble);
+    msgsEl.appendChild(wrap);
+    msgsEl.scrollTop = msgsEl.scrollHeight;
+    return bubble;
+  }
+
+  function appendTyping() {
+    hideEmpty();
+    const wrap = document.createElement('div');
+    wrap.className = 'ai-msg ai-msg-assistant ai-typing';
+    wrap.innerHTML = '<div class="ai-bubble"><span class="ai-dots"><i></i><i></i><i></i></span></div>';
+    msgsEl.appendChild(wrap);
+    msgsEl.scrollTop = msgsEl.scrollHeight;
+    return wrap;
+  }
+
+  function autoSize() {
+    inputEl.style.height = 'auto';
+    inputEl.style.height = Math.min(inputEl.scrollHeight, 140) + 'px';
+  }
+
+  function openPanel() {
+    panel.classList.add('open');
+    panel.setAttribute('aria-hidden', 'false');
+    fab.classList.add('hidden');
+    setTimeout(() => inputEl.focus(), 50);
+  }
+  function closePanel() {
+    panel.classList.remove('open');
+    panel.setAttribute('aria-hidden', 'true');
+    fab.classList.remove('hidden');
+  }
+
+  fab.addEventListener('click', openPanel);
+  closeBtn.addEventListener('click', closePanel);
+  document.addEventListener('keydown', e => {
+    if (e.key === 'Escape' && panel.classList.contains('open')) closePanel();
+  });
+
+  // ---- LanguageModel session ----
+  let session = null;
+  let creating = null;
+  let history = [];
+
+  function buildSystemPrompt() {
+    // Keep article context modest — Gemini Nano's input quota is small.
+    const article = articleText().slice(0, 4000);
+    return (
+      'You are a concise, helpful assistant answering questions about a blog post. ' +
+      'Use the article below as your primary source. If the answer is not in it, say so briefly and answer generally. ' +
+      'Reply in the same language as the user\'s question. Keep answers short unless asked for detail.\n\n' +
+      '=== ARTICLE TITLE ===\n' + POST_TITLE + '\n\n' +
+      '=== ARTICLE CONTENT ===\n' + article
+    );
+  }
+
+  async function ensureSession() {
+    if (session) return session;
+    if (creating) return creating;
+
+    if (!('LanguageModel' in self)) {
+      throw new Error(
+        'On-device AI not available. Use Chrome 138+ on desktop, or enable ' +
+        '"Prompt API for Gemini Nano" in chrome://flags.'
+      );
+    }
+
+    setStatus('Checking model…', 'info');
+    const status = await LanguageModel.availability();
+    if (status === 'unavailable') {
+      throw new Error('Model unavailable on this device.');
+    }
+
+    creating = (async () => {
+      // Only show download UI when the model isn't already there.
+      const willDownload = (status !== 'available');
+      if (willDownload) setStatus('Preparing model (first run downloads ~2GB)…', 'info');
+      else setStatus('Warming up…', 'info');
+
+      const s = await LanguageModel.create({
+        initialPrompts: [{ role: 'system', content: buildSystemPrompt() }],
+        monitor(m) {
+          m.addEventListener('downloadprogress', e => {
+            // Skip the spurious 0% event Chrome fires for cached models.
+            if (!willDownload && e.loaded === 0) return;
+            const pct = (e.loaded * 100).toFixed(1);
+            setStatus('Downloading model: ' + pct + '%', 'info');
+          });
+        }
+      });
+      session = s;
+      setStatus('');
+      return s;
+    })();
+
+    try { return await creating; }
+    finally { creating = null; }
+  }
+
+  async function ask(q) {
+    appendBubble('user', q);
+    history.push({ role: 'user', content: q });
+
+    sendBtn.disabled = true;
+    inputEl.disabled = true;
+    const typing = appendTyping();
+
+    let answerBubble = null;
+    let acc = '';
+    try {
+      const s = await ensureSession();
+      const stream = s.promptStreaming(q);
+      for await (const chunk of stream) {
+        if (!answerBubble) {
+          typing.remove();
+          const wrap = document.createElement('div');
+          wrap.className = 'ai-msg ai-msg-assistant';
+          answerBubble = document.createElement('div');
+          answerBubble.className = 'ai-bubble';
+          wrap.appendChild(answerBubble);
+          msgsEl.appendChild(wrap);
+        }
+        acc += chunk;
+        answerBubble.textContent = acc;
+        msgsEl.scrollTop = msgsEl.scrollHeight;
+      }
+      if (acc) history.push({ role: 'assistant', content: acc });
+      else { typing.remove(); appendBubble('assistant', '(no response)'); }
+    } catch (e) {
+      if (typing && typing.parentNode) typing.remove();
+      const err = document.createElement('div');
+      err.className = 'ai-msg ai-msg-error';
+      err.innerHTML = '<div class="ai-bubble">⚠ ' + (e && e.message ? e.message : String(e)) + '</div>';
+      msgsEl.appendChild(err);
+      msgsEl.scrollTop = msgsEl.scrollHeight;
+    } finally {
+      sendBtn.disabled = !inputEl.value.trim();
+      inputEl.disabled = false;
+      inputEl.focus();
+    }
+  }
+
+  formEl.addEventListener('submit', e => {
+    e.preventDefault();
+    const q = inputEl.value.trim();
+    if (!q) return;
+    inputEl.value = '';
+    autoSize();
+    sendBtn.disabled = true;
+    ask(q);
+  });
+
+  inputEl.addEventListener('input', () => {
+    autoSize();
+    sendBtn.disabled = !inputEl.value.trim();
+  });
+  inputEl.addEventListener('keydown', e => {
+    if (e.key === 'Enter' && !e.shiftKey) {
+      e.preventDefault();
+      formEl.requestSubmit();
+    }
+  });
+
+  clearBtn.addEventListener('click', () => {
+    msgsEl.innerHTML = '';
+    msgsEl.appendChild(emptyEl);
+    emptyEl.style.display = '';
+    history = [];
+    if (session && session.destroy) { try { session.destroy(); } catch (_) {} }
+    session = null;
+    setStatus('');
+  });
+
+  if (!('LanguageModel' in self)) {
+    fab.addEventListener('click', () => {
+      openPanel();
+      setStatus('On-device AI not detected. Use Chrome 138+ desktop, or enable "Prompt API for Gemini Nano" in chrome://flags.', 'bad');
+    }, { once: true });
+  }
+})();
+</script>
+
+<!-- Outline notes / comments — DataScript + IndexedDB -->
+<script src="https://github.com/tonsky/datascript/releases/download/1.7.8/datascript-1.7.8.min.js"></script>
+<script src="../notes.js?v=6"></script>
+<script src="../theme.js"></script>
+<script src="../wechat-copy.js?v=3"></script>
+
+</body>
+</html>
