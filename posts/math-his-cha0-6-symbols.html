@@ -1,0 +1,1265 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>为什么 AI 论文全是天书？因为每一个数学符号，其实都是一句人话 · Steve Chan — xlisp</title>
+<meta name="description" content="上一篇（Chapter 0 / 0.5）讲的是为什么是这个公式 —— 为什么反复出现平方、$1/r^2$、$\log$。">
+<meta name="author" content="Steve Chan">
+<link rel="icon" type="image/jpeg" href="../icon.jpeg">
+<link rel="apple-touch-icon" href="../icon.jpeg">
+<meta property="og:type" content="article">
+<meta property="og:title" content="为什么 AI 论文全是天书？因为每一个数学符号，其实都是一句人话">
+<meta property="og:description" content="上一篇（Chapter 0 / 0.5）讲的是为什么是这个公式 —— 为什么反复出现平方、$1/r^2$、$\log$。">
+<meta property="og:image" content="../icon.jpeg">
+<meta property="og:site_name" content="Steve Chan — xlisp">
+<meta name="twitter:card" content="summary_large_image">
+<meta name="twitter:title" content="为什么 AI 论文全是天书？因为每一个数学符号，其实都是一句人话">
+<meta name="twitter:description" content="上一篇（Chapter 0 / 0.5）讲的是为什么是这个公式 —— 为什么反复出现平方、$1/r^2$、$\log$。">
+<meta name="twitter:image" content="../icon.jpeg">
+<link rel="stylesheet" href="../style.css?v=light1">
+<script>(function(){try{if(localStorage.getItem('theme')==='light')document.documentElement.setAttribute('data-theme','light');}catch(e){}})();</script>
+<!-- Math formula rendering via MathJax -->
+<script>
+window.MathJax = {
+  tex: {
+    // arithmatex emits \(...\) / \[...\] markup, so only these delimiters
+    // are needed; plain `$` is left alone (avoids currency false positives).
+    inlineMath: [['\\(', '\\)']],
+    displayMath: [['\\[', '\\]']],
+    processEscapes: true
+  },
+  svg: {
+    // Each formula gets its own self-contained <defs>, so the copy script can
+    // serialize one <svg> and rasterize it to a PNG for WeChat.
+    fontCache: 'local'
+  },
+  options: {
+    skipHtmlTags: ['script', 'noscript', 'style', 'textarea', 'pre', 'code'],
+    ignoreHtmlClass: 'highlight'
+  }
+};
+</script>
+<script src="https://cdn.jsdelivr.net/npm/mathjax@3/es5/tex-svg.js" async></script>
+</head>
+<body>
+<main class="wrap post">
+
+  <nav class="topnav">
+    <a href="../index.html">← home</a>
+  </nav>
+
+  <article>
+    <header class="post-header">
+      <h1>为什么 AI 论文全是天书？因为每一个数学符号，其实都是一句人话</h1>
+      <p class="meta">2026-07-31 · Steve Chan</p>
+    </header>
+
+    <div class="content">
+<blockquote>
+<p>AI 论文里的 ∑、∂、∇、𝔼、argmax 为什么越看越像天书？其实它们不是新的知识，而是一整句话被压缩后的缩写。从数学符号的诞生历史，到 GPT、Transformer、PyTorch 代码，一篇文章教你读懂任何公式。</p>
+<p>"一个好的记号，能把大脑从不必要的劳动中解放出来，让它去思考更高级的问题。" —— 怀特海</p>
+<p>"在 1591 年之前，人类甚至写不出'一般的方程'这句话。"</p>
+</blockquote>
+<p>上一篇（Chapter 0 / 0.5）讲的是<strong>为什么是这个公式</strong> —— 为什么反复出现平方、<span class="arithmatex">\(1/r^2\)</span>、<span class="arithmatex">\(\log\)</span>。
+这一篇讲更前置、也更卡人的一步：<strong>你拿到一个陌生公式，怎么把它读下去。</strong></p>
+<p>很多人说"我数学不好"，其实说的是："我看到 <span class="arithmatex">\(\sum\)</span>、<span class="arithmatex">\(\partial\)</span>、<span class="arithmatex">\(\nabla\)</span>、<span class="arithmatex">\(\mathbb{E}\)</span>、<span class="arithmatex">\(\arg\max\)</span>、<span class="arithmatex">\(\otimes\)</span> 就自动关机了。"
+这不是智力问题，是<strong>没人告诉你这些符号是缩写，而缩写的全称从来没被展开过</strong>。</p>
+<hr />
+<h2 id="061-先看一件震撼的事实数学在-1600-年前是用大白话写的">🕰️ 0.6.1 先看一件震撼的事实：数学在 1600 年前，是用大白话写的</h2>
+<p>数学史学家 Nesselmann（1842）把代数分成三个阶段：</p>
+<table>
+<thead>
+<tr>
+<th>阶段</th>
+<th>时代</th>
+<th>长什么样</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><strong>文辞代数</strong>（rhetorical）</td>
+<td>巴比伦 ~ 花拉子米（820）</td>
+<td>全是句子，一个符号都没有</td>
+</tr>
+<tr>
+<td><strong>简写代数</strong>（syncopated）</td>
+<td>丢番图（~250）</td>
+<td>开始用缩写字母，但仍是"速记"</td>
+</tr>
+<tr>
+<td><strong>符号代数</strong>（symbolic）</td>
+<td>韦达（1591）→ 笛卡尔（1637）</td>
+<td>可以写出"任意的方程"</td>
+</tr>
+</tbody>
+</table>
+<p>花拉子米（al-Khwārizmī, 820，<em>al-Jabr</em> —— "algebra" 一词的来源）解一元二次方程时，原文大意是：</p>
+<blockquote>
+<p>"一个平方，与十个它的根，等于三十九迪拉姆。取根数目之半，得五；自乘之，得二十五；加于三十九，得六十四；取其方根，得八；减去根数目之半，得三 —— 此即所求之根。"</p>
+</blockquote>
+<p>翻译成今天的符号，全文就是一行：</p>
+<div class="arithmatex">\[x^2 + 10x = 39 \;\Rightarrow\; x = \sqrt{(10/2)^2 + 39} - 10/2 = 3\]</div>
+<p><strong>一整段话 → 一行符号。</strong> 你现在感受到的"公式好难"，本质是<strong>信息密度</strong>难：一行公式压缩了一整段人话，而没人教你解压。</p>
+<p>而且这些符号是<strong>被一个一个发明出来的</strong>，每一个背后都有一个具体的人、一个具体的偷懒动机：</p>
+<table>
+<thead>
+<tr>
+<th>符号</th>
+<th>发明者 / 年份</th>
+<th>发明动机（真实的）</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><span class="arithmatex">\(+\;-\)</span></td>
+<td>维德曼 1489</td>
+<td>仓库账本上的<strong>盈余/亏空</strong>记号，先是商业符号，后被数学借用</td>
+</tr>
+<tr>
+<td><span class="arithmatex">\(\sqrt{\;}\)</span></td>
+<td>鲁道夫 1525</td>
+<td>拉丁文 <em>radix</em>（根）的手写体 r 拉长</td>
+</tr>
+<tr>
+<td><span class="arithmatex">\(=\)</span></td>
+<td>雷科德 1557</td>
+<td>"我写腻了 <em>is equal to</em>"，取两条<strong>等长平行线</strong> —— "再没有两样东西比它们更相等"</td>
+</tr>
+<tr>
+<td><span class="arithmatex">\(\times\)</span></td>
+<td>奥特雷德 1631</td>
+<td>莱布尼茨嫌它像字母 x，坚持用 <span class="arithmatex">\(\cdot\)</span>（今天两派仍并存）</td>
+</tr>
+<tr>
+<td><span class="arithmatex">\(&lt;\;&gt;\)</span></td>
+<td>哈里奥特 1631（遗著）</td>
+<td>开口朝大数</td>
+</tr>
+<tr>
+<td>未知数 <span class="arithmatex">\(x,y,z\)</span></td>
+<td>笛卡尔 1637</td>
+<td>韦达 1591 用元音表未知、辅音表已知；笛卡尔改成字母表<strong>末尾=未知，开头=已知</strong></td>
+</tr>
+<tr>
+<td>指数 <span class="arithmatex">\(x^3\)</span></td>
+<td>笛卡尔 1637</td>
+<td>此前要写 <em>cubus</em>，或画三个 x</td>
+</tr>
+<tr>
+<td><span class="arithmatex">\(\infty\)</span></td>
+<td>沃利斯 1655</td>
+<td>罗马数字里表"很多"的符号变体</td>
+</tr>
+<tr>
+<td><span class="arithmatex">\(\int\)</span></td>
+<td><strong>莱布尼茨 1675.10.29</strong></td>
+<td>拉长的 <strong>s</strong> = <em>summa</em>（和）—— 积分号从诞生第一天起就在喊："我是求和"</td>
+</tr>
+<tr>
+<td><span class="arithmatex">\(dx\)</span></td>
+<td><strong>莱布尼茨 1675.11.11</strong></td>
+<td><em>differentia</em>（差）的首字母 —— 差分的 d</td>
+</tr>
+<tr>
+<td><span class="arithmatex">\(\dot{x}\)</span></td>
+<td>牛顿 1665</td>
+<td>"流数"，强调<strong>对时间</strong>的变化率</td>
+</tr>
+<tr>
+<td><span class="arithmatex">\(f(x)\)</span></td>
+<td>欧拉 1734</td>
+<td>第一次把"函数"当成可命名的对象</td>
+</tr>
+<tr>
+<td><span class="arithmatex">\(\sum\)</span></td>
+<td>欧拉 1755</td>
+<td>希腊大写 Sigma = <strong>S</strong>um</td>
+</tr>
+<tr>
+<td><span class="arithmatex">\(\pi\)</span></td>
+<td>琼斯 1706 / 欧拉 1748 推广</td>
+<td>περιφέρεια（周长）首字母</td>
+</tr>
+<tr>
+<td><span class="arithmatex">\(e\)</span></td>
+<td>欧拉 1727</td>
+<td>很可能只是 <em>exponential</em>，或 a,b,c,d 之后的下一个可用字母</td>
+</tr>
+<tr>
+<td><span class="arithmatex">\(i\)</span></td>
+<td>欧拉 1777 / 高斯 1801 推广</td>
+<td><em>imaginarius</em></td>
+</tr>
+<tr>
+<td><span class="arithmatex">\(n!\)</span></td>
+<td>克拉普 1808</td>
+<td>为了排版方便（此前写成 <span class="arithmatex">\(\lfloor\!\underline{n}\)</span> 这类怪东西）</td>
+</tr>
+<tr>
+<td><span class="arithmatex">\(\prod\)</span></td>
+<td>高斯 1812</td>
+<td>大写 Pi = <strong>P</strong>roduct</td>
+</tr>
+<tr>
+<td><span class="arithmatex">\(\partial\)</span></td>
+<td>勒让德 1786 / 雅可比 1841 推广</td>
+<td>"圆 d"，用来区分"只对其中一个变量偷偷动一下"</td>
+</tr>
+<tr>
+<td><span class="arithmatex">\(\lim\)</span></td>
+<td>吕利耶 1786；箭头 <span class="arithmatex">\(\to\)</span> 由哈代 ~1908</td>
+<td>此前只能写"无限趋近于"</td>
+</tr>
+<tr>
+<td><span class="arithmatex">\(\varepsilon,\delta\)</span></td>
+<td>柯西 1821（<span class="arithmatex">\(\varepsilon\)</span> = <em>erreur</em> 误差）→ 魏尔斯特拉斯 1860s 严格化</td>
+<td>把"无穷小"这个哲学争议翻译成<strong>可验证的不等式</strong></td>
+</tr>
+<tr>
+<td>矩阵</td>
+<td>西尔维斯特 1850 命名，凯莱 1858 成为代数对象</td>
+<td>先有"一堆数排成方阵"的用法，两千年后才有名字</td>
+</tr>
+<tr>
+<td><span class="arithmatex">\(\in\;\cup\;\cap\;\subset\)</span></td>
+<td>皮亚诺 1888–1889</td>
+<td><span class="arithmatex">\(\in\)</span> 取自希腊语 ἐστί（"是"）的 ε</td>
+</tr>
+<tr>
+<td><span class="arithmatex">\(\exists\)</span></td>
+<td>皮亚诺 1897</td>
+<td>反写的 <strong>E</strong>xists</td>
+</tr>
+<tr>
+<td><span class="arithmatex">\(\forall\)</span></td>
+<td>根岑 1935</td>
+<td>倒写的 <strong>A</strong>ll</td>
+</tr>
+<tr>
+<td><span class="arithmatex">\(\nabla\)</span></td>
+<td>哈密顿 1837，泰特命名 "nabla"</td>
+<td>形似一种希伯来竖琴；吉布斯/亥维赛把它推成向量分析标配</td>
+</tr>
+<tr>
+<td><span class="arithmatex">\(\aleph\)</span></td>
+<td>康托尔 1893</td>
+<td>希伯来字母第一个，标记无穷的"大小"</td>
+</tr>
+<tr>
+<td>求和约定</td>
+<td>爱因斯坦 1916</td>
+<td>"重复指标就求和" —— 他自嘲这是他"数学史上最大的贡献"</td>
+</tr>
+<tr>
+<td>$\langle\psi</td>
+<td>\phi\rangle$</td>
+<td>狄拉克 1939</td>
+</tr>
+</tbody>
+</table>
+<blockquote>
+<p><strong>看这张表要看出的东西</strong>：没有一个符号是"从天上掉下来的规定"。每一个都是某个人<strong>嫌麻烦</strong>，于是把一段话压成一个记号。
+所以读符号的正确姿势永远是：<strong>把它解压回那句人话。</strong></p>
+</blockquote>
+<hr />
+<h2 id="062-读公式六步法像读代码一样读公式">🧭 0.6.2 读公式六步法：像读代码一样读公式</h2>
+<p>数学公式和一段代码是同构的。程序员读陌生代码有一套本能流程 —— 读公式用同一套。</p>
+<h3 id="step-1-先做-shape-check每个符号是什么类型">Step 1 · 先做 shape check：每个符号是什么"类型"？</h3>
+<p>在读<strong>含义</strong>之前，先读<strong>类型</strong>：标量？向量？矩阵？函数？算子？集合？分布？</p>
+<div class="arithmatex">\[\hat{y} = \sigma(W x + b)\]</div>
+<div class="highlight"><pre><span></span><code><span class="kn">import</span><span class="w"> </span><span class="nn">torch</span>
+<span class="c1"># 读公式的第一件事不是&quot;理解&quot;，是&quot;标注类型&quot;</span>
+<span class="n">x</span> <span class="o">=</span> <span class="n">torch</span><span class="o">.</span><span class="n">randn</span><span class="p">(</span><span class="mi">4</span><span class="p">)</span>        <span class="c1"># 输入：向量,  shape (4,)      —— 小写粗体 → 向量</span>
+<span class="n">W</span> <span class="o">=</span> <span class="n">torch</span><span class="o">.</span><span class="n">randn</span><span class="p">(</span><span class="mi">3</span><span class="p">,</span> <span class="mi">4</span><span class="p">)</span>     <span class="c1"># 权重：矩阵,  shape (3, 4)    —— 大写 → 矩阵</span>
+<span class="n">b</span> <span class="o">=</span> <span class="n">torch</span><span class="o">.</span><span class="n">randn</span><span class="p">(</span><span class="mi">3</span><span class="p">)</span>        <span class="c1"># 偏置：向量,  shape (3,)</span>
+<span class="n">sigma</span> <span class="o">=</span> <span class="n">torch</span><span class="o">.</span><span class="n">sigmoid</span>     <span class="c1"># σ：函数 R→R，逐元素作用     —— 希腊字母这里是&quot;函数&quot;不是&quot;标准差&quot;</span>
+
+<span class="n">y</span> <span class="o">=</span> <span class="n">sigma</span><span class="p">(</span><span class="n">W</span> <span class="o">@</span> <span class="n">x</span> <span class="o">+</span> <span class="n">b</span><span class="p">)</span>      <span class="c1"># (3,4)@(4,) -&gt; (3,) ; +(3,) -&gt; (3,) ; σ 不改 shape</span>
+<span class="nb">print</span><span class="p">(</span><span class="n">y</span><span class="o">.</span><span class="n">shape</span><span class="p">)</span>            <span class="c1"># torch.Size([3])</span>
+</code></pre></div>
+
+<p><strong>类型对不上，公式一定读错了。</strong> 这一步能过滤掉 80% 的误读 —— 就像编译器帮你抓住的那 80% 的 bug。</p>
+<h3 id="step-2-找主动词从外向内读不要从左向右读">Step 2 · 找"主动词"：从外向内读，不要从左向右读</h3>
+<p>汉语句子先找谓语，公式先找<strong>最外层的运算</strong>。这才是这个公式"在干什么"。</p>
+<div class="arithmatex">\[\mathcal{L}(\theta) = -\frac{1}{N}\sum_{i=1}^{N}\sum_{c=1}^{C} y_{ic}\log \hat{p}_{ic}(\theta)\]</div>
+<p>从外往里剥：</p>
+<div class="highlight"><pre><span></span><code>最外层：  负号 + 平均            → &quot;我要最小化某个平均量&quot;
+第二层：  ∑_i  遍历 N 个样本      → &quot;这个量是逐样本算完再平均的&quot;
+第三层：  ∑_c  遍历 C 个类别      → &quot;每个样本内部再对类别求和&quot;
+最内层：  y·log p̂                → &quot;只有真实类别 (y=1) 那一项活下来&quot;
+</code></pre></div>
+
+<p>到这里公式已经读完了：<strong>交叉熵 = 对每个样本，取真实类别的 <span class="arithmatex">\(-\log\)</span> 预测概率，再平均。</strong> 一行代码：</p>
+<div class="highlight"><pre><span></span><code><span class="n">loss</span> <span class="o">=</span> <span class="o">-</span><span class="p">(</span><span class="n">y_onehot</span> <span class="o">*</span> <span class="n">p_hat</span><span class="o">.</span><span class="n">log</span><span class="p">())</span><span class="o">.</span><span class="n">sum</span><span class="p">(</span><span class="n">dim</span><span class="o">=</span><span class="mi">1</span><span class="p">)</span><span class="o">.</span><span class="n">mean</span><span class="p">()</span>   <span class="c1"># 逐符号对应，一一映射</span>
+</code></pre></div>
+
+<blockquote>
+<p><strong>由外向内</strong>是关键。从左向右读 <span class="arithmatex">\(-\frac{1}{N}\sum\sum y\log\hat p\)</span>，你会淹死在下标里；
+先看清"这是一个平均"，剩下的都是细节。</p>
+</blockquote>
+<h3 id="step-3-分清哑变量与自由变量-这是最大的困惑源">Step 3 · 分清哑变量与自由变量 —— 这是最大的困惑源</h3>
+<div class="arithmatex">\[S = \sum_{i=1}^{n} a_i \qquad\text{和}\qquad S = \sum_{k=1}^{n} a_k \qquad\text{是同一个东西}\]</div>
+<p><span class="arithmatex">\(i\)</span> / <span class="arithmatex">\(k\)</span> 是<strong>哑变量（bound variable）</strong>：它只在 <span class="arithmatex">\(\sum\)</span> 内部存在，出了求和号就没有意义。
+<span class="arithmatex">\(n\)</span> 和 <span class="arithmatex">\(a\)</span> 是<strong>自由变量</strong>：它们从外面传进来。</p>
+<p>这就是 lambda 的参数，改名不改语义 —— λ 演算里叫 <strong>α-变换</strong>（呼应 Chapter 0.9）：</p>
+<div class="highlight"><pre><span></span><code><span class="c1"># 哑变量 = 函数的局部参数，改名毫无影响</span>
+<span class="n">f</span> <span class="o">=</span> <span class="k">lambda</span> <span class="n">a</span><span class="p">,</span> <span class="n">n</span><span class="p">:</span> <span class="nb">sum</span><span class="p">(</span><span class="n">a</span><span class="p">[</span><span class="n">i</span><span class="p">]</span> <span class="k">for</span> <span class="n">i</span> <span class="ow">in</span> <span class="nb">range</span><span class="p">(</span><span class="n">n</span><span class="p">))</span>   <span class="c1"># i 是哑的</span>
+<span class="n">g</span> <span class="o">=</span> <span class="k">lambda</span> <span class="n">a</span><span class="p">,</span> <span class="n">n</span><span class="p">:</span> <span class="nb">sum</span><span class="p">(</span><span class="n">a</span><span class="p">[</span><span class="n">k</span><span class="p">]</span> <span class="k">for</span> <span class="n">k</span> <span class="ow">in</span> <span class="nb">range</span><span class="p">(</span><span class="n">n</span><span class="p">))</span>   <span class="c1"># k 是哑的，f 和 g 完全相同</span>
+</code></pre></div>
+
+<p><strong>凡是带"绑定器"的符号，其紧跟的变量都是哑的</strong>：</p>
+<table>
+<thead>
+<tr>
+<th>绑定器</th>
+<th>哑变量</th>
+<th>编程对应</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><span class="arithmatex">\(\sum_{i}\)</span>、<span class="arithmatex">\(\prod_{i}\)</span></td>
+<td><span class="arithmatex">\(i\)</span></td>
+<td><code>for i in ...</code> 的循环变量</td>
+</tr>
+<tr>
+<td><span class="arithmatex">\(\int f(x)\,dx\)</span></td>
+<td><span class="arithmatex">\(x\)</span></td>
+<td>积分变量 = 被积函数的形参</td>
+</tr>
+<tr>
+<td><span class="arithmatex">\(\forall x\)</span>、<span class="arithmatex">\(\exists x\)</span></td>
+<td><span class="arithmatex">\(x\)</span></td>
+<td><code>all(... for x in ...)</code></td>
+</tr>
+<tr>
+<td><span class="arithmatex">\(\max_{\theta}\)</span>、<span class="arithmatex">\(\arg\min_{\theta}\)</span></td>
+<td><span class="arithmatex">\(\theta\)</span></td>
+<td>优化循环里的可变参数</td>
+</tr>
+<tr>
+<td><span class="arithmatex">\(\{x : P(x)\}\)</span></td>
+<td><span class="arithmatex">\(x\)</span></td>
+<td>列表推导 <code>[x for x in S if P(x)]</code></td>
+</tr>
+<tr>
+<td><span class="arithmatex">\(\lambda x.\,M\)</span></td>
+<td><span class="arithmatex">\(x\)</span></td>
+<td><code>lambda x: M</code></td>
+</tr>
+</tbody>
+</table>
+<p>一旦你会分辨"哪个字母是临时工、哪个是从外面传进来的"，公式的<strong>作用域</strong>就清晰了 —— 和读代码找变量作用域是同一个动作。</p>
+<h3 id="step-4-量纲维度检查加号两边必须是同类东西">Step 4 · 量纲/维度检查：加号两边必须是同类东西</h3>
+<ul>
+<li><strong>加号两边必须同量纲、同 shape。</strong> <span class="arithmatex">\(E = mc^2 + v\)</span> 一眼就是错的（能量 + 速度）。</li>
+<li><strong><span class="arithmatex">\(\exp\)</span>、<span class="arithmatex">\(\log\)</span>、<span class="arithmatex">\(\sin\)</span> 的宗量必须无量纲。</strong> 所以 <span class="arithmatex">\(e^{-t/\tau}\)</span> 里必然有个时间常数 <span class="arithmatex">\(\tau\)</span> 来把 <span class="arithmatex">\(t\)</span> 除成纯数 —— 看到 <span class="arithmatex">\(e^{-x/\lambda}\)</span>，你立刻知道 <span class="arithmatex">\(\lambda\)</span> 和 <span class="arithmatex">\(x\)</span> 同量纲。</li>
+<li><strong>比值和平方要跟着量纲走。</strong> <span class="arithmatex">\(\mathrm{Var}[X]\)</span> 的量纲是 <span class="arithmatex">\(X\)</span> 的平方，所以才需要开根号变成标准差，才能跟 <span class="arithmatex">\(X\)</span> 画在同一张图上。</li>
+</ul>
+<div class="highlight"><pre><span></span><code><span class="c1"># 用量纲反推陌生公式里某个符号的身份：高斯密度里的 σ 一定和 x 同量纲</span>
+<span class="c1"># 因为 exp 的宗量 (x-μ)²/(2σ²) 必须无量纲</span>
+<span class="c1"># 又因为整个密度要积分成 1（无量纲），前面的 1/(σ√(2π)) 必须是 1/量纲(x)</span>
+</code></pre></div>
+
+<p><strong>这一步不需要理解公式就能做，却能倒推出符号的身份。</strong> 物理学家用它猜公式（呼应 Chapter 0.7），你可以用它读公式。</p>
+<h3 id="step-5-代极端值n01sigmato0inftytto-0">Step 5 · 代极端值：<span class="arithmatex">\(n=0,1\)</span>；<span class="arithmatex">\(\sigma\to0,\infty\)</span>；<span class="arithmatex">\(T\to 0\)</span></h3>
+<p>公式是抽象的，抽象的东西要<strong>审问</strong>（呼应 Chapter 0.95 的代入法）：</p>
+<div class="highlight"><pre><span></span><code><span class="kn">import</span><span class="w"> </span><span class="nn">torch</span>
+
+<span class="k">def</span><span class="w"> </span><span class="nf">softmax_T</span><span class="p">(</span><span class="n">z</span><span class="p">,</span> <span class="n">T</span><span class="p">):</span>
+    <span class="k">return</span> <span class="n">torch</span><span class="o">.</span><span class="n">softmax</span><span class="p">(</span><span class="n">z</span> <span class="o">/</span> <span class="n">T</span><span class="p">,</span> <span class="n">dim</span><span class="o">=-</span><span class="mi">1</span><span class="p">)</span>
+
+<span class="n">z</span> <span class="o">=</span> <span class="n">torch</span><span class="o">.</span><span class="n">tensor</span><span class="p">([</span><span class="mf">2.0</span><span class="p">,</span> <span class="mf">1.0</span><span class="p">,</span> <span class="mf">0.1</span><span class="p">])</span>
+<span class="nb">print</span><span class="p">(</span><span class="n">softmax_T</span><span class="p">(</span><span class="n">z</span><span class="p">,</span> <span class="mf">1.0</span><span class="p">))</span>    <span class="c1"># tensor([0.6590, 0.2424, 0.0986])            正常</span>
+<span class="nb">print</span><span class="p">(</span><span class="n">softmax_T</span><span class="p">(</span><span class="n">z</span><span class="p">,</span> <span class="mf">0.01</span><span class="p">))</span>   <span class="c1"># tensor([1.0000e+00, 3.78e-44, 0.0000e+00])  T→0 退化成 argmax（一位独大）</span>
+<span class="nb">print</span><span class="p">(</span><span class="n">softmax_T</span><span class="p">(</span><span class="n">z</span><span class="p">,</span> <span class="mf">100.0</span><span class="p">))</span>  <span class="c1"># tensor([0.3366, 0.3332, 0.3302])            T→∞ 退化成均匀分布</span>
+</code></pre></div>
+
+<p>三个极端一试，<span class="arithmatex">\(T\)</span> 这个符号的身份立刻水落石出：<strong>它是"决策锐度"的旋钮</strong>。
+这比读十行文字描述都快。<strong>任何含参数的公式，都先把参数推到两个极端看它退化成什么。</strong></p>
+<h3 id="step-6-写成代码跑一遍-唯一的验收标准">Step 6 · 写成代码跑一遍 —— 唯一的验收标准</h3>
+<p><strong>能把公式写成一个不用任何数学库的 <code>for</code> 循环，才算真读懂了。</strong></p>
+<div class="arithmatex">\[\text{Var}[X] = \mathbb{E}[(X-\mu)^2]\]</div>
+<div class="highlight"><pre><span></span><code><span class="n">xs</span> <span class="o">=</span> <span class="p">[</span><span class="mf">2.0</span><span class="p">,</span> <span class="mf">4.0</span><span class="p">,</span> <span class="mf">4.0</span><span class="p">,</span> <span class="mf">4.0</span><span class="p">,</span> <span class="mf">5.0</span><span class="p">,</span> <span class="mf">5.0</span><span class="p">,</span> <span class="mf">7.0</span><span class="p">,</span> <span class="mf">9.0</span><span class="p">]</span>
+
+<span class="n">mu</span> <span class="o">=</span> <span class="nb">sum</span><span class="p">(</span><span class="n">xs</span><span class="p">)</span> <span class="o">/</span> <span class="nb">len</span><span class="p">(</span><span class="n">xs</span><span class="p">)</span>                         <span class="c1"># 𝔼[X]      → 平均</span>
+<span class="n">var</span> <span class="o">=</span> <span class="nb">sum</span><span class="p">((</span><span class="n">x</span> <span class="o">-</span> <span class="n">mu</span><span class="p">)</span> <span class="o">**</span> <span class="mi">2</span> <span class="k">for</span> <span class="n">x</span> <span class="ow">in</span> <span class="n">xs</span><span class="p">)</span> <span class="o">/</span> <span class="nb">len</span><span class="p">(</span><span class="n">xs</span><span class="p">)</span> <span class="c1"># 𝔼[(X-μ)²] → 平方后再平均</span>
+<span class="nb">print</span><span class="p">(</span><span class="n">mu</span><span class="p">,</span> <span class="n">var</span><span class="p">)</span>                                 <span class="c1"># 5.0 4.0</span>
+
+<span class="c1"># 对拍：库函数必须给出一样的答案，否则是你读错了公式</span>
+<span class="kn">import</span><span class="w"> </span><span class="nn">torch</span>
+<span class="n">t</span> <span class="o">=</span> <span class="n">torch</span><span class="o">.</span><span class="n">tensor</span><span class="p">(</span><span class="n">xs</span><span class="p">)</span>
+<span class="nb">print</span><span class="p">(</span><span class="n">t</span><span class="o">.</span><span class="n">mean</span><span class="p">()</span><span class="o">.</span><span class="n">item</span><span class="p">(),</span> <span class="n">t</span><span class="o">.</span><span class="n">var</span><span class="p">(</span><span class="n">unbiased</span><span class="o">=</span><span class="kc">False</span><span class="p">)</span><span class="o">.</span><span class="n">item</span><span class="p">())</span>   <span class="c1"># 5.0 4.0  ✓</span>
+</code></pre></div>
+
+<p><strong>"手写 for 循环 vs 库函数对拍"</strong> 是检验"我是不是真看懂这个符号"的黄金标准 —— 它无法自欺欺人。</p>
+<hr />
+<h2 id="063-符号-代码-总字典">📖 0.6.3 符号 → 代码 总字典</h2>
+<p>把这张表贴在显示器旁边。读公式时逐符号查，读三个月，就不用查了。</p>
+<h3 id="求和-求积-积分-循环家族">求和 / 求积 / 积分 —— "循环"家族</h3>
+<table>
+<thead>
+<tr>
+<th>符号</th>
+<th>读作</th>
+<th>代码</th>
+<th>注意</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><span class="arithmatex">\(\sum_{i=1}^{n} a_i\)</span></td>
+<td>对 i 从 1 到 n 求和</td>
+<td><code>sum(a[i] for i in range(n))</code> / <code>a.sum()</code></td>
+<td>数学下标从 1，代码从 0</td>
+</tr>
+<tr>
+<td><span class="arithmatex">\(\sum_{i \ne j}\)</span></td>
+<td>跳过对角</td>
+<td><code>mask = ~torch.eye(n,dtype=bool)</code></td>
+<td>极易漏掉的条件</td>
+</tr>
+<tr>
+<td><span class="arithmatex">\(\prod_i a_i\)</span></td>
+<td>求积</td>
+<td><code>a.prod()</code></td>
+<td>数值上常改成 <code>a.log().sum().exp()</code> 防下溢</td>
+</tr>
+<tr>
+<td><span class="arithmatex">\(\int_a^b f(x)dx\)</span></td>
+<td>求和的连续版</td>
+<td><code>torch.trapz(f(x), x)</code></td>
+<td><span class="arithmatex">\(\int\)</span> 就是拉长的 s = summa</td>
+</tr>
+<tr>
+<td><span class="arithmatex">\(\oint\)</span></td>
+<td>沿闭合回路积分</td>
+<td>首尾相接的 <code>trapz</code></td>
+<td>环路 → 守恒量、绕数</td>
+</tr>
+<tr>
+<td><span class="arithmatex">\(\iint,\ \iiint\)</span></td>
+<td>多重积分</td>
+<td>嵌套循环 / <code>meshgrid</code></td>
+<td>对应多重 <code>for</code></td>
+</tr>
+<tr>
+<td><span class="arithmatex">\(\mathbb{E}[X]\)</span></td>
+<td>X 的期望</td>
+<td><code>x.mean()</code>（蒙特卡洛）</td>
+<td>期望 = 概率加权求和，采样后就是平均</td>
+</tr>
+<tr>
+<td><span class="arithmatex">\(\mathbb{E}_{x\sim p}[f(x)]\)</span></td>
+<td>在分布 p 下的期望</td>
+<td><code>f(p.sample((N,))).mean()</code></td>
+<td>下标写的是<strong>从哪个分布采样</strong></td>
+</tr>
+</tbody>
+</table>
+<h3 id="微分-变化率家族">微分 —— "变化率"家族</h3>
+<table>
+<thead>
+<tr>
+<th>符号</th>
+<th>读作</th>
+<th>代码</th>
+<th>含义差别</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><span class="arithmatex">\(\dot{x}\)</span></td>
+<td>牛顿点记法</td>
+<td><code>grad(x, t)</code></td>
+<td>专指<strong>对时间</strong>求导</td>
+</tr>
+<tr>
+<td><span class="arithmatex">\(\frac{dy}{dx}\)</span></td>
+<td>莱布尼茨记法</td>
+<td><code>torch.autograd.grad(y, x)</code></td>
+<td>强调"两个微分的比值"，可以约分（换元法的心理支柱）</td>
+</tr>
+<tr>
+<td><span class="arithmatex">\(\frac{\partial f}{\partial x}\)</span></td>
+<td>偏导，"圆 d"</td>
+<td>多元函数中对单个参数求导</td>
+<td><strong>其它变量按住不动</strong></td>
+</tr>
+<tr>
+<td><span class="arithmatex">\(f'(x)\)</span></td>
+<td>拉格朗日撇号</td>
+<td>同上</td>
+<td>撇号也可能表示"另一个变量"，看上下文！</td>
+</tr>
+<tr>
+<td><span class="arithmatex">\(\nabla f\)</span></td>
+<td>梯度（nabla / del）</td>
+<td><code>torch.autograd.grad(f, x)</code> → 向量</td>
+<td>标量→向量，指向上升最快方向</td>
+</tr>
+<tr>
+<td><span class="arithmatex">\(\nabla \cdot \mathbf{F}\)</span></td>
+<td>散度</td>
+<td><code>sum(∂F_i/∂x_i)</code> → 标量</td>
+<td>"这里是源还是汇"</td>
+</tr>
+<tr>
+<td><span class="arithmatex">\(\nabla \times \mathbf{F}\)</span></td>
+<td>旋度</td>
+<td>反对称组合 → 向量</td>
+<td>"这里在打转吗"</td>
+</tr>
+<tr>
+<td><span class="arithmatex">\(\nabla^2,\ \Delta\)</span></td>
+<td>拉普拉斯算子</td>
+<td>二阶导之和</td>
+<td>热传导、扩散、图拉普拉斯的核心</td>
+</tr>
+<tr>
+<td><span class="arithmatex">\(J\)</span></td>
+<td>雅可比矩阵</td>
+<td><code>torch.func.jacrev(f)(x)</code></td>
+<td>shape = (输出维, 输入维)</td>
+</tr>
+<tr>
+<td><span class="arithmatex">\(H\)</span></td>
+<td>海森矩阵</td>
+<td><code>torch.func.hessian(f)(x)</code></td>
+<td>二阶导，曲率 = 牛顿法的地基</td>
+</tr>
+<tr>
+<td><span class="arithmatex">\(\delta\)</span>（变分）</td>
+<td>泛函的"微分"</td>
+<td>最优控制 / 拉格朗日力学</td>
+<td>和 Kronecker <span class="arithmatex">\(\delta\)</span>、Dirac <span class="arithmatex">\(\delta\)</span> <strong>完全不是一个东西</strong></td>
+</tr>
+</tbody>
+</table>
+<div class="highlight"><pre><span></span><code><span class="kn">import</span><span class="w"> </span><span class="nn">torch</span>
+<span class="n">x</span> <span class="o">=</span> <span class="n">torch</span><span class="o">.</span><span class="n">tensor</span><span class="p">([</span><span class="mf">1.0</span><span class="p">,</span> <span class="mf">2.0</span><span class="p">],</span> <span class="n">requires_grad</span><span class="o">=</span><span class="kc">True</span><span class="p">)</span>
+<span class="n">f</span> <span class="o">=</span> <span class="p">(</span><span class="n">x</span> <span class="o">**</span> <span class="mi">2</span><span class="p">)</span><span class="o">.</span><span class="n">sum</span><span class="p">()</span>                      <span class="c1"># f = x₁² + x₂²</span>
+<span class="n">g</span><span class="p">,</span> <span class="o">=</span> <span class="n">torch</span><span class="o">.</span><span class="n">autograd</span><span class="o">.</span><span class="n">grad</span><span class="p">(</span><span class="n">f</span><span class="p">,</span> <span class="n">x</span><span class="p">)</span>          <span class="c1"># ∇f = (2x₁, 2x₂)</span>
+<span class="nb">print</span><span class="p">(</span><span class="n">g</span><span class="p">)</span>                                <span class="c1"># tensor([2., 4.])</span>
+<span class="c1"># ∇ 这个符号在代码里的全部内容，就是这一行：把标量变成和输入同 shape 的向量</span>
+</code></pre></div>
+
+<h3 id="线性代数-shape-流家族">线性代数 —— "shape 流"家族</h3>
+<table>
+<thead>
+<tr>
+<th>符号</th>
+<th>读作</th>
+<th>代码</th>
+<th>shape 变化</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><span class="arithmatex">\(A^{\mathsf T}\)</span></td>
+<td>转置</td>
+<td><code>A.T</code></td>
+<td>(m,n) → (n,m)</td>
+</tr>
+<tr>
+<td><span class="arithmatex">\(A^{-1}\)</span></td>
+<td>逆</td>
+<td><code>torch.linalg.inv(A)</code></td>
+<td>实战中几乎总该换成 <code>solve</code></td>
+</tr>
+<tr>
+<td><span class="arithmatex">\(A^{+}\)</span></td>
+<td>伪逆</td>
+<td><code>torch.linalg.pinv(A)</code></td>
+<td>最小二乘的闭式解</td>
+</tr>
+<tr>
+<td><span class="arithmatex">\(\langle u, v\rangle\)</span>、<span class="arithmatex">\(u\cdot v\)</span>、<span class="arithmatex">\(u^{\mathsf T}v\)</span></td>
+<td>内积</td>
+<td><code>u @ v</code></td>
+<td>(n,),(n,) → 标量</td>
+</tr>
+<tr>
+<td><span class="arithmatex">\(u \otimes v\)</span>、<span class="arithmatex">\(uv^{\mathsf T}\)</span></td>
+<td>外积 / 张量积</td>
+<td><code>torch.outer(u,v)</code></td>
+<td>(m,),(n,) → (m,n)</td>
+</tr>
+<tr>
+<td><span class="arithmatex">\(A \odot B\)</span></td>
+<td>逐元素积（Hadamard）</td>
+<td><code>A * B</code></td>
+<td>shape 不变</td>
+</tr>
+<tr>
+<td><span class="arithmatex">\(\|x\|_2\)</span></td>
+<td>L2 范数</td>
+<td><code>x.norm()</code></td>
+<td>向量 → 标量（长度）</td>
+</tr>
+<tr>
+<td><span class="arithmatex">\(\|x\|_1\)</span></td>
+<td>L1 范数</td>
+<td><code>x.abs().sum()</code></td>
+<td>稀疏正则</td>
+</tr>
+<tr>
+<td><span class="arithmatex">\(\det A\)</span></td>
+<td>行列式</td>
+<td><code>torch.linalg.det(A)</code></td>
+<td>矩阵 → 标量（有向体积）</td>
+</tr>
+<tr>
+<td><span class="arithmatex">\(\operatorname{tr} A\)</span></td>
+<td>迹</td>
+<td><code>A.trace()</code></td>
+<td>特征值之和</td>
+</tr>
+<tr>
+<td><span class="arithmatex">\(\lambda_i,\ v_i\)</span></td>
+<td>特征值 / 特征向量</td>
+<td><code>torch.linalg.eig(A)</code></td>
+<td>"被这个矩阵作用后只缩放不转向"的方向</td>
+</tr>
+<tr>
+<td><span class="arithmatex">\(A_{ij}B_{jk}\)</span>（爱因斯坦约定）</td>
+<td>重复指标即求和</td>
+<td><code>torch.einsum('ij,jk-&gt;ik', A, B)</code></td>
+<td><strong>einsum 就是爱因斯坦 1916 的记号本身</strong></td>
+</tr>
+</tbody>
+</table>
+<blockquote>
+<p><span class="arithmatex">\(\otimes\)</span> 和 <span class="arithmatex">\(\odot\)</span> 这类符号最容易糊 —— 别背名字，<strong>背 shape</strong>：
+外积让维度变多，Hadamard 让维度不变，内积让维度消失。</p>
+</blockquote>
+<h3 id="逻辑-集合-断言家族">逻辑 / 集合 —— "断言"家族</h3>
+<table>
+<thead>
+<tr>
+<th>符号</th>
+<th>读作</th>
+<th>代码</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><span class="arithmatex">\(\forall x \in S,\ P(x)\)</span></td>
+<td>对所有</td>
+<td><code>all(P(x) for x in S)</code></td>
+</tr>
+<tr>
+<td><span class="arithmatex">\(\exists x \in S,\ P(x)\)</span></td>
+<td>存在</td>
+<td><code>any(P(x) for x in S)</code></td>
+</tr>
+<tr>
+<td><span class="arithmatex">\(x \in S\)</span></td>
+<td>属于</td>
+<td><code>x in S</code></td>
+</tr>
+<tr>
+<td><span class="arithmatex">\(A \subset B\)</span></td>
+<td>子集</td>
+<td><code>A &lt;= B</code>（Python <code>set</code>）</td>
+</tr>
+<tr>
+<td><span class="arithmatex">\(A \cup B,\ A\cap B\)</span></td>
+<td>并、交</td>
+<td><code>A | B</code>、<code>A &amp; B</code></td>
+</tr>
+<tr>
+<td><span class="arithmatex">\(\Rightarrow,\ \iff\)</span></td>
+<td>蕴含、当且仅当</td>
+<td><code>not p or q</code>、<code>p == q</code></td>
+</tr>
+<tr>
+<td><span class="arithmatex">\(:=\)</span>、<span class="arithmatex">\(\triangleq\)</span></td>
+<td>定义为（不是等式）</td>
+<td><code>=</code> 赋值 —— <strong>左边是新名字，不用去"解"它</strong></td>
+</tr>
+<tr>
+<td><span class="arithmatex">\(\propto\)</span></td>
+<td>正比于</td>
+<td>差一个常数因子；贝叶斯里表示"归一化常数省略了"</td>
+</tr>
+<tr>
+<td><span class="arithmatex">\(\sim\)</span></td>
+<td>服从分布 / 渐近于</td>
+<td><code>x = dist.sample()</code>；或 <span class="arithmatex">\(n! \sim \sqrt{2\pi n}(n/e)^n\)</span></td>
+</tr>
+<tr>
+<td><span class="arithmatex">\(\sup,\ \inf\)</span></td>
+<td>上确界、下确界</td>
+<td><code>max</code>/<code>min</code>，<strong>但可能取不到</strong>（开区间）</td>
+</tr>
+<tr>
+<td><span class="arithmatex">\(\arg\max_x f(x)\)</span></td>
+<td>使 f 最大的<strong>那个 x</strong></td>
+<td><code>x[f(x).argmax()]</code> —— <strong>返回位置，不是返回值</strong></td>
+</tr>
+</tbody>
+</table>
+<blockquote>
+<p><span class="arithmatex">\(\max\)</span> 与 <span class="arithmatex">\(\arg\max\)</span> 的区别，是初学者最常见的翻车点：
+<span class="arithmatex">\(\max_x f(x)\)</span> 返回<strong>最高的分数</strong>，<span class="arithmatex">\(\arg\max_x f(x)\)</span> 返回<strong>取得最高分的那个选手</strong>。
+一个是 <code>f(x).max()</code>，一个是 <code>f(x).argmax()</code>。</p>
+</blockquote>
+<hr />
+<h2 id="064-一词多义地图同一个符号五种意思">⚠️ 0.6.4 一词多义地图：同一个符号，五种意思</h2>
+<p>这是"符号看不懂"最真实的原因 —— <strong>不是符号太多，是符号太少，被反复重用。</strong>
+希腊字母只有 24 个，而数学分支有上百个。</p>
+<table>
+<thead>
+<tr>
+<th>符号</th>
+<th>可能的含义（靠上下文消歧）</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><span class="arithmatex">\(\sigma\)</span></td>
+<td>标准差 / 激活函数（sigmoid）/ 奇异值 / 置换 / 表面电荷密度 / 应力</td>
+</tr>
+<tr>
+<td><span class="arithmatex">\(\Sigma\)</span></td>
+<td>求和号 / <strong>协方差矩阵</strong> / 字母表（形式语言）</td>
+</tr>
+<tr>
+<td><span class="arithmatex">\(\lambda\)</span></td>
+<td>特征值 / 正则化系数 / 波长 / 泊松参数 / λ 演算的抽象 / 学习率衰减</td>
+</tr>
+<tr>
+<td><span class="arithmatex">\(\delta\)</span></td>
+<td>Kronecker <span class="arithmatex">\(\delta_{ij}\)</span>（相等取 1）/ Dirac <span class="arithmatex">\(\delta(x)\)</span>（广义函数）/ 变分 <span class="arithmatex">\(\delta J\)</span> / ε-δ 里的小量 / 反向传播的误差项</td>
+</tr>
+<tr>
+<td><span class="arithmatex">\(\varepsilon\)</span></td>
+<td>任意小量 / 噪声项 / 强化学习探索率 / 数值稳定项 <code>1e-8</code> / 介电常数</td>
+</tr>
+<tr>
+<td><span class="arithmatex">\(\mu\)</span></td>
+<td>均值 / 测度 / 磁导率 / 动量系数 / 微（<span class="arithmatex">\(10^{-6}\)</span>）</td>
+</tr>
+<tr>
+<td><span class="arithmatex">\(\pi\)</span></td>
+<td>圆周率 / <strong>策略函数</strong>（RL）/ 置换 / 平稳分布</td>
+</tr>
+<tr>
+<td><span class="arithmatex">\(\theta\)</span></td>
+<td>角度 / <strong>模型参数</strong>（ML 中最常见）</td>
+</tr>
+<tr>
+<td><span class="arithmatex">\(\rho\)</span></td>
+<td>密度 / 相关系数 / 谱半径 / 密度矩阵</td>
+</tr>
+<tr>
+<td><span class="arithmatex">\(\|\cdot\|\)</span></td>
+<td>绝对值 / 复数模 / 集合势 / <strong>行列式</strong>（$</td>
+</tr>
+<tr>
+<td><span class="arithmatex">\(*\)</span></td>
+<td>乘法 / <strong>卷积</strong> <span class="arithmatex">\(f*g\)</span> / 共轭 <span class="arithmatex">\(z^*\)</span> / 对偶空间 <span class="arithmatex">\(V^*\)</span> / 最优解 <span class="arithmatex">\(x^*\)</span></td>
+</tr>
+<tr>
+<td><span class="arithmatex">\('\)</span></td>
+<td>导数 / "另一个"变量（<span class="arithmatex">\(x'\)</span>）/ 转置（部分统计文献）</td>
+</tr>
+<tr>
+<td><span class="arithmatex">\(\top\)</span></td>
+<td>转置 / 逻辑真 / 格的顶元素</td>
+</tr>
+<tr>
+<td><span class="arithmatex">\(\nabla\)</span></td>
+<td>梯度 / 散度（配 <span class="arithmatex">\(\cdot\)</span>）/ 旋度（配 <span class="arithmatex">\(\times\)</span>）/ 联络（微分几何）</td>
+</tr>
+<tr>
+<td><span class="arithmatex">\(\cdot\)</span></td>
+<td>乘法 / 内积 / 占位符（<span class="arithmatex">\(f(\cdot)\)</span> 表示"这里放一个参数"）</td>
+</tr>
+</tbody>
+</table>
+<p><strong>唯一的消歧规则：符号本身没有意义，"符号 + 领域 + 位置"才有意义。</strong></p>
+<p>具体三招：
+1. <strong>看它出现在什么运算里</strong>：<span class="arithmatex">\(\Sigma\)</span> 后面跟下标 <span class="arithmatex">\(i=1\)</span> 就是求和，出现在 <span class="arithmatex">\(\mathcal{N}(\mu,\Sigma)\)</span> 里就是协方差矩阵。
+2. <strong>看它的 shape</strong>：<span class="arithmatex">\(\delta\)</span> 带两个下标（<span class="arithmatex">\(\delta_{ij}\)</span>）是 Kronecker，带括号（<span class="arithmatex">\(\delta(x)\)</span>）是 Dirac。
+3. <strong>看这一页的第一次出现</strong>：论文的规范是<strong>首次出现处必须定义</strong>。看不懂就往回找定义 —— 找不到的话，那是作者的错，不是你的。</p>
+<hr />
+<h2 id="065-实战解剖三个公式逐符号拆开">🔬 0.6.5 实战解剖：三个公式，逐符号拆开</h2>
+<p>按本项目的规矩：<strong>现象 → 模拟 → 拆解 → 公式</strong>（Chapter 0.7），不是反过来。</p>
+<h3 id="案例一高斯分布-从高尔顿板到符号">案例一：高斯分布 —— 从"高尔顿板"到符号</h3>
+<p><strong>先看现象</strong>：一堆小球从上往下掉，每层随机左右偏一次，落到底部形成一堆。</p>
+<div class="highlight"><pre><span></span><code><span class="kn">import</span><span class="w"> </span><span class="nn">torch</span><span class="o">,</span><span class="w"> </span><span class="nn">matplotlib.pyplot</span><span class="w"> </span><span class="k">as</span><span class="w"> </span><span class="nn">plt</span>
+
+<span class="n">n_balls</span><span class="p">,</span> <span class="n">n_rows</span> <span class="o">=</span> <span class="mi">20000</span><span class="p">,</span> <span class="mi">32</span>
+<span class="n">steps</span> <span class="o">=</span> <span class="p">(</span><span class="n">torch</span><span class="o">.</span><span class="n">randint</span><span class="p">(</span><span class="mi">0</span><span class="p">,</span> <span class="mi">2</span><span class="p">,</span> <span class="p">(</span><span class="n">n_balls</span><span class="p">,</span> <span class="n">n_rows</span><span class="p">))</span> <span class="o">*</span> <span class="mi">2</span> <span class="o">-</span> <span class="mi">1</span><span class="p">)</span>   <span class="c1"># 每层 ±1，公平的硬币</span>
+<span class="n">pos</span> <span class="o">=</span> <span class="n">steps</span><span class="o">.</span><span class="n">sum</span><span class="p">(</span><span class="n">dim</span><span class="o">=</span><span class="mi">1</span><span class="p">)</span><span class="o">.</span><span class="n">float</span><span class="p">()</span>                             <span class="c1"># 累积左右偏移</span>
+
+<span class="n">plt</span><span class="o">.</span><span class="n">hist</span><span class="p">(</span><span class="n">pos</span><span class="o">.</span><span class="n">numpy</span><span class="p">(),</span> <span class="n">bins</span><span class="o">=</span><span class="mi">40</span><span class="p">,</span> <span class="n">density</span><span class="o">=</span><span class="kc">True</span><span class="p">,</span> <span class="n">alpha</span><span class="o">=</span><span class="mf">.6</span><span class="p">,</span> <span class="n">label</span><span class="o">=</span><span class="s2">&quot;高尔顿板（模拟）&quot;</span><span class="p">)</span>
+<span class="n">mu</span><span class="p">,</span> <span class="n">sigma</span> <span class="o">=</span> <span class="n">pos</span><span class="o">.</span><span class="n">mean</span><span class="p">(),</span> <span class="n">pos</span><span class="o">.</span><span class="n">std</span><span class="p">()</span>
+<span class="n">xs</span> <span class="o">=</span> <span class="n">torch</span><span class="o">.</span><span class="n">linspace</span><span class="p">(</span><span class="n">pos</span><span class="o">.</span><span class="n">min</span><span class="p">(),</span> <span class="n">pos</span><span class="o">.</span><span class="n">max</span><span class="p">(),</span> <span class="mi">300</span><span class="p">)</span>
+<span class="n">pdf</span> <span class="o">=</span> <span class="mi">1</span><span class="o">/</span><span class="p">(</span><span class="n">sigma</span><span class="o">*</span><span class="n">torch</span><span class="o">.</span><span class="n">sqrt</span><span class="p">(</span><span class="n">torch</span><span class="o">.</span><span class="n">tensor</span><span class="p">(</span><span class="mi">2</span><span class="o">*</span><span class="n">torch</span><span class="o">.</span><span class="n">pi</span><span class="p">)))</span> <span class="o">*</span> <span class="n">torch</span><span class="o">.</span><span class="n">exp</span><span class="p">(</span><span class="o">-</span><span class="p">(</span><span class="n">xs</span><span class="o">-</span><span class="n">mu</span><span class="p">)</span><span class="o">**</span><span class="mi">2</span><span class="o">/</span><span class="p">(</span><span class="mi">2</span><span class="o">*</span><span class="n">sigma</span><span class="o">**</span><span class="mi">2</span><span class="p">))</span>
+<span class="n">plt</span><span class="o">.</span><span class="n">plot</span><span class="p">(</span><span class="n">xs</span><span class="p">,</span> <span class="n">pdf</span><span class="p">,</span> <span class="n">lw</span><span class="o">=</span><span class="mi">2</span><span class="p">,</span> <span class="n">label</span><span class="o">=</span><span class="s2">&quot;高斯公式&quot;</span><span class="p">)</span>
+<span class="n">plt</span><span class="o">.</span><span class="n">legend</span><span class="p">();</span> <span class="n">plt</span><span class="o">.</span><span class="n">show</span><span class="p">()</span>
+</code></pre></div>
+
+<p><strong>先跑出那个钟形，再回头解剖公式</strong>：</p>
+<div class="arithmatex">\[p(x) = \underbrace{\frac{1}{\sigma\sqrt{2\pi}}}_{\text{③ 归一化}} \exp\Big(-\underbrace{\frac{(x-\mu)^2}{2\sigma^2}}_{\text{① 标准化距离的平方}}\Big)\]</div>
+<table>
+<thead>
+<tr>
+<th>片段</th>
+<th>它在干什么</th>
+<th>对应代码</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><span class="arithmatex">\(x - \mu\)</span></td>
+<td>距离中心多远</td>
+<td><code>xs - mu</code></td>
+</tr>
+<tr>
+<td><span class="arithmatex">\((\cdot)^2\)</span></td>
+<td><strong>左右对称 + 可微</strong>（呼应 0.5.1）</td>
+<td><code>** 2</code></td>
+</tr>
+<tr>
+<td><span class="arithmatex">\(/\sigma^2\)</span></td>
+<td>用"自然尺度"去量，使宗量无量纲</td>
+<td><code>/ sigma**2</code></td>
+</tr>
+<tr>
+<td><span class="arithmatex">\(\exp(-\cdot)\)</span></td>
+<td>让远处衰减得<strong>极快</strong>，且永不为零</td>
+<td><code>torch.exp</code></td>
+</tr>
+<tr>
+<td><span class="arithmatex">\(\frac{1}{\sigma\sqrt{2\pi}}\)</span></td>
+<td>让总面积 = 1，<span class="arithmatex">\(\sqrt{2\pi}\)</span> 是被逼出来的常数</td>
+<td>归一化因子</td>
+</tr>
+</tbody>
+</table>
+<p><span class="arithmatex">\(\sqrt{2\pi}\)</span> 不是审美，是<strong>积分 <span class="arithmatex">\(\int e^{-x^2/2}dx=\sqrt{2\pi}\)</span> 逼出来的账单</strong>（那个极坐标换元技巧，正是 Chapter 0.3 的 <code>gaussian_integral_polar.py</code>）。</p>
+<h3 id="案例二注意力公式-现代-ai-里最吓人的一行">案例二：注意力公式 —— 现代 AI 里最"吓人"的一行</h3>
+<div class="arithmatex">\[\mathrm{Attention}(Q,K,V) = \mathrm{softmax}\!\left(\frac{QK^{\mathsf T}}{\sqrt{d_k}}\right)V\]</div>
+<p>用六步法，<strong>只跟 shape 走</strong>，两分钟读完：</p>
+<div class="highlight"><pre><span></span><code><span class="kn">import</span><span class="w"> </span><span class="nn">torch</span>
+<span class="n">n</span><span class="p">,</span> <span class="n">d_k</span><span class="p">,</span> <span class="n">d_v</span> <span class="o">=</span> <span class="mi">5</span><span class="p">,</span> <span class="mi">8</span><span class="p">,</span> <span class="mi">8</span>                     <span class="c1"># 5 个 token</span>
+<span class="n">Q</span> <span class="o">=</span> <span class="n">torch</span><span class="o">.</span><span class="n">randn</span><span class="p">(</span><span class="n">n</span><span class="p">,</span> <span class="n">d_k</span><span class="p">)</span>                   <span class="c1"># Query：我在找什么</span>
+<span class="n">K</span> <span class="o">=</span> <span class="n">torch</span><span class="o">.</span><span class="n">randn</span><span class="p">(</span><span class="n">n</span><span class="p">,</span> <span class="n">d_k</span><span class="p">)</span>                   <span class="c1"># Key  ：我是什么</span>
+<span class="n">V</span> <span class="o">=</span> <span class="n">torch</span><span class="o">.</span><span class="n">randn</span><span class="p">(</span><span class="n">n</span><span class="p">,</span> <span class="n">d_v</span><span class="p">)</span>                   <span class="c1"># Value：我能提供什么</span>
+
+<span class="n">scores</span> <span class="o">=</span> <span class="n">Q</span> <span class="o">@</span> <span class="n">K</span><span class="o">.</span><span class="n">T</span>                          <span class="c1"># (n,d_k)@(d_k,n) -&gt; (n,n)   ← 每对 token 的内积=相似度</span>
+<span class="n">scores</span> <span class="o">=</span> <span class="n">scores</span> <span class="o">/</span> <span class="n">d_k</span> <span class="o">**</span> <span class="mf">0.5</span>              <span class="c1"># 除 √d_k：内积随维度增长 ~√d_k，不缩放 softmax 会饱和</span>
+<span class="n">w</span> <span class="o">=</span> <span class="n">torch</span><span class="o">.</span><span class="n">softmax</span><span class="p">(</span><span class="n">scores</span><span class="p">,</span> <span class="n">dim</span><span class="o">=-</span><span class="mi">1</span><span class="p">)</span>         <span class="c1"># (n,n)，每行求和为 1        ← 变成&quot;注意力权重分配&quot;</span>
+<span class="n">out</span> <span class="o">=</span> <span class="n">w</span> <span class="o">@</span> <span class="n">V</span>                               <span class="c1"># (n,n)@(n,d_v) -&gt; (n,d_v)   ← 按权重把别人的信息加权平均</span>
+
+<span class="nb">print</span><span class="p">(</span><span class="n">scores</span><span class="o">.</span><span class="n">shape</span><span class="p">,</span> <span class="n">w</span><span class="o">.</span><span class="n">shape</span><span class="p">,</span> <span class="n">out</span><span class="o">.</span><span class="n">shape</span><span class="p">)</span>   <span class="c1"># (5,5) (5,5) (5,8)</span>
+<span class="nb">print</span><span class="p">(</span><span class="n">w</span><span class="o">.</span><span class="n">sum</span><span class="p">(</span><span class="n">dim</span><span class="o">=-</span><span class="mi">1</span><span class="p">))</span>                      <span class="c1"># tensor([1., 1., 1., 1., 1.]) ✓ 归一化确认</span>
+</code></pre></div>
+
+<p>逐符号翻译成人话：</p>
+<table>
+<thead>
+<tr>
+<th>符号</th>
+<th>人话</th>
+<th>历史血统</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><span class="arithmatex">\(QK^{\mathsf T}\)</span></td>
+<td>每个查询和每个键的<strong>内积</strong> = 相似度</td>
+<td>内积 = 投影 = 欧几里得的"夹角"（0.5.4）</td>
+</tr>
+<tr>
+<td><span class="arithmatex">\(\sqrt{d_k}\)</span></td>
+<td>尺度校正，避免 softmax 饱和</td>
+<td>随机向量内积的标准差 <span class="arithmatex">\(\propto\sqrt{d}\)</span> —— <strong>中心极限定理</strong></td>
+</tr>
+<tr>
+<td><span class="arithmatex">\(\mathrm{softmax}\)</span></td>
+<td>把任意分数变成概率分布</td>
+<td>玻尔兹曼分布（1877）改名换姓</td>
+</tr>
+<tr>
+<td><span class="arithmatex">\(\cdot\, V\)</span></td>
+<td>按权重加权平均</td>
+<td>期望 <span class="arithmatex">\(\mathbb{E}\)</span> 的离散形式</td>
+</tr>
+</tbody>
+</table>
+<p><strong>结论</strong>：这一行公式的全部内容是 —— "<strong>算相似度 → 归一化成权重 → 加权平均</strong>"。
+三个动作，每个都有两百年历史。吓人的只是符号密度，不是思想密度。</p>
+<h3 id="案例三链式法则-一个-partial-引发的百年国耻">案例三：链式法则 —— 一个 <span class="arithmatex">\(\partial\)</span> 引发的百年国耻</h3>
+<div class="arithmatex">\[\frac{\partial L}{\partial w} = \frac{\partial L}{\partial \hat{y}}\cdot\frac{\partial \hat{y}}{\partial z}\cdot\frac{\partial z}{\partial w}\]</div>
+<p>莱布尼茨记法的天才之处：<strong>它长得就像可以约分</strong>（<span class="arithmatex">\(\frac{\partial L}{\partial \hat y}\cdot\frac{\partial \hat y}{\partial z}\)</span> 中间的 <span class="arithmatex">\(\partial\hat y\)</span> "消掉"）。
+这个视觉暗示不是严格证明，但它让人<strong>敢往下推</strong> —— 这就是好符号的全部价值。</p>
+<div class="highlight"><pre><span></span><code><span class="kn">import</span><span class="w"> </span><span class="nn">torch</span>
+<span class="n">w</span> <span class="o">=</span> <span class="n">torch</span><span class="o">.</span><span class="n">tensor</span><span class="p">(</span><span class="mf">2.0</span><span class="p">,</span> <span class="n">requires_grad</span><span class="o">=</span><span class="kc">True</span><span class="p">)</span>
+<span class="n">x</span> <span class="o">=</span> <span class="n">torch</span><span class="o">.</span><span class="n">tensor</span><span class="p">(</span><span class="mf">3.0</span><span class="p">)</span>
+
+<span class="n">z</span>     <span class="o">=</span> <span class="n">w</span> <span class="o">*</span> <span class="n">x</span>                     <span class="c1"># ∂z/∂w = x = 3</span>
+<span class="n">y_hat</span> <span class="o">=</span> <span class="n">torch</span><span class="o">.</span><span class="n">sigmoid</span><span class="p">(</span><span class="n">z</span><span class="p">)</span>          <span class="c1"># ∂ŷ/∂z = ŷ(1-ŷ)</span>
+<span class="n">L</span>     <span class="o">=</span> <span class="p">(</span><span class="n">y_hat</span> <span class="o">-</span> <span class="mf">1.0</span><span class="p">)</span> <span class="o">**</span> <span class="mi">2</span>        <span class="c1"># ∂L/∂ŷ = 2(ŷ-1)</span>
+
+<span class="n">L</span><span class="o">.</span><span class="n">backward</span><span class="p">()</span>                      <span class="c1"># ← 这一行就是那个连乘</span>
+
+<span class="n">manual</span> <span class="o">=</span> <span class="mi">2</span><span class="o">*</span><span class="p">(</span><span class="n">y_hat</span><span class="o">-</span><span class="mi">1</span><span class="p">)</span> <span class="o">*</span> <span class="n">y_hat</span><span class="o">*</span><span class="p">(</span><span class="mi">1</span><span class="o">-</span><span class="n">y_hat</span><span class="p">)</span> <span class="o">*</span> <span class="n">x</span>     <span class="c1"># 逐符号手抄公式</span>
+<span class="nb">print</span><span class="p">(</span><span class="n">w</span><span class="o">.</span><span class="n">grad</span><span class="o">.</span><span class="n">item</span><span class="p">(),</span> <span class="n">manual</span><span class="o">.</span><span class="n">item</span><span class="p">())</span>            <span class="c1"># 两者相等 ✓ —— 公式读对了</span>
+</code></pre></div>
+
+<p><strong>而牛顿的 <span class="arithmatex">\(\dot{x}\)</span> 写不出这种链式约分。</strong> 英国数学界出于民族情绪坚持点记法一百年，直到 1812 年剑桥的巴贝奇、赫歇尔、皮考克成立"分析学会"，打出那句著名口号：</p>
+<blockquote>
+<p>"推行纯粹的 <strong>d 主义</strong>，反对这所大学的 <strong>点时代</strong>。"
+（<em>the principles of pure D-ism in opposition to the Dot-age of the University</em> —— 一句双关：D-ism / deism（自然神论），Dot-age / dotage（老糊涂））</p>
+</blockquote>
+<p><strong>一个符号的选择，让一个国家的数学落后了一个世纪。</strong> 这是"符号即思维外骨骼"最贵的一次学费。</p>
+<hr />
+<h2 id="066-三条习惯把看不懂变成查得到">🧠 0.6.6 三条习惯：把"看不懂"变成"查得到"</h2>
+<ol>
+<li><strong>看到陌生符号，先问"它是什么类型"，而不是"它是什么意思"。</strong>
+   标量/向量/矩阵/函数/算子/集合 —— 类型定了，能做什么运算就定了一半。这是 shape check，不是理解力问题。</li>
+<li><strong>看到复杂公式，先找最外层运算，由外向内剥。</strong>
+   一个公式只有一个"主动词"。找到它，你就知道这个公式<strong>产出什么</strong>；剩下的括号都是它的参数。</li>
+<li><strong>看到任何公式，最后一定要写成能跑的代码，并跟库函数对拍。</strong>
+   手写 <code>for</code> 循环 = 唯一无法自欺欺人的验收。跑通那一刻，符号就从"要背"变成了"我造过"。</li>
+</ol>
+<blockquote>
+<p>再补一条对付一词多义的：<strong>符号无意义，符号 + 领域才有意义。</strong>
+别问"<span class="arithmatex">\(\sigma\)</span> 是什么"，要问"在这一页里，<span class="arithmatex">\(\sigma\)</span> 是什么"。</p>
+</blockquote>
+<hr />
+<h2 id="067-可视化与代码ch00_97_reading_formulas">🎨 0.6.7 可视化与代码：<code>ch00_97_reading_formulas/</code></h2>
+<table>
+<thead>
+<tr>
+<th>脚本</th>
+<th>做什么</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>symbol_timeline.py</code></td>
+<td>数学符号发明编年史时间轴（1489 → 1939），标注发明者与动机</td>
+</tr>
+<tr>
+<td><code>rhetorical_to_symbolic.py</code></td>
+<td>花拉子米原文 ↔ 现代符号 ↔ Python 代码，三栏同步高亮动画</td>
+</tr>
+<tr>
+<td><code>shape_flow_attention.py</code></td>
+<td>注意力公式的 shape 流动图：<span class="arithmatex">\((n,d)\to(n,n)\to(n,d_v)\)</span> 逐步可视化</td>
+</tr>
+<tr>
+<td><code>bound_variable_alpha.py</code></td>
+<td>哑变量改名（α-变换）动画：<span class="arithmatex">\(\sum_i\)</span> 与 <span class="arithmatex">\(\sum_k\)</span> 是同一段代码</td>
+</tr>
+<tr>
+<td><code>gaussian_dissection.py</code></td>
+<td>高尔顿板模拟 → 逐片段点亮高斯密度公式的每个因子</td>
+</tr>
+<tr>
+<td><code>dot_vs_leibniz.py</code></td>
+<td>点记法 vs <span class="arithmatex">\(d/dx\)</span> 记法推链式法则，并排展示"能不能约分"</td>
+</tr>
+<tr>
+<td><code>sigma_disambiguation.py</code></td>
+<td>一词多义交互面板：同一个 <span class="arithmatex">\(\sigma\)</span> 在 6 个语境中的不同身份</td>
+</tr>
+<tr>
+<td><code>einsum_as_einstein.py</code></td>
+<td>爱因斯坦求和约定 ↔ <code>torch.einsum</code> 的逐指标对照动画</td>
+</tr>
+<tr>
+<td><code>formula_to_forloop.py</code></td>
+<td>输入一个公式，输出手写 <code>for</code> 循环 + 库函数对拍结果</td>
+</tr>
+</tbody>
+</table>
+<hr />
+<blockquote>
+<p><strong>本文小结</strong>：数学符号不是门槛，是<strong>压缩包</strong>。每一个都由某个具体的人，为了少写几个字，在某一年发明出来 —— 莱布尼茨 1675 年 10 月 29 日写下的那个拉长的 s，至今仍在每一篇论文里喊着"我是求和"。</p>
+<p>看不懂公式，从来不是因为你笨，而是因为没人给你解压密码。密码就三条：<strong>先读类型，由外向内，写成代码。</strong></p>
+<p>下期预告：Chapter 0.7 —— 学物理就是学数学，为什么大脑只记得住"有现实意义的事"。</p>
+</blockquote>
+    </div>
+  </article>
+
+</main>
+
+<!-- Floating Ask-AI chat widget -->
+<button class="ai-fab" id="ai-fab" aria-label="Ask AI about this article" title="Ask AI about this article">
+  <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+    <path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"/>
+  </svg>
+  <span class="ai-fab-label">Ask AI</span>
+</button>
+
+<div class="ai-panel" id="ai-panel" role="dialog" aria-labelledby="ai-panel-title" aria-hidden="true">
+  <header class="ai-panel-head">
+    <div class="ai-panel-title-wrap">
+      <span class="ai-dot"></span>
+      <h3 id="ai-panel-title">Ask AI about this post</h3>
+    </div>
+    <div class="ai-panel-actions">
+      <button class="ai-icon-btn" id="ai-clear" title="Clear conversation" aria-label="Clear">
+        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><polyline points="3 6 5 6 21 6"/><path d="M19 6l-1 14a2 2 0 0 1-2 2H8a2 2 0 0 1-2-2L5 6"/><path d="M10 11v6M14 11v6"/><path d="M9 6V4a1 1 0 0 1 1-1h4a1 1 0 0 1 1 1v2"/></svg>
+      </button>
+      <button class="ai-icon-btn" id="ai-close" title="Minimize" aria-label="Minimize">
+        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><polyline points="6 9 12 15 18 9"/></svg>
+      </button>
+    </div>
+  </header>
+
+  <div class="ai-messages" id="ai-messages">
+    <div class="ai-empty" id="ai-empty">
+      <p class="ai-empty-title">On-device AI · Gemini Nano</p>
+      <p class="ai-empty-sub">Ask anything about this article. Runs in your browser — nothing leaves your device.</p>
+    </div>
+  </div>
+
+  <div class="ai-status" id="ai-status" hidden></div>
+
+  <form class="ai-composer" id="ai-form">
+    <textarea id="ai-input" rows="1" placeholder="Ask about this post…" autocomplete="off"></textarea>
+    <button type="submit" id="ai-send" class="ai-send" aria-label="Send" disabled>
+      <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><line x1="22" y1="2" x2="11" y2="13"/><polygon points="22 2 15 22 11 13 2 9 22 2"/></svg>
+    </button>
+  </form>
+</div>
+
+<script>
+(function () {
+  const POST_TITLE = "\u4e3a\u4ec0\u4e48 AI \u8bba\u6587\u5168\u662f\u5929\u4e66\uff1f\u56e0\u4e3a\u6bcf\u4e00\u4e2a\u6570\u5b66\u7b26\u53f7\uff0c\u5176\u5b9e\u90fd\u662f\u4e00\u53e5\u4eba\u8bdd";
+  const contentEl = document.querySelector('article .content');
+
+  const fab = document.getElementById('ai-fab');
+  const panel = document.getElementById('ai-panel');
+  const closeBtn = document.getElementById('ai-close');
+  const clearBtn = document.getElementById('ai-clear');
+  const msgsEl = document.getElementById('ai-messages');
+  const emptyEl = document.getElementById('ai-empty');
+  const statusEl = document.getElementById('ai-status');
+  const formEl = document.getElementById('ai-form');
+  const inputEl = document.getElementById('ai-input');
+  const sendBtn = document.getElementById('ai-send');
+
+  function articleText() {
+    if (!contentEl) return '';
+    return (contentEl.innerText || contentEl.textContent || '')
+      .replace(/[ \t]+\n/g, '\n')
+      .replace(/\n{3,}/g, '\n\n')
+      .trim();
+  }
+
+  function setStatus(msg, cls) {
+    if (!msg) { statusEl.hidden = true; statusEl.textContent = ''; statusEl.className = 'ai-status'; return; }
+    statusEl.hidden = false;
+    statusEl.textContent = msg;
+    statusEl.className = 'ai-status' + (cls ? ' ' + cls : '');
+  }
+
+  function hideEmpty() { if (emptyEl) emptyEl.style.display = 'none'; }
+
+  function appendBubble(role, text) {
+    hideEmpty();
+    const wrap = document.createElement('div');
+    wrap.className = 'ai-msg ai-msg-' + role;
+    const bubble = document.createElement('div');
+    bubble.className = 'ai-bubble';
+    bubble.textContent = text;
+    wrap.appendChild(bubble);
+    msgsEl.appendChild(wrap);
+    msgsEl.scrollTop = msgsEl.scrollHeight;
+    return bubble;
+  }
+
+  function appendTyping() {
+    hideEmpty();
+    const wrap = document.createElement('div');
+    wrap.className = 'ai-msg ai-msg-assistant ai-typing';
+    wrap.innerHTML = '<div class="ai-bubble"><span class="ai-dots"><i></i><i></i><i></i></span></div>';
+    msgsEl.appendChild(wrap);
+    msgsEl.scrollTop = msgsEl.scrollHeight;
+    return wrap;
+  }
+
+  function autoSize() {
+    inputEl.style.height = 'auto';
+    inputEl.style.height = Math.min(inputEl.scrollHeight, 140) + 'px';
+  }
+
+  function openPanel() {
+    panel.classList.add('open');
+    panel.setAttribute('aria-hidden', 'false');
+    fab.classList.add('hidden');
+    setTimeout(() => inputEl.focus(), 50);
+  }
+  function closePanel() {
+    panel.classList.remove('open');
+    panel.setAttribute('aria-hidden', 'true');
+    fab.classList.remove('hidden');
+  }
+
+  fab.addEventListener('click', openPanel);
+  closeBtn.addEventListener('click', closePanel);
+  document.addEventListener('keydown', e => {
+    if (e.key === 'Escape' && panel.classList.contains('open')) closePanel();
+  });
+
+  // ---- LanguageModel session ----
+  let session = null;
+  let creating = null;
+  let history = [];
+
+  function buildSystemPrompt() {
+    // Keep article context modest — Gemini Nano's input quota is small.
+    const article = articleText().slice(0, 4000);
+    return (
+      'You are a concise, helpful assistant answering questions about a blog post. ' +
+      'Use the article below as your primary source. If the answer is not in it, say so briefly and answer generally. ' +
+      'Reply in the same language as the user\'s question. Keep answers short unless asked for detail.\n\n' +
+      '=== ARTICLE TITLE ===\n' + POST_TITLE + '\n\n' +
+      '=== ARTICLE CONTENT ===\n' + article
+    );
+  }
+
+  async function ensureSession() {
+    if (session) return session;
+    if (creating) return creating;
+
+    if (!('LanguageModel' in self)) {
+      throw new Error(
+        'On-device AI not available. Use Chrome 138+ on desktop, or enable ' +
+        '"Prompt API for Gemini Nano" in chrome://flags.'
+      );
+    }
+
+    setStatus('Checking model…', 'info');
+    const status = await LanguageModel.availability();
+    if (status === 'unavailable') {
+      throw new Error('Model unavailable on this device.');
+    }
+
+    creating = (async () => {
+      // Only show download UI when the model isn't already there.
+      const willDownload = (status !== 'available');
+      if (willDownload) setStatus('Preparing model (first run downloads ~2GB)…', 'info');
+      else setStatus('Warming up…', 'info');
+
+      const s = await LanguageModel.create({
+        initialPrompts: [{ role: 'system', content: buildSystemPrompt() }],
+        monitor(m) {
+          m.addEventListener('downloadprogress', e => {
+            // Skip the spurious 0% event Chrome fires for cached models.
+            if (!willDownload && e.loaded === 0) return;
+            const pct = (e.loaded * 100).toFixed(1);
+            setStatus('Downloading model: ' + pct + '%', 'info');
+          });
+        }
+      });
+      session = s;
+      setStatus('');
+      return s;
+    })();
+
+    try { return await creating; }
+    finally { creating = null; }
+  }
+
+  async function ask(q) {
+    appendBubble('user', q);
+    history.push({ role: 'user', content: q });
+
+    sendBtn.disabled = true;
+    inputEl.disabled = true;
+    const typing = appendTyping();
+
+    let answerBubble = null;
+    let acc = '';
+    try {
+      const s = await ensureSession();
+      const stream = s.promptStreaming(q);
+      for await (const chunk of stream) {
+        if (!answerBubble) {
+          typing.remove();
+          const wrap = document.createElement('div');
+          wrap.className = 'ai-msg ai-msg-assistant';
+          answerBubble = document.createElement('div');
+          answerBubble.className = 'ai-bubble';
+          wrap.appendChild(answerBubble);
+          msgsEl.appendChild(wrap);
+        }
+        acc += chunk;
+        answerBubble.textContent = acc;
+        msgsEl.scrollTop = msgsEl.scrollHeight;
+      }
+      if (acc) history.push({ role: 'assistant', content: acc });
+      else { typing.remove(); appendBubble('assistant', '(no response)'); }
+    } catch (e) {
+      if (typing && typing.parentNode) typing.remove();
+      const err = document.createElement('div');
+      err.className = 'ai-msg ai-msg-error';
+      err.innerHTML = '<div class="ai-bubble">⚠ ' + (e && e.message ? e.message : String(e)) + '</div>';
+      msgsEl.appendChild(err);
+      msgsEl.scrollTop = msgsEl.scrollHeight;
+    } finally {
+      sendBtn.disabled = !inputEl.value.trim();
+      inputEl.disabled = false;
+      inputEl.focus();
+    }
+  }
+
+  formEl.addEventListener('submit', e => {
+    e.preventDefault();
+    const q = inputEl.value.trim();
+    if (!q) return;
+    inputEl.value = '';
+    autoSize();
+    sendBtn.disabled = true;
+    ask(q);
+  });
+
+  inputEl.addEventListener('input', () => {
+    autoSize();
+    sendBtn.disabled = !inputEl.value.trim();
+  });
+  inputEl.addEventListener('keydown', e => {
+    if (e.key === 'Enter' && !e.shiftKey) {
+      e.preventDefault();
+      formEl.requestSubmit();
+    }
+  });
+
+  clearBtn.addEventListener('click', () => {
+    msgsEl.innerHTML = '';
+    msgsEl.appendChild(emptyEl);
+    emptyEl.style.display = '';
+    history = [];
+    if (session && session.destroy) { try { session.destroy(); } catch (_) {} }
+    session = null;
+    setStatus('');
+  });
+
+  if (!('LanguageModel' in self)) {
+    fab.addEventListener('click', () => {
+      openPanel();
+      setStatus('On-device AI not detected. Use Chrome 138+ desktop, or enable "Prompt API for Gemini Nano" in chrome://flags.', 'bad');
+    }, { once: true });
+  }
+})();
+</script>
+
+<!-- Outline notes / comments — DataScript + IndexedDB -->
+<script src="https://github.com/tonsky/datascript/releases/download/1.7.8/datascript-1.7.8.min.js"></script>
+<script src="../notes.js?v=6"></script>
+<script src="../theme.js"></script>
+<script src="../wechat-copy.js?v=3"></script>
+
+</body>
+</html>
