@@ -156,7 +156,77 @@ t=16μs  → ↗ ↖ ← ↙ ↘ → ↗ ↖ ← ↙ ↘ →
 边缘就会被当成中心附近的东西，<strong>折到图像的另一侧</strong>——这就是 MRI 里的折叠伪影（aliasing）。
 采样定理在这里长着一张很具体的脸。</p>
 <hr />
-<h2 id="4-线圈收到的那一个复数就是-k-空间上的一个点">4. 线圈收到的那一个复数，就是 k 空间上的一个点</h2>
+<h2 id="4-打断一下这排箭头不是波形一个必须澄清的误解">4. 打断一下：这排箭头不是波形（一个必须澄清的误解）</h2>
+<p>很多人看到上面那张图，会以为线圈收到的是一条<strong>"左边高频、右边低频、频率一路递减"</strong>的波形（啁啾 chirp）。
+<strong>不是的。</strong> 这里有三件事要分清楚：</p>
+<p><strong>① 那排箭头的横轴是"空间"，不是"时间"。</strong></p>
+<div class="highlight"><pre><span></span><code>t= 4μs  ↓ ↓ ↘ ↘ ↘ → → → ↗ ↗ ↗ ↑ ↑
+        ↑                       ↑
+       左耳                    右耳      ← 横轴 = 身体从左到右的位置
+</code></pre></div>
+
+<p>每一行是<strong>某一瞬间、全身指针方向的一张快照</strong>；往下一行是时间前进一点。
+所以你看到的是"随时间越扇越开"，不是一条起伏的曲线。</p>
+<p><strong>② 每个位置的频率是固定的，不会沿着时间递减。</strong>
+位置 <code>x</code> 的转速是 <code>γ(B0 + G·x)</code>——它只和<strong>位置</strong>有关，<strong>和时间无关</strong>。
+左边的质子从头到尾都慢，右边的从头到尾都快，<strong>没有任何一个质子的频率在"下滑"。</strong>
+频率沿时间滑动的啁啾，需要梯度自己在变（螺旋采集、chirp 激发脉冲里才有），不是标准读出。</p>
+<p><strong>③ 那么线圈收到的波形到底长什么样？</strong> 把几万条固定频率的正弦全加起来，是这个形状：</p>
+<div class="highlight"><pre><span></span><code><span class="kn">import</span><span class="w"> </span><span class="nn">torch</span>
+
+<span class="n">N</span><span class="p">,</span> <span class="n">M</span> <span class="o">=</span> <span class="mi">240</span><span class="p">,</span> <span class="mi">96</span>
+<span class="n">x</span> <span class="o">=</span> <span class="n">torch</span><span class="o">.</span><span class="n">linspace</span><span class="p">(</span><span class="o">-</span><span class="mi">1</span><span class="p">,</span> <span class="mi">1</span><span class="p">,</span> <span class="n">N</span><span class="p">)</span>
+<span class="n">body</span> <span class="o">=</span> <span class="p">(</span><span class="n">x</span><span class="o">.</span><span class="n">abs</span><span class="p">()</span> <span class="o">&lt;</span> <span class="mf">0.55</span><span class="p">)</span><span class="o">.</span><span class="n">float</span><span class="p">()</span> <span class="o">+</span> <span class="mf">0.6</span> <span class="o">*</span> <span class="p">((</span><span class="n">x</span> <span class="o">-</span> <span class="mf">0.75</span><span class="p">)</span><span class="o">.</span><span class="n">abs</span><span class="p">()</span> <span class="o">&lt;</span> <span class="mf">0.12</span><span class="p">)</span><span class="o">.</span><span class="n">float</span><span class="p">()</span>   <span class="c1"># 一维身体</span>
+
+<span class="n">t</span> <span class="o">=</span> <span class="n">torch</span><span class="o">.</span><span class="n">linspace</span><span class="p">(</span><span class="o">-</span><span class="mi">1</span><span class="p">,</span> <span class="mi">1</span><span class="p">,</span> <span class="n">M</span><span class="p">)</span>                       <span class="c1"># 读出梯度打开的这段时间</span>
+<span class="n">sig</span> <span class="o">=</span> <span class="n">torch</span><span class="o">.</span><span class="n">stack</span><span class="p">([(</span><span class="n">body</span> <span class="o">*</span> <span class="n">torch</span><span class="o">.</span><span class="n">exp</span><span class="p">(</span><span class="mi">2</span><span class="n">j</span> <span class="o">*</span> <span class="n">torch</span><span class="o">.</span><span class="n">pi</span> <span class="o">*</span> <span class="mi">4</span> <span class="o">*</span> <span class="n">x</span> <span class="o">*</span> <span class="n">tv</span><span class="p">))</span><span class="o">.</span><span class="n">mean</span><span class="p">()</span> <span class="k">for</span> <span class="n">tv</span> <span class="ow">in</span> <span class="n">t</span><span class="p">])</span><span class="o">.</span><span class="n">real</span>
+
+<span class="k">def</span><span class="w"> </span><span class="nf">plot</span><span class="p">(</span><span class="n">v</span><span class="p">,</span> <span class="n">rows</span><span class="o">=</span><span class="mi">13</span><span class="p">):</span>                              <span class="c1"># 把一条曲线打成 ASCII 折线图</span>
+    <span class="n">v</span> <span class="o">=</span> <span class="n">v</span> <span class="o">/</span> <span class="n">v</span><span class="o">.</span><span class="n">abs</span><span class="p">()</span><span class="o">.</span><span class="n">max</span><span class="p">()</span>
+    <span class="n">grid</span> <span class="o">=</span> <span class="p">[[</span><span class="s2">&quot; &quot;</span><span class="p">]</span> <span class="o">*</span> <span class="nb">len</span><span class="p">(</span><span class="n">v</span><span class="p">)</span> <span class="k">for</span> <span class="n">_</span> <span class="ow">in</span> <span class="nb">range</span><span class="p">(</span><span class="n">rows</span><span class="p">)]</span>
+    <span class="k">for</span> <span class="n">c</span><span class="p">,</span> <span class="n">val</span> <span class="ow">in</span> <span class="nb">enumerate</span><span class="p">(</span><span class="n">v</span><span class="p">):</span>
+        <span class="n">r</span> <span class="o">=</span> <span class="nb">round</span><span class="p">((</span><span class="mi">1</span> <span class="o">-</span> <span class="n">val</span><span class="o">.</span><span class="n">item</span><span class="p">())</span> <span class="o">/</span> <span class="mi">2</span> <span class="o">*</span> <span class="p">(</span><span class="n">rows</span> <span class="o">-</span> <span class="mi">1</span><span class="p">))</span>
+        <span class="n">grid</span><span class="p">[</span><span class="n">r</span><span class="p">][</span><span class="n">c</span><span class="p">]</span> <span class="o">=</span> <span class="s2">&quot;*&quot;</span>
+    <span class="n">grid</span><span class="p">[</span><span class="n">rows</span> <span class="o">//</span> <span class="mi">2</span><span class="p">]</span> <span class="o">=</span> <span class="p">[</span><span class="n">ch</span> <span class="k">if</span> <span class="n">ch</span> <span class="o">==</span> <span class="s2">&quot;*&quot;</span> <span class="k">else</span> <span class="s2">&quot;-&quot;</span> <span class="k">for</span> <span class="n">ch</span> <span class="ow">in</span> <span class="n">grid</span><span class="p">[</span><span class="n">rows</span> <span class="o">//</span> <span class="mi">2</span><span class="p">]]</span>
+    <span class="k">return</span> <span class="s2">&quot;</span><span class="se">\n</span><span class="s2">&quot;</span><span class="o">.</span><span class="n">join</span><span class="p">(</span><span class="s2">&quot;&quot;</span><span class="o">.</span><span class="n">join</span><span class="p">(</span><span class="n">r</span><span class="p">)</span> <span class="k">for</span> <span class="n">r</span> <span class="ow">in</span> <span class="n">grid</span><span class="p">)</span>
+
+<span class="nb">print</span><span class="p">(</span><span class="n">plot</span><span class="p">(</span><span class="n">sig</span><span class="p">))</span>
+<span class="nb">print</span><span class="p">(</span><span class="s2">&quot;↑ 线圈在读出梯度期间收到的波形（横轴 = 时间）&quot;</span><span class="p">)</span>
+</code></pre></div>
+
+<p>输出：</p>
+<div class="highlight"><pre><span></span><code>                                              ****                                              
+                                            **    **                                            
+                                           *        *                                           
+                                          *          *                                          
+                                         *            *                                         
+                 ****                  **              **                  ****                 
+********----*****----*********------***------------------***------*********----*****----********
+        ****                  ******                        ******                  ****        
+
+
+
+
+
+↑ 线圈在读出梯度期间收到的波形（横轴 = 时间）
+</code></pre></div>
+
+<p><strong>中间一个尖峰（回波中心：所有指针恰好对齐），两边是越来越碎的小波纹，而且左右对称。</strong>
+看起来像"中间疏、两边密"，但那不是频率在滑动——<strong>是一大堆固定频率在互相干涉</strong>。
+这条曲线本身，就是身体的傅里叶变换。</p>
+<p><strong>那"近的高频、远的低频"这句话错了吗？没错，但它说的是另一件事：不是一条波形的频率在滑动，
+而是一整套频率同时存在。</strong></p>
+<div class="highlight"><pre><span></span><code>k 空间中心的疏尺子  → 器官的大致轮廓（低频）
+k 空间边缘的密尺子  → 病灶边缘、血管细线（高频）
+RoPE 转得慢的维度  → 记住隔了上百个词的远距离关系
+RoPE 转得快的维度  → 分辨相邻两个词的先后
+
+—— 时针、分针、秒针同时挂在墙上，而不是一根针越走越慢。
+</code></pre></div>
+
+<p>这一套"一整套频率"的证据，下面两节就会看到。</p>
+<hr />
+<h2 id="5-线圈收到的那一个复数就是-k-空间上的一个点">5. 线圈收到的那一个复数，就是 k 空间上的一个点</h2>
 <p>现在把梯度开一段固定的时间，位置 <code>x</code> 的质子就带上了 <code>k·x</code> 的相位。
 线圈把全身带着相位的信号加起来：</p>
 <div class="arithmatex">\[S(k) = \int \rho(x)\, e^{-ikx}\, dx\]</div>
@@ -196,7 +266,7 @@ k=8  尺子:█▆▃▁ ▁▄▆█▆▃▁ ▁▄▆█▆▃▁ ▁▄▆�
 往下每一行，尺子越来越密，问的问题越来越细。</p>
 <p><strong>扫描仪硬盘里存的从来不是图像，是这一整排复数：k 空间。</strong></p>
 <hr />
-<h2 id="5-二维怎么办两个方向各来一个梯度">5. 二维怎么办：两个方向各来一个梯度</h2>
+<h2 id="6-二维怎么办两个方向各来一个梯度">6. 二维怎么办：两个方向各来一个梯度</h2>
 <p>真实机器有三组梯度线圈（x / y / z），任意组合就能画出<strong>任意方向、任意疏密的斜条纹</strong>：</p>
 <div class="highlight"><pre><span></span><code><span class="kn">import</span><span class="w"> </span><span class="nn">torch</span>
 
@@ -238,7 +308,7 @@ k=8  尺子:█▆▃▁ ▁▄▆█▆▃▁ ▁▄▆█▆▃▁ ▁▄▆�
 <p><strong>一张 MRI 图像，就是把这样几万把条纹尺子的读数，全部叠回去的结果。</strong>
 所谓"扫描要躺十分钟"，躺的就是<strong>换尺子、量一次、换尺子、量一次</strong>这几万个来回。</p>
 <hr />
-<h2 id="6-扫完世界原样回来">6. 扫完，世界原样回来</h2>
+<h2 id="7-扫完世界原样回来">7. 扫完，世界原样回来</h2>
 <p>k 空间不是图像，是图像的频域。全部量完，做一次逆傅里叶，你的身体就回来了。
 下面这段还顺便展示了"只量了一部分"会长什么样：</p>
 <div class="highlight"><pre><span></span><code><span class="kn">import</span><span class="w"> </span><span class="nn">torch</span>
@@ -274,7 +344,7 @@ k=8  尺子:█▆▃▁ ▁▄▆█▆▃▁ ▁▄▆█▆▃▁ ▁▄▆�
 <strong>低频（疏尺子）给你器官的大致轮廓，高频（密尺子）才给你病灶的边缘和血管的细线。</strong>
 这就是那句行话的来历：<strong>k 空间中心决定对比度，k 空间边缘决定锐利度。</strong></p>
 <hr />
-<h2 id="7-相位散了还能原样收回来梯度回波">7. 相位散了，还能原样收回来：梯度回波</h2>
+<h2 id="8-相位散了还能原样收回来梯度回波">8. 相位散了，还能原样收回来：梯度回波</h2>
 <p>最后一个必须看的现象。把梯度打开，指针越扇越开，线圈收到的总和迅速掉到 0——
 信号好像"消失"了。但它没消失，它只是<strong>藏进了角度里</strong>。
 把梯度<strong>反个号</strong>，同一批指针会原路倒着转回来，在某个时刻<strong>全部重新对齐</strong>：</p>
@@ -310,7 +380,7 @@ k=8  尺子:█▆▃▁ ▁▄▆█▆▃▁ ▁▄▆█▆▃▁ ▁▄▆�
 <p><strong>信号只取决于"相位转了多少"这个相对量，与从哪个绝对角度起步无关。</strong></p>
 </blockquote>
 <hr />
-<h2 id="8-同一个算子在大模型里叫-rope">8. 同一个算子，在大模型里叫 RoPE</h2>
+<h2 id="9-同一个算子在大模型里叫-rope">9. 同一个算子，在大模型里叫 RoPE</h2>
 <p>MRI：给位置 <code>x</code> 的质子，转 <code>k·x</code> 的角度。
 RoPE：给位置 <code>m</code> 的词向量，转 <code>m·θ</code> 的角度。</p>
 <p>不是"像"，是<strong>同一个算子换了个变量名</strong>：</p>
@@ -392,6 +462,9 @@ RoPE：给位置 <code>m</code> 的词向量，转 <code>m·θ</code> 的角度�
 <p><strong>图三（动画）</strong>：k 空间一点点被填满。左边是当前这一步梯度画出的二维条纹尺子（越来越密），
 中间是已采到的 k 空间从中心往外扩，右边是此刻重建出的身体——
 <strong>先长出一团轮廓，血管和病灶要到最后才浮现。</strong></p>
+<p><strong>图四（四格）</strong>：第 4 节那个误解的图解版。三个位置各自固定的频率 → 它们相加后线圈真正收到的波形
+（中间回波、两边碎、左右对称）→ 旁边摆一条真正的啁啾做对照 →
+最后是「一整套频率并存」的那张梯子图：下面转得快分辨相邻，上面转得慢管住远距离。</p>
 </blockquote>
 <hr />
 <h2 id="一句话收尾">一句话收尾</h2>

@@ -22,6 +22,12 @@
     中  ：已经采到的 k 空间（从中心低频往外扩）
     右  ：用现有 k 点重建出的图像 —— 先出轮廓，细节最后才长出来
 
+图四（静态，四格）：澄清一个常见误解 —— 这不是啁啾（chirp）
+    ①  一个位置 = 一个固定频率，全程不变（不是频率一路递减的波形）
+    ②  线圈真正收到的波形：几万条固定正弦之和，中间回波、两边碎、左右对称
+    ③  对照组：真正的啁啾长什么样，以及它需要什么条件
+    ④ 「近的高频、远的低频」的正确含义：一整套频率并存（k空间中心↔边缘 / RoPE）
+
 运行：
     python gradient_field_phase_visualization.py
 需要：numpy, matplotlib
@@ -227,10 +233,63 @@ anim = FuncAnimation(fig3, draw, frames=len(RADII), interval=800, repeat=True)
 fig3.suptitle("每换一次梯度，就是拿一把更密的条纹尺子去量一次身体", fontsize=13)
 fig3.tight_layout(rect=[0, 0, 1, 0.93])
 
+# ================================================================ 图四：不是啁啾（常见误解）
+
+fig4, dx = plt.subplots(2, 2, figsize=(15, 8.5))
+
+# --- ① 一个位置 = 一个固定频率 ---
+tc = np.linspace(0, 1, 1200)
+for fq, col, lab in [(3, "#1f77b4", "左边的质子（慢）"),
+                     (6, "#2ca02c", "中间的质子"),
+                     (9, "#d62728", "右边的质子（快）")]:
+    dx[0, 0].plot(tc, np.cos(2 * np.pi * fq * tc), color=col, lw=1.4,
+                  label=f"{lab}   f={fq}，全程不变")
+dx[0, 0].legend(fontsize=9); dx[0, 0].grid(alpha=0.25); dx[0, 0].set_xlabel("时间 t")
+dx[0, 0].set_title("① 梯度磁场下：一个位置 = 一个【固定】频率\n"
+                   "频率只和位置有关、和时间无关（所以不是啁啾）")
+
+# --- ② 线圈真正收到的波形：全部求和 ---
+xb = np.linspace(-1, 1, 400)
+rho = (np.abs(xb) < 0.55) * 1.0 + (np.abs(xb - 0.75) < 0.12) * 0.6      # 一维身体
+tb = np.linspace(-1, 1, 1500)
+wave = np.array([np.mean(rho * np.exp(2j * np.pi * 6 * xb * tv)) for tv in tb]).real
+dx[0, 1].plot(tb, wave, color="#d62728", lw=1.2)
+dx[0, 1].axvline(0, color="#888888", ls="--", lw=1)
+dx[0, 1].annotate("回波中心\n（所有指针恰好对齐）", xy=(0, wave.max()),
+                  xytext=(0.15, wave.max() * 0.8), fontsize=9,
+                  arrowprops=dict(arrowstyle="->", lw=0.8))
+dx[0, 1].grid(alpha=0.25); dx[0, 1].set_xlabel("时间 t（读出梯度打开期间）")
+dx[0, 1].set_title("② 线圈真正收到的波形：把①里几万条正弦全加起来\n"
+                   "中间最高、两边碎、左右对称 —— 是干涉，不是频率在滑动")
+
+# --- ③ 啁啾长什么样（对照组） ---
+fi = 12 - 9 * tc                                        # 瞬时频率随时间递减
+dx[1, 0].plot(tc, (0.4 + 0.9 * tc) * np.cos(2 * np.pi * np.cumsum(fi) * (tc[1] - tc[0])),
+              color="#ff7f0e", lw=1.4)
+dx[1, 0].grid(alpha=0.25); dx[1, 0].set_xlabel("时间 t")
+dx[1, 0].set_title("③ 对照：啁啾 chirp\n"
+                   "频率【沿时间轴一路递减】—— 要让梯度自己在变才会出现")
+
+# --- ④ 「近高频、远低频」真正的意思：一整套频率并存 ---
+d = 8
+thetas = 10000.0 ** (-np.arange(d) / d)
+mm = np.arange(0, 64)
+for i in range(d):
+    dx[1, 1].plot(mm, np.cos(mm * thetas[i]) + i * 2.4, lw=1.3, color=plt.cm.viridis(i / d))
+    dx[1, 1].text(65, i * 2.4, f"θ={thetas[i]:.3f}", fontsize=8, va="center")
+dx[1, 1].set_yticks([]); dx[1, 1].set_xlim(0, 78)
+dx[1, 1].set_xlabel("位置 m（第几个词）/ 空间位置 x")
+dx[1, 1].set_title("④「近的高频、远的低频」说的是这个：一整套频率同时存在\n"
+                   "下面转得快=分辨相邻，上面转得慢=管住远距离（k空间中心↔边缘 / RoPE）")
+
+fig4.suptitle("澄清：梯度给的是「一个位置一个固定频率」，不是频率递减的啁啾", fontsize=14)
+fig4.tight_layout(rect=[0, 0, 1, 0.94])
+
 if SAVE:
     os.makedirs(OUT, exist_ok=True)
     fig1.savefig(os.path.join(OUT, "gradient_field_phase.png"), dpi=130)
     fig2.savefig(os.path.join(OUT, "gradient_echo.png"), dpi=130)
+    fig4.savefig(os.path.join(OUT, "not_a_chirp.png"), dpi=130)
     anim.save(os.path.join(OUT, "kspace_filling.gif"), writer="pillow", fps=1.5)
     print("已保存到", OUT)
 else:
