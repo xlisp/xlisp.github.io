@@ -1,0 +1,691 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>把磁场掰斜一点点，你的位置就变成了一个角度 · Steve Chan — xlisp</title>
+<meta name="description" content="流程是这样的：">
+<meta name="author" content="Steve Chan">
+<link rel="icon" type="image/jpeg" href="../icon.jpeg">
+<link rel="apple-touch-icon" href="../icon.jpeg">
+<meta property="og:type" content="article">
+<meta property="og:title" content="把磁场掰斜一点点，你的位置就变成了一个角度">
+<meta property="og:description" content="流程是这样的：">
+<meta property="og:image" content="../icon.jpeg">
+<meta property="og:site_name" content="Steve Chan — xlisp">
+<meta name="twitter:card" content="summary_large_image">
+<meta name="twitter:title" content="把磁场掰斜一点点，你的位置就变成了一个角度">
+<meta name="twitter:description" content="流程是这样的：">
+<meta name="twitter:image" content="../icon.jpeg">
+<link rel="stylesheet" href="../style.css?v=light1">
+<script>(function(){try{if(localStorage.getItem('theme')==='light')document.documentElement.setAttribute('data-theme','light');}catch(e){}})();</script>
+<!-- Math formula rendering via MathJax -->
+<script>
+window.MathJax = {
+  tex: {
+    // arithmatex emits \(...\) / \[...\] markup, so only these delimiters
+    // are needed; plain `$` is left alone (avoids currency false positives).
+    inlineMath: [['\\(', '\\)']],
+    displayMath: [['\\[', '\\]']],
+    processEscapes: true
+  },
+  svg: {
+    // Each formula gets its own self-contained <defs>, so the copy script can
+    // serialize one <svg> and rasterize it to a PNG for WeChat.
+    fontCache: 'local'
+  },
+  options: {
+    skipHtmlTags: ['script', 'noscript', 'style', 'textarea', 'pre', 'code'],
+    ignoreHtmlClass: 'highlight'
+  }
+};
+</script>
+<script src="https://cdn.jsdelivr.net/npm/mathjax@3/es5/tex-svg.js" async></script>
+</head>
+<body>
+<main class="wrap post">
+
+  <nav class="topnav">
+    <a href="../index.html">← home</a>
+  </nav>
+
+  <article>
+    <header class="post-header">
+      <h1>把磁场掰斜一点点，你的位置就变成了一个角度</h1>
+      <p class="meta">2026-08-01 · Steve Chan</p>
+    </header>
+
+    <div class="content">
+<blockquote>
+<p>核磁共振机器里没有相机，它从来没"看见"过你的身体。
+它只做了一件事：<strong>在主磁场上加一个歪斜的梯度磁场，让身体每个位置的质子转得不一样快。</strong>
+转速不一样 → 转过的角度不一样 → <strong>"你在哪"被写成了"你转了多少度"。</strong></p>
+<p>这篇只讲这一步，把梯度磁场画出来、把相位转起来看。
+最后你会发现：大模型里那个 RoPE 位置编码，干的是一模一样的事。</p>
+</blockquote>
+<hr />
+<h2 id="1-先看死结线圈只收到一个数">1. 先看死结：线圈只收到一个数</h2>
+<p>流程是这样的：</p>
+<div class="highlight"><pre><span></span><code>1. 强磁场（1.5T / 3T）把你体内水分子的氢质子&quot;排好队&quot;
+2. 每个质子像陀螺一样绕磁场方向进动，转速 = 拉莫尔频率 = γ·B
+3. 打一发射频脉冲，把这群陀螺&quot;推歪&quot;
+4. 陀螺一边转一边发信号，线圈把全身的信号「加起来」收进来
+</code></pre></div>
+
+<p>第 4 步是死结：<strong>线圈收到的只有一个数——所有质子的总和。</strong>
+就像把一个话筒扔进合唱团，录下来是一条乱糟糟的波形，<strong>里面没有任何位置信息。</strong></p>
+<p>怎么办？让每个位置<strong>唱不同的音高</strong>就行了。</p>
+<hr />
+<h2 id="2-那一步天才把磁场掰斜">2. 那一步天才：把磁场掰斜</h2>
+<p>主磁场处处一样，所以全身质子转速一样，谁也分不出谁。
+机器于是叠加一个<strong>沿空间线性变化的梯度磁场</strong>，把那条水平线掰成一条斜线：</p>
+<div class="highlight"><pre><span></span><code>   磁场 B(x)
+     ↑                                  ● 3.0015 T  → 转 127.8039 MHz
+     |                        ●
+     |             ●                       ← 加了梯度：B(x) = B0 + G·x
+B0 --●------●------●------●------●--       ← 没有梯度：处处一样，谁也分不出谁
+     |
+     └──────────────────────────────→ 位置 x
+   左耳 -15cm                    右耳 +15cm
+</code></pre></div>
+
+<p>代码把这条斜线算出来（3 T 主磁场 + 10 mT/m 的梯度，都是真实机器的参数）：</p>
+<div class="highlight"><pre><span></span><code><span class="kn">import</span><span class="w"> </span><span class="nn">torch</span>
+
+<span class="n">gamma</span> <span class="o">=</span> <span class="mf">42.58e6</span>                      <span class="c1"># 氢质子旋磁比：42.58 MHz / T</span>
+<span class="n">B0</span><span class="p">,</span> <span class="n">G</span> <span class="o">=</span> <span class="mf">3.0</span><span class="p">,</span> <span class="mf">0.010</span>                   <span class="c1"># 主磁场 3 T，梯度 10 mT/m</span>
+
+<span class="n">x</span> <span class="o">=</span> <span class="n">torch</span><span class="o">.</span><span class="n">linspace</span><span class="p">(</span><span class="o">-</span><span class="mf">0.15</span><span class="p">,</span> <span class="mf">0.15</span><span class="p">,</span> <span class="mi">7</span><span class="p">)</span>   <span class="c1"># 从左耳到右耳，30 厘米</span>
+<span class="n">B</span> <span class="o">=</span> <span class="n">B0</span> <span class="o">+</span> <span class="n">G</span> <span class="o">*</span> <span class="n">x</span>                       <span class="c1"># 每个位置感受到的磁场：一条斜线</span>
+<span class="n">f</span> <span class="o">=</span> <span class="n">gamma</span> <span class="o">*</span> <span class="n">B</span>                        <span class="c1"># 拉莫尔频率：转速 ∝ 磁场</span>
+
+<span class="nb">print</span><span class="p">(</span><span class="s2">&quot;位置x(cm)   磁场B(T)      转速f(MHz)   比中心快(Hz)&quot;</span><span class="p">)</span>
+<span class="k">for</span> <span class="n">xi</span><span class="p">,</span> <span class="n">Bi</span><span class="p">,</span> <span class="n">fi</span> <span class="ow">in</span> <span class="nb">zip</span><span class="p">(</span><span class="n">x</span><span class="p">,</span> <span class="n">B</span><span class="p">,</span> <span class="n">f</span><span class="p">):</span>
+    <span class="nb">print</span><span class="p">(</span><span class="sa">f</span><span class="s2">&quot;</span><span class="si">{</span><span class="n">xi</span><span class="o">*</span><span class="mi">100</span><span class="si">:</span><span class="s2">7.1f</span><span class="si">}</span><span class="s2">   </span><span class="si">{</span><span class="n">Bi</span><span class="si">:</span><span class="s2">.6f</span><span class="si">}</span><span class="s2">   </span><span class="si">{</span><span class="n">fi</span><span class="o">/</span><span class="mf">1e6</span><span class="si">:</span><span class="s2">10.4f</span><span class="si">}</span><span class="s2">   </span><span class="si">{</span><span class="n">fi</span><span class="o">-</span><span class="n">f</span><span class="p">[</span><span class="mi">3</span><span class="p">]</span><span class="si">:</span><span class="s2">+10.0f</span><span class="si">}</span><span class="s2">&quot;</span><span class="p">)</span>
+</code></pre></div>
+
+<p>输出：</p>
+<div class="highlight"><pre><span></span><code>位置x(cm)   磁场B(T)      转速f(MHz)   比中心快(Hz)
+  -15.0   2.998500     127.6761       -63864
+  -10.0   2.999000     127.6974       -42576
+   -5.0   2.999500     127.7187       -21288
+    0.0   3.000000     127.7400           +0
+    5.0   3.000500     127.7613       +21288
+   10.0   3.001000     127.7826       +42576
+   15.0   3.001500     127.8039       +63864
+</code></pre></div>
+
+<p><strong>注意这个量级：梯度只把磁场改了万分之五（3 T 上下 1.5 mT），
+却让左耳和右耳的转速差出了 64 kHz——足够干净地分开。</strong></p>
+<blockquote>
+<p><strong>位置 → 转速。</strong> 这就是整台机器的第一块基石。</p>
+</blockquote>
+<hr />
+<h2 id="3-转速不同-角度就扇开了">3. 转速不同 → 角度就扇开了</h2>
+<p>转速不同，只要等一会儿，转过的角度就拉开了：</p>
+<div class="arithmatex">\[\varphi(x, t) = 2\pi \cdot \gamma G x \cdot t\]</div>
+<p>把一排质子的相位画成箭头，看它随时间怎么扇开：</p>
+<div class="highlight"><pre><span></span><code><span class="kn">import</span><span class="w"> </span><span class="nn">torch</span>
+
+<span class="n">ARROW</span> <span class="o">=</span> <span class="s2">&quot;→↗↑↖←↙↓↘&quot;</span>                    <span class="c1"># 8 个方向，代表指针转到了哪</span>
+<span class="k">def</span><span class="w"> </span><span class="nf">draw</span><span class="p">(</span><span class="n">phase</span><span class="p">):</span>                      <span class="c1"># 把一排相位画成一排箭头</span>
+    <span class="n">idx</span> <span class="o">=</span> <span class="p">((</span><span class="n">phase</span> <span class="o">/</span> <span class="p">(</span><span class="mi">2</span><span class="o">*</span><span class="n">torch</span><span class="o">.</span><span class="n">pi</span><span class="p">)</span> <span class="o">*</span> <span class="mi">8</span><span class="p">)</span><span class="o">.</span><span class="n">round</span><span class="p">()</span><span class="o">.</span><span class="n">long</span><span class="p">())</span> <span class="o">%</span> <span class="mi">8</span>
+    <span class="k">return</span> <span class="s2">&quot; &quot;</span><span class="o">.</span><span class="n">join</span><span class="p">(</span><span class="n">ARROW</span><span class="p">[</span><span class="n">i</span><span class="p">]</span> <span class="k">for</span> <span class="n">i</span> <span class="ow">in</span> <span class="n">idx</span><span class="p">)</span>
+
+<span class="n">gamma_G</span> <span class="o">=</span> <span class="mf">42.58e6</span> <span class="o">*</span> <span class="mf">0.010</span>             <span class="c1"># γ·G = 425800 Hz/m</span>
+<span class="n">x</span> <span class="o">=</span> <span class="n">torch</span><span class="o">.</span><span class="n">linspace</span><span class="p">(</span><span class="o">-</span><span class="mf">0.15</span><span class="p">,</span> <span class="mf">0.15</span><span class="p">,</span> <span class="mi">13</span><span class="p">)</span>   <span class="c1"># 13 个位置</span>
+
+<span class="nb">print</span><span class="p">(</span><span class="s2">&quot;位置:   左 ←──────────── 中心 ────────────→ 右&quot;</span><span class="p">)</span>
+<span class="k">for</span> <span class="n">t_us</span> <span class="ow">in</span> <span class="p">[</span><span class="mi">0</span><span class="p">,</span> <span class="mi">4</span><span class="p">,</span> <span class="mi">8</span><span class="p">,</span> <span class="mi">12</span><span class="p">,</span> <span class="mi">16</span><span class="p">]:</span>
+    <span class="n">phase</span> <span class="o">=</span> <span class="mi">2</span> <span class="o">*</span> <span class="n">torch</span><span class="o">.</span><span class="n">pi</span> <span class="o">*</span> <span class="n">gamma_G</span> <span class="o">*</span> <span class="n">x</span> <span class="o">*</span> <span class="p">(</span><span class="n">t_us</span> <span class="o">*</span> <span class="mf">1e-6</span><span class="p">)</span>     <span class="c1"># φ = 2π·γG·x·t</span>
+    <span class="nb">print</span><span class="p">(</span><span class="sa">f</span><span class="s2">&quot;t=</span><span class="si">{</span><span class="n">t_us</span><span class="si">:</span><span class="s2">2d</span><span class="si">}</span><span class="s2">μs  </span><span class="si">{</span><span class="n">draw</span><span class="p">(</span><span class="n">phase</span><span class="p">)</span><span class="si">}</span><span class="s2">&quot;</span><span class="p">)</span>
+</code></pre></div>
+
+<p>输出：</p>
+<div class="highlight"><pre><span></span><code>位置:   左 ←──────────── 中心 ────────────→ 右
+t= 0μs  → → → → → → → → → → → → →
+t= 4μs  ↓ ↓ ↘ ↘ ↘ → → → ↗ ↗ ↗ ↑ ↑
+t= 8μs  ← ↙ ↙ ↓ ↘ ↘ → ↗ ↗ ↑ ↖ ↖ ←
+t=12μs  ↑ ↖ ← ↙ ↓ ↘ → ↗ ↑ ↖ ← ↙ ↓
+t=16μs  → ↗ ↖ ← ↙ ↘ → ↗ ↖ ← ↙ ↘ →
+</code></pre></div>
+
+<p>第一行整整齐齐，之后越扇越开，拧成一条螺旋。<strong>这就是"空间被编码进相位"的全过程。</strong></p>
+<p>顺便看最后一行：t=16μs 时两端已经转过了一整圈，箭头绕回了起点——
+<strong>机器分不清 +360° 和 0°。</strong> 如果相邻两次采样之间，边缘的相位就已经转过了一整圈，
+边缘就会被当成中心附近的东西，<strong>折到图像的另一侧</strong>——这就是 MRI 里的折叠伪影（aliasing）。
+采样定理在这里长着一张很具体的脸。</p>
+<hr />
+<h2 id="4-线圈收到的那一个复数就是-k-空间上的一个点">4. 线圈收到的那一个复数，就是 k 空间上的一个点</h2>
+<p>现在把梯度开一段固定的时间，位置 <code>x</code> 的质子就带上了 <code>k·x</code> 的相位。
+线圈把全身带着相位的信号加起来：</p>
+<div class="arithmatex">\[S(k) = \int \rho(x)\, e^{-ikx}\, dx\]</div>
+<p><strong>这就是傅里叶变换本人。</strong> 换句话说：<strong>每一步梯度，就是拿一把"条纹尺子"去量一次身体</strong>，
+量出来的一个复数，存进 k 空间。梯度越强，尺子的条纹越密：</p>
+<div class="highlight"><pre><span></span><code><span class="kn">import</span><span class="w"> </span><span class="nn">torch</span>
+
+<span class="n">N</span> <span class="o">=</span> <span class="mi">64</span>
+<span class="n">x</span> <span class="o">=</span> <span class="n">torch</span><span class="o">.</span><span class="n">arange</span><span class="p">(</span><span class="n">N</span><span class="p">)</span><span class="o">.</span><span class="n">float</span><span class="p">()</span>
+<span class="n">body</span> <span class="o">=</span> <span class="n">torch</span><span class="o">.</span><span class="n">zeros</span><span class="p">(</span><span class="n">N</span><span class="p">);</span> <span class="n">body</span><span class="p">[</span><span class="mi">20</span><span class="p">:</span><span class="mi">30</span><span class="p">]</span> <span class="o">=</span> <span class="mf">1.0</span><span class="p">;</span> <span class="n">body</span><span class="p">[</span><span class="mi">40</span><span class="p">:</span><span class="mi">45</span><span class="p">]</span> <span class="o">=</span> <span class="mf">0.6</span>   <span class="c1"># 一维&quot;人体&quot;：两块组织</span>
+
+<span class="n">BAR</span> <span class="o">=</span> <span class="s2">&quot; ▁▂▃▄▅▆▇█&quot;</span>
+<span class="k">def</span><span class="w"> </span><span class="nf">stripe</span><span class="p">(</span><span class="n">k</span><span class="p">):</span>                                   <span class="c1"># 第 k 步梯度在身体上画出的&quot;条纹尺子&quot;</span>
+    <span class="n">c</span> <span class="o">=</span> <span class="n">torch</span><span class="o">.</span><span class="n">cos</span><span class="p">(</span><span class="mi">2</span> <span class="o">*</span> <span class="n">torch</span><span class="o">.</span><span class="n">pi</span> <span class="o">*</span> <span class="n">k</span> <span class="o">*</span> <span class="n">x</span> <span class="o">/</span> <span class="n">N</span><span class="p">)</span>
+    <span class="k">return</span> <span class="s2">&quot;&quot;</span><span class="o">.</span><span class="n">join</span><span class="p">(</span><span class="n">BAR</span><span class="p">[</span><span class="nb">int</span><span class="p">((</span><span class="n">v</span> <span class="o">+</span> <span class="mi">1</span><span class="p">)</span> <span class="o">/</span> <span class="mi">2</span> <span class="o">*</span> <span class="mi">8</span><span class="p">)]</span> <span class="k">for</span> <span class="n">v</span> <span class="ow">in</span> <span class="n">c</span><span class="p">)</span>
+
+<span class="k">def</span><span class="w"> </span><span class="nf">acquire</span><span class="p">(</span><span class="n">k</span><span class="p">):</span>                                  <span class="c1"># 线圈：全身相位求和 = 一个复数</span>
+    <span class="n">phase</span> <span class="o">=</span> <span class="o">-</span><span class="mi">2</span> <span class="o">*</span> <span class="n">torch</span><span class="o">.</span><span class="n">pi</span> <span class="o">*</span> <span class="n">k</span> <span class="o">*</span> <span class="n">x</span> <span class="o">/</span> <span class="n">N</span>
+    <span class="k">return</span> <span class="p">(</span><span class="n">body</span> <span class="o">*</span> <span class="n">torch</span><span class="o">.</span><span class="n">exp</span><span class="p">(</span><span class="mi">1</span><span class="n">j</span> <span class="o">*</span> <span class="n">phase</span><span class="p">))</span><span class="o">.</span><span class="n">sum</span><span class="p">()</span>
+
+<span class="nb">print</span><span class="p">(</span><span class="s2">&quot;身体:&quot;</span><span class="p">,</span> <span class="s2">&quot;&quot;</span><span class="o">.</span><span class="n">join</span><span class="p">(</span><span class="n">BAR</span><span class="p">[</span><span class="nb">int</span><span class="p">(</span><span class="n">v</span> <span class="o">*</span> <span class="mi">8</span><span class="p">)]</span> <span class="k">for</span> <span class="n">v</span> <span class="ow">in</span> <span class="n">body</span><span class="p">))</span>
+<span class="k">for</span> <span class="n">k</span> <span class="ow">in</span> <span class="p">[</span><span class="mi">0</span><span class="p">,</span> <span class="mi">1</span><span class="p">,</span> <span class="mi">2</span><span class="p">,</span> <span class="mi">4</span><span class="p">,</span> <span class="mi">8</span><span class="p">]:</span>
+    <span class="n">s</span> <span class="o">=</span> <span class="n">acquire</span><span class="p">(</span><span class="n">k</span><span class="p">)</span>
+    <span class="nb">print</span><span class="p">(</span><span class="sa">f</span><span class="s2">&quot;k=</span><span class="si">{</span><span class="n">k</span><span class="si">:</span><span class="s2">&lt;2d</span><span class="si">}</span><span class="s2"> 尺子:</span><span class="si">{</span><span class="n">stripe</span><span class="p">(</span><span class="n">k</span><span class="p">)</span><span class="si">}</span><span class="s2">  测得 </span><span class="si">{</span><span class="n">s</span><span class="o">.</span><span class="n">real</span><span class="si">:</span><span class="s2">+7.2f</span><span class="si">}{</span><span class="n">s</span><span class="o">.</span><span class="n">imag</span><span class="si">:</span><span class="s2">+7.2f</span><span class="si">}</span><span class="s2">i&quot;</span><span class="p">)</span>
+</code></pre></div>
+
+<p>输出：</p>
+<div class="highlight"><pre><span></span><code>身体:                     ██████████          ▄▄▄▄▄                   
+k=0  尺子:████████████████████████████████████████████████████████████████  测得  +13.00  +0.00i
+k=1  尺子:█▇▇▇▇▇▇▇▆▆▆▅▅▅▄▄▃▃▃▂▂▂▁▁▁               ▁▁▁▂▂▂▃▃▄▄▄▅▅▅▆▆▆▇▇▇▇▇▇▇  测得   -8.77  -3.98i
+k=2  尺子:█▇▇▇▆▆▅▄▃▃▂▁▁       ▁▁▂▃▄▄▅▆▆▇▇▇█▇▇▇▆▆▅▄▃▃▂▁▁       ▁▁▂▃▄▄▅▆▆▇▇▇  测得   -0.27  +5.78i
+k=4  尺子:█▇▆▅▃▂▁   ▁▂▄▅▆▇█▇▆▅▃▂▁   ▁▂▄▅▆▇█▇▆▅▃▂▁   ▁▂▄▅▆▇█▇▆▅▃▂▁   ▁▂▄▅▆▇  测得   -6.45  +2.73i
+k=8  尺子:█▆▃▁ ▁▄▆█▆▃▁ ▁▄▆█▆▃▁ ▁▄▆█▆▃▁ ▁▄▆█▆▃▁ ▁▄▆█▆▃▁ ▁▃▆█▆▃▁ ▁▄▆█▆▄▁ ▁▄▆  测得   -1.71  -0.74i
+</code></pre></div>
+
+<p><code>k=0</code> 那把尺子整条都是满格——它不问位置，只问"总共有多少组织"，测得 13.00，正好是全身信号求和。
+往下每一行，尺子越来越密，问的问题越来越细。</p>
+<p><strong>扫描仪硬盘里存的从来不是图像，是这一整排复数：k 空间。</strong></p>
+<hr />
+<h2 id="5-二维怎么办两个方向各来一个梯度">5. 二维怎么办：两个方向各来一个梯度</h2>
+<p>真实机器有三组梯度线圈（x / y / z），任意组合就能画出<strong>任意方向、任意疏密的斜条纹</strong>：</p>
+<div class="highlight"><pre><span></span><code><span class="kn">import</span><span class="w"> </span><span class="nn">torch</span>
+
+<span class="n">N</span> <span class="o">=</span> <span class="mi">16</span>
+<span class="n">yy</span><span class="p">,</span> <span class="n">xx</span> <span class="o">=</span> <span class="n">torch</span><span class="o">.</span><span class="n">meshgrid</span><span class="p">(</span><span class="n">torch</span><span class="o">.</span><span class="n">arange</span><span class="p">(</span><span class="n">N</span><span class="p">)</span><span class="o">.</span><span class="n">float</span><span class="p">(),</span> <span class="n">torch</span><span class="o">.</span><span class="n">arange</span><span class="p">(</span><span class="n">N</span><span class="p">)</span><span class="o">.</span><span class="n">float</span><span class="p">(),</span> <span class="n">indexing</span><span class="o">=</span><span class="s1">&#39;ij&#39;</span><span class="p">)</span>
+<span class="n">BAR</span> <span class="o">=</span> <span class="s2">&quot; ░▒▓█&quot;</span>
+
+<span class="k">def</span><span class="w"> </span><span class="nf">stripe2d</span><span class="p">(</span><span class="n">kx</span><span class="p">,</span> <span class="n">ky</span><span class="p">):</span>                              <span class="c1"># 两个方向的梯度合起来画出的斜条纹</span>
+    <span class="n">c</span> <span class="o">=</span> <span class="n">torch</span><span class="o">.</span><span class="n">cos</span><span class="p">(</span><span class="mi">2</span> <span class="o">*</span> <span class="n">torch</span><span class="o">.</span><span class="n">pi</span> <span class="o">*</span> <span class="p">(</span><span class="n">kx</span> <span class="o">*</span> <span class="n">xx</span> <span class="o">+</span> <span class="n">ky</span> <span class="o">*</span> <span class="n">yy</span><span class="p">)</span> <span class="o">/</span> <span class="n">N</span><span class="p">)</span>
+    <span class="k">return</span> <span class="p">[[</span><span class="n">BAR</span><span class="p">[</span><span class="nb">int</span><span class="p">((</span><span class="n">v</span> <span class="o">+</span> <span class="mi">1</span><span class="p">)</span> <span class="o">/</span> <span class="mi">2</span> <span class="o">*</span> <span class="mf">4.99</span><span class="p">)]</span> <span class="k">for</span> <span class="n">v</span> <span class="ow">in</span> <span class="n">row</span><span class="p">]</span> <span class="k">for</span> <span class="n">row</span> <span class="ow">in</span> <span class="n">c</span><span class="p">]</span>
+
+<span class="n">pairs</span> <span class="o">=</span> <span class="p">[(</span><span class="mi">1</span><span class="p">,</span> <span class="mi">0</span><span class="p">),</span> <span class="p">(</span><span class="mi">0</span><span class="p">,</span> <span class="mi">1</span><span class="p">),</span> <span class="p">(</span><span class="mi">2</span><span class="p">,</span> <span class="mi">2</span><span class="p">),</span> <span class="p">(</span><span class="mi">4</span><span class="p">,</span> <span class="mi">1</span><span class="p">)]</span>
+<span class="n">grids</span> <span class="o">=</span> <span class="p">[</span><span class="n">stripe2d</span><span class="p">(</span><span class="o">*</span><span class="n">p</span><span class="p">)</span> <span class="k">for</span> <span class="n">p</span> <span class="ow">in</span> <span class="n">pairs</span><span class="p">]</span>
+<span class="nb">print</span><span class="p">(</span><span class="s2">&quot;   &quot;</span><span class="o">.</span><span class="n">join</span><span class="p">(</span><span class="sa">f</span><span class="s2">&quot;(kx=</span><span class="si">{</span><span class="n">a</span><span class="si">}</span><span class="s2">,ky=</span><span class="si">{</span><span class="n">b</span><span class="si">}</span><span class="s2">)&quot;</span><span class="o">.</span><span class="n">center</span><span class="p">(</span><span class="n">N</span><span class="p">)</span> <span class="k">for</span> <span class="n">a</span><span class="p">,</span> <span class="n">b</span> <span class="ow">in</span> <span class="n">pairs</span><span class="p">))</span>
+<span class="k">for</span> <span class="n">r</span> <span class="ow">in</span> <span class="nb">range</span><span class="p">(</span><span class="n">N</span><span class="p">):</span>
+    <span class="nb">print</span><span class="p">(</span><span class="s2">&quot;   &quot;</span><span class="o">.</span><span class="n">join</span><span class="p">(</span><span class="s2">&quot;&quot;</span><span class="o">.</span><span class="n">join</span><span class="p">(</span><span class="n">g</span><span class="p">[</span><span class="n">r</span><span class="p">])</span> <span class="k">for</span> <span class="n">g</span> <span class="ow">in</span> <span class="n">grids</span><span class="p">))</span>
+</code></pre></div>
+
+<p>输出：</p>
+<div class="highlight"><pre><span></span><code>  (kx=1,ky=0)        (kx=0,ky=1)        (kx=2,ky=2)        (kx=4,ky=1)   
+███▓▒░     ░▒▓██   ████████████████   ██▒   ▒███▒   ▒█   █▒ ▒█▒ ▒█▒ ▒█▒ ▒
+███▓▒░     ░▒▓██   ████████████████   █▒   ▒███▒   ▒██   █░ ▓█░ ▓█░ ▓█░ ▓
+███▓▒░     ░▒▓██   ████████████████   ▒   ▒███▒   ▒███   █  ██  ██  ██  █
+███▓▒░     ░▒▓██   ▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓      ▒███▒   ▒███▒   ▓ ░█▓ ░█▓ ░█▓ ░█
+███▓▒░     ░▒▓██   ▒▒▒▒▒▒▒▒▒▒▒▒▒▒▒▒     ▒███▒   ▒███▒    ▒ ▒█▒ ▒█▒ ▒█▒ ▒█
+███▓▒░     ░▒▓██   ░░░░░░░░░░░░░░░░    ▒███▒   ▒███▒     ░ ▓█░ ▓█░ ▓█░ ▓█
+███▓▒░     ░▒▓██                      ▒███▒   ▒███▒        ██  ██  ██  ██
+███▓▒░     ░▒▓██                      ███▒   ▒███▒   ▒    ░█▓ ░█▓ ░█▓ ░█▓
+███▓▒░     ░▒▓██                      ██▒   ▒███▒   ▒█    ▒█▒ ▒█▒ ▒█▒ ▒█▒
+███▓▒░     ░▒▓██                      █▒   ▒███▒   ▒██    ▓█░ ▓█░ ▓█░ ▓█░
+███▓▒░     ░▒▓██                      ▒   ▒███▒   ▒███    ██  ██  ██  ██ 
+███▓▒░     ░▒▓██   ░░░░░░░░░░░░░░░░      ▒███▒   ▒███▒   ░█▓ ░█▓ ░█▓ ░█▓ 
+███▓▒░     ░▒▓██   ▒▒▒▒▒▒▒▒▒▒▒▒▒▒▒▒     ▒███▒   ▒███▒    ▒█▒ ▒█▒ ▒█▒ ▒█▒ 
+███▓▒░     ░▒▓██   ▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓    ▒███▒   ▒███▒     ▓█░ ▓█░ ▓█░ ▓█░ 
+███▓▒░     ░▒▓██   ████████████████   ▒███▒   ▒███▒      ██  ██  ██  ██  
+███▓▒░     ░▒▓██   ████████████████   ███▒   ▒███▒   ▒   █▓ ░█▓ ░█▓ ░█▓ ░
+</code></pre></div>
+
+<p><strong>一张 MRI 图像，就是把这样几万把条纹尺子的读数，全部叠回去的结果。</strong>
+所谓"扫描要躺十分钟"，躺的就是<strong>换尺子、量一次、换尺子、量一次</strong>这几万个来回。</p>
+<hr />
+<h2 id="6-扫完世界原样回来">6. 扫完，世界原样回来</h2>
+<p>k 空间不是图像，是图像的频域。全部量完，做一次逆傅里叶，你的身体就回来了。
+下面这段还顺便展示了"只量了一部分"会长什么样：</p>
+<div class="highlight"><pre><span></span><code><span class="kn">import</span><span class="w"> </span><span class="nn">torch</span>
+
+<span class="n">N</span> <span class="o">=</span> <span class="mi">64</span>
+<span class="n">x</span> <span class="o">=</span> <span class="n">torch</span><span class="o">.</span><span class="n">arange</span><span class="p">(</span><span class="n">N</span><span class="p">)</span><span class="o">.</span><span class="n">float</span><span class="p">()</span>
+<span class="n">body</span> <span class="o">=</span> <span class="n">torch</span><span class="o">.</span><span class="n">zeros</span><span class="p">(</span><span class="n">N</span><span class="p">);</span> <span class="n">body</span><span class="p">[</span><span class="mi">20</span><span class="p">:</span><span class="mi">30</span><span class="p">]</span> <span class="o">=</span> <span class="mf">1.0</span><span class="p">;</span> <span class="n">body</span><span class="p">[</span><span class="mi">40</span><span class="p">:</span><span class="mi">45</span><span class="p">]</span> <span class="o">=</span> <span class="mf">0.6</span>
+<span class="n">BAR</span> <span class="o">=</span> <span class="s2">&quot; ▁▂▃▄▅▆▇█&quot;</span>
+<span class="n">show</span> <span class="o">=</span> <span class="k">lambda</span> <span class="n">v</span><span class="p">:</span> <span class="s2">&quot;&quot;</span><span class="o">.</span><span class="n">join</span><span class="p">(</span><span class="n">BAR</span><span class="p">[</span><span class="nb">int</span><span class="p">(</span><span class="nb">max</span><span class="p">(</span><span class="mf">0.0</span><span class="p">,</span> <span class="nb">min</span><span class="p">(</span><span class="mf">0.999</span><span class="p">,</span> <span class="n">i</span><span class="p">))</span> <span class="o">*</span> <span class="mi">8</span><span class="p">)]</span> <span class="k">for</span> <span class="n">i</span> <span class="ow">in</span> <span class="n">v</span><span class="p">)</span>
+
+<span class="n">kspace</span> <span class="o">=</span> <span class="n">torch</span><span class="o">.</span><span class="n">stack</span><span class="p">([(</span><span class="n">body</span> <span class="o">*</span> <span class="n">torch</span><span class="o">.</span><span class="n">exp</span><span class="p">(</span><span class="o">-</span><span class="mi">2</span><span class="n">j</span><span class="o">*</span><span class="n">torch</span><span class="o">.</span><span class="n">pi</span><span class="o">*</span><span class="n">k</span><span class="o">*</span><span class="n">x</span><span class="o">/</span><span class="n">N</span><span class="p">))</span><span class="o">.</span><span class="n">sum</span><span class="p">()</span> <span class="k">for</span> <span class="n">k</span> <span class="ow">in</span> <span class="nb">range</span><span class="p">(</span><span class="n">N</span><span class="p">)])</span>
+
+<span class="nb">print</span><span class="p">(</span><span class="s2">&quot;真实身体        :&quot;</span><span class="p">,</span> <span class="n">show</span><span class="p">(</span><span class="n">body</span><span class="p">))</span>
+<span class="k">for</span> <span class="n">M</span> <span class="ow">in</span> <span class="p">[</span><span class="mi">2</span><span class="p">,</span> <span class="mi">4</span><span class="p">,</span> <span class="mi">8</span><span class="p">,</span> <span class="mi">16</span><span class="p">,</span> <span class="mi">32</span><span class="p">]:</span>                       <span class="c1"># 只保留最中心的 2M-1 个 k 点（低频）</span>
+    <span class="n">kept</span> <span class="o">=</span> <span class="n">kspace</span><span class="o">.</span><span class="n">clone</span><span class="p">();</span> <span class="n">kept</span><span class="p">[</span><span class="n">M</span><span class="p">:</span><span class="n">N</span><span class="o">-</span><span class="n">M</span><span class="o">+</span><span class="mi">1</span><span class="p">]</span> <span class="o">=</span> <span class="mi">0</span>
+    <span class="n">rec</span> <span class="o">=</span> <span class="n">torch</span><span class="o">.</span><span class="n">fft</span><span class="o">.</span><span class="n">ifft</span><span class="p">(</span><span class="n">kept</span><span class="p">)</span><span class="o">.</span><span class="n">real</span>
+    <span class="nb">print</span><span class="p">(</span><span class="sa">f</span><span class="s2">&quot;只用 </span><span class="si">{</span><span class="mi">2</span><span class="o">*</span><span class="n">M</span><span class="o">-</span><span class="mi">1</span><span class="si">:</span><span class="s2">2d</span><span class="si">}</span><span class="s2"> 个 k 点 :&quot;</span><span class="p">,</span> <span class="n">show</span><span class="p">(</span><span class="n">rec</span><span class="p">),</span> <span class="sa">f</span><span class="s2">&quot; 误差 </span><span class="si">{</span><span class="p">(</span><span class="n">rec</span><span class="o">-</span><span class="n">body</span><span class="p">)</span><span class="o">.</span><span class="n">abs</span><span class="p">()</span><span class="o">.</span><span class="n">max</span><span class="p">()</span><span class="si">:</span><span class="s2">.2e</span><span class="si">}</span><span class="s2">&quot;</span><span class="p">)</span>
+<span class="n">rec</span> <span class="o">=</span> <span class="n">torch</span><span class="o">.</span><span class="n">fft</span><span class="o">.</span><span class="n">ifft</span><span class="p">(</span><span class="n">kspace</span><span class="p">)</span><span class="o">.</span><span class="n">real</span>
+<span class="nb">print</span><span class="p">(</span><span class="sa">f</span><span class="s2">&quot;全部 </span><span class="si">{</span><span class="n">N</span><span class="si">}</span><span class="s2"> 个 k 点 :&quot;</span><span class="p">,</span> <span class="n">show</span><span class="p">(</span><span class="n">rec</span><span class="p">),</span> <span class="sa">f</span><span class="s2">&quot; 误差 </span><span class="si">{</span><span class="p">(</span><span class="n">rec</span><span class="o">-</span><span class="n">body</span><span class="p">)</span><span class="o">.</span><span class="n">abs</span><span class="p">()</span><span class="o">.</span><span class="n">max</span><span class="p">()</span><span class="si">:</span><span class="s2">.2e</span><span class="si">}</span><span class="s2">&quot;</span><span class="p">)</span>
+</code></pre></div>
+
+<p>输出：</p>
+<div class="highlight"><pre><span></span><code>真实身体        :                     ▇▇▇▇▇▇▇▇▇▇          ▄▄▄▄▄                   
+只用  3 个 k 点 :          ▁▁▁▁▁▂▂▂▂▃▃▃▃▃▃▃▃▄▄▄▄▃▃▃▃▃▃▃▃▂▂▂▂▂▁▁▁▁                   误差 5.77e-01
+只用  7 个 k 点 : ▁▁▁             ▁▂▃▄▅▆▆▇▇▇▆▆▅▄▃▂▂▁      ▁▁▂▂▂▂▂▂▁▁                误差 5.74e-01
+只用 15 个 k 点 :                   ▁▂▄▆▇▇▇▇▇▇▆▄▃▁      ▁▂▃▄▄▄▃▂                    误差 4.34e-01
+只用 31 个 k 点 :                    ▂▅▇▇▇▇▇▇▇▇▅▂        ▁▃▄▅▄▃▁                    误差 2.86e-01
+只用 63 个 k 点 :                     ▇▇▇▇▇▇▇▇▇▇          ▄▄▄▄▄                     误差 9.38e-03
+全部 64 个 k 点 :                     ▇▇▇▇▇▇▇▇▇▇          ▄▄▄▄▄                     误差 3.73e-06
+</code></pre></div>
+
+<p><strong>误差 3e-06——浮点误差级别，等于完美还原。</strong> 而中间那几行也说明了另一件事：
+<strong>低频（疏尺子）给你器官的大致轮廓，高频（密尺子）才给你病灶的边缘和血管的细线。</strong>
+这就是那句行话的来历：<strong>k 空间中心决定对比度，k 空间边缘决定锐利度。</strong></p>
+<hr />
+<h2 id="7-相位散了还能原样收回来梯度回波">7. 相位散了，还能原样收回来：梯度回波</h2>
+<p>最后一个必须看的现象。把梯度打开，指针越扇越开，线圈收到的总和迅速掉到 0——
+信号好像"消失"了。但它没消失，它只是<strong>藏进了角度里</strong>。
+把梯度<strong>反个号</strong>，同一批指针会原路倒着转回来，在某个时刻<strong>全部重新对齐</strong>：</p>
+<div class="highlight"><pre><span></span><code><span class="kn">import</span><span class="w"> </span><span class="nn">torch</span>
+
+<span class="n">ARROW</span> <span class="o">=</span> <span class="s2">&quot;→↗↑↖←↙↓↘&quot;</span>
+<span class="n">draw</span> <span class="o">=</span> <span class="k">lambda</span> <span class="n">p</span><span class="p">:</span> <span class="s2">&quot; &quot;</span><span class="o">.</span><span class="n">join</span><span class="p">(</span><span class="n">ARROW</span><span class="p">[</span><span class="n">i</span><span class="p">]</span> <span class="k">for</span> <span class="n">i</span> <span class="ow">in</span> <span class="p">((</span><span class="n">p</span> <span class="o">/</span> <span class="p">(</span><span class="mi">2</span><span class="o">*</span><span class="n">torch</span><span class="o">.</span><span class="n">pi</span><span class="p">)</span> <span class="o">*</span> <span class="mi">8</span><span class="p">)</span><span class="o">.</span><span class="n">round</span><span class="p">()</span><span class="o">.</span><span class="n">long</span><span class="p">())</span> <span class="o">%</span> <span class="mi">8</span><span class="p">)</span>
+
+<span class="n">x</span> <span class="o">=</span> <span class="n">torch</span><span class="o">.</span><span class="n">linspace</span><span class="p">(</span><span class="o">-</span><span class="mi">1</span><span class="p">,</span> <span class="mi">1</span><span class="p">,</span> <span class="mi">13</span><span class="p">)</span>                     <span class="c1"># 一排质子</span>
+<span class="n">k</span> <span class="o">=</span> <span class="n">torch</span><span class="o">.</span><span class="n">tensor</span><span class="p">(</span><span class="mf">0.0</span><span class="p">)</span>
+<span class="k">for</span> <span class="n">step</span> <span class="ow">in</span> <span class="nb">range</span><span class="p">(</span><span class="mi">8</span><span class="p">):</span>
+    <span class="n">sign</span> <span class="o">=</span> <span class="o">+</span><span class="mi">1</span> <span class="k">if</span> <span class="n">step</span> <span class="o">&lt;</span> <span class="mi">4</span> <span class="k">else</span> <span class="o">-</span><span class="mi">1</span>                 <span class="c1"># 前 4 步开 +G，后 4 步把梯度翻个号</span>
+    <span class="n">k</span> <span class="o">=</span> <span class="n">k</span> <span class="o">+</span> <span class="n">sign</span> <span class="o">*</span> <span class="mf">0.25</span>
+    <span class="n">phase</span> <span class="o">=</span> <span class="n">k</span> <span class="o">*</span> <span class="n">x</span> <span class="o">*</span> <span class="n">torch</span><span class="o">.</span><span class="n">pi</span>
+    <span class="n">signal</span> <span class="o">=</span> <span class="n">torch</span><span class="o">.</span><span class="n">exp</span><span class="p">(</span><span class="mi">1</span><span class="n">j</span> <span class="o">*</span> <span class="n">phase</span><span class="p">)</span><span class="o">.</span><span class="n">mean</span><span class="p">()</span><span class="o">.</span><span class="n">abs</span><span class="p">()</span>   <span class="c1"># 线圈收到的 = 所有指针的矢量和</span>
+    <span class="nb">print</span><span class="p">(</span><span class="sa">f</span><span class="s2">&quot;</span><span class="si">{</span><span class="s1">&#39;+G 散相&#39;</span><span class="w"> </span><span class="k">if</span><span class="w"> </span><span class="n">sign</span><span class="w"> </span><span class="o">&gt;</span><span class="w"> </span><span class="mi">0</span><span class="w"> </span><span class="k">else</span><span class="w"> </span><span class="s1">&#39;-G 重聚&#39;</span><span class="si">}</span><span class="s2">  </span><span class="si">{</span><span class="n">draw</span><span class="p">(</span><span class="n">phase</span><span class="p">)</span><span class="si">}</span><span class="s2">   总信号=</span><span class="si">{</span><span class="n">signal</span><span class="si">:</span><span class="s2">.2f</span><span class="si">}</span><span class="s2">&quot;</span><span class="p">)</span>
+</code></pre></div>
+
+<p>输出：</p>
+<div class="highlight"><pre><span></span><code>+G 散相  ↘ ↘ ↘ → → → → → → → ↗ ↗ ↗   总信号=0.88
++G 散相  ↓ ↓ ↘ ↘ ↘ → → → ↗ ↗ ↗ ↑ ↑   总信号=0.58
++G 散相  ↙ ↓ ↓ ↓ ↘ → → → ↗ ↑ ↑ ↑ ↖   总信号=0.22
++G 散相  ← ↙ ↙ ↓ ↘ ↘ → ↗ ↗ ↑ ↖ ↖ ←   总信号=0.08
+-G 重聚  ↙ ↓ ↓ ↓ ↘ → → → ↗ ↑ ↑ ↑ ↖   总信号=0.22
+-G 重聚  ↓ ↓ ↘ ↘ ↘ → → → ↗ ↗ ↗ ↑ ↑   总信号=0.58
+-G 重聚  ↘ ↘ ↘ → → → → → → → ↗ ↗ ↗   总信号=0.88
+-G 重聚  → → → → → → → → → → → → →   总信号=1.00
+</code></pre></div>
+
+<p><strong>0.88 → 0.08 → 一路回到 1.00，一个完美对称的回波。</strong>
+这就是"梯度回波（GRE）"这个序列名字的来历，也是全篇最关键的一条性质：</p>
+<blockquote>
+<p><strong>信号只取决于"相位转了多少"这个相对量，与从哪个绝对角度起步无关。</strong></p>
+</blockquote>
+<hr />
+<h2 id="8-同一个算子在大模型里叫-rope">8. 同一个算子，在大模型里叫 RoPE</h2>
+<p>MRI：给位置 <code>x</code> 的质子，转 <code>k·x</code> 的角度。
+RoPE：给位置 <code>m</code> 的词向量，转 <code>m·θ</code> 的角度。</p>
+<p>不是"像"，是<strong>同一个算子换了个变量名</strong>：</p>
+<table>
+<thead>
+<tr>
+<th></th>
+<th>核磁共振</th>
+<th>RoPE</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>被编码的东西</td>
+<td>空间位置 <code>x</code></td>
+<td>序列位置 <code>m</code></td>
+</tr>
+<tr>
+<td>编码方式</td>
+<td>乘上 <code>e^{ikx}</code></td>
+<td>乘上 <code>e^{imθ}</code></td>
+</tr>
+<tr>
+<td>谁提供角度</td>
+<td>梯度磁场 <code>k</code></td>
+<td>频率参数 <code>θ</code></td>
+</tr>
+<tr>
+<td>只改什么</td>
+<td>只改相位、不改幅度</td>
+<td>只改方向、不改长度</td>
+</tr>
+<tr>
+<td>一整套频率</td>
+<td>疏尺子给轮廓，密尺子给细节</td>
+<td>转得慢的维度管长程，转得快的管相邻</td>
+</tr>
+</tbody>
+</table>
+<p>而上一节那条"只依赖相对量"的性质，两边也一模一样：</p>
+<div class="highlight"><pre><span></span><code><span class="kn">import</span><span class="w"> </span><span class="nn">torch</span>
+
+<span class="k">def</span><span class="w"> </span><span class="nf">spin</span><span class="p">(</span><span class="n">z</span><span class="p">,</span> <span class="n">ang</span><span class="p">):</span> <span class="k">return</span> <span class="n">z</span> <span class="o">*</span> <span class="n">torch</span><span class="o">.</span><span class="n">exp</span><span class="p">(</span><span class="mi">1</span><span class="n">j</span> <span class="o">*</span> <span class="n">torch</span><span class="o">.</span><span class="n">as_tensor</span><span class="p">(</span><span class="n">ang</span><span class="p">))</span>
+<span class="n">mri</span>  <span class="o">=</span> <span class="k">lambda</span> <span class="n">rho</span><span class="p">,</span> <span class="n">pos</span><span class="p">,</span> <span class="n">k</span><span class="p">:</span>  <span class="n">spin</span><span class="p">(</span><span class="n">rho</span><span class="p">,</span> <span class="n">k</span> <span class="o">*</span> <span class="n">pos</span><span class="p">)</span>      <span class="c1"># MRI ：位置 pos 的质子转 k*pos</span>
+<span class="n">rope</span> <span class="o">=</span> <span class="k">lambda</span> <span class="n">vec</span><span class="p">,</span> <span class="n">m</span><span class="p">,</span> <span class="n">th</span><span class="o">=</span><span class="mf">1.0</span><span class="p">:</span> <span class="n">spin</span><span class="p">(</span><span class="n">vec</span><span class="p">,</span> <span class="n">m</span> <span class="o">*</span> <span class="n">th</span><span class="p">)</span>     <span class="c1"># RoPE：第 m 个词向量转 m*th</span>
+
+<span class="n">a</span> <span class="o">=</span> <span class="n">torch</span><span class="o">.</span><span class="n">tensor</span><span class="p">(</span><span class="mf">1.0</span> <span class="o">+</span> <span class="mi">0</span><span class="n">j</span><span class="p">)</span>
+<span class="k">for</span> <span class="p">(</span><span class="n">m</span><span class="p">,</span> <span class="n">n</span><span class="p">)</span> <span class="ow">in</span> <span class="p">[(</span><span class="mi">0</span><span class="p">,</span> <span class="mi">3</span><span class="p">),</span> <span class="p">(</span><span class="mi">2</span><span class="p">,</span> <span class="mi">5</span><span class="p">),</span> <span class="p">(</span><span class="mi">10</span><span class="p">,</span> <span class="mi">13</span><span class="p">)]:</span>
+    <span class="n">coh</span> <span class="o">=</span> <span class="p">(</span><span class="n">mri</span><span class="p">(</span><span class="n">a</span><span class="p">,</span> <span class="nb">float</span><span class="p">(</span><span class="n">m</span><span class="p">),</span> <span class="mf">1.0</span><span class="p">)</span><span class="o">.</span><span class="n">conj</span><span class="p">()</span> <span class="o">*</span> <span class="n">mri</span><span class="p">(</span><span class="n">a</span><span class="p">,</span> <span class="nb">float</span><span class="p">(</span><span class="n">n</span><span class="p">),</span> <span class="mf">1.0</span><span class="p">))</span><span class="o">.</span><span class="n">real</span>
+    <span class="n">dot</span> <span class="o">=</span> <span class="p">(</span><span class="n">rope</span><span class="p">(</span><span class="n">a</span><span class="p">,</span> <span class="n">m</span><span class="p">)</span><span class="o">.</span><span class="n">conj</span><span class="p">()</span> <span class="o">*</span> <span class="n">rope</span><span class="p">(</span><span class="n">a</span><span class="p">,</span> <span class="n">n</span><span class="p">))</span><span class="o">.</span><span class="n">real</span>
+    <span class="nb">print</span><span class="p">(</span><span class="sa">f</span><span class="s2">&quot;位置对(</span><span class="si">{</span><span class="n">m</span><span class="si">:</span><span class="s2">2d</span><span class="si">}</span><span class="s2">,</span><span class="si">{</span><span class="n">n</span><span class="si">:</span><span class="s2">2d</span><span class="si">}</span><span class="s2">) 距离=</span><span class="si">{</span><span class="n">n</span><span class="o">-</span><span class="n">m</span><span class="si">}</span><span class="s2">  MRI相干度=</span><span class="si">{</span><span class="n">coh</span><span class="o">.</span><span class="n">item</span><span class="p">()</span><span class="si">:</span><span class="s2">+.4f</span><span class="si">}</span><span class="s2">  RoPE点积=</span><span class="si">{</span><span class="n">dot</span><span class="o">.</span><span class="n">item</span><span class="p">()</span><span class="si">:</span><span class="s2">+.4f</span><span class="si">}</span><span class="s2">&quot;</span><span class="p">)</span>
+</code></pre></div>
+
+<p>输出：</p>
+<div class="highlight"><pre><span></span><code>位置对( 0, 3) 距离=3  MRI相干度=-0.9900  RoPE点积=-0.9900
+位置对( 2, 5) 距离=3  MRI相干度=-0.9900  RoPE点积=-0.9900
+位置对(10,13) 距离=3  MRI相干度=-0.9900  RoPE点积=-0.9900
+</code></pre></div>
+
+<p><strong>三行数字完全一样，左右两列也完全一样。</strong></p>
+<ul>
+<li>MRI 里这叫<strong>相位相干</strong>：两个质子的信号能不能重新叠加增强，只看它们的位置差——梯度回波就是靠它。</li>
+<li>大模型里这叫<strong>相对位置编码</strong>：注意力分数只看两个词的距离，不关心这句话从文档第几行开始。</li>
+</ul>
+<p><strong>同一条数学性质，一边撑起了现代影像医学，一边撑起了现代大模型。</strong></p>
+<hr />
+<h2 id="动手把梯度磁场画出来">🎬 动手：把梯度磁场画出来</h2>
+<p>仓库里的脚本把上面全部画成了图和动画：</p>
+<div class="highlight"><pre><span></span><code>python<span class="w"> </span>scripts/gradient_field_phase_visualization.py
+</code></pre></div>
+
+<blockquote>
+<p><strong>图一（六格）</strong>：被掰斜的磁场 <code>B(x)=B0+G·x</code> → 沿位置线性铺开的转速（左右耳差 64 kHz）→
+一排指针随时间扇开成螺旋 → 相位地图 <code>φ(x,t)</code> 的斜条纹 →
+<strong>一个 k 点是怎么测出来的：复平面上一条首尾相接的箭头链，走完的终点就是那个复数</strong> →
+逆傅里叶把身体原样还原（误差 1e-15）。</p>
+<p><strong>图二（三格）</strong>：梯度回波。左边指针越扇越开、信号掉到 0，右边梯度反号后原路收回，
+中间那条绿色曲线是一个漂亮的对称 V —— 相位从来没丢，它一直在角度里。</p>
+<p><strong>图三（动画）</strong>：k 空间一点点被填满。左边是当前这一步梯度画出的二维条纹尺子（越来越密），
+中间是已采到的 k 空间从中心往外扩，右边是此刻重建出的身体——
+<strong>先长出一团轮廓，血管和病灶要到最后才浮现。</strong></p>
+</blockquote>
+<hr />
+<h2 id="一句话收尾">一句话收尾</h2>
+<blockquote>
+<p><strong>梯度磁场做的事，是把"你在哪"翻译成"你转了多少度"。</strong>
+位置变成角度，角度可以求和，求和可以逆变换——于是身体被完整地写进一堆复数，再原样读回来。
+1973 年劳特伯靠这一步拍出了第一张核磁图像；半个世纪后，同一个 <code>e^{iθ}</code> 换名叫 RoPE，装进了每一个大模型，
+干的还是同一件事：<strong>把位置写成角度。</strong></p>
+</blockquote>
+<hr />
+<blockquote>
+<p><strong>相关阅读：</strong>
+- <a href="mri_to_multimodal.md">医院那台核磁共振，和大模型的位置编码、多模态，是同一件事</a> —— 完整版：k 空间、FFT 的核试验往事、投影切片定理与多模态
+- <a href="trigonometry_to_rope.md">高中背了三年的 sin 和 cos，原来是大模型记住"谁先谁后"的秘密</a> —— RoPE 的完整推导
+- <a href="complex_numbers_to_rope.md">高中觉得最没用的"虚数 i"，其实是 RoPE 最优雅的写法</a> —— <code>e^{iθ}</code> 那条线</p>
+<p><strong>参考：</strong>
+Lauterbur (1973), <em>Image Formation by Induced Local Interactions: Examples Employing Nuclear Magnetic Resonance</em> —— 用梯度磁场做空间编码，MRI 由此诞生（2003 诺奖）；
+Mansfield (1977), <em>Multi-planar image formation using NMR spin echoes</em> —— 平面回波成像，把扫描时间压到几十毫秒；
+Ernst &amp; Anderson (1966), <em>Application of Fourier Transform Spectroscopy to Magnetic Resonance</em> —— 把傅里叶变换搬进核磁共振（1991 诺奖）；
+Su et al. (2021), <em>RoFormer: Enhanced Transformer with Rotary Position Embedding</em> —— RoPE。</p>
+</blockquote>
+    </div>
+  </article>
+
+</main>
+
+<!-- Floating Ask-AI chat widget -->
+<button class="ai-fab" id="ai-fab" aria-label="Ask AI about this article" title="Ask AI about this article">
+  <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+    <path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"/>
+  </svg>
+  <span class="ai-fab-label">Ask AI</span>
+</button>
+
+<div class="ai-panel" id="ai-panel" role="dialog" aria-labelledby="ai-panel-title" aria-hidden="true">
+  <header class="ai-panel-head">
+    <div class="ai-panel-title-wrap">
+      <span class="ai-dot"></span>
+      <h3 id="ai-panel-title">Ask AI about this post</h3>
+    </div>
+    <div class="ai-panel-actions">
+      <button class="ai-icon-btn" id="ai-clear" title="Clear conversation" aria-label="Clear">
+        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><polyline points="3 6 5 6 21 6"/><path d="M19 6l-1 14a2 2 0 0 1-2 2H8a2 2 0 0 1-2-2L5 6"/><path d="M10 11v6M14 11v6"/><path d="M9 6V4a1 1 0 0 1 1-1h4a1 1 0 0 1 1 1v2"/></svg>
+      </button>
+      <button class="ai-icon-btn" id="ai-close" title="Minimize" aria-label="Minimize">
+        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><polyline points="6 9 12 15 18 9"/></svg>
+      </button>
+    </div>
+  </header>
+
+  <div class="ai-messages" id="ai-messages">
+    <div class="ai-empty" id="ai-empty">
+      <p class="ai-empty-title">On-device AI · Gemini Nano</p>
+      <p class="ai-empty-sub">Ask anything about this article. Runs in your browser — nothing leaves your device.</p>
+    </div>
+  </div>
+
+  <div class="ai-status" id="ai-status" hidden></div>
+
+  <form class="ai-composer" id="ai-form">
+    <textarea id="ai-input" rows="1" placeholder="Ask about this post…" autocomplete="off"></textarea>
+    <button type="submit" id="ai-send" class="ai-send" aria-label="Send" disabled>
+      <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><line x1="22" y1="2" x2="11" y2="13"/><polygon points="22 2 15 22 11 13 2 9 22 2"/></svg>
+    </button>
+  </form>
+</div>
+
+<script>
+(function () {
+  const POST_TITLE = "\u628a\u78c1\u573a\u63b0\u659c\u4e00\u70b9\u70b9\uff0c\u4f60\u7684\u4f4d\u7f6e\u5c31\u53d8\u6210\u4e86\u4e00\u4e2a\u89d2\u5ea6";
+  const contentEl = document.querySelector('article .content');
+
+  const fab = document.getElementById('ai-fab');
+  const panel = document.getElementById('ai-panel');
+  const closeBtn = document.getElementById('ai-close');
+  const clearBtn = document.getElementById('ai-clear');
+  const msgsEl = document.getElementById('ai-messages');
+  const emptyEl = document.getElementById('ai-empty');
+  const statusEl = document.getElementById('ai-status');
+  const formEl = document.getElementById('ai-form');
+  const inputEl = document.getElementById('ai-input');
+  const sendBtn = document.getElementById('ai-send');
+
+  function articleText() {
+    if (!contentEl) return '';
+    return (contentEl.innerText || contentEl.textContent || '')
+      .replace(/[ \t]+\n/g, '\n')
+      .replace(/\n{3,}/g, '\n\n')
+      .trim();
+  }
+
+  function setStatus(msg, cls) {
+    if (!msg) { statusEl.hidden = true; statusEl.textContent = ''; statusEl.className = 'ai-status'; return; }
+    statusEl.hidden = false;
+    statusEl.textContent = msg;
+    statusEl.className = 'ai-status' + (cls ? ' ' + cls : '');
+  }
+
+  function hideEmpty() { if (emptyEl) emptyEl.style.display = 'none'; }
+
+  function appendBubble(role, text) {
+    hideEmpty();
+    const wrap = document.createElement('div');
+    wrap.className = 'ai-msg ai-msg-' + role;
+    const bubble = document.createElement('div');
+    bubble.className = 'ai-bubble';
+    bubble.textContent = text;
+    wrap.appendChild(bubble);
+    msgsEl.appendChild(wrap);
+    msgsEl.scrollTop = msgsEl.scrollHeight;
+    return bubble;
+  }
+
+  function appendTyping() {
+    hideEmpty();
+    const wrap = document.createElement('div');
+    wrap.className = 'ai-msg ai-msg-assistant ai-typing';
+    wrap.innerHTML = '<div class="ai-bubble"><span class="ai-dots"><i></i><i></i><i></i></span></div>';
+    msgsEl.appendChild(wrap);
+    msgsEl.scrollTop = msgsEl.scrollHeight;
+    return wrap;
+  }
+
+  function autoSize() {
+    inputEl.style.height = 'auto';
+    inputEl.style.height = Math.min(inputEl.scrollHeight, 140) + 'px';
+  }
+
+  function openPanel() {
+    panel.classList.add('open');
+    panel.setAttribute('aria-hidden', 'false');
+    fab.classList.add('hidden');
+    setTimeout(() => inputEl.focus(), 50);
+  }
+  function closePanel() {
+    panel.classList.remove('open');
+    panel.setAttribute('aria-hidden', 'true');
+    fab.classList.remove('hidden');
+  }
+
+  fab.addEventListener('click', openPanel);
+  closeBtn.addEventListener('click', closePanel);
+  document.addEventListener('keydown', e => {
+    if (e.key === 'Escape' && panel.classList.contains('open')) closePanel();
+  });
+
+  // ---- LanguageModel session ----
+  let session = null;
+  let creating = null;
+  let history = [];
+
+  function buildSystemPrompt() {
+    // Keep article context modest — Gemini Nano's input quota is small.
+    const article = articleText().slice(0, 4000);
+    return (
+      'You are a concise, helpful assistant answering questions about a blog post. ' +
+      'Use the article below as your primary source. If the answer is not in it, say so briefly and answer generally. ' +
+      'Reply in the same language as the user\'s question. Keep answers short unless asked for detail.\n\n' +
+      '=== ARTICLE TITLE ===\n' + POST_TITLE + '\n\n' +
+      '=== ARTICLE CONTENT ===\n' + article
+    );
+  }
+
+  async function ensureSession() {
+    if (session) return session;
+    if (creating) return creating;
+
+    if (!('LanguageModel' in self)) {
+      throw new Error(
+        'On-device AI not available. Use Chrome 138+ on desktop, or enable ' +
+        '"Prompt API for Gemini Nano" in chrome://flags.'
+      );
+    }
+
+    setStatus('Checking model…', 'info');
+    const status = await LanguageModel.availability();
+    if (status === 'unavailable') {
+      throw new Error('Model unavailable on this device.');
+    }
+
+    creating = (async () => {
+      // Only show download UI when the model isn't already there.
+      const willDownload = (status !== 'available');
+      if (willDownload) setStatus('Preparing model (first run downloads ~2GB)…', 'info');
+      else setStatus('Warming up…', 'info');
+
+      const s = await LanguageModel.create({
+        initialPrompts: [{ role: 'system', content: buildSystemPrompt() }],
+        monitor(m) {
+          m.addEventListener('downloadprogress', e => {
+            // Skip the spurious 0% event Chrome fires for cached models.
+            if (!willDownload && e.loaded === 0) return;
+            const pct = (e.loaded * 100).toFixed(1);
+            setStatus('Downloading model: ' + pct + '%', 'info');
+          });
+        }
+      });
+      session = s;
+      setStatus('');
+      return s;
+    })();
+
+    try { return await creating; }
+    finally { creating = null; }
+  }
+
+  async function ask(q) {
+    appendBubble('user', q);
+    history.push({ role: 'user', content: q });
+
+    sendBtn.disabled = true;
+    inputEl.disabled = true;
+    const typing = appendTyping();
+
+    let answerBubble = null;
+    let acc = '';
+    try {
+      const s = await ensureSession();
+      const stream = s.promptStreaming(q);
+      for await (const chunk of stream) {
+        if (!answerBubble) {
+          typing.remove();
+          const wrap = document.createElement('div');
+          wrap.className = 'ai-msg ai-msg-assistant';
+          answerBubble = document.createElement('div');
+          answerBubble.className = 'ai-bubble';
+          wrap.appendChild(answerBubble);
+          msgsEl.appendChild(wrap);
+        }
+        acc += chunk;
+        answerBubble.textContent = acc;
+        msgsEl.scrollTop = msgsEl.scrollHeight;
+      }
+      if (acc) history.push({ role: 'assistant', content: acc });
+      else { typing.remove(); appendBubble('assistant', '(no response)'); }
+    } catch (e) {
+      if (typing && typing.parentNode) typing.remove();
+      const err = document.createElement('div');
+      err.className = 'ai-msg ai-msg-error';
+      err.innerHTML = '<div class="ai-bubble">⚠ ' + (e && e.message ? e.message : String(e)) + '</div>';
+      msgsEl.appendChild(err);
+      msgsEl.scrollTop = msgsEl.scrollHeight;
+    } finally {
+      sendBtn.disabled = !inputEl.value.trim();
+      inputEl.disabled = false;
+      inputEl.focus();
+    }
+  }
+
+  formEl.addEventListener('submit', e => {
+    e.preventDefault();
+    const q = inputEl.value.trim();
+    if (!q) return;
+    inputEl.value = '';
+    autoSize();
+    sendBtn.disabled = true;
+    ask(q);
+  });
+
+  inputEl.addEventListener('input', () => {
+    autoSize();
+    sendBtn.disabled = !inputEl.value.trim();
+  });
+  inputEl.addEventListener('keydown', e => {
+    if (e.key === 'Enter' && !e.shiftKey) {
+      e.preventDefault();
+      formEl.requestSubmit();
+    }
+  });
+
+  clearBtn.addEventListener('click', () => {
+    msgsEl.innerHTML = '';
+    msgsEl.appendChild(emptyEl);
+    emptyEl.style.display = '';
+    history = [];
+    if (session && session.destroy) { try { session.destroy(); } catch (_) {} }
+    session = null;
+    setStatus('');
+  });
+
+  if (!('LanguageModel' in self)) {
+    fab.addEventListener('click', () => {
+      openPanel();
+      setStatus('On-device AI not detected. Use Chrome 138+ desktop, or enable "Prompt API for Gemini Nano" in chrome://flags.', 'bad');
+    }, { once: true });
+  }
+})();
+</script>
+
+<!-- Outline notes / comments — DataScript + IndexedDB -->
+<script src="https://github.com/tonsky/datascript/releases/download/1.7.8/datascript-1.7.8.min.js"></script>
+<script src="../notes.js?v=6"></script>
+<script src="../theme.js"></script>
+<script src="../wechat-copy.js?v=3"></script>
+
+</body>
+</html>
