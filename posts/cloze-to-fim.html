@@ -1,0 +1,663 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>英语考试的完形填空，就是大模型学会写代码的全部方法 · Steve Chan — xlisp</title>
+<meta name="description" content="如果只能留一句话，那就是这句：">
+<meta name="author" content="Steve Chan">
+<link rel="icon" type="image/jpeg" href="../icon.jpeg">
+<link rel="apple-touch-icon" href="../icon.jpeg">
+<meta property="og:type" content="article">
+<meta property="og:title" content="英语考试的完形填空，就是大模型学会写代码的全部方法">
+<meta property="og:description" content="如果只能留一句话，那就是这句：">
+<meta property="og:image" content="../icon.jpeg">
+<meta property="og:site_name" content="Steve Chan — xlisp">
+<meta name="twitter:card" content="summary_large_image">
+<meta name="twitter:title" content="英语考试的完形填空，就是大模型学会写代码的全部方法">
+<meta name="twitter:description" content="如果只能留一句话，那就是这句：">
+<meta name="twitter:image" content="../icon.jpeg">
+<link rel="stylesheet" href="../style.css?v=light1">
+<script>(function(){try{if(localStorage.getItem('theme')==='light')document.documentElement.setAttribute('data-theme','light');}catch(e){}})();</script>
+<!-- Math formula rendering via MathJax -->
+<script>
+window.MathJax = {
+  tex: {
+    // arithmatex emits \(...\) / \[...\] markup, so only these delimiters
+    // are needed; plain `$` is left alone (avoids currency false positives).
+    inlineMath: [['\\(', '\\)']],
+    displayMath: [['\\[', '\\]']],
+    processEscapes: true
+  },
+  svg: {
+    // Each formula gets its own self-contained <defs>, so the copy script can
+    // serialize one <svg> and rasterize it to a PNG for WeChat.
+    fontCache: 'local'
+  },
+  options: {
+    skipHtmlTags: ['script', 'noscript', 'style', 'textarea', 'pre', 'code'],
+    ignoreHtmlClass: 'highlight'
+  }
+};
+</script>
+<script src="https://cdn.jsdelivr.net/npm/mathjax@3/es5/tex-svg.js" async></script>
+</head>
+<body>
+<main class="wrap post">
+
+  <nav class="topnav">
+    <a href="../index.html">← home</a>
+  </nav>
+
+  <article>
+    <header class="post-header">
+      <h1>英语考试的完形填空，就是大模型学会写代码的全部方法</h1>
+      <p class="meta">2026-08-02 · Steve Chan</p>
+    </header>
+
+    <div class="content">
+<blockquote>
+<p>完形填空做了十几年：一段话挖掉几个词，你要根据<strong>前后文</strong>把它补回去。
+老师说的技巧永远是那一句——"别只看空前面，一定要往后读两行"。</p>
+<p>你可能没意识到，今天你在 VS Code 里按下补全键、光标中间自动冒出三行代码，
+用的是<strong>一模一样的做题方法</strong>：看前面写了什么，看后面接着什么，然后把中间补上。</p>
+<p><strong>麻烦在于：GPT 这类模型天生只会"接龙"——只能用左边猜右边，被明令禁止偷看后文。</strong>
+<strong>让它学会做完形填空的那个办法，叫 FIM（Fill-in-the-Middle），思路简单到有点耍赖。</strong></p>
+<p>这篇文章不看论文、不推公式，全部用能跑起来的 PyTorch 代码，
+从英语试卷上的那几个括号，一路接到 Copilot 补代码的真实机制。顺手回答四个灵魂拷问：</p>
+<ul>
+<li>GPT 号称只会往后接龙，为什么它能补你光标<strong>中间</strong>的代码？</li>
+<li>因果掩码明明规定"不许看后文"，FIM 是怎么合法作弊的？</li>
+<li>BERT 天生就会做完形填空，为什么不干脆用它来补代码？</li>
+<li><code>&lt;|fim_prefix|&gt;</code> <code>&lt;|fim_suffix|&gt;</code> <code>&lt;|fim_middle|&gt;</code> 这三个怪 token 到底在干嘛？</li>
+</ul>
+</blockquote>
+<hr />
+<h2 id="0-一句话主线">0. 一句话主线</h2>
+<p>如果只能留一句话，那就是这句：</p>
+<blockquote>
+<p><strong>完形填空的灵魂是"用两边猜中间"；GPT 的天性是"用左边猜右边"。
+FIM 干的事情只有一件——把右边那段剪下来、搬到左边去。
+于是"偷看后文"这件被禁止的事，摇身一变成了完全合法的"回看前文"。</strong></p>
+</blockquote>
+<p>不改模型结构、不改损失函数、不加任何新参数，<strong>只改数据的摆放顺序</strong>。
+这就是今天 Copilot、Cursor、通义灵码在你光标处补全代码的全部秘密。</p>
+<p>先感受一下"往后读两行"到底值多少钱——用信息熵量一量：</p>
+<div class="highlight"><pre><span></span><code><span class="kn">import</span><span class="w"> </span><span class="nn">torch</span>
+
+<span class="n">cand</span>   <span class="o">=</span> <span class="p">[</span><span class="s2">&quot;学校&quot;</span><span class="p">,</span> <span class="s2">&quot;公园&quot;</span><span class="p">,</span> <span class="s2">&quot;书店&quot;</span><span class="p">,</span> <span class="s2">&quot;医院&quot;</span><span class="p">]</span>
+<span class="n">p_left</span> <span class="o">=</span> <span class="n">torch</span><span class="o">.</span><span class="n">tensor</span><span class="p">([</span><span class="mf">0.30</span><span class="p">,</span> <span class="mf">0.25</span><span class="p">,</span> <span class="mf">0.25</span><span class="p">,</span> <span class="mf">0.20</span><span class="p">])</span>   <span class="c1"># 只看左文「我昨天去 ___」（示意分布）</span>
+<span class="n">p_both</span> <span class="o">=</span> <span class="n">torch</span><span class="o">.</span><span class="n">tensor</span><span class="p">([</span><span class="mf">0.02</span><span class="p">,</span> <span class="mf">0.01</span><span class="p">,</span> <span class="mf">0.95</span><span class="p">,</span> <span class="mf">0.02</span><span class="p">])</span>   <span class="c1"># 再看到右文「___ 买了一本书」（示意分布）</span>
+
+<span class="n">entropy</span> <span class="o">=</span> <span class="k">lambda</span> <span class="n">p</span><span class="p">:</span> <span class="o">-</span><span class="p">(</span><span class="n">p</span> <span class="o">*</span> <span class="n">p</span><span class="o">.</span><span class="n">log</span><span class="p">())</span><span class="o">.</span><span class="n">sum</span><span class="p">()</span>          <span class="c1"># 熵 = 还剩多少不确定性</span>
+<span class="nb">print</span><span class="p">(</span><span class="sa">f</span><span class="s2">&quot;只看左边  熵 = </span><span class="si">{</span><span class="n">entropy</span><span class="p">(</span><span class="n">p_left</span><span class="p">)</span><span class="si">:</span><span class="s2">.3f</span><span class="si">}</span><span class="s2">  -&gt; 四个地方都说得通&quot;</span><span class="p">)</span>
+<span class="nb">print</span><span class="p">(</span><span class="sa">f</span><span class="s2">&quot;两边都看  熵 = </span><span class="si">{</span><span class="n">entropy</span><span class="p">(</span><span class="n">p_both</span><span class="p">)</span><span class="si">:</span><span class="s2">.3f</span><span class="si">}</span><span class="s2">  -&gt; 几乎锁定「书店」&quot;</span><span class="p">)</span>
+<span class="c1"># 只看左边 1.376 / 两边都看 0.251 —— 后文一句话，把不确定性砍掉了 82%</span>
+</code></pre></div>
+
+<p><strong>那 82% 就是"后文"的价值。</strong>代码里这个价值只会更高——你光标下面那行 <code>return result</code>，
+几乎单枪匹马就决定了中间该写什么。下面所有内容都挂在这一点上。</p>
+<hr />
+<h2 id="1-接龙和完形填空是两道不同的题">1. "接龙"和"完形填空"，是两道不同的题</h2>
+<p>先把两道题的形状摆清楚：</p>
+<table>
+<thead>
+<tr>
+<th></th>
+<th>给你什么</th>
+<th>让你猜什么</th>
+<th>谁擅长</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><strong>接龙（自回归）</strong></td>
+<td>左文</td>
+<td>下一个词</td>
+<td>GPT</td>
+</tr>
+<tr>
+<td><strong>完形填空</strong></td>
+<td>左文 <strong>+ 右文</strong></td>
+<td>中间那段</td>
+<td>人类考生 / BERT</td>
+</tr>
+</tbody>
+</table>
+<p>而<strong>代码补全天生是第二种题</strong>。你在 IDE 里写代码，光标从来不在文件末尾：</p>
+<div class="highlight"><pre><span></span><code><span class="n">code</span> <span class="o">=</span> <span class="s2">&quot;&quot;&quot;</span>
+<span class="s2">def load_config(path):</span>
+<span class="s2">    with open(path) as f:</span>
+<span class="s2">        raw = f.read()</span>
+<span class="s2">    ▮                       # ← 光标在这里，上有 raw，下有 return cfg</span>
+<span class="s2">    return cfg</span>
+<span class="s2">&quot;&quot;&quot;</span>
+</code></pre></div>
+
+<p>光标上面告诉你"有个字符串叫 <code>raw</code>"，光标下面告诉你"必须造出一个叫 <code>cfg</code> 的东西"。
+只看上文，你能写出一万种合法的下一行；<strong>看了下文，答案基本只剩 <code>cfg = json.loads(raw)</code> 这一类。</strong></p>
+<p>所以问题变成：一个只会接龙的模型，怎么去做一道完形填空题？</p>
+<hr />
+<h2 id="2-gpt-的考场纪律因果掩码明令禁止偷看后面">2. GPT 的考场纪律：因果掩码，明令禁止偷看后面</h2>
+<p>GPT 做不了完形填空，不是因为笨，是因为<strong>规矩不许</strong>。
+它的注意力里有一张"下三角"的掩码矩阵，规定每个位置只能看到自己和左边：</p>
+<div class="highlight"><pre><span></span><code><span class="kn">import</span><span class="w"> </span><span class="nn">torch</span>
+
+<span class="n">toks</span> <span class="o">=</span> <span class="p">[</span><span class="s2">&quot;def&quot;</span><span class="p">,</span> <span class="s2">&quot;add&quot;</span><span class="p">,</span> <span class="s2">&quot;(a,b)&quot;</span><span class="p">,</span> <span class="s2">&quot;:&quot;</span><span class="p">,</span> <span class="s2">&quot;result&quot;</span><span class="p">,</span> <span class="s2">&quot;=&quot;</span><span class="p">,</span> <span class="s2">&quot;a+b&quot;</span><span class="p">,</span> <span class="s2">&quot;return&quot;</span><span class="p">,</span> <span class="s2">&quot;result&quot;</span><span class="p">]</span>
+<span class="n">T</span> <span class="o">=</span> <span class="nb">len</span><span class="p">(</span><span class="n">toks</span><span class="p">)</span>
+<span class="n">mask</span> <span class="o">=</span> <span class="n">torch</span><span class="o">.</span><span class="n">tril</span><span class="p">(</span><span class="n">torch</span><span class="o">.</span><span class="n">ones</span><span class="p">(</span><span class="n">T</span><span class="p">,</span> <span class="n">T</span><span class="p">,</span> <span class="n">dtype</span><span class="o">=</span><span class="n">torch</span><span class="o">.</span><span class="n">int</span><span class="p">))</span>   <span class="c1"># 下三角 = 只能往左看</span>
+
+<span class="nb">print</span><span class="p">(</span><span class="n">mask</span><span class="p">)</span>
+<span class="nb">print</span><span class="p">(</span><span class="s2">&quot;第 4 个位置(result)能看到:&quot;</span><span class="p">,</span> <span class="p">[</span><span class="n">toks</span><span class="p">[</span><span class="n">i</span><span class="p">]</span> <span class="k">for</span> <span class="n">i</span> <span class="ow">in</span> <span class="n">mask</span><span class="p">[</span><span class="mi">4</span><span class="p">]</span><span class="o">.</span><span class="n">nonzero</span><span class="p">()</span><span class="o">.</span><span class="n">flatten</span><span class="p">()])</span>
+<span class="c1"># [&#39;def&#39;, &#39;add&#39;, &#39;(a,b)&#39;, &#39;:&#39;, &#39;result&#39;] —— 后面的 return 它一眼都看不到</span>
+</code></pre></div>
+
+<p>这张下三角矩阵就是<strong>考试纪律</strong>：答第 4 题时，第 5 题往后的卷面全被盖住。</p>
+<p>为什么要这么严？因为训练时模型在同一批数据里<strong>同时</strong>学"第 1 个字→第 2 个字""第 2 个字→第 3 个字"……
+如果允许它看后面，它一低头就抄到了标准答案，训练直接作废。
+<strong>因果掩码是自回归模型能高效训练的地基，动不得。</strong></p>
+<p>于是矛盾摆在这里：</p>
+<blockquote>
+<p>代码补全<strong>必须</strong>看后文，而 GPT 的地基<strong>禁止</strong>看后文。</p>
+</blockquote>
+<hr />
+<h2 id="3-那为什么不用-bert它天生就会做完形填空">3. 那为什么不用 BERT？它天生就会做完形填空</h2>
+<p>好问题。BERT 的训练任务（MLM，掩码语言模型）字面意思就是完形填空：
+把句子里 15% 的词换成 <code>[MASK]</code>，模型看着<strong>左右两边</strong>把它们猜回来。它天生双向。</p>
+<p>但 BERT 有个致命短板：<strong>它只会填"给定个数"的空。</strong></p>
+<div class="highlight"><pre><span></span><code><span class="c1"># BERT 式填空：挖了几个空是题目给定的，模型只在这几个坑上出答案</span>
+<span class="n">masked</span> <span class="o">=</span> <span class="p">[</span><span class="s2">&quot;def&quot;</span><span class="p">,</span> <span class="s2">&quot;add&quot;</span><span class="p">,</span> <span class="s2">&quot;(a,b)&quot;</span><span class="p">,</span> <span class="s2">&quot;:&quot;</span><span class="p">,</span> <span class="s2">&quot;[MASK]&quot;</span><span class="p">,</span> <span class="s2">&quot;[MASK]&quot;</span><span class="p">,</span> <span class="s2">&quot;[MASK]&quot;</span><span class="p">,</span> <span class="s2">&quot;return&quot;</span><span class="p">,</span> <span class="s2">&quot;result&quot;</span><span class="p">]</span>
+<span class="nb">print</span><span class="p">(</span><span class="s2">&quot;必须提前告诉它挖了几个空:&quot;</span><span class="p">,</span> <span class="n">masked</span><span class="o">.</span><span class="n">count</span><span class="p">(</span><span class="s2">&quot;[MASK]&quot;</span><span class="p">))</span>   <span class="c1"># 3</span>
+
+<span class="c1"># 自回归式生成：写几个词是模型自己决定的，写到 &lt;eos&gt; 才停</span>
+<span class="n">draft</span><span class="p">,</span> <span class="n">out</span> <span class="o">=</span> <span class="p">[</span><span class="s2">&quot;result&quot;</span><span class="p">,</span> <span class="s2">&quot;=&quot;</span><span class="p">,</span> <span class="s2">&quot;a&quot;</span><span class="p">,</span> <span class="s2">&quot;+&quot;</span><span class="p">,</span> <span class="s2">&quot;b&quot;</span><span class="p">,</span> <span class="s2">&quot;&lt;eos&gt;&quot;</span><span class="p">],</span> <span class="p">[]</span>      <span class="c1"># 示意：模型逐个吐出的 token</span>
+<span class="k">for</span> <span class="n">t</span> <span class="ow">in</span> <span class="n">draft</span><span class="p">:</span>
+    <span class="k">if</span> <span class="n">t</span> <span class="o">==</span> <span class="s2">&quot;&lt;eos&gt;&quot;</span><span class="p">:</span>
+        <span class="k">break</span>
+    <span class="n">out</span><span class="o">.</span><span class="n">append</span><span class="p">(</span><span class="n">t</span><span class="p">)</span>
+<span class="nb">print</span><span class="p">(</span><span class="s2">&quot;模型自己决定写多长:&quot;</span><span class="p">,</span> <span class="n">out</span><span class="p">)</span>                              <span class="c1"># [&#39;result&#39;,&#39;=&#39;,&#39;a&#39;,&#39;+&#39;,&#39;b&#39;]</span>
+</code></pre></div>
+
+<p>差别看着小，实际是天堑。你在 IDE 里按下补全，<strong>没有人知道该补几个 token</strong>——
+可能是半个变量名，也可能是十七行的错误处理。BERT 要求你先说"我要填 3 个词"，这根本没法用。</p>
+<p>一句话总结这场对垒：</p>
+<blockquote>
+<p><strong>BERT 会填空，但不会写作文；GPT 会写作文，但不会填空。</strong>
+而代码补全要的是一个<strong>会写作文的填空高手</strong>。</p>
+</blockquote>
+<p>FIM 的答案是：不换模型，让 GPT 学会做填空题。</p>
+<hr />
+<h2 id="4-fim-的绝招不改模型改座位">4. FIM 的绝招：不改模型，改座位</h2>
+<p>思路简单到令人发指——<strong>既然模型只许往左看，那就把"右边"搬到左边去。</strong></p>
+<p>一段代码被切成三份：光标前的 <code>prefix</code>、要补的 <code>middle</code>、光标后的 <code>suffix</code>。
+原来的顺序是 <code>P → M → S</code>，FIM 把它重排成：</p>
+<div class="highlight"><pre><span></span><code>&lt;|fim_prefix|&gt; P &lt;|fim_suffix|&gt; S &lt;|fim_middle|&gt; M
+</code></pre></div>
+
+<p>看清楚：<strong><code>suffix</code> 被挪到了 <code>middle</code> 前面。</strong> 十行代码就能实现：</p>
+<div class="highlight"><pre><span></span><code><span class="k">def</span><span class="w"> </span><span class="nf">apply_fim</span><span class="p">(</span><span class="n">tokens</span><span class="p">,</span> <span class="n">lo</span><span class="p">,</span> <span class="n">hi</span><span class="p">):</span>
+<span class="w">    </span><span class="sd">&quot;&quot;&quot;把 tokens[lo:hi] 挖成待填的 middle，并按 PSM 顺序重排&quot;&quot;&quot;</span>
+    <span class="n">prefix</span><span class="p">,</span> <span class="n">middle</span><span class="p">,</span> <span class="n">suffix</span> <span class="o">=</span> <span class="n">tokens</span><span class="p">[:</span><span class="n">lo</span><span class="p">],</span> <span class="n">tokens</span><span class="p">[</span><span class="n">lo</span><span class="p">:</span><span class="n">hi</span><span class="p">],</span> <span class="n">tokens</span><span class="p">[</span><span class="n">hi</span><span class="p">:]</span>
+    <span class="k">return</span> <span class="p">([</span><span class="s2">&quot;&lt;|fim_prefix|&gt;&quot;</span><span class="p">]</span> <span class="o">+</span> <span class="n">prefix</span>
+          <span class="o">+</span> <span class="p">[</span><span class="s2">&quot;&lt;|fim_suffix|&gt;&quot;</span><span class="p">]</span> <span class="o">+</span> <span class="n">suffix</span>
+          <span class="o">+</span> <span class="p">[</span><span class="s2">&quot;&lt;|fim_middle|&gt;&quot;</span><span class="p">]</span> <span class="o">+</span> <span class="n">middle</span><span class="p">)</span>
+
+<span class="n">code</span> <span class="o">=</span> <span class="p">[</span><span class="s2">&quot;def&quot;</span><span class="p">,</span> <span class="s2">&quot;add&quot;</span><span class="p">,</span> <span class="s2">&quot;(a,b)&quot;</span><span class="p">,</span> <span class="s2">&quot;:&quot;</span><span class="p">,</span> <span class="s2">&quot;result&quot;</span><span class="p">,</span> <span class="s2">&quot;=&quot;</span><span class="p">,</span> <span class="s2">&quot;a+b&quot;</span><span class="p">,</span> <span class="s2">&quot;return&quot;</span><span class="p">,</span> <span class="s2">&quot;result&quot;</span><span class="p">]</span>
+<span class="n">fim</span>  <span class="o">=</span> <span class="n">apply_fim</span><span class="p">(</span><span class="n">code</span><span class="p">,</span> <span class="mi">4</span><span class="p">,</span> <span class="mi">7</span><span class="p">)</span>          <span class="c1"># 挖掉 result = a+b</span>
+<span class="nb">print</span><span class="p">(</span><span class="s2">&quot; &quot;</span><span class="o">.</span><span class="n">join</span><span class="p">(</span><span class="n">fim</span><span class="p">))</span>
+<span class="c1"># &lt;|fim_prefix|&gt; def add (a,b) : &lt;|fim_suffix|&gt; return result &lt;|fim_middle|&gt; result = a+b</span>
+</code></pre></div>
+
+<p>对着这行输出念一遍，你就懂了整个 FIM：</p>
+<blockquote>
+<p>「<strong>前面是</strong>：<code>def add(a,b):</code>；<strong>后面是</strong>：<code>return result</code>；<strong>现在，把中间补上</strong>：」</p>
+</blockquote>
+<p>这不就是一道完形填空的<strong>题干格式</strong>吗？前情、后情、然后开始作答。
+模型从头到尾还是在老老实实地"用左边猜右边"——只是这一次，<strong>左边里已经包含了后文。</strong></p>
+<hr />
+<h2 id="疑惑点一把后文搬到前面不就把代码顺序搞乱了吗模型不会学疯吗">🤔 疑惑点一：把后文搬到前面，不就把代码顺序搞乱了吗？模型不会学疯吗？</h2>
+<p><strong>不会。因为那三个 <code>&lt;|fim_*|&gt;</code> 标记就是"题干格式"本身——模型在训练里见过几百亿次，它学会的不是"代码就长这样"，而是"看到这个格式，就该做填空题"。</strong></p>
+<p>打个比方：英语试卷上的完形填空，选项 A/B/C/D 印在文章下面，这<strong>并不意味着</strong>英语句子的语序错了。
+<code>A. tell  B. told  C. telling  D. to tell</code> 是<strong>题目的排版</strong>，不是<strong>语言本身</strong>。你的大脑一眼就能区分二者。</p>
+<p>模型也一样。<code>&lt;|fim_prefix|&gt;</code> 这些 token 在正常代码里<strong>永远不会出现</strong>，
+所以它们是绝对无歧义的信号灯——一亮起来，模型就知道"接下来是填空题的排版，不是代码的语序"。</p>
+<p>而且训练时并<strong>不是</strong>所有样本都做 FIM 变换。实践中通常留一半左右保持原样：</p>
+<ul>
+<li>一半样本走 <strong>FIM</strong>：学会"看到题干格式就填中间"</li>
+<li>一半样本走<strong>普通接龙</strong>：保住原本的续写能力，别把作文本事忘了</li>
+</ul>
+<p>OpenAI 2022 年那篇 FIM 论文里最漂亮的结论就是：<strong>加了 FIM 训练，模型原本的续写能力几乎零损失</strong>——
+论文标题里那句 "FIM-for-free"（白送的填空能力）说的就是这件事。
+今天 StarCoder、CodeLlama、DeepSeek-Coder、Qwen-Coder 全都这么训。</p>
+<hr />
+<h2 id="5-用代码证明重排之后middle-真的能合法看到-suffix">5. 用代码证明：重排之后，middle 真的能"合法"看到 suffix</h2>
+<p>嘴上说没用，直接查位置索引。因果掩码只认一件事：<strong>你的下标比我小，我就能看见你。</strong></p>
+<div class="highlight"><pre><span></span><code><span class="kn">import</span><span class="w"> </span><span class="nn">torch</span>
+
+<span class="n">i_suf</span> <span class="o">=</span> <span class="n">fim</span><span class="o">.</span><span class="n">index</span><span class="p">(</span><span class="s2">&quot;&lt;|fim_suffix|&gt;&quot;</span><span class="p">)</span>
+<span class="n">i_mid</span> <span class="o">=</span> <span class="n">fim</span><span class="o">.</span><span class="n">index</span><span class="p">(</span><span class="s2">&quot;&lt;|fim_middle|&gt;&quot;</span><span class="p">)</span>
+
+<span class="nb">print</span><span class="p">(</span><span class="s2">&quot;suffix 段占据的位置:&quot;</span><span class="p">,</span> <span class="nb">list</span><span class="p">(</span><span class="nb">range</span><span class="p">(</span><span class="n">i_suf</span> <span class="o">+</span> <span class="mi">1</span><span class="p">,</span> <span class="n">i_mid</span><span class="p">)))</span>     <span class="c1"># [6, 7]</span>
+<span class="nb">print</span><span class="p">(</span><span class="s2">&quot;middle 段占据的位置:&quot;</span><span class="p">,</span> <span class="nb">list</span><span class="p">(</span><span class="nb">range</span><span class="p">(</span><span class="n">i_mid</span> <span class="o">+</span> <span class="mi">1</span><span class="p">,</span> <span class="nb">len</span><span class="p">(</span><span class="n">fim</span><span class="p">))))</span>  <span class="c1"># [9, 10, 11]</span>
+
+<span class="n">T</span> <span class="o">=</span> <span class="nb">len</span><span class="p">(</span><span class="n">fim</span><span class="p">)</span>
+<span class="n">mask</span> <span class="o">=</span> <span class="n">torch</span><span class="o">.</span><span class="n">tril</span><span class="p">(</span><span class="n">torch</span><span class="o">.</span><span class="n">ones</span><span class="p">(</span><span class="n">T</span><span class="p">,</span> <span class="n">T</span><span class="p">,</span> <span class="n">dtype</span><span class="o">=</span><span class="n">torch</span><span class="o">.</span><span class="n">int</span><span class="p">))</span>
+<span class="n">first_mid</span> <span class="o">=</span> <span class="n">i_mid</span> <span class="o">+</span> <span class="mi">1</span>                                   <span class="c1"># 要生成的第一个 middle token</span>
+<span class="nb">print</span><span class="p">(</span><span class="s2">&quot;它能看到:&quot;</span><span class="p">,</span> <span class="p">[</span><span class="n">fim</span><span class="p">[</span><span class="n">i</span><span class="p">]</span> <span class="k">for</span> <span class="n">i</span> <span class="ow">in</span> <span class="n">mask</span><span class="p">[</span><span class="n">first_mid</span><span class="p">]</span><span class="o">.</span><span class="n">nonzero</span><span class="p">()</span><span class="o">.</span><span class="n">flatten</span><span class="p">()])</span>
+</code></pre></div>
+
+<p>输出的最后一行里，<strong><code>return</code> 和 <code>result</code> 赫然在列</strong>。</p>
+<p>对比第 2 节：在原始顺序下，第 4 个位置（要填的空）看不到任何后文；
+重排之后，同样的因果掩码、同样的模型、一个参数没改，<strong>后文已经堂堂正正地躺在它的视野里了。</strong></p>
+<p>这就是全部的"作弊"手法——它甚至称不上作弊，因为规矩一条都没破。
+<strong>规矩说"只能往左看"，FIM 说"那我把它放到左边不就行了"。</strong></p>
+<hr />
+<h2 id="6-loss-只算-middle只批改被挖空的那几个格子">6. loss 只算 middle：只批改被挖空的那几个格子</h2>
+<p>还有一个容易忽略但很关键的细节：<strong>训练时只在 <code>middle</code> 段上计算损失。</strong></p>
+<p>道理很直白——<code>prefix</code> 和 <code>suffix</code> 是<strong>题干</strong>，是白送给模型的条件，
+让它去"预测题干"毫无意义，还会稀释真正的学习信号。只有 <code>middle</code> 是<strong>答案</strong>，只批改答案。</p>
+<div class="highlight"><pre><span></span><code><span class="kn">import</span><span class="w"> </span><span class="nn">torch</span>
+<span class="kn">import</span><span class="w"> </span><span class="nn">torch.nn.functional</span><span class="w"> </span><span class="k">as</span><span class="w"> </span><span class="nn">F</span>
+
+<span class="n">vocab</span> <span class="o">=</span> <span class="p">{</span><span class="n">t</span><span class="p">:</span> <span class="n">i</span> <span class="k">for</span> <span class="n">i</span><span class="p">,</span> <span class="n">t</span> <span class="ow">in</span> <span class="nb">enumerate</span><span class="p">(</span><span class="nb">dict</span><span class="o">.</span><span class="n">fromkeys</span><span class="p">(</span><span class="n">fim</span><span class="p">))}</span>
+<span class="n">ids</span>   <span class="o">=</span> <span class="n">torch</span><span class="o">.</span><span class="n">tensor</span><span class="p">([</span><span class="n">vocab</span><span class="p">[</span><span class="n">t</span><span class="p">]</span> <span class="k">for</span> <span class="n">t</span> <span class="ow">in</span> <span class="n">fim</span><span class="p">])</span>
+
+<span class="n">labels</span> <span class="o">=</span> <span class="n">ids</span><span class="o">.</span><span class="n">clone</span><span class="p">()</span>
+<span class="n">labels</span><span class="p">[:</span> <span class="n">i_mid</span> <span class="o">+</span> <span class="mi">1</span><span class="p">]</span> <span class="o">=</span> <span class="o">-</span><span class="mi">100</span>          <span class="c1"># 题干（含三个标记）全部屏蔽，-100 = 不计 loss</span>
+<span class="nb">print</span><span class="p">(</span><span class="n">labels</span><span class="o">.</span><span class="n">tolist</span><span class="p">())</span>              <span class="c1"># 前面一串 -100，只有末尾 middle 保留真实 id</span>
+
+<span class="n">torch</span><span class="o">.</span><span class="n">manual_seed</span><span class="p">(</span><span class="mi">0</span><span class="p">)</span>
+<span class="n">logits</span> <span class="o">=</span> <span class="n">torch</span><span class="o">.</span><span class="n">randn</span><span class="p">(</span><span class="nb">len</span><span class="p">(</span><span class="n">ids</span><span class="p">),</span> <span class="nb">len</span><span class="p">(</span><span class="n">vocab</span><span class="p">))</span>                   <span class="c1"># 假装这是模型输出</span>
+<span class="n">loss</span> <span class="o">=</span> <span class="n">F</span><span class="o">.</span><span class="n">cross_entropy</span><span class="p">(</span><span class="n">logits</span><span class="p">,</span> <span class="n">labels</span><span class="p">,</span> <span class="n">ignore_index</span><span class="o">=-</span><span class="mi">100</span><span class="p">)</span>
+<span class="nb">print</span><span class="p">(</span><span class="sa">f</span><span class="s2">&quot;只在 </span><span class="si">{</span><span class="nb">int</span><span class="p">((</span><span class="n">labels</span><span class="w"> </span><span class="o">!=</span><span class="w"> </span><span class="o">-</span><span class="mi">100</span><span class="p">)</span><span class="o">.</span><span class="n">sum</span><span class="p">())</span><span class="si">}</span><span class="s2"> 个 middle token 上算 loss -&gt; </span><span class="si">{</span><span class="n">loss</span><span class="si">:</span><span class="s2">.3f</span><span class="si">}</span><span class="s2">&quot;</span><span class="p">)</span>
+<span class="c1"># 为了看清&quot;哪些位置参与批改&quot;，这里省略了真实训练中输入/标签错开一格的细节</span>
+</code></pre></div>
+
+<p><code>ignore_index=-100</code> 这一个参数，就是"只批改被挖空的格子"的全部实现。</p>
+<hr />
+<h2 id="疑惑点二还有个-spm-模式为什么要有两种排法">🤔 疑惑点二：还有个 SPM 模式，为什么要有两种排法？</h2>
+<p><strong>因为把 <code>suffix</code> 放前面还是把 <code>prefix</code> 放前面，决定了模型在"补全刚开始打的那半个词"时能不能接得住。</strong></p>
+<p>除了上面的 PSM（Prefix-Suffix-Middle），还有一种排法叫 SPM：</p>
+<div class="highlight"><pre><span></span><code>PSM:  &lt;prefix&gt; P &lt;suffix&gt; S &lt;middle&gt; M      # 前情 → 后情 → 作答
+SPM:  &lt;suffix&gt; S &lt;prefix&gt; P &lt;middle&gt; M      # 后情 → 前情 → 作答
+</code></pre></div>
+
+<p>区别在于<strong>谁紧挨着 <code>middle</code></strong>。SPM 里 <code>prefix</code> 就贴在答案前面，中间不隔任何东西——
+这在一种极常见的场景下很重要：<strong>你已经敲了半个词。</strong></p>
+<p>比如你打到 <code>cfg = json.lo▮</code>，模型要补的是 <code>ads(raw)</code>。
+这时 <code>prefix</code> 的最后几个字符（<code>json.lo</code>）和答案的第一个字符是<strong>咬死在一起</strong>的，
+中间隔着一段 <code>suffix</code> 会让模型更容易接崩。SPM 把它俩贴紧，续得更顺。</p>
+<p>实践中的做法是<strong>两种排法混着训</strong>（各占一半），推理时按场景挑一种用。
+说到底还是那句话：<strong>变的只是座位表，模型一个参数都没动。</strong></p>
+<hr />
+<h2 id="动手亲眼看着后文被搬到左边">🎬 动手：亲眼看着"后文"被搬到左边</h2>
+<p>把上面所有画面缝成一个能跑的最小 FIM 数据管线——注意 <code>rate=0.5</code>，
+一半样本做填空、一半保持接龙，这是真实训练里的标准配比：</p>
+<div class="highlight"><pre><span></span><code><span class="kn">import</span><span class="w"> </span><span class="nn">random</span>
+
+<span class="k">def</span><span class="w"> </span><span class="nf">make_sample</span><span class="p">(</span><span class="n">tokens</span><span class="p">,</span> <span class="n">rate</span><span class="o">=</span><span class="mf">0.5</span><span class="p">,</span> <span class="n">seed</span><span class="o">=</span><span class="mi">0</span><span class="p">):</span>
+    <span class="n">rng</span> <span class="o">=</span> <span class="n">random</span><span class="o">.</span><span class="n">Random</span><span class="p">(</span><span class="n">seed</span><span class="p">)</span>
+    <span class="k">if</span> <span class="n">rng</span><span class="o">.</span><span class="n">random</span><span class="p">()</span> <span class="o">&gt;</span> <span class="n">rate</span><span class="p">:</span>
+        <span class="k">return</span> <span class="n">tokens</span>                                  <span class="c1"># 保持原样：普通接龙样本</span>
+    <span class="n">lo</span><span class="p">,</span> <span class="n">hi</span> <span class="o">=</span> <span class="nb">sorted</span><span class="p">(</span><span class="n">rng</span><span class="o">.</span><span class="n">sample</span><span class="p">(</span><span class="nb">range</span><span class="p">(</span><span class="nb">len</span><span class="p">(</span><span class="n">tokens</span><span class="p">)</span> <span class="o">+</span> <span class="mi">1</span><span class="p">),</span> <span class="mi">2</span><span class="p">))</span>
+    <span class="k">return</span> <span class="n">apply_fim</span><span class="p">(</span><span class="n">tokens</span><span class="p">,</span> <span class="n">lo</span><span class="p">,</span> <span class="n">hi</span><span class="p">)</span>                   <span class="c1"># 随机挖一段：FIM 样本</span>
+
+<span class="n">code</span> <span class="o">=</span> <span class="s2">&quot;def add ( a , b ) : result = a + b return result&quot;</span><span class="o">.</span><span class="n">split</span><span class="p">()</span>
+<span class="k">for</span> <span class="n">s</span> <span class="ow">in</span> <span class="nb">range</span><span class="p">(</span><span class="mi">5</span><span class="p">):</span>
+    <span class="nb">print</span><span class="p">(</span><span class="sa">f</span><span class="s2">&quot;seed=</span><span class="si">{</span><span class="n">s</span><span class="si">}</span><span class="s2">:&quot;</span><span class="p">,</span> <span class="s2">&quot; &quot;</span><span class="o">.</span><span class="n">join</span><span class="p">(</span><span class="n">make_sample</span><span class="p">(</span><span class="n">code</span><span class="p">,</span> <span class="n">seed</span><span class="o">=</span><span class="n">s</span><span class="p">)))</span>
+<span class="c1"># 你会看到有的行原封不动，有的行被剪开重排 —— 同一个模型两种题都练</span>
+</code></pre></div>
+
+<p>仓库里的动画脚本把这个"剪切—搬运"的过程画了出来：</p>
+<div class="highlight"><pre><span></span><code>python<span class="w"> </span>cloze_fim_visualization.py
+</code></pre></div>
+
+<blockquote>
+<p>左图是<strong>原始顺序</strong>：光标处那一格向左射出一道视野，后文那几格被灰掉，打上"看不见"。
+中图是 <strong>FIM 重排后</strong>：同一道视野，因为 <code>suffix</code> 已经被搬到左边，它现在<strong>亮着</strong>被包含在内。
+右图是动画：middle 一个 token 一个 token 地被生成，你能看到它每一步的可见窗口——
+<strong>始终只往左看，却始终看得见后文。</strong></p>
+</blockquote>
+<hr />
+<h2 id="缝合把所有画面接起来">缝合：把所有画面接起来</h2>
+<table>
+<thead>
+<tr>
+<th>完形填空里的东西</th>
+<th>英语课怎么讲</th>
+<th>这篇文章怎么看（画面）</th>
+<th>在大模型里是什么</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><strong>挖掉的那个括号</strong></td>
+<td>空</td>
+<td>光标所在的位置（第 1 节）</td>
+<td><code>middle</code>，唯一要生成的部分</td>
+</tr>
+<tr>
+<td><strong>空前面那半句</strong></td>
+<td>上文</td>
+<td>已经写好的代码（第 1 节）</td>
+<td><code>prefix</code></td>
+</tr>
+<tr>
+<td><strong>"一定要往后读两行"</strong></td>
+<td>下文</td>
+<td>砍掉 82% 不确定性（第 0 节）</td>
+<td><code>suffix</code>，FIM 的全部价值所在</td>
+</tr>
+<tr>
+<td><strong>不许翻到后一页</strong></td>
+<td>考场纪律</td>
+<td>下三角掩码（第 2 节）</td>
+<td>因果掩码，自回归的地基</td>
+</tr>
+<tr>
+<td><strong>题干的排版</strong></td>
+<td>A/B/C/D 印在文章下面</td>
+<td>排版 ≠ 语序（疑惑点一）</td>
+<td><code>&lt;\|fim_prefix\|&gt;</code> 等特殊 token</td>
+</tr>
+<tr>
+<td><strong>只批改填空题</strong></td>
+<td>阅读理解不算这题的分</td>
+<td>只在答案格上算分（第 6 节）</td>
+<td><code>ignore_index=-100</code></td>
+</tr>
+</tbody>
+</table>
+<p>三句话总结这篇文章：</p>
+<blockquote>
+<p><strong>代码补全天生是完形填空题</strong>，因为光标下面那行几乎决定了中间该写什么（第 0、1 节）；
+<strong>但 GPT 被因果掩码钉死在"只能往左看"上</strong>，它天生只会接龙、不会填空（第 2、3 节）；
+<strong>于是 FIM 把后文剪下来搬到左边</strong>——规矩一条没破，填空能力凭空长出来（第 4、5 节）。</p>
+</blockquote>
+<p>英语老师当年反复念叨的"一定要往后读两行"，你大概觉得那只是个应试技巧。
+<strong>十几年后，同一句话被写成了三个特殊 token，塞进每一个代码大模型的训练数据里，
+成了你光标中间那三行代码凭空冒出来的原因。</strong></p>
+<p>下次按下补全键的时候，你可以想一想：
+<strong>它正在做的，是一道你做过几百遍的完形填空——只不过这一次，它把答案纸剪开重新排了个座位。</strong></p>
+<hr />
+<blockquote>
+<p><strong>备注（选题/标题）：</strong> 这篇走"学生时代的日常经验其实是 AI 机制"的钩子，
+比"高中数学"系列门槛更低（文理科通吃）。若要并入高中系列，标题可换成：
+《英语卷子上做了十几年的完形填空，原来是大模型补代码的唯一办法》。</p>
+</blockquote>
+    </div>
+  </article>
+
+</main>
+
+<!-- Floating Ask-AI chat widget -->
+<button class="ai-fab" id="ai-fab" aria-label="Ask AI about this article" title="Ask AI about this article">
+  <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+    <path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"/>
+  </svg>
+  <span class="ai-fab-label">Ask AI</span>
+</button>
+
+<div class="ai-panel" id="ai-panel" role="dialog" aria-labelledby="ai-panel-title" aria-hidden="true">
+  <header class="ai-panel-head">
+    <div class="ai-panel-title-wrap">
+      <span class="ai-dot"></span>
+      <h3 id="ai-panel-title">Ask AI about this post</h3>
+    </div>
+    <div class="ai-panel-actions">
+      <button class="ai-icon-btn" id="ai-clear" title="Clear conversation" aria-label="Clear">
+        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><polyline points="3 6 5 6 21 6"/><path d="M19 6l-1 14a2 2 0 0 1-2 2H8a2 2 0 0 1-2-2L5 6"/><path d="M10 11v6M14 11v6"/><path d="M9 6V4a1 1 0 0 1 1-1h4a1 1 0 0 1 1 1v2"/></svg>
+      </button>
+      <button class="ai-icon-btn" id="ai-close" title="Minimize" aria-label="Minimize">
+        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><polyline points="6 9 12 15 18 9"/></svg>
+      </button>
+    </div>
+  </header>
+
+  <div class="ai-messages" id="ai-messages">
+    <div class="ai-empty" id="ai-empty">
+      <p class="ai-empty-title">On-device AI · Gemini Nano</p>
+      <p class="ai-empty-sub">Ask anything about this article. Runs in your browser — nothing leaves your device.</p>
+    </div>
+  </div>
+
+  <div class="ai-status" id="ai-status" hidden></div>
+
+  <form class="ai-composer" id="ai-form">
+    <textarea id="ai-input" rows="1" placeholder="Ask about this post…" autocomplete="off"></textarea>
+    <button type="submit" id="ai-send" class="ai-send" aria-label="Send" disabled>
+      <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><line x1="22" y1="2" x2="11" y2="13"/><polygon points="22 2 15 22 11 13 2 9 22 2"/></svg>
+    </button>
+  </form>
+</div>
+
+<script>
+(function () {
+  const POST_TITLE = "\u82f1\u8bed\u8003\u8bd5\u7684\u5b8c\u5f62\u586b\u7a7a\uff0c\u5c31\u662f\u5927\u6a21\u578b\u5b66\u4f1a\u5199\u4ee3\u7801\u7684\u5168\u90e8\u65b9\u6cd5";
+  const contentEl = document.querySelector('article .content');
+
+  const fab = document.getElementById('ai-fab');
+  const panel = document.getElementById('ai-panel');
+  const closeBtn = document.getElementById('ai-close');
+  const clearBtn = document.getElementById('ai-clear');
+  const msgsEl = document.getElementById('ai-messages');
+  const emptyEl = document.getElementById('ai-empty');
+  const statusEl = document.getElementById('ai-status');
+  const formEl = document.getElementById('ai-form');
+  const inputEl = document.getElementById('ai-input');
+  const sendBtn = document.getElementById('ai-send');
+
+  function articleText() {
+    if (!contentEl) return '';
+    return (contentEl.innerText || contentEl.textContent || '')
+      .replace(/[ \t]+\n/g, '\n')
+      .replace(/\n{3,}/g, '\n\n')
+      .trim();
+  }
+
+  function setStatus(msg, cls) {
+    if (!msg) { statusEl.hidden = true; statusEl.textContent = ''; statusEl.className = 'ai-status'; return; }
+    statusEl.hidden = false;
+    statusEl.textContent = msg;
+    statusEl.className = 'ai-status' + (cls ? ' ' + cls : '');
+  }
+
+  function hideEmpty() { if (emptyEl) emptyEl.style.display = 'none'; }
+
+  function appendBubble(role, text) {
+    hideEmpty();
+    const wrap = document.createElement('div');
+    wrap.className = 'ai-msg ai-msg-' + role;
+    const bubble = document.createElement('div');
+    bubble.className = 'ai-bubble';
+    bubble.textContent = text;
+    wrap.appendChild(bubble);
+    msgsEl.appendChild(wrap);
+    msgsEl.scrollTop = msgsEl.scrollHeight;
+    return bubble;
+  }
+
+  function appendTyping() {
+    hideEmpty();
+    const wrap = document.createElement('div');
+    wrap.className = 'ai-msg ai-msg-assistant ai-typing';
+    wrap.innerHTML = '<div class="ai-bubble"><span class="ai-dots"><i></i><i></i><i></i></span></div>';
+    msgsEl.appendChild(wrap);
+    msgsEl.scrollTop = msgsEl.scrollHeight;
+    return wrap;
+  }
+
+  function autoSize() {
+    inputEl.style.height = 'auto';
+    inputEl.style.height = Math.min(inputEl.scrollHeight, 140) + 'px';
+  }
+
+  function openPanel() {
+    panel.classList.add('open');
+    panel.setAttribute('aria-hidden', 'false');
+    fab.classList.add('hidden');
+    setTimeout(() => inputEl.focus(), 50);
+  }
+  function closePanel() {
+    panel.classList.remove('open');
+    panel.setAttribute('aria-hidden', 'true');
+    fab.classList.remove('hidden');
+  }
+
+  fab.addEventListener('click', openPanel);
+  closeBtn.addEventListener('click', closePanel);
+  document.addEventListener('keydown', e => {
+    if (e.key === 'Escape' && panel.classList.contains('open')) closePanel();
+  });
+
+  // ---- LanguageModel session ----
+  let session = null;
+  let creating = null;
+  let history = [];
+
+  function buildSystemPrompt() {
+    // Keep article context modest — Gemini Nano's input quota is small.
+    const article = articleText().slice(0, 4000);
+    return (
+      'You are a concise, helpful assistant answering questions about a blog post. ' +
+      'Use the article below as your primary source. If the answer is not in it, say so briefly and answer generally. ' +
+      'Reply in the same language as the user\'s question. Keep answers short unless asked for detail.\n\n' +
+      '=== ARTICLE TITLE ===\n' + POST_TITLE + '\n\n' +
+      '=== ARTICLE CONTENT ===\n' + article
+    );
+  }
+
+  async function ensureSession() {
+    if (session) return session;
+    if (creating) return creating;
+
+    if (!('LanguageModel' in self)) {
+      throw new Error(
+        'On-device AI not available. Use Chrome 138+ on desktop, or enable ' +
+        '"Prompt API for Gemini Nano" in chrome://flags.'
+      );
+    }
+
+    setStatus('Checking model…', 'info');
+    const status = await LanguageModel.availability();
+    if (status === 'unavailable') {
+      throw new Error('Model unavailable on this device.');
+    }
+
+    creating = (async () => {
+      // Only show download UI when the model isn't already there.
+      const willDownload = (status !== 'available');
+      if (willDownload) setStatus('Preparing model (first run downloads ~2GB)…', 'info');
+      else setStatus('Warming up…', 'info');
+
+      const s = await LanguageModel.create({
+        initialPrompts: [{ role: 'system', content: buildSystemPrompt() }],
+        monitor(m) {
+          m.addEventListener('downloadprogress', e => {
+            // Skip the spurious 0% event Chrome fires for cached models.
+            if (!willDownload && e.loaded === 0) return;
+            const pct = (e.loaded * 100).toFixed(1);
+            setStatus('Downloading model: ' + pct + '%', 'info');
+          });
+        }
+      });
+      session = s;
+      setStatus('');
+      return s;
+    })();
+
+    try { return await creating; }
+    finally { creating = null; }
+  }
+
+  async function ask(q) {
+    appendBubble('user', q);
+    history.push({ role: 'user', content: q });
+
+    sendBtn.disabled = true;
+    inputEl.disabled = true;
+    const typing = appendTyping();
+
+    let answerBubble = null;
+    let acc = '';
+    try {
+      const s = await ensureSession();
+      const stream = s.promptStreaming(q);
+      for await (const chunk of stream) {
+        if (!answerBubble) {
+          typing.remove();
+          const wrap = document.createElement('div');
+          wrap.className = 'ai-msg ai-msg-assistant';
+          answerBubble = document.createElement('div');
+          answerBubble.className = 'ai-bubble';
+          wrap.appendChild(answerBubble);
+          msgsEl.appendChild(wrap);
+        }
+        acc += chunk;
+        answerBubble.textContent = acc;
+        msgsEl.scrollTop = msgsEl.scrollHeight;
+      }
+      if (acc) history.push({ role: 'assistant', content: acc });
+      else { typing.remove(); appendBubble('assistant', '(no response)'); }
+    } catch (e) {
+      if (typing && typing.parentNode) typing.remove();
+      const err = document.createElement('div');
+      err.className = 'ai-msg ai-msg-error';
+      err.innerHTML = '<div class="ai-bubble">⚠ ' + (e && e.message ? e.message : String(e)) + '</div>';
+      msgsEl.appendChild(err);
+      msgsEl.scrollTop = msgsEl.scrollHeight;
+    } finally {
+      sendBtn.disabled = !inputEl.value.trim();
+      inputEl.disabled = false;
+      inputEl.focus();
+    }
+  }
+
+  formEl.addEventListener('submit', e => {
+    e.preventDefault();
+    const q = inputEl.value.trim();
+    if (!q) return;
+    inputEl.value = '';
+    autoSize();
+    sendBtn.disabled = true;
+    ask(q);
+  });
+
+  inputEl.addEventListener('input', () => {
+    autoSize();
+    sendBtn.disabled = !inputEl.value.trim();
+  });
+  inputEl.addEventListener('keydown', e => {
+    if (e.key === 'Enter' && !e.shiftKey) {
+      e.preventDefault();
+      formEl.requestSubmit();
+    }
+  });
+
+  clearBtn.addEventListener('click', () => {
+    msgsEl.innerHTML = '';
+    msgsEl.appendChild(emptyEl);
+    emptyEl.style.display = '';
+    history = [];
+    if (session && session.destroy) { try { session.destroy(); } catch (_) {} }
+    session = null;
+    setStatus('');
+  });
+
+  if (!('LanguageModel' in self)) {
+    fab.addEventListener('click', () => {
+      openPanel();
+      setStatus('On-device AI not detected. Use Chrome 138+ desktop, or enable "Prompt API for Gemini Nano" in chrome://flags.', 'bad');
+    }, { once: true });
+  }
+})();
+</script>
+
+<!-- Outline notes / comments — DataScript + IndexedDB -->
+<script src="https://github.com/tonsky/datascript/releases/download/1.7.8/datascript-1.7.8.min.js"></script>
+<script src="../notes.js?v=6"></script>
+<script src="../theme.js"></script>
+<script src="../wechat-copy.js?v=3"></script>
+
+</body>
+</html>
