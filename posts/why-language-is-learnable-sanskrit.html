@@ -1,0 +1,1104 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>为什么语言规律可以被学习：从梵语到 CodeChat 的 8B 权重 · Steve Chan — xlisp</title>
+<meta name="description" content="&quot;语言规律可以被学习&quot;这句话听起来像哲学命题。它不是。它是一个有单位的工程量。">
+<meta name="author" content="Steve Chan">
+<link rel="icon" type="image/jpeg" href="../icon.jpeg">
+<link rel="apple-touch-icon" href="../icon.jpeg">
+<meta property="og:type" content="article">
+<meta property="og:title" content="为什么语言规律可以被学习：从梵语到 CodeChat 的 8B 权重">
+<meta property="og:description" content="&quot;语言规律可以被学习&quot;这句话听起来像哲学命题。它不是。它是一个有单位的工程量。">
+<meta property="og:image" content="../icon.jpeg">
+<meta property="og:site_name" content="Steve Chan — xlisp">
+<meta name="twitter:card" content="summary_large_image">
+<meta name="twitter:title" content="为什么语言规律可以被学习：从梵语到 CodeChat 的 8B 权重">
+<meta name="twitter:description" content="&quot;语言规律可以被学习&quot;这句话听起来像哲学命题。它不是。它是一个有单位的工程量。">
+<meta name="twitter:image" content="../icon.jpeg">
+<link rel="stylesheet" href="../style.css?v=light1">
+<script>(function(){try{if(localStorage.getItem('theme')==='light')document.documentElement.setAttribute('data-theme','light');}catch(e){}})();</script>
+<!-- Math formula rendering via MathJax -->
+<script>
+window.MathJax = {
+  tex: {
+    // arithmatex emits \(...\) / \[...\] markup, so only these delimiters
+    // are needed; plain `$` is left alone (avoids currency false positives).
+    inlineMath: [['\\(', '\\)']],
+    displayMath: [['\\[', '\\]']],
+    processEscapes: true
+  },
+  svg: {
+    // Each formula gets its own self-contained <defs>, so the copy script can
+    // serialize one <svg> and rasterize it to a PNG for WeChat.
+    fontCache: 'local'
+  },
+  options: {
+    skipHtmlTags: ['script', 'noscript', 'style', 'textarea', 'pre', 'code'],
+    ignoreHtmlClass: 'highlight'
+  }
+};
+</script>
+<script src="https://cdn.jsdelivr.net/npm/mathjax@3/es5/tex-svg.js" async></script>
+</head>
+<body>
+<main class="wrap post">
+
+  <nav class="topnav">
+    <a href="../index.html">← home</a>
+  </nav>
+
+  <article>
+    <header class="post-header">
+      <h1>为什么语言规律可以被学习：从梵语到 CodeChat 的 8B 权重</h1>
+      <p class="meta">2026-08-04 · Steve Chan</p>
+    </header>
+
+    <div class="content">
+<blockquote>
+<p>缘起：一场微信群聊。有人说"法语无论语法还是读音都是标准化的"，接着话头转到梵语——
+"公元前 500 年就已经被形式化了，和现代的编程语言一样用递归公式定义"、
+"梵语的规则里面甚至有编译和优化步骤"、"几乎就是编译器手册"、"有 4000 条规则"、
+"你背诵的经文其实是编码之后的，并不是原文，你要理解原文要解码"、"自带校验码"、
+最后有人补一句："所以学 LISP 的最后都入佛门了。"</p>
+<p>这些话每一句都不是玄学。它们恰好命中了"<strong>语言规律为什么可以被一个神经网络学到</strong>"
+这个问题的四个层次：语言学的、几何的、统计的、神经的。</p>
+<p>这篇文章用本仓库的代码和真实训练日志把这四层串起来。</p>
+</blockquote>
+<hr />
+<h2 id="目录">目录</h2>
+<ul>
+<li><a href="#0-一个可以量化的问题">0. 一个可以量化的问题</a></li>
+<li><a href="#1-语言学层梵语是一门被编译过的语言">1. 语言学层：梵语是一门被"编译"过的语言</a></li>
+<li><a href="#2-为什么规则意味着可学重复即梯度">2. 为什么"规则"意味着"可学"：重复即梯度</a></li>
+<li><a href="#3-统计层1137--061被穿透的到底是多少比特">3. 统计层：11.37 → 0.61，被穿透的到底是多少比特</a></li>
+<li><a href="#4-几何层规则的几何定义是不变的方向">4. 几何层：规则的几何定义是"不变的方向"</a></li>
+<li><a href="#5-神经层transformer-就是一台软的重写机">5. 神经层：Transformer 就是一台软的重写机</a></li>
+<li><a href="#6-sandhi-与-bpe同一个可逆性难题">6. Sandhi 与 BPE：同一个可逆性难题</a></li>
+<li><a href="#7-经文的校验码冗余编码与本仓库的阶梯奖励">7. 经文的校验码：冗余编码与本仓库的阶梯奖励</a></li>
+<li><a href="#8-为什么可以被穿透gold-定理与概率的逃生舱">8. 为什么"可以被穿透"：Gold 定理与概率的逃生舱</a></li>
+<li><a href="#9-边界哪些东西不在权重里">9. 边界：哪些东西不在权重里</a></li>
+<li><a href="#10-一张对照表">10. 一张对照表</a></li>
+</ul>
+<hr />
+<h2 id="0-一个可以量化的问题">0. 一个可以量化的问题</h2>
+<p>"语言规律可以被学习"这句话听起来像哲学命题。它不是。它是一个有单位的工程量。</p>
+<p>本仓库 <code>reports/TRAINING_REPORT_8b_a88_x8.md</code> 里有一行：</p>
+<div class="highlight"><pre><span></span><code>8B 预训练 30k 步，loss 11.37 → 0.61
+</code></pre></div>
+
+<p>这两个数字就是答案的全部。</p>
+<ul>
+<li><strong>11.37 nats</strong> 是随机初始化的模型面对 Python 源码时的交叉熵。作为参照，
+  <code>codechat/tokenizer.py:14</code> 的 <code>VOCAB_SIZE = 50257</code>，均匀乱猜的熵是 <code>ln(50257) = 10.82 nats</code>。
+  11.37 略高于它——因为随机初始化的输出分布不是均匀分布，而是偏了的乱猜，比乱猜还差一点。</li>
+<li><strong>0.61 nats</strong> 是训练结束后的交叉熵。困惑度 <code>e^0.61 = 1.84</code>。</li>
+</ul>
+<p><strong>模型在每个 token 位置上，平均只在不到两个候选之间犹豫。</strong></p>
+<p>换成比特：<code>11.37 / ln2 = 16.40 bits</code> → <code>0.61 / ln2 = 0.88 bits</code>。</p>
+<blockquote>
+<p>每个 token 被压掉了 <strong>15.5 比特</strong>。
+这 15.5 比特就是"语言规律"的重量。它不是比喻，它是从 <code>codechat/gpt.py:129-133</code>
+那个 <code>F.cross_entropy</code> 里读出来的数。</p>
+</blockquote>
+<p>所以问题应该重新问：<strong>是什么让这 15.5 比特存在，又是什么让它可以被 80 亿个浮点数吸收？</strong></p>
+<p>梵语给了一个异常干净的答案。</p>
+<hr />
+<h2 id="1-语言学层梵语是一门被编译过的语言">1. 语言学层：梵语是一门被"编译"过的语言</h2>
+<h3 id="11-群里那句公元前-500-年就被形式化了是准确的">1.1 群里那句"公元前 500 年就被形式化了"是准确的</h3>
+<p>公元前 5–4 世纪，波你尼（Pāṇini）写了《八章书》（<em>Aṣṭādhyāyī</em>），约 <strong>3959 条 sūtra</strong>（不同传本 3983 条上下，群里说"4000 条"是对的）。它不是一本描述性语法书，它是一台<strong>生成器</strong>：</p>
+<div class="highlight"><pre><span></span><code>输入：  词根（dhātu） + 语法环境（人称/数/时态/语态/格）
+过程：  按规则表逐条改写
+输出：  唯一确定的合法词形
+</code></pre></div>
+
+<p>这台生成器有下面这些性质，每一条都能在现代编译器里找到对应物：</p>
+<table>
+<thead>
+<tr>
+<th>《八章书》的机制</th>
+<th>梵文术语</th>
+<th>现代对应</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>规则中的规则、控制规则如何被使用</td>
+<td><em>paribhāṣā</em></td>
+<td><strong>元规则 / 宏 / 解释器指令</strong></td>
+</tr>
+<tr>
+<td>冲突时后出现的规则胜出</td>
+<td><em>vipratiṣedha</em></td>
+<td><strong>规则优先级 / 最长匹配 / shadowing</strong></td>
+</tr>
+<tr>
+<td>一条 sūtra 的上下文自动被后续 sūtra 继承</td>
+<td><em>anuvṛtti</em></td>
+<td><strong>词法作用域 / 环境继承 / <code>let</code> 嵌套</strong></td>
+</tr>
+<tr>
+<td>用「首元素 + 终止标记」压缩表示一整类音</td>
+<td><em>pratyāhāra</em>（湿婆经）</td>
+<td><strong>区间编码 / 位掩码 / 符号表压缩</strong></td>
+</tr>
+<tr>
+<td>规则可以作用在自身输出上</td>
+<td>—</td>
+<td><strong>递归 / 不动点迭代</strong></td>
+</tr>
+<tr>
+<td>一条规则临时"假装"输入是别的东西</td>
+<td><em>sthānivadbhāva</em></td>
+<td><strong>视图 / 代换 / 中间表示（IR）</strong></td>
+</tr>
+</tbody>
+</table>
+<p><code>pratyāhāra</code> 特别值得展开，因为它是纯粹的<strong>压缩表达</strong>。湿婆经把梵语所有音素排成 14 组特定顺序，每组末尾加一个哑标记（<em>it</em>）。之后任何一个音类都可以用「起点音 + 某个哑标记」两个字符表示：</p>
+<div class="highlight"><pre><span></span><code>音素序列：  a i u ṇ | ṛ ḷ k | e o ṅ | ai au c | ...
+             └─────┘ 哑标记
+
+写 &quot;aC&quot;  →  从 a 开始到标记 C 为止的全部音  =  所有元音
+写 &quot;haL&quot; →  从 h 开始到标记 L 为止的全部音  =  所有辅音
+写 &quot;aL&quot;  →  全部音素
+</code></pre></div>
+
+<p>这是<strong>用两个字符寻址一个集合</strong>。4000 条规则之所以能装下整门语言，靠的就是这种寻址方式——和你在编译器里用一个 <code>u64</code> 位掩码表示 "所有二元算符" 是同一个动机：<strong>规则表要小，就必须让「集合」本身可被廉价命名</strong>。</p>
+<p>群里说"几乎就是编译器手册"，这个判断在结构上成立。计算机科学界甚至有人正式提议把 BNF（Backus–Naur Form）改称 <strong>Pāṇini–Backus Form</strong>（Ingerman, 1967），理由就是波你尼的规则形式先于 Backus 两千多年。</p>
+<h3 id="12-法语是同一件事的弱化版">1.2 法语是同一件事的弱化版</h3>
+<p>群里从法语起头是有道理的。法语的「拼写 → 读音」方向<strong>接近确定性函数</strong>：</p>
+<div class="highlight"><pre><span></span><code>-eau   → /o/       beau, eau, bureau
+-ent   → ∅（动词第三人称复数词尾不发音）
+-ille  → /ij/      fille, famille        （例外：ville, mille）
+c + e/i/y → /s/,  否则 → /k/
+</code></pre></div>
+
+<p>学了规则就能读，不需要音标。英语做不到（<code>ough</code>：through / though / thought / rough / cough / bough，六个词六种读法）。</p>
+<p>但注意一个重要的不对称：</p>
+<div class="highlight"><pre><span></span><code>拼写 ──确定性──▶ 读音          （单射性好，规则可写完）
+读音 ──多对一──▶ 拼写          vers / vert / verre / ver / vair  全读 /vɛʁ/
+</code></pre></div>
+
+<p><strong>法语的正字法是一个有损压缩的解码器，不是编码器。</strong> 这个不对称待会儿在第 6 节会以 tokenizer 的形式原封不动地重现。</p>
+<h3 id="13-梵语更彻底词形是一个张量积">1.3 梵语更彻底：词形是一个张量积</h3>
+<p>梵语的形态学不是"一堆不规则表"，它是<strong>几个独立维度的笛卡尔积</strong>：</p>
+<div class="highlight"><pre><span></span><code>动词形 = 词根 ⊗ 时态语气(lakāra, 10) ⊗ 人称(3) ⊗ 数(3) ⊗ 语态(2)
+                                    ≈ 180 个形式 / 每个词根
+
+名词形 = 词干 ⊗ 格(8) ⊗ 数(3)      ≈ 24 个形式 / 每个词干
+                （性别 3 影响的是走哪张变格表）
+</code></pre></div>
+
+<p>一个词根 √gam（去）可以机械地生成 <code>gacchati / gacchataḥ / gacchanti / agacchat / gamiṣyati / jagāma / ...</code>，每一个都由「词根 + 各维度取值」经规则展开而来。</p>
+<p><strong>这是一个低秩结构。</strong> 请记住这句话——第 4 节整节都在讲它，因为这正是 embedding 空间能把语法编码进去的原因。</p>
+<hr />
+<h2 id="2-为什么规则意味着可学重复即梯度">2. 为什么"规则"意味着"可学"：重复即梯度</h2>
+<p>你的 TODO 里写着"大量的重复，经文"。这是整篇文章最关键的一句。</p>
+<h3 id="21-一条规则被应用一万次就是同一个梯度被累加一万次">2.1 一条规则被应用一万次，就是同一个梯度被累加一万次</h3>
+<p>考虑最朴素的情形。假设语言里有一条规则 R，在语料里被触发了 N 次。神经网络看到的是 N 个不同的句子，但这 N 个句子在 R 触发的那个位置上，<strong>要求的输出变换是同一个</strong>。</p>
+<div class="highlight"><pre><span></span><code>样本 1:  ...  x₁ ──R──▶ y₁      梯度 g₁
+样本 2:  ...  x₂ ──R──▶ y₂      梯度 g₂
+   ...
+样本 N:  ...  x_N ─R──▶ y_N     梯度 g_N
+
+如果 R 是一条真规则，g₁...g_N 在参数空间里方向高度一致
+→ 累加后模长 ≈ N·|g|          （相干叠加）
+
+如果只是噪声/巧合，方向随机
+→ 累加后模长 ≈ √N·|g|         （随机游走）
+</code></pre></div>
+
+<p><strong>信噪比随 √N 增长。</strong> 规则越是被反复应用，它在梯度里就越突出；巧合则被平均掉。这就是"语言规律可以被学习"的机械原因——不需要任何神秘主义。</p>
+<p>这也解释了为什么本仓库的 <code>PretrainLoader</code> 长这样：</p>
+<div class="highlight"><pre><span></span><code><span class="c1"># codechat/dataloader.py:49-52</span>
+<span class="k">def</span><span class="w"> </span><span class="nf">next_batch</span><span class="p">(</span><span class="bp">self</span><span class="p">):</span>
+    <span class="n">shard</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">_load</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">shards</span><span class="p">[</span><span class="bp">self</span><span class="o">.</span><span class="n">rng</span><span class="o">.</span><span class="n">integers</span><span class="p">(</span><span class="nb">len</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">shards</span><span class="p">))])</span>
+    <span class="n">ix</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">rng</span><span class="o">.</span><span class="n">integers</span><span class="p">(</span><span class="mi">0</span><span class="p">,</span> <span class="nb">len</span><span class="p">(</span><span class="n">shard</span><span class="p">)</span> <span class="o">-</span> <span class="bp">self</span><span class="o">.</span><span class="n">block_size</span> <span class="o">-</span> <span class="mi">1</span><span class="p">,</span> <span class="n">size</span><span class="o">=</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">batch_size</span><span class="p">,))</span>
+    <span class="o">...</span>
+</code></pre></div>
+
+<p>它<strong>随机地、有放回地、无穷次地</strong>从语料里抽 2048-token 的窗口。同一段 Python 代码在 30000 步训练里会被采到很多次，同一条语法规则（<code>def</code> 后面跟标识符、<code>:</code> 后面缩进、<code>(</code> 必须闭合）会被触发千百万次。</p>
+<p><strong>训练的本质就是让规则相干叠加，让噪声随机游走。</strong></p>
+<h3 id="22-吠陀经文人类在没有硬盘的时候用同一个原理">2.2 吠陀经文：人类在没有硬盘的时候用同一个原理</h3>
+<p>古印度传承经文靠的不是抄写，是背诵。而且是<strong>多种排列方式的背诵</strong>（<em>pāṭha</em>）：</p>
+<div class="highlight"><pre><span></span><code>原文（saṃhitā）:      a b c d
+逐词（pada）:          a | b | c | d
+连读（krama）:         ab  bc  cd
+辫式（jaṭā）:          ab ba ab   bc cb bc   cd dc cd
+密式（ghana）:         ab ba abc cba abc   bc cb bcd dcb bcd   ...
+</code></pre></div>
+
+<p><code>ghana-pāṭha</code> 里每一个词平均出现 <strong>13 次</strong>，而且出现在不同的邻接关系中。</p>
+<p>群里那句"你背诵的经文其实是编码之后的，并不是原文，你要理解原文要解码"——<strong>字面上正确</strong>。背 ghana 的人念出来的不是原文，是原文的一个冗余展开；原文要从这个展开里还原。</p>
+<p>而"自带校验码"也字面上正确：如果某处记错了一个词，它会在多个不同的邻接对里同时不一致，<strong>错误立刻暴露且位置可定位</strong>。这就是纠错码的定义性质。</p>
+<blockquote>
+<p>这套机制的效果是可验证的：吠陀经文口传两千余年，不同地区传本之间的差异小到可以逐音节比对。
+在没有写本的条件下，这是人类做过的最成功的一次<strong>数据完整性工程</strong>。</p>
+</blockquote>
+<h3 id="23-两者是同一件事">2.3 两者是同一件事</h3>
+<table>
+<thead>
+<tr>
+<th></th>
+<th>吠陀 pāṭha</th>
+<th>神经网络预训练</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>单元</td>
+<td>词</td>
+<td>token</td>
+</tr>
+<tr>
+<td>冗余来源</td>
+<td>同一个词在多种排列中重复</td>
+<td>同一个模式在多个上下文中重复</td>
+</tr>
+<tr>
+<td>冗余度</td>
+<td>每词约 13 次</td>
+<td>每个高频模式 10⁶–10⁹ 次</td>
+</tr>
+<tr>
+<td>目的</td>
+<td>抵抗记忆噪声</td>
+<td>抵抗梯度噪声</td>
+</tr>
+<tr>
+<td>结果</td>
+<td>无损还原</td>
+<td>loss 11.37 → 0.61</td>
+</tr>
+</tbody>
+</table>
+<p>古印度人和 SGD 都发现了同一个事实：<strong>要让脆弱的存储介质记住有结构的东西，就把结构重复地、以不同的切面反复呈现给它。</strong></p>
+<hr />
+<h2 id="3-统计层1137-061被穿透的到底是多少比特">3. 统计层：11.37 → 0.61，被穿透的到底是多少比特</h2>
+<h3 id="31-交叉熵就是你还有多少不懂">3.1 交叉熵就是"你还有多少不懂"</h3>
+<p><code>codechat/gpt.py:129-133</code>：</p>
+<div class="highlight"><pre><span></span><code><span class="n">loss</span> <span class="o">=</span> <span class="n">F</span><span class="o">.</span><span class="n">cross_entropy</span><span class="p">(</span>
+    <span class="n">logits</span><span class="o">.</span><span class="n">view</span><span class="p">(</span><span class="o">-</span><span class="mi">1</span><span class="p">,</span> <span class="n">logits</span><span class="o">.</span><span class="n">size</span><span class="p">(</span><span class="o">-</span><span class="mi">1</span><span class="p">))</span><span class="o">.</span><span class="n">float</span><span class="p">(),</span>
+    <span class="n">targets</span><span class="o">.</span><span class="n">view</span><span class="p">(</span><span class="o">-</span><span class="mi">1</span><span class="p">),</span>
+    <span class="n">ignore_index</span><span class="o">=-</span><span class="mi">100</span><span class="p">,</span>
+<span class="p">)</span>
+</code></pre></div>
+
+<p>这一行的输出有一个精确的信息论含义：<strong>在模型的信念下，编码真实下一个 token 平均需要多少 nat</strong>。</p>
+<table>
+<thead>
+<tr>
+<th>状态</th>
+<th>loss (nats)</th>
+<th>困惑度</th>
+<th>含义</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>均匀乱猜（理论下界的上界）</td>
+<td>10.82</td>
+<td>50257</td>
+<td>语言无结构</td>
+</tr>
+<tr>
+<td>随机初始化（实测 step 1）</td>
+<td>11.37</td>
+<td>86,600</td>
+<td>比乱猜还差</td>
+</tr>
+<tr>
+<td>8B 预训练结束（step 30k）</td>
+<td><strong>0.61</strong></td>
+<td><strong>1.84</strong></td>
+<td>几乎不犹豫</td>
+</tr>
+<tr>
+<td>v6 联合 SFT 起点</td>
+<td>2.51</td>
+<td>12.3</td>
+<td>换了数据分布，重新爬</td>
+</tr>
+<tr>
+<td>v6 联合 SFT 结束</td>
+<td>0.2–0.9</td>
+<td>1.2–2.5</td>
+<td>对话格式也被吸收</td>
+</tr>
+</tbody>
+</table>
+<h3 id="32-全部字符串的空间-vs-合法字符串的集合">3.2 全部字符串的空间 vs 合法字符串的集合</h3>
+<p>设想 <code>block_size = 2048</code>（<code>codechat/gpt.py:23</code>）。所有可能的 token 序列有：</p>
+<div class="highlight"><pre><span></span><code>50257^2048  ≈  10^9628
+</code></pre></div>
+
+<p>而实际存在的、语法正确、语义连贯的 Python 程序有多少？用实测熵估：</p>
+<div class="highlight"><pre><span></span><code>e^(0.61 × 2048)  ≈  10^543
+</code></pre></div>
+
+<p>比值：</p>
+<div class="highlight"><pre><span></span><code>10^543 / 10^9628  =  10^(-9085)
+</code></pre></div>
+
+<p><strong>合法序列在全部序列中占的比例是 10 的负九千次方量级。</strong></p>
+<p>这就是"语言规律"的几何面貌：<strong>语言不是空间里的一片云，它是一根极细的线。</strong></p>
+<blockquote>
+<p>这里必须诚实：0.61 是在 <code>codeparrot/github-code-clean</code> 的 Python 子集上测的，
+且是训练分布内的数字，不是留出集。它反映的是"这个模型在这个分布上还剩多少不确定"，
+不是 Python 语言熵的无偏估计。但数量级的结论不受影响。</p>
+</blockquote>
+<h3 id="33-为什么细等于可学">3.3 为什么"细"等于"可学"</h3>
+<p>统计学习的核心权衡：</p>
+<div class="highlight"><pre><span></span><code>泛化误差  ≲  训练误差  +  O( √( 模型复杂度 / 样本数 ) )
+</code></pre></div>
+
+<p>如果目标函数可以躺在一个<strong>低维</strong>（这里"维"指有效自由度，不是坐标数）的假设类里，那么用有限样本逼近它就是可能的。</p>
+<p>梵语把这一点做到了极致：一门语言的全部合法词形，由 <strong>4000 条规则</strong>生成。规则表的描述长度是 O(4000)，而它覆盖的词形数量是天文数字。</p>
+<p><strong>这就是"可被穿透"的定义：生成器远小于被生成物。</strong></p>
+<p>CodeChat 的 8B 权重是同一件事的连续版本——83 亿个参数（<code>gpt.py:39</code>, <code>depth=40, n_embd=4096</code>）编码了一个能生成近乎无限多合法 Python 程序的分布。压缩比是天文数字，因为<strong>规律本身就是压缩</strong>。</p>
+<hr />
+<h2 id="4-几何层规则的几何定义是不变的方向">4. 几何层：规则的几何定义是"不变的方向"</h2>
+<p>你的 TODO 里写着"几何定义"和"统计学几何规律"。这里给一个可操作的定义。</p>
+<h3 id="41-定义">4.1 定义</h3>
+<blockquote>
+<p><strong>一条语法规则，在表示空间里的几何形式，是一个作用在低维子空间上的近似不变变换。</strong></p>
+</blockquote>
+<p>拆开说：</p>
+<ul>
+<li><strong>表示空间</strong>：<code>codechat/gpt.py:100</code>，<code>self.tok_emb = nn.Embedding(50257, 4096)</code>。
+  每个 token 是 ℝ⁴⁰⁹⁶ 里的一个点。加上 40 层残差流的演化，每个位置在每一层都有一个 ℝ⁴⁰⁹⁶ 的状态。</li>
+<li><strong>低维子空间</strong>：规则只关心少数几个特征。"第三人称单数"这个属性可能只占据 4096 维里的
+  一两个方向，其余维度与它无关。</li>
+<li><strong>近似不变变换</strong>：规则 R 对应一个映射 T_R，使得对所有满足触发条件的 x，
+  <code>T_R(x)</code> 都落在正确的输出区域。它对无关维度近似恒等。</li>
+</ul>
+<h3 id="42-梵语给出了教科书级的例子">4.2 梵语给出了教科书级的例子</h3>
+<p>回到 1.3 节：梵语动词形 = 词根 ⊗ 时态 ⊗ 人称 ⊗ 数 ⊗ 语态。</p>
+<p>如果表示空间学到了这个结构，那么在几何上应该有：</p>
+<div class="highlight"><pre><span></span><code>vec(gacchati)  −  vec(gacchanti)   ≈   vec(bhavati)  −  vec(bhavanti)
+   「他去」        「他们去」              「他是」        「他们是」
+
+     └────────── 同一个&quot;单数→复数&quot;方向向量 ──────────┘
+</code></pre></div>
+
+<p>这就是 <code>king − man + woman ≈ queen</code> 的严肃版本。区别在于：</p>
+<ul>
+<li>英语的类比关系是<strong>零散的、有例外的</strong>（<code>go/went</code>, <code>child/children</code>）；</li>
+<li>梵语的类比关系是<strong>规则生成的、几乎无例外的</strong>，因为它本来就是被形式化设计出来的。</li>
+</ul>
+<p>于是<strong>梵语的形态学在表示空间里应该近似是一个多线性结构</strong>——几个近似正交的方向轴，词形是它们的组合。这不是猜测，它是 1.3 节那个张量积在几何上的直接后果。</p>
+<div class="highlight"><pre><span></span><code>              ▲ 数 (单/双/复)
+              │
+              │     ● gacchanti
+              │    ╱
+              │   ╱
+              │  ● gacchati
+              │ ╱
+   ───────────┼──────────────▶ 人称 (1/2/3)
+             ╱│
+            ╱ │
+           ╱  │
+          ▼   
+        时态 (10 个 lakāra)
+
+   一个动词形 = 词根锚点 + Σ (各维度的偏移向量)
+</code></pre></div>
+
+<h3 id="43-为什么英语python-也能有这种结构只是更脏">4.3 为什么英语/Python 也能有这种结构（只是更脏）</h3>
+<p>Python 的规律性介于梵语和英语之间：</p>
+<div class="highlight"><pre><span></span><code>def f(x):        缩进规则近乎严格 → 强几何结构
+    return x     
+
+list.append      方法名与类型的关联 → 中等强度
+
+# TODO: fix      注释内容 → 几乎无结构，纯噪声
+</code></pre></div>
+
+<p><code>loss = 0.61</code> 是这三类混合后的加权平均。语法部分的局部 loss 远低于 0.61，自然语言注释部分远高于——模型对 <code>def</code> 后面必然跟标识符几乎零犹豫，对注释里下一个词写什么则相当不确定。</p>
+<p><strong>这就是"统计学几何规律"的真实样子：不是全空间的均匀低维，而是分区域的、软硬不一的流形。</strong></p>
+<hr />
+<h2 id="5-神经层transformer-就是一台软的重写机">5. 神经层：Transformer 就是一台软的重写机</h2>
+<p>你的 TODO 里写着"神经化这个角度"。这一节把《八章书》和 <code>gpt.py</code> 逐行对上。</p>
+<h3 id="51-残差流-正在被推导的中间形式">5.1 残差流 = 正在被推导的中间形式</h3>
+<p><code>codechat/gpt.py:90-93</code>：</p>
+<div class="highlight"><pre><span></span><code><span class="k">def</span><span class="w"> </span><span class="nf">forward</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">x</span><span class="p">):</span>
+    <span class="n">x</span> <span class="o">=</span> <span class="n">x</span> <span class="o">+</span> <span class="bp">self</span><span class="o">.</span><span class="n">attn</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">ln1</span><span class="p">(</span><span class="n">x</span><span class="p">))</span>
+    <span class="n">x</span> <span class="o">=</span> <span class="n">x</span> <span class="o">+</span> <span class="bp">self</span><span class="o">.</span><span class="n">mlp</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">ln2</span><span class="p">(</span><span class="n">x</span><span class="p">))</span>
+    <span class="k">return</span> <span class="n">x</span>
+</code></pre></div>
+
+<p>请把它读成一条<strong>重写规则的应用</strong>：</p>
+<div class="highlight"><pre><span></span><code>x_new  =  x_old  +  Δ
+
+其中 Δ = 「读取上下文，判断该应用什么规则，产出增量」
+</code></pre></div>
+
+<p>这正是一个 term-rewriting 引擎的一步：<strong>读状态 → 匹配规则 → 写回状态</strong>。区别只有一个——它是软的、可微的、所有规则同时以不同权重被应用，而不是离散地选一条。</p>
+<p>40 层（<code>depth=40</code>）意味着：<strong>最多 40 步串行的规则应用</strong>。这不是比喻，这是架构的硬约束——任何需要超过 40 步串行推导才能得到的结论，模型必须靠别的方式（比如在输出里写出中间步骤，即 CoT）来绕过。</p>
+<h3 id="52-注意力-anuvṛtti上下文继承的可微版本">5.2 注意力 = anuvṛtti（上下文继承）的可微版本</h3>
+<p>波你尼的 <em>anuvṛtti</em>：一条 sūtra 的限定条件自动被后面若干条 sūtra 继承，直到被覆盖。读《八章书》时你必须<strong>往回看</strong>，才知道当前这条规则在什么环境下生效。</p>
+<p><code>codechat/gpt.py:67</code>：</p>
+<div class="highlight"><pre><span></span><code><span class="n">y</span> <span class="o">=</span> <span class="n">F</span><span class="o">.</span><span class="n">scaled_dot_product_attention</span><span class="p">(</span><span class="n">q</span><span class="p">,</span> <span class="n">k</span><span class="p">,</span> <span class="n">v</span><span class="p">,</span> <span class="n">is_causal</span><span class="o">=</span><span class="kc">True</span><span class="p">)</span>
+</code></pre></div>
+
+<ul>
+<li><code>is_causal=True</code>：<strong>只能往左看</strong>。和梵语推导的从左到右、和 <em>anuvṛtti</em> 的"继承前面"完全同构。</li>
+<li><code>q·k</code>：当前位置在<strong>查询"我该继承哪些上下文"</strong>。</li>
+<li><code>v</code>：被继承的内容本身。</li>
+</ul>
+<p><strong>注意力就是可微的、学出来的 anuvṛtti。</strong> 波你尼手工指定了继承链；attention 用 QK 点积在运行时算出继承链。</p>
+<h3 id="53-mlp-规则表">5.3 MLP = 规则表</h3>
+<p><code>codechat/gpt.py:75-79</code>：</p>
+<div class="highlight"><pre><span></span><code><span class="bp">self</span><span class="o">.</span><span class="n">fc</span>   <span class="o">=</span> <span class="n">nn</span><span class="o">.</span><span class="n">Linear</span><span class="p">(</span><span class="n">cfg</span><span class="o">.</span><span class="n">n_embd</span><span class="p">,</span> <span class="mi">4</span> <span class="o">*</span> <span class="n">cfg</span><span class="o">.</span><span class="n">n_embd</span><span class="p">,</span> <span class="n">bias</span><span class="o">=</span><span class="kc">False</span><span class="p">)</span>
+<span class="bp">self</span><span class="o">.</span><span class="n">proj</span> <span class="o">=</span> <span class="n">nn</span><span class="o">.</span><span class="n">Linear</span><span class="p">(</span><span class="mi">4</span> <span class="o">*</span> <span class="n">cfg</span><span class="o">.</span><span class="n">n_embd</span><span class="p">,</span> <span class="n">cfg</span><span class="o">.</span><span class="n">n_embd</span><span class="p">,</span> <span class="n">bias</span><span class="o">=</span><span class="kc">False</span><span class="p">)</span>
+</code></pre></div>
+
+<p>一个广为接受的解读（Geva et al., <em>Transformer Feed-Forward Layers Are Key-Value Memories</em>）：<code>fc</code> 的每一行是一个<strong>模式（key）</strong>，<code>proj</code> 的每一列是对应的<strong>输出（value）</strong>。一次前向就是"匹配所有模式，按匹配度加权取出对应输出"。</p>
+<p><strong>这就是一张规则表。</strong> 数一下 8B 的规模：</p>
+<div class="highlight"><pre><span></span><code>每层 hidden 单元数 = 4 × 4096 = 16384
+总层数            = 40
+规则槽位总数      = 655,360
+</code></pre></div>
+
+<p>对照：</p>
+<div class="highlight"><pre><span></span><code>《八章书》         ≈  4,000 条规则     离散、可读、无例外、人写
+CodeChat 8B       ≈  655,360 个槽位   连续、不可读、有例外、SGD 写
+</code></pre></div>
+
+<p>差了 160 倍的容量，换来的是：<strong>不需要人来发现规则</strong>。这是整个深度学习相对于形式语法的唯一但决定性的优势。</p>
+<h3 id="54-权重共享-生成器与识别器是同一张表">5.4 权重共享 = 生成器与识别器是同一张表</h3>
+<p><code>codechat/gpt.py:105-106</code>：</p>
+<div class="highlight"><pre><span></span><code><span class="c1"># weight tying</span>
+<span class="bp">self</span><span class="o">.</span><span class="n">head</span><span class="o">.</span><span class="n">weight</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">tok_emb</span><span class="o">.</span><span class="n">weight</span>
+</code></pre></div>
+
+<p>同一个 <code>[50257, 4096]</code> 矩阵既用于「token → 向量」（读入），也用于「向量 → token 分布」（写出）。</p>
+<p>波你尼的规则表也是双向的：同一套规则既能从词根<strong>生成</strong>词形，也能用来<strong>判定</strong>一个词形是否合法。语法书天然是生成器兼识别器。</p>
+<p>权重绑定把这件事变成了架构约束：<strong>读和写共用同一个符号表</strong>。</p>
+<h3 id="55-一张对照表">5.5 一张对照表</h3>
+<table>
+<thead>
+<tr>
+<th>《八章书》</th>
+<th>CodeChat 代码</th>
+<th>位置</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>词根 + 语法环境（输入）</td>
+<td><code>idx</code> token 序列</td>
+<td><code>gpt.py:115</code></td>
+</tr>
+<tr>
+<td>逐条改写、状态演进</td>
+<td><code>x = x + attn(...)</code>; <code>x = x + mlp(...)</code></td>
+<td><code>gpt.py:91-92</code></td>
+</tr>
+<tr>
+<td><em>anuvṛtti</em> 上下文继承</td>
+<td>因果注意力</td>
+<td><code>gpt.py:67</code></td>
+</tr>
+<tr>
+<td>规则表（4000 条 sūtra）</td>
+<td>MLP key-value（655k 槽位）</td>
+<td><code>gpt.py:75-79</code></td>
+</tr>
+<tr>
+<td>规则优先级 / 冲突消解</td>
+<td>softmax 的软竞争</td>
+<td><code>gpt.py:145</code></td>
+</tr>
+<tr>
+<td>推导步数上限</td>
+<td><code>depth = 40</code></td>
+<td><code>gpt.py:39</code></td>
+</tr>
+<tr>
+<td>生成器 = 识别器</td>
+<td>weight tying</td>
+<td><code>gpt.py:106</code></td>
+</tr>
+<tr>
+<td>从左到右推导</td>
+<td><code>is_causal=True</code></td>
+<td><code>gpt.py:67</code></td>
+</tr>
+<tr>
+<td>合法词形（输出）</td>
+<td><code>logits</code> → 采样</td>
+<td><code>gpt.py:126, 146</code></td>
+</tr>
+</tbody>
+</table>
+<p>群里那句"学 LISP 的最后都入佛门了"——LISP 的同像性（代码即数据）、宏（写规则的规则）、<code>eval</code> 的不动点，确实和 <em>paribhāṣā</em>（元规则）、<em>anuvṛtti</em>（作用域继承）在结构上同构。这不是巧合，而是<strong>任何一个想用有限规则覆盖无限表达的系统，都会收敛到同一组设计</strong>：递归、元层、作用域、压缩寻址。波你尼在公元前 5 世纪撞上了它，McCarthy 在 1958 年撞上了它，Transformer 在 2017 年用连续参数重新实现了它。</p>
+<hr />
+<h2 id="6-sandhi-与-bpe同一个可逆性难题">6. Sandhi 与 BPE：同一个可逆性难题</h2>
+<h3 id="61-梵语的-sandhi-是强制的音变">6.1 梵语的 sandhi 是强制的音变</h3>
+<p>梵语要求相邻词在书写时就发生连音（<em>sandhi</em>），而且<strong>必须</strong>：</p>
+<div class="highlight"><pre><span></span><code>tat + api     →  tadapi
+na  + asti    →  nāsti
+rāmaḥ + iti   →  rāma iti
+deva + indra  →  devendra          (a + i → e)
+</code></pre></div>
+
+<p>正向（合成）是确定性的：给定两个词，输出唯一。</p>
+<p><strong>逆向（切分）是歧义的</strong>：看到 <code>devendra</code>，它可能来自 <code>deva + indra</code>，也可能来自 <code>devā + indra</code>，或者本身就是一个词。梵语文本的自动切分（sandhi splitting）至今是计算语言学的一个真实难题，因为搜索空间随句长指数增长。</p>
+<p>和 1.2 节法语的「拼写→读音单射，读音→拼写多对一」是<strong>完全相同的不对称</strong>。</p>
+<h3 id="62-本仓库的-tokenizer-有一模一样的问题">6.2 本仓库的 tokenizer 有一模一样的问题</h3>
+<p><code>codechat/tokenizer.py:11-19</code>：</p>
+<div class="highlight"><pre><span></span><code><span class="c1"># Reserve some &quot;special&quot; tokens for chat formatting. GPT-2 BPE has 50257 tokens</span>
+<span class="c1"># (including &lt;|endoftext|&gt;). We repurpose &lt;|endoftext|&gt; as both BOS and EOS,</span>
+<span class="c1"># and encode chat turn boundaries as plain text markers that get BPE&#39;d.</span>
+<span class="n">VOCAB_SIZE</span> <span class="o">=</span> <span class="n">_ENC</span><span class="o">.</span><span class="n">n_vocab</span>  <span class="c1"># 50257</span>
+<span class="n">EOT</span> <span class="o">=</span> <span class="n">_ENC</span><span class="o">.</span><span class="n">eot_token</span>       <span class="c1"># 50256</span>
+
+<span class="n">USER_TAG</span> <span class="o">=</span> <span class="s2">&quot;&lt;|user|&gt;&quot;</span>
+<span class="n">ASSISTANT_TAG</span> <span class="o">=</span> <span class="s2">&quot;&lt;|assistant|&gt;&quot;</span>
+<span class="n">END_TAG</span> <span class="o">=</span> <span class="s2">&quot;&lt;|end|&gt;&quot;</span>
+</code></pre></div>
+
+<p>注意注释里那句 <strong>"get BPE'd"</strong>。<code>&lt;|user|&gt;</code> 不是一个原子 token，它被 BPE 拆成若干碎片（<code>&lt;</code>, <code>|</code>, <code>user</code>, <code>|</code>, <code>&gt;</code> 之类）。这就是 sandhi：<strong>边界标记被溶解进了字节流，不再有物理边界。</strong></p>
+<p>后果和梵语切分完全一致：</p>
+<div class="highlight"><pre><span></span><code>训练侧   encode_chat() 生成    &quot;&lt;|user|&gt;\n...\n&lt;|end|&gt;\n&quot;   → 碎片序列 A
+推理侧   如果多打一个空格      &quot;&lt;|user|&gt; \n...\n&lt;|end|&gt;\n&quot;  → 碎片序列 B ≠ A
+
+模型学到的是 A 的统计规律。喂 B 给它，等于喂了一个它没见过的 sandhi 形式。
+</code></pre></div>
+
+<p>这就是 <code>docs/sft_rl_inference_mechanics.md</code> §5.2 强调 <strong>"训练侧和推理侧必须逐字节一致"</strong> 的根本原因。它不是洁癖，它是因为 <strong>BPE 是一个 sandhi，而 sandhi 不可靠地可逆</strong>。</p>
+<h3 id="63-停止条件同一个坑的另一个入口">6.3 停止条件：同一个坑的另一个入口</h3>
+<p><code>codechat/gpt.py:136-148</code> 的 <code>generate</code> <strong>根本不检查停止符</strong>：</p>
+<div class="highlight"><pre><span></span><code><span class="nd">@torch</span><span class="o">.</span><span class="n">no_grad</span><span class="p">()</span>
+<span class="k">def</span><span class="w"> </span><span class="nf">generate</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">idx</span><span class="p">,</span> <span class="n">max_new_tokens</span><span class="p">,</span> <span class="n">temperature</span><span class="o">=</span><span class="mf">0.8</span><span class="p">,</span> <span class="n">top_k</span><span class="o">=</span><span class="mi">50</span><span class="p">):</span>
+    <span class="k">for</span> <span class="n">_</span> <span class="ow">in</span> <span class="nb">range</span><span class="p">(</span><span class="n">max_new_tokens</span><span class="p">):</span>
+        <span class="o">...</span>
+        <span class="n">idx</span> <span class="o">=</span> <span class="n">torch</span><span class="o">.</span><span class="n">cat</span><span class="p">([</span><span class="n">idx</span><span class="p">,</span> <span class="n">next_id</span><span class="p">],</span> <span class="n">dim</span><span class="o">=</span><span class="mi">1</span><span class="p">)</span>
+    <span class="k">return</span> <span class="n">idx</span>
+</code></pre></div>
+
+<p>它跑满 <code>max_new_tokens</code> 才停。因为 <code>&lt;|end|&gt;</code> 不是一个 token，是一串碎片，没法用 <code>next_id == END_TOKEN</code> 判断。</p>
+<p><strong>梵语的解决方案是 <code>avagraha</code>（ऽ）——一个显式标记，用来标注"这里原本有一个被 sandhi 吃掉的元音"。</strong> 现代 LLM 的解决方案是真正的 special token（把 <code>&lt;|im_start|&gt;</code> 加进词表，让它成为原子）。本仓库两个都没做，所以只能在调用侧靠字符串匹配兜底。</p>
+<p><strong>这是一个两千五百年前就被识别、并被给出正确解法的问题。</strong></p>
+<hr />
+<h2 id="7-经文的校验码冗余编码与本仓库的阶梯奖励">7. 经文的校验码：冗余编码与本仓库的阶梯奖励</h2>
+<h3 id="71-二值判据没有梯度这是本仓库最贵的一课">7.1 二值判据没有梯度——这是本仓库最贵的一课</h3>
+<p><code>reports/TRAINING_REPORT_8b_a88_x8.md</code> 记录了一次失败：</p>
+<div class="highlight"><pre><span></span><code>rl step   240 | reward 0.000 (max 0.00) | loss 0.0335
+rl step   300 | reward 0.000 (max 0.00) | loss 0.0277
+rl step   415 | reward 0.000 (max 0.00) | loss 0.0323
+</code></pre></div>
+
+<p><strong>415 步，reward 恒为 0。</strong> 原因写在 <code>codechat/funcall_reward.py:4-7</code>：</p>
+<div class="highlight"><pre><span></span><code><span class="n">CodeChat</span><span class="s1">&#39;s MBPP RL failed because the reward was binary (pass all unit</span>
+<span class="n">tests</span> <span class="o">-&gt;</span> <span class="mf">1.0</span><span class="p">,</span> <span class="k">else</span> <span class="mf">0.0</span><span class="p">)</span><span class="o">.</span> <span class="n">For</span> <span class="n">an</span> <span class="mi">8</span><span class="n">B</span> <span class="n">model</span> <span class="k">with</span> <span class="n">weak</span> <span class="n">code</span> <span class="n">SFT</span> <span class="n">this</span> <span class="n">meant</span>
+<span class="n">every</span> <span class="n">rollout</span> <span class="n">scored</span> <span class="mi">0</span><span class="p">,</span> <span class="n">GRPO</span><span class="s1">&#39;s advantage collapsed to 0, and training</span>
+<span class="n">did</span> <span class="n">nothing</span> <span class="k">for</span> <span class="mi">415</span> <span class="n">steps</span><span class="o">.</span>
+</code></pre></div>
+
+<p>GRPO 的优势是组内减均值。如果一组 rollout 全是 0，均值也是 0，<strong>优势恒等于 0，梯度恒等于 0</strong>。日志里那个在 0.03 抖动的 loss 只是 KL 惩罚项的自振荡，不是学习。</p>
+<p><strong>语法上的"对/错"二值判断，在模型还不会的时候，是一个零信息的信号。</strong></p>
+<h3 id="72-解法把判据变成阶梯">7.2 解法：把判据变成阶梯</h3>
+<p><code>codechat/funcall_reward.py:17-25</code> 的阶梯：</p>
+<div class="highlight"><pre><span></span><code>model output                                 → tier
+─────────────────────────────────────────────────────
+no &lt;functioncall&gt; tag at all                 → 0.00
+tag present, body not valid JSON             → 0.15
+JSON OK but missing &#39;name&#39;                   → 0.30
+JSON OK, wrong function name                 → 0.35
+right name, no/empty arguments               → 0.55
+right name, args parse, partial match        → 0.55 + 0.45 * match_frac
+right name, all arguments exactly match      → 1.00
+</code></pre></div>
+
+<p>这是一个<strong>部分推导的信用分配</strong>：模型的输出被解析器一层层剥开，走到哪一层就给哪一层的分。哪怕只学会了"要输出 <code>&lt;functioncall&gt;</code> 这个标记"，也立刻拿到 0.15。</p>
+<p>效果（<code>reports/TRAINING_REPORT_8b_v6_unified.md</code>）：</p>
+<div class="highlight"><pre><span></span><code>v6 joint SFT 出来即   pass@1 = 85.4%,  pass@8 = 87.5%
+funcall RL           reward_mean 稳定 0.88–1.0
+</code></pre></div>
+
+<p>对比 v1 的恒 0。<strong>同一个模型，同一个算法，只换了奖励的形状。</strong></p>
+<h3 id="73-这和-ghana-pāṭha-是同一个设计">7.3 这和 ghana-pāṭha 是同一个设计</h3>
+<p>回到 2.2 节。为什么古印度人不是简单地"多背几遍"，而是发明了 krama / jaṭā / ghana 这些排列？</p>
+<p>因为<strong>单纯重复只能检测"我忘了"，检测不出"我记错了"，更定位不了错在哪</strong>。而多重排列让每个词出现在多个不同的邻接对里：</p>
+<div class="highlight"><pre><span></span><code>原文 a b c d，你把 c 记成了 c&#39;
+
+简单重复：       a b c&#39; d              → 自洽，无法发现
+ghana-pāṭha：    bc&#39; c&#39;b bc&#39;d ...      → 与 cd dc cd 段落冲突
+                 cd  →  c&#39;d  与其它段落不一致
+                 → 错误在多处同时暴露 → 可检测 + 可定位
+</code></pre></div>
+
+<p><strong>这就是把"对/错"的二值判断，展开成"在哪一层、哪一个位置不一致"的阶梯判断。</strong></p>
+<table>
+<thead>
+<tr>
+<th></th>
+<th>ghana-pāṭha</th>
+<th>funcall 阶梯奖励</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>朴素方案</td>
+<td>整段背对 / 背错</td>
+<td>全部测试通过 / 不通过</td>
+</tr>
+<tr>
+<td>朴素方案的问题</td>
+<td>无法定位错误</td>
+<td>全 0，无梯度</td>
+</tr>
+<tr>
+<td>改进</td>
+<td>多重排列暴露局部不一致</td>
+<td>分层解析暴露局部正确</td>
+</tr>
+<tr>
+<td>得到的信息</td>
+<td>错在第几个词</td>
+<td>对到第几层</td>
+</tr>
+<tr>
+<td>效果</td>
+<td>两千年无损传承</td>
+<td>reward 0.00 → 0.88</td>
+</tr>
+</tbody>
+</table>
+<p><code>codechat/funcall_reward.py:53-100</code> 的 <code>_extract_functioncall_json</code> 就是那个"解码器"——它做括号平衡扫描，从模型输出的字节流里把结构还原出来。</p>
+<p><strong>群里说"你背诵的经文其实是编码之后的，你要理解原文要解码"。这行 Python 函数在做的，就是解码。</strong></p>
+<hr />
+<h2 id="8-为什么可以被穿透gold-定理与概率的逃生舱">8. 为什么"可以被穿透"：Gold 定理与概率的逃生舱</h2>
+<p>你的 TODO 里写着"探索，为什么可以被穿透"。这里给出理论上的答案，因为它决定了这件事的边界在哪。</p>
+<h3 id="81-坏消息gold-定理">8.1 坏消息：Gold 定理</h3>
+<p><strong>Gold (1967)</strong>：任何包含所有有限语言和至少一个无限语言的语言类（superfinite class），<strong>都不能</strong>仅从正例中在极限内被识别出来。</p>
+<p>具体地：只给你合法句子（没人告诉你哪些句子不合法），你无法在有限时间内确定地锁定正则语言、上下文无关语言、乃至任何足够丰富的语言类。</p>
+<p>这曾经是"语言不可能被学习，必须先天内置"（Chomsky 的刺激贫乏论证）的形式化支柱。</p>
+<h3 id="82-好消息horning-定理">8.2 好消息：Horning 定理</h3>
+<p><strong>Horning (1969)</strong>：如果目标不是"识别集合"，而是"逼近分布"——<strong>随机上下文无关文法（SCFG）是可以从正例中以概率 1 学习的</strong>。</p>
+<p>关键差别：</p>
+<div class="highlight"><pre><span></span><code>Gold 的设定：   学习一个集合 L ⊆ Σ*        （某句子 ∈ L 还是 ∉ L）
+Horning 的设定：学习一个分布 P over Σ*     （某句子的概率是多少）
+</code></pre></div>
+
+<p>在分布设定下，<strong>"没见过"本身就是信息</strong>。一个句法上可能但从未出现的结构，会被赋予低概率——这等价于一个软的负例。Gold 定理的困难恰恰来自"缺少负例"，而概率建模从数据的<strong>相对频率</strong>里凭空造出了负例。</p>
+<h3 id="83-这正是-codechat-在做的事">8.3 这正是 CodeChat 在做的事</h3>
+<p><code>codechat/gpt.py:129</code>：</p>
+<div class="highlight"><pre><span></span><code><span class="n">loss</span> <span class="o">=</span> <span class="n">F</span><span class="o">.</span><span class="n">cross_entropy</span><span class="p">(</span><span class="n">logits</span><span class="p">,</span> <span class="n">targets</span><span class="p">,</span> <span class="n">ignore_index</span><span class="o">=-</span><span class="mi">100</span><span class="p">)</span>
+</code></pre></div>
+
+<p>交叉熵是<strong>分布匹配</strong>，不是集合判定。模型从未被告知"这段代码语法错误"，它只被告知"这段代码出现过"。它学到的是 P(下一个 token | 上文)，而不是"合法 / 不合法"。</p>
+<p><strong>这就是"为什么可以被穿透"的完整答案：</strong></p>
+<blockquote>
+<p>语言规律可以被学习，不是因为它作为一个<strong>集合</strong>可学（Gold 说不可以），
+而是因为它作为一个<strong>分布</strong>可学（Horning 说可以），
+而分布可学的前提是——规律在数据里被<strong>高频、相干、多切面地重复</strong>（第 2 节），
+且规律本身占据一个<strong>远小于全空间的低维结构</strong>（第 3、4 节）。</p>
+<p>梵语是这个前提的极端情形：规律被人工设计成 4000 条无例外的规则，
+并被 ghana-pāṭha 以每词 13 次的冗余度反复呈现。</p>
+<p>它是"最容易被穿透的语言"，因为它是唯一一门<strong>为了被完美传输而设计</strong>的自然语言。</p>
+</blockquote>
+<h3 id="84-反过来说什么时候穿不透">8.4 反过来说：什么时候穿不透</h3>
+<p>Gold 定理没有消失，它只是被绕过了。绕过是有代价的，代价体现在本仓库的失败记录里：</p>
+<p><code>reports/TRAINING_REPORT_8b_a88_x8.md</code> 的 MBPP RL 恒 0——因为"程序通过单元测试"是一个<strong>集合判定</strong>，不是分布匹配。模型在这个判据上退回到了 Gold 的设定，于是学不动。</p>
+<p><code>docs/</code> 里 <code>eval_mbpp_pass_at_k.py</code> 的 VERDICT 阈值也是这个道理：</p>
+<div class="highlight"><pre><span></span><code>pass@1 &lt; 1%    →  别跑 GRPO（分布几乎不覆盖目标集合）
+pass@1 ∈ [1,5%) →  用 tiered reward + group≥8 + 过滤
+pass@1 ≥ 5%    →  标准 GRPO 可以工作
+</code></pre></div>
+
+<p><strong>当分布已经覆盖到目标一点点的时候，二值判据才重新变得可用。</strong> 在此之前，必须把判据软化成阶梯——也就是第 7 节做的事。</p>
+<hr />
+<h2 id="9-边界哪些东西不在权重里">9. 边界：哪些东西不在权重里</h2>
+<p>这篇文章一路在论证"语言规律可以被学习"。为了不夸大，必须说清楚哪些东西<strong>学不进权重</strong>。</p>
+<p><code>docs/sft_rl_inference_mechanics.md</code> §1 的核心二分：</p>
+<div class="highlight"><pre><span></span><code>知识住在 W 里          协议住在代码里
+──────────────         ──────────────
+语法规律               chat template 的字节序列
+词形变化               停止条件的判断
+代码模式               工具执行循环
+函数调用的时机          采样温度 / top-k
+</code></pre></div>
+
+<p>对应到梵语：</p>
+<ul>
+<li>《八章书》的 4000 条规则 = 权重能学的部分</li>
+<li><strong>怎么念、什么时候念、念错了怎么办</strong> = 传承体系（gurukula、pāṭha 制度）里的部分，不在规则书里</li>
+</ul>
+<p><code>codechat/gpt.py:136-148</code> 的 <code>generate</code> 不会停，<code>scripts/funcall_cli.py</code> 必须在循环里做字符串匹配——<strong>这些是"协议"，永远不会因为多训一万步就自动出现。</strong></p>
+<p>同理，波你尼的书里没写"背诵时要用 ghana 排列"。那是另一套系统。</p>
+<p><strong>规律可学，纪律不可学。</strong> 这可能是这篇文章最有实用价值的一句。</p>
+<hr />
+<h2 id="10-一张对照表">10. 一张对照表</h2>
+<table>
+<thead>
+<tr>
+<th>层次</th>
+<th>梵语的答案</th>
+<th>CodeChat 的答案</th>
+<th>代码位置</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><strong>语言学</strong></td>
+<td>4000 条 sūtra，含元规则、优先级、递归、压缩寻址</td>
+<td>655k 个 MLP 槽位，含软优先级、40 层递归</td>
+<td><code>gpt.py:39,75-79</code></td>
+</tr>
+<tr>
+<td><strong>重复</strong></td>
+<td>ghana-pāṭha，每词 13 次冗余展开</td>
+<td>随机窗口采样，30k 步 × 8 卡</td>
+<td><code>dataloader.py:49-52</code></td>
+</tr>
+<tr>
+<td><strong>统计</strong></td>
+<td>无例外规则 → 熵极低</td>
+<td>loss 11.37 → 0.61，困惑度 1.84</td>
+<td><code>gpt.py:129</code></td>
+</tr>
+<tr>
+<td><strong>几何</strong></td>
+<td>词形 = 词根 ⊗ 时态 ⊗ 人称 ⊗ 数 ⊗ 语态（低秩）</td>
+<td>embedding 里的近似线性属性方向</td>
+<td><code>gpt.py:100</code></td>
+</tr>
+<tr>
+<td><strong>神经</strong></td>
+<td>逐条改写，上下文继承（anuvṛtti）</td>
+<td><code>x = x + attn(x)</code>，因果注意力</td>
+<td><code>gpt.py:67,91-92</code></td>
+</tr>
+<tr>
+<td><strong>可逆性</strong></td>
+<td>sandhi 正向确定、逆向歧义；用 avagraha 标注</td>
+<td>BPE 正向确定、逆向歧义；无 special token</td>
+<td><code>tokenizer.py:11-19</code></td>
+</tr>
+<tr>
+<td><strong>纠错</strong></td>
+<td>多重排列 → 错误多处暴露 → 可定位</td>
+<td>阶梯奖励 → 部分正确可评分 → 有梯度</td>
+<td><code>funcall_reward.py:17-25</code></td>
+</tr>
+<tr>
+<td><strong>失败模式</strong></td>
+<td>传承中断则规则失传</td>
+<td>二值 reward → advantage ≡ 0 → 415 步空转</td>
+<td><code>TRAINING_REPORT_8b_a88_x8.md:192-197</code></td>
+</tr>
+<tr>
+<td><strong>理论保证</strong></td>
+<td>人工设计，无需学习</td>
+<td>Horning：分布可学；Gold：集合不可学</td>
+<td>—</td>
+</tr>
+<tr>
+<td><strong>不可学部分</strong></td>
+<td>念诵纪律、传承制度</td>
+<td>chat template、停止条件、工具循环</td>
+<td><code>sft_rl_inference_mechanics.md:33</code></td>
+</tr>
+</tbody>
+</table>
+<hr />
+<h2 id="结语">结语</h2>
+<p>群里那句"我一直觉得古代印度文明就像是程序员建立的"，说反了一半。</p>
+<p>不是印度人像程序员。是<strong>任何一个认真面对"用有限规则覆盖无限表达"这个问题的人，最后都会走到同一个地方</strong>：递归、元规则、作用域、压缩寻址、冗余校验。</p>
+<p>波你尼在公元前 5 世纪走到了，用的是离散符号和人的记忆。
+McCarthy 在 1958 年走到了，用的是 S-表达式和 <code>eval</code>。
+本仓库的 <code>codechat/gpt.py</code>，148 行，走到了同一个地方，用的是 83 亿个浮点数和交叉熵。</p>
+<p><strong>语言规律之所以可以被学习，是因为它一开始就是被"写"出来的——不管写它的是波你尼，还是十亿次相干叠加的梯度。</strong></p>
+<p>而那 15.5 个比特，就是这件事的收据。</p>
+<hr />
+<h2 id="参考">参考</h2>
+<ul>
+<li>Pāṇini, <em>Aṣṭādhyāyī</em>（约公元前 5–4 世纪），约 3959 条 sūtra</li>
+<li>P. Z. Ingerman, "Pāṇini-Backus Form Suggested", <em>CACM</em> 10(3), 1967</li>
+<li>E. M. Gold, "Language Identification in the Limit", <em>Information and Control</em> 10(5), 1967</li>
+<li>J. J. Horning, <em>A Study of Grammatical Inference</em>, PhD thesis, Stanford, 1969</li>
+<li>M. Geva et al., "Transformer Feed-Forward Layers Are Key-Value Memories", EMNLP 2021</li>
+<li>本仓库：<code>codechat/gpt.py</code>, <code>codechat/tokenizer.py</code>, <code>codechat/dataloader.py</code>,
+  <code>codechat/funcall_reward.py</code>, <code>reports/TRAINING_REPORT_8b_a88_x8.md</code>,
+  <code>reports/TRAINING_REPORT_8b_v6_unified.md</code>, <code>docs/sft_rl_inference_mechanics.md</code></li>
+</ul>
+    </div>
+  </article>
+
+</main>
+
+<!-- Floating Ask-AI chat widget -->
+<button class="ai-fab" id="ai-fab" aria-label="Ask AI about this article" title="Ask AI about this article">
+  <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+    <path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"/>
+  </svg>
+  <span class="ai-fab-label">Ask AI</span>
+</button>
+
+<div class="ai-panel" id="ai-panel" role="dialog" aria-labelledby="ai-panel-title" aria-hidden="true">
+  <header class="ai-panel-head">
+    <div class="ai-panel-title-wrap">
+      <span class="ai-dot"></span>
+      <h3 id="ai-panel-title">Ask AI about this post</h3>
+    </div>
+    <div class="ai-panel-actions">
+      <button class="ai-icon-btn" id="ai-clear" title="Clear conversation" aria-label="Clear">
+        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><polyline points="3 6 5 6 21 6"/><path d="M19 6l-1 14a2 2 0 0 1-2 2H8a2 2 0 0 1-2-2L5 6"/><path d="M10 11v6M14 11v6"/><path d="M9 6V4a1 1 0 0 1 1-1h4a1 1 0 0 1 1 1v2"/></svg>
+      </button>
+      <button class="ai-icon-btn" id="ai-close" title="Minimize" aria-label="Minimize">
+        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><polyline points="6 9 12 15 18 9"/></svg>
+      </button>
+    </div>
+  </header>
+
+  <div class="ai-messages" id="ai-messages">
+    <div class="ai-empty" id="ai-empty">
+      <p class="ai-empty-title">On-device AI · Gemini Nano</p>
+      <p class="ai-empty-sub">Ask anything about this article. Runs in your browser — nothing leaves your device.</p>
+    </div>
+  </div>
+
+  <div class="ai-status" id="ai-status" hidden></div>
+
+  <form class="ai-composer" id="ai-form">
+    <textarea id="ai-input" rows="1" placeholder="Ask about this post…" autocomplete="off"></textarea>
+    <button type="submit" id="ai-send" class="ai-send" aria-label="Send" disabled>
+      <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><line x1="22" y1="2" x2="11" y2="13"/><polygon points="22 2 15 22 11 13 2 9 22 2"/></svg>
+    </button>
+  </form>
+</div>
+
+<script>
+(function () {
+  const POST_TITLE = "\u4e3a\u4ec0\u4e48\u8bed\u8a00\u89c4\u5f8b\u53ef\u4ee5\u88ab\u5b66\u4e60\uff1a\u4ece\u68b5\u8bed\u5230 CodeChat \u7684 8B \u6743\u91cd";
+  const contentEl = document.querySelector('article .content');
+
+  const fab = document.getElementById('ai-fab');
+  const panel = document.getElementById('ai-panel');
+  const closeBtn = document.getElementById('ai-close');
+  const clearBtn = document.getElementById('ai-clear');
+  const msgsEl = document.getElementById('ai-messages');
+  const emptyEl = document.getElementById('ai-empty');
+  const statusEl = document.getElementById('ai-status');
+  const formEl = document.getElementById('ai-form');
+  const inputEl = document.getElementById('ai-input');
+  const sendBtn = document.getElementById('ai-send');
+
+  function articleText() {
+    if (!contentEl) return '';
+    return (contentEl.innerText || contentEl.textContent || '')
+      .replace(/[ \t]+\n/g, '\n')
+      .replace(/\n{3,}/g, '\n\n')
+      .trim();
+  }
+
+  function setStatus(msg, cls) {
+    if (!msg) { statusEl.hidden = true; statusEl.textContent = ''; statusEl.className = 'ai-status'; return; }
+    statusEl.hidden = false;
+    statusEl.textContent = msg;
+    statusEl.className = 'ai-status' + (cls ? ' ' + cls : '');
+  }
+
+  function hideEmpty() { if (emptyEl) emptyEl.style.display = 'none'; }
+
+  function appendBubble(role, text) {
+    hideEmpty();
+    const wrap = document.createElement('div');
+    wrap.className = 'ai-msg ai-msg-' + role;
+    const bubble = document.createElement('div');
+    bubble.className = 'ai-bubble';
+    bubble.textContent = text;
+    wrap.appendChild(bubble);
+    msgsEl.appendChild(wrap);
+    msgsEl.scrollTop = msgsEl.scrollHeight;
+    return bubble;
+  }
+
+  function appendTyping() {
+    hideEmpty();
+    const wrap = document.createElement('div');
+    wrap.className = 'ai-msg ai-msg-assistant ai-typing';
+    wrap.innerHTML = '<div class="ai-bubble"><span class="ai-dots"><i></i><i></i><i></i></span></div>';
+    msgsEl.appendChild(wrap);
+    msgsEl.scrollTop = msgsEl.scrollHeight;
+    return wrap;
+  }
+
+  function autoSize() {
+    inputEl.style.height = 'auto';
+    inputEl.style.height = Math.min(inputEl.scrollHeight, 140) + 'px';
+  }
+
+  function openPanel() {
+    panel.classList.add('open');
+    panel.setAttribute('aria-hidden', 'false');
+    fab.classList.add('hidden');
+    setTimeout(() => inputEl.focus(), 50);
+  }
+  function closePanel() {
+    panel.classList.remove('open');
+    panel.setAttribute('aria-hidden', 'true');
+    fab.classList.remove('hidden');
+  }
+
+  fab.addEventListener('click', openPanel);
+  closeBtn.addEventListener('click', closePanel);
+  document.addEventListener('keydown', e => {
+    if (e.key === 'Escape' && panel.classList.contains('open')) closePanel();
+  });
+
+  // ---- LanguageModel session ----
+  let session = null;
+  let creating = null;
+  let history = [];
+
+  function buildSystemPrompt() {
+    // Keep article context modest — Gemini Nano's input quota is small.
+    const article = articleText().slice(0, 4000);
+    return (
+      'You are a concise, helpful assistant answering questions about a blog post. ' +
+      'Use the article below as your primary source. If the answer is not in it, say so briefly and answer generally. ' +
+      'Reply in the same language as the user\'s question. Keep answers short unless asked for detail.\n\n' +
+      '=== ARTICLE TITLE ===\n' + POST_TITLE + '\n\n' +
+      '=== ARTICLE CONTENT ===\n' + article
+    );
+  }
+
+  async function ensureSession() {
+    if (session) return session;
+    if (creating) return creating;
+
+    if (!('LanguageModel' in self)) {
+      throw new Error(
+        'On-device AI not available. Use Chrome 138+ on desktop, or enable ' +
+        '"Prompt API for Gemini Nano" in chrome://flags.'
+      );
+    }
+
+    setStatus('Checking model…', 'info');
+    const status = await LanguageModel.availability();
+    if (status === 'unavailable') {
+      throw new Error('Model unavailable on this device.');
+    }
+
+    creating = (async () => {
+      // Only show download UI when the model isn't already there.
+      const willDownload = (status !== 'available');
+      if (willDownload) setStatus('Preparing model (first run downloads ~2GB)…', 'info');
+      else setStatus('Warming up…', 'info');
+
+      const s = await LanguageModel.create({
+        initialPrompts: [{ role: 'system', content: buildSystemPrompt() }],
+        monitor(m) {
+          m.addEventListener('downloadprogress', e => {
+            // Skip the spurious 0% event Chrome fires for cached models.
+            if (!willDownload && e.loaded === 0) return;
+            const pct = (e.loaded * 100).toFixed(1);
+            setStatus('Downloading model: ' + pct + '%', 'info');
+          });
+        }
+      });
+      session = s;
+      setStatus('');
+      return s;
+    })();
+
+    try { return await creating; }
+    finally { creating = null; }
+  }
+
+  async function ask(q) {
+    appendBubble('user', q);
+    history.push({ role: 'user', content: q });
+
+    sendBtn.disabled = true;
+    inputEl.disabled = true;
+    const typing = appendTyping();
+
+    let answerBubble = null;
+    let acc = '';
+    try {
+      const s = await ensureSession();
+      const stream = s.promptStreaming(q);
+      for await (const chunk of stream) {
+        if (!answerBubble) {
+          typing.remove();
+          const wrap = document.createElement('div');
+          wrap.className = 'ai-msg ai-msg-assistant';
+          answerBubble = document.createElement('div');
+          answerBubble.className = 'ai-bubble';
+          wrap.appendChild(answerBubble);
+          msgsEl.appendChild(wrap);
+        }
+        acc += chunk;
+        answerBubble.textContent = acc;
+        msgsEl.scrollTop = msgsEl.scrollHeight;
+      }
+      if (acc) history.push({ role: 'assistant', content: acc });
+      else { typing.remove(); appendBubble('assistant', '(no response)'); }
+    } catch (e) {
+      if (typing && typing.parentNode) typing.remove();
+      const err = document.createElement('div');
+      err.className = 'ai-msg ai-msg-error';
+      err.innerHTML = '<div class="ai-bubble">⚠ ' + (e && e.message ? e.message : String(e)) + '</div>';
+      msgsEl.appendChild(err);
+      msgsEl.scrollTop = msgsEl.scrollHeight;
+    } finally {
+      sendBtn.disabled = !inputEl.value.trim();
+      inputEl.disabled = false;
+      inputEl.focus();
+    }
+  }
+
+  formEl.addEventListener('submit', e => {
+    e.preventDefault();
+    const q = inputEl.value.trim();
+    if (!q) return;
+    inputEl.value = '';
+    autoSize();
+    sendBtn.disabled = true;
+    ask(q);
+  });
+
+  inputEl.addEventListener('input', () => {
+    autoSize();
+    sendBtn.disabled = !inputEl.value.trim();
+  });
+  inputEl.addEventListener('keydown', e => {
+    if (e.key === 'Enter' && !e.shiftKey) {
+      e.preventDefault();
+      formEl.requestSubmit();
+    }
+  });
+
+  clearBtn.addEventListener('click', () => {
+    msgsEl.innerHTML = '';
+    msgsEl.appendChild(emptyEl);
+    emptyEl.style.display = '';
+    history = [];
+    if (session && session.destroy) { try { session.destroy(); } catch (_) {} }
+    session = null;
+    setStatus('');
+  });
+
+  if (!('LanguageModel' in self)) {
+    fab.addEventListener('click', () => {
+      openPanel();
+      setStatus('On-device AI not detected. Use Chrome 138+ desktop, or enable "Prompt API for Gemini Nano" in chrome://flags.', 'bad');
+    }, { once: true });
+  }
+})();
+</script>
+
+<!-- Outline notes / comments — DataScript + IndexedDB -->
+<script src="https://github.com/tonsky/datascript/releases/download/1.7.8/datascript-1.7.8.min.js"></script>
+<script src="../notes.js?v=6"></script>
+<script src="../theme.js"></script>
+<script src="../wechat-copy.js?v=3"></script>
+
+</body>
+</html>
