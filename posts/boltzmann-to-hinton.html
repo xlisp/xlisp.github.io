@@ -1,0 +1,1540 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>从玻尔兹曼到辛顿: 从 \(S = k \log W\) 到 gpt.py:145 的一条线 · Steve Chan — xlisp</title>
+<meta name="description" content="先把结论放在最前面。下面每一行都是上一行的直接后果，中间没有跳跃：">
+<meta name="author" content="Steve Chan">
+<link rel="icon" type="image/jpeg" href="../icon.jpeg">
+<link rel="apple-touch-icon" href="../icon.jpeg">
+<meta property="og:type" content="article">
+<meta property="og:title" content="从玻尔兹曼到辛顿: 从 \(S = k \log W\) 到 gpt.py:145 的一条线">
+<meta property="og:description" content="先把结论放在最前面。下面每一行都是上一行的直接后果，中间没有跳跃：">
+<meta property="og:image" content="../icon.jpeg">
+<meta property="og:site_name" content="Steve Chan — xlisp">
+<meta name="twitter:card" content="summary_large_image">
+<meta name="twitter:title" content="从玻尔兹曼到辛顿: 从 \(S = k \log W\) 到 gpt.py:145 的一条线">
+<meta name="twitter:description" content="先把结论放在最前面。下面每一行都是上一行的直接后果，中间没有跳跃：">
+<meta name="twitter:image" content="../icon.jpeg">
+<link rel="stylesheet" href="../style.css?v=light1">
+<script>(function(){try{if(localStorage.getItem('theme')==='light')document.documentElement.setAttribute('data-theme','light');}catch(e){}})();</script>
+<!-- Math formula rendering via MathJax -->
+<script>
+window.MathJax = {
+  tex: {
+    // arithmatex emits \(...\) / \[...\] markup, so only these delimiters
+    // are needed; plain `$` is left alone (avoids currency false positives).
+    inlineMath: [['\\(', '\\)']],
+    displayMath: [['\\[', '\\]']],
+    processEscapes: true
+  },
+  svg: {
+    // Each formula gets its own self-contained <defs>, so the copy script can
+    // serialize one <svg> and rasterize it to a PNG for WeChat.
+    fontCache: 'local'
+  },
+  options: {
+    skipHtmlTags: ['script', 'noscript', 'style', 'textarea', 'pre', 'code'],
+    ignoreHtmlClass: 'highlight'
+  }
+};
+</script>
+<script src="https://cdn.jsdelivr.net/npm/mathjax@3/es5/tex-svg.js" async></script>
+</head>
+<body>
+<main class="wrap post">
+
+  <nav class="topnav">
+    <a href="../index.html">← home</a>
+  </nav>
+
+  <article>
+    <header class="post-header">
+      <h1>从玻尔兹曼到辛顿: 从 \(S = k \log W\) 到 gpt.py:145 的一条线</h1>
+      <p class="meta">2026-08-06 · Steve Chan</p>
+    </header>
+
+    <div class="content">
+<blockquote>
+<p>玻尔兹曼其人、"玻尔兹曼机"这个名字从何而来、"受限"到底限了什么、辛顿的三篇论文，
+以及为什么本仓库 <code>codechat/gpt.py</code> 第 145 行那个 <code>F.softmax(logits, dim=-1)</code>
+就是 1877 年那个 <span class="arithmatex">\(e^{-E/kT}/Z\)</span>。</p>
+<p>全文只讲<strong>一条线</strong>。这条线有一个起点（一个奥地利人为原子的存在辩护了三十年，
+然后在他被证明是对的两年前自杀）、两次断裂（1969、1995）、
+一次诺贝尔物理学奖（2024），和一个终点（你正在训练的这个 8B 模型的最后一层）。</p>
+<p>配套可执行 demo：<code>docs/examples/boltzmann_machine_demo.py</code>
+（<code>python docs/examples/boltzmann_machine_demo.py</code> 复现本文全部数字和四张图）。</p>
+</blockquote>
+<hr />
+<h2 id="目录">目录</h2>
+<ul>
+<li><a href="#0-这条线的骨架">0. 这条线的骨架</a></li>
+<li><a href="#1-路德维希玻尔兹曼18441906">1. 路德维希·玻尔兹曼（1844–1906）</a></li>
+<li><a href="#2-那个公式的技术内容熵是数数分布是-e-etz">2. 那个公式的技术内容：熵是数数，分布是 <span class="arithmatex">\(e^{-E/T}/Z\)</span></a></li>
+<li><a href="#3-断裂与接续神经网络的另一半渊源19431982">3. 断裂与接续：神经网络的另一半渊源（1943–1982）</a></li>
+<li><a href="#4-1982-hopfield把-ising-模型搬进神经网络">4. 1982 Hopfield：把 Ising 模型搬进神经网络</a></li>
+<li><a href="#5-19831985-辛顿玻尔兹曼机">5. 1983–1985 辛顿：玻尔兹曼机</a></li>
+<li><a href="#6-为什么玻尔兹曼机当年跑不动z-的诅咒">6. 为什么玻尔兹曼机当年跑不动：<span class="arithmatex">\(Z\)</span> 的诅咒</a></li>
+<li><a href="#7-2002-cd-1-与-2006-dbn这条线第二次接上">7. 2002 CD-1 与 2006 DBN：这条线第二次接上</a></li>
+<li><a href="#8-今天本仓库里的玻尔兹曼">8. 今天：本仓库里的玻尔兹曼</a></li>
+<li><a href="#9-类比在哪里断掉">9. 类比在哪里断掉</a></li>
+<li><a href="#10-一张对照表">10. 一张对照表</a></li>
+<li><a href="#11-运行-demo">11. 运行 demo</a></li>
+</ul>
+<hr />
+<h2 id="0-这条线的骨架">0. 这条线的骨架</h2>
+<p>先把结论放在最前面。下面每一行都是上一行的<strong>直接后果</strong>，中间没有跳跃：</p>
+<table>
+<thead>
+<tr>
+<th>年份</th>
+<th>谁</th>
+<th>干了什么</th>
+<th>一行公式</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>1877</td>
+<td>Boltzmann</td>
+<td>熵 = 微观态数的对数</td>
+<td><span class="arithmatex">\(S = k \log W\)</span></td>
+</tr>
+<tr>
+<td>1877</td>
+<td>Boltzmann</td>
+<td>平衡态下状态的概率由能量决定</td>
+<td><span class="arithmatex">\(p(s) = \dfrac{e^{-E(s)/kT}}{Z}\)</span></td>
+</tr>
+<tr>
+<td>1925</td>
+<td>Ising / Lenz</td>
+<td>把 <span class="arithmatex">\(E\)</span> 写成自旋的两两耦合</td>
+<td><span class="arithmatex">\(E = -\tfrac{1}{2}\sum_{ij} J_{ij}\,s_i s_j\)</span></td>
+</tr>
+<tr>
+<td>1982</td>
+<td>Hopfield</td>
+<td>把 <span class="arithmatex">\(J\)</span> 换成<strong>可学的权重</strong> <span class="arithmatex">\(W\)</span>，得到联想记忆</td>
+<td><span class="arithmatex">\(E(s) = -\tfrac{1}{2}s^{\mathsf T}Ws\)</span>，<span class="arithmatex">\(s_i \leftarrow \operatorname{sign}(h_i)\)</span></td>
+</tr>
+<tr>
+<td>1985</td>
+<td>Hinton &amp; Sejnowski</td>
+<td>把 <span class="arithmatex">\(\operatorname{sign}(\cdot)\)</span> 换成<strong>按玻尔兹曼分布采样</strong></td>
+<td><span class="arithmatex">\(p(s_i{=}1) = \sigma\!\left(\dfrac{2h_i}{T}\right)\)</span></td>
+</tr>
+<tr>
+<td>1985</td>
+<td>Ackley/Hinton/Sejnowski</td>
+<td>学习律 = 数据下的相关 − 模型下的相关</td>
+<td><span class="arithmatex">\(\Delta w_{ij} \propto \langle s_i s_j\rangle_{\text{data}} - \langle s_i s_j\rangle_{\text{model}}\)</span></td>
+</tr>
+<tr>
+<td>1986</td>
+<td>Smolensky</td>
+<td>砍成二部图 → 条件独立 + 自由能有闭式</td>
+<td><span class="arithmatex">\(E(v,h) = -v^{\mathsf T}Wh - b^{\mathsf T}v - c^{\mathsf T}h\)</span></td>
+</tr>
+<tr>
+<td>2002</td>
+<td>Hinton</td>
+<td>负相用 1 步 Gibbs 近似，RBM 终于训得动</td>
+<td>CD-1</td>
+</tr>
+<tr>
+<td>2006</td>
+<td>Hinton et al.</td>
+<td>逐层 RBM 预训练 → 深度网络能收敛</td>
+<td>DBN</td>
+</tr>
+<tr>
+<td>2017</td>
+<td>Vaswani et al.</td>
+<td>把 <span class="arithmatex">\(Z\)</span> 从 <span class="arithmatex">\(2^N\)</span> 项换成 <span class="arithmatex">\(50257\)</span> 项的显式求和</td>
+<td><span class="arithmatex">\(\operatorname{softmax}(\text{logits})\)</span></td>
+</tr>
+<tr>
+<td>今天</td>
+<td>本仓库</td>
+<td><code>codechat/gpt.py:141-146</code></td>
+<td><span class="arithmatex">\(p = \operatorname{softmax}(\text{logits}/T)\)</span></td>
+</tr>
+</tbody>
+</table>
+<p><strong>整条线只有一个母题：给状态定义能量，然后按 <span class="arithmatex">\(e^{-E/T}\)</span> 分配概率。</strong>
+一百五十年里变的只是「谁来算 <span class="arithmatex">\(Z\)</span>」。</p>
+<hr />
+<h2 id="1-路德维希玻尔兹曼18441906">1. 路德维希·玻尔兹曼（1844–1906）</h2>
+<p>路德维希·爱德华·玻尔兹曼 1844 年 2 月 20 日生于维也纳。他后来讲过一个不太得体的玩笑：
+自己出生在忏悔星期二的夜里，第二天就是圣灰星期三——狂欢和斋戒之间那道缝里；
+他说这解释了为什么他的情绪总在狂喜和绝望之间摆荡，从不肯在中间停留。
+当时朋友们把它当笑话听。</p>
+<p>他的父亲是税务官，1859 年死于肺结核，玻尔兹曼那年十五岁。他在维也纳大学师从约瑟夫·斯特凡，
+1866 年获博士学位，1869 年二十五岁就当上格拉茨大学的理论物理教授。
+1884 年他从热力学和麦克斯韦电磁理论出发推导出黑体辐射的 <span class="arithmatex">\(T^4\)</span> 定律——
+那条定律上因此有斯特凡和他两个人的名字。</p>
+<h3 id="11-他做的事把力学和概率焊在一起">1.1 他做的事：把力学和概率焊在一起</h3>
+<p>十九世纪下半叶的核心矛盾是这样的：牛顿力学在时间上是可逆的，把所有分子的速度反号，
+一切都会精确地倒着重演一遍。可现实不是这样——热只从热的地方流向冷的地方，
+杯子摔碎了不会自己拼回去。<strong>可逆的微观规律，怎么会导出不可逆的宏观定律？</strong></p>
+<p>1872 年玻尔兹曼写下了后来以他命名的输运方程，并证明其中一个量（他记作 <span class="arithmatex">\(H\)</span>）只会单调下降：</p>
+<div class="arithmatex">\[H(t) \;=\; \int f(\mathbf v,t)\,\log f(\mathbf v,t)\,\mathrm d\mathbf v,
+\qquad \frac{\mathrm dH}{\mathrm dt} \le 0\]</div>
+<p>这就是 <strong>H 定理</strong>，而 <span class="arithmatex">\(-H\)</span> 就是熵。他认为自己证明了热力学第二定律。</p>
+<p>1876 年，他在格拉茨的同事约瑟夫·洛施密特提出了反驳，后世称为<strong>可逆性佯谬</strong>（Umkehreinwand）：</p>
+<blockquote>
+<p>你的推导用的全是可逆的力学。可逆的前提不可能推出不可逆的结论。
+把所有分子的速度反号（<span class="arithmatex">\(\mathbf v \mapsto -\mathbf v\)</span>），你的 <span class="arithmatex">\(H\)</span> 就必须往上走。
+你的定理里一定藏着一个非力学的假设。</p>
+</blockquote>
+<p>洛施密特是对的。玻尔兹曼花了一年才给出回答——<strong>而这个回答比原来的定理重要得多。</strong></p>
+<h3 id="12-1877答案是数数">1.2 1877：答案是「数数」</h3>
+<p>他的回答是：<strong>第二定律根本不是一条力学定律，它是一条关于数数的定律。</strong></p>
+<p>给定一个宏观态（比如「气体均匀充满容器」），有多少个微观态与之相容？
+玻尔兹曼把这个数叫作<strong>排列数</strong>（Permutabilität），记作 <span class="arithmatex">\(W\)</span>。
+均匀分布对应的 <span class="arithmatex">\(W\)</span> 大得离谱，所有分子挤在左半边对应的 <span class="arithmatex">\(W\)</span> 小得可怜。
+系统并不是被某种力"推"向平衡，它只是<strong>走向了微观态更多的那一边</strong>——因为那一边的态实在太多。</p>
+<p>于是有了 1877 年那篇《论热力学第二定律与概率计算的关系》里的核心命题：</p>
+<div class="arithmatex">\[S \;\propto\; \log W\]</div>
+<p>这一步同时也回答了洛施密特：反转速度确实会让熵下降，
+<strong>但那个初态在 <span class="arithmatex">\(W\)</span> 里占的比例小到你等宇宙年龄也撞不上一次</strong>。
+第二定律为真，不是因为它不可能被违反，而是因为违反它的概率是 <span class="arithmatex">\(10^{-10^{23}}\)</span> 这个量级的东西。</p>
+<p><strong>他把"必然"换成了"几乎必然"。</strong> 这一步让他付出了后半生的代价。</p>
+<p>1896 年策梅洛拿庞加莱的回归定理又质疑了一次（<strong>回归佯谬</strong>，Wiederkehreinwand）：
+任何有限系统迟早会回到初态附近，所以熵不可能单调增。
+玻尔兹曼的回答还是同一句：会回来，但你要等的时间比宇宙的年龄长得多。</p>
+<h3 id="13-他打的那场仗">1.3 他打的那场仗</h3>
+<p>1890 年代的欧洲物理学界流行两样东西，两样都跟他过不去。</p>
+<p>一样是奥斯特瓦尔德的<strong>唯能论</strong>：能量是唯一实在的东西，原子是多余的假设。
+另一样是马赫的实证主义：<strong>看不见的东西不该写进物理学</strong>——原子谁看见过？
+所以原子是形而上学。</p>
+<p>1895 年在吕贝克的自然科学家大会上，玻尔兹曼和奥斯特瓦尔德当面辩论。
+索末菲后来把那场辩论形容为斗牛：奥斯特瓦尔德是斗牛士，玻尔兹曼是那头公牛。
+公牛赢了那一场，但输掉了那些年的气氛。</p>
+<p>他不停地换学校——格拉茨、维也纳、慕尼黑、维也纳、莱比锡、维也纳。
+在莱比锡他和奥斯特瓦尔德成了同事，两人私交其实不坏，这让局面更难受；
+他在那里有过一次未遂的自杀。1889 年他十一岁的长子路德维希·胡戈死于阑尾炎，
+他一直认为是自己耽误了治疗。</p>
+<p>1902 年他回到维也纳，除物理外还接下了马赫留下的自然哲学课——
+一个坚持原子论的人去讲马赫的哲学课，讽刺意味他自己很清楚。
+讲座大到要换教室，皇帝接见了他。他在讲台上说过一句被反复引用的话：</p>
+<blockquote>
+<p>我是一个孤独的人，一个留在后面的人。</p>
+</blockquote>
+<p>1905 年他去加州大学伯克利分校讲暑期课，回来写了篇游记
+《一个德国教授的黄金国之旅》，在里面抱怨美国人不喝酒只喝水，
+说这是此行最大的苦难。那是他写过最轻松的文字。</p>
+<p>1906 年 9 月 5 日，在的里雅斯特附近的杜伊诺，妻子和女儿去海里游泳的时候，
+玻尔兹曼在旅馆房间里上吊自杀，六十二岁。</p>
+<h3 id="14-他没看见的后来">1.4 他没看见的后来</h3>
+<ul>
+<li><strong>1905 年</strong>爱因斯坦解释了布朗运动——原子存在的直接证据。那是他死前一年印出来的。</li>
+<li><strong>1908–1909 年</strong>佩兰完成实验，原子的存在再无争议。那是他死后两三年。</li>
+<li><strong>普朗克</strong>在 1900 年为解释黑体辐射被迫用了玻尔兹曼的方法，
+  引入一个常数 <span class="arithmatex">\(k\)</span>（他称之为<strong>玻尔兹曼常数</strong>，尽管这个常数是普朗克自己先写下来的），
+  并把玻尔兹曼的关系式写成了最终形式：</li>
+</ul>
+<p>$<span class="arithmatex">\(S = k \log W\)</span>$</p>
+<p><strong>玻尔兹曼本人从未把它写成过这个样子。</strong>
+  维也纳中央公墓他的墓碑上刻的，是普朗克的写法。</p>
+<p>一个人用一生证明「概率就够了」，而他自己的名字，最后是被别人以概率的方式安放上去的。</p>
+<h2 id="2-那个公式的技术内容熵是数数分布是-e-etz">2. 那个公式的技术内容：熵是数数，分布是 <span class="arithmatex">\(e^{-E/T}/Z\)</span></h2>
+<p>生平到此为止。下面把 1877 年那两个命题变成能跑的代码。</p>
+<h3 id="21-s-k-log-w第二定律是一句数数的结论">2.1 <span class="arithmatex">\(S = k \log W\)</span>：第二定律是一句数数的结论</h3>
+<p><code>docs/examples/boltzmann_machine_demo.py</code> 第 1 部分把 <span class="arithmatex">\(N=20\)</span> 个粒子扔进左右两个盒子，
+宏观态是「左边有 <span class="arithmatex">\(n\)</span> 个」，微观态数就是二项系数：</p>
+<div class="arithmatex">\[W(n) = \binom{N}{n} = \frac{N!}{n!\,(N-n)!},
+\qquad S(n) = \log W(n)\]</div>
+<div class="highlight"><pre><span></span><code>   n    W(n)=C(N,n)    S=ln W
+   0              1     0.000
+   4          4,845     8.486  ############################
+   8        125,970    11.744  #######################################
+  10        184,755    12.127  ########################################   ← 最大
+  12        125,970    11.744  #######################################
+  20              1     0.000
+
+  全部在左边（&#39;有序&#39;）的概率：9.537e-07
+  正好均分（&#39;平衡&#39;）的概率  ：1.762e-01
+  倍数：184,756 倍
+</code></pre></div>
+
+<p>20 个粒子，"有序"就已经比"平衡"少了 18 万倍：</p>
+<div class="arithmatex">\[\frac{W(N/2)}{W(0)} = \binom{20}{10} = 184{,}756\]</div>
+<p>把 <span class="arithmatex">\(N=20\)</span> 换成阿伏伽德罗常数 <span class="arithmatex">\(N_A \approx 6\times10^{23}\)</span>，这个比值的指数就是 <span class="arithmatex">\(10^{23}\)</span> 量级。
+<strong>洛施密特的反转确实存在，只是它落在一个测度为零的集合里。</strong></p>
+<p>对应的图（<code>docs/images/boltzmann_01_entropy_and_distribution.png</code> 左）：</p>
+<p><img alt="熵与玻尔兹曼分布" src="images/boltzmann_01_entropy_and_distribution.png" /></p>
+<h3 id="22-p-propto-e-ekt分布是熵与能量的一次配比">2.2 <span class="arithmatex">\(p \propto e^{-E/kT}\)</span>：分布是「熵与能量的一次配比」</h3>
+<p>在总能量固定的约束下最大化熵，即求解</p>
+<div class="arithmatex">\[\max_{p}\; \Big(-\sum_i p_i \log p_i\Big)
+\quad \text{s.t.} \quad \sum_i p_i = 1,\;\; \sum_i p_i E_i = \bar E\]</div>
+<p>对应的拉格朗日函数 <span class="arithmatex">\(\mathcal L = -\sum_i p_i\log p_i - \alpha(\sum_i p_i - 1) - \beta(\sum_i p_i E_i - \bar E)\)</span>
+求驻点 <span class="arithmatex">\(\partial\mathcal L/\partial p_i = 0\)</span>，得到 <span class="arithmatex">\(\log p_i = -1-\alpha-\beta E_i\)</span>，
+其中第二个乘子恰好是 <span class="arithmatex">\(\beta = 1/kT\)</span>。归一化后就是<strong>玻尔兹曼分布</strong>：</p>
+<div class="arithmatex">\[\boxed{\;p_i = \frac{e^{-E_i/kT}}{Z},
+\qquad Z = \sum_j e^{-E_j/kT}\;}\]</div>
+<p>等价地：系统最小化<strong>亥姆霍兹自由能</strong></p>
+<div class="arithmatex">\[F = \langle E\rangle - T S = -kT\log Z\]</div>
+<p><span class="arithmatex">\(T\)</span> 就是这场拉锯的汇率——它决定你愿意为多一点熵付出多少能量。</p>
+<p>demo 里对同一组能级扫温度：</p>
+<div class="highlight"><pre><span></span><code>      T | E=0   E=1   E=2   E=3   E=4   |   S = −Σ p·ln p
+    0.2 | 0.993 0.007 0.000 0.000 0.000 |   0.0407
+    1.0 | 0.636 0.234 0.086 0.032 0.012 |   1.0000
+    5.0 | 0.287 0.235 0.192 0.157 0.129 |   1.5705
+  100.0 | 0.204 0.202 0.200 0.198 0.196 |   1.6093   ← ln 5 = 1.6094
+</code></pre></div>
+
+<p>注意 demo 里那行代码：</p>
+<div class="highlight"><pre><span></span><code><span class="n">p</span> <span class="o">=</span> <span class="n">F</span><span class="o">.</span><span class="n">softmax</span><span class="p">(</span><span class="o">-</span><span class="n">E</span> <span class="o">/</span> <span class="n">T</span><span class="p">,</span> <span class="n">dim</span><span class="o">=</span><span class="mi">0</span><span class="p">)</span>          <span class="c1"># ← softmax(-E/T) 就是玻尔兹曼分布</span>
+</code></pre></div>
+
+<p>因为按定义</p>
+<div class="arithmatex">\[\operatorname{softmax}(x)_i = \frac{e^{x_i}}{\sum_j e^{x_j}}
+\;\;\Longrightarrow\;\;
+\operatorname{softmax}\!\left(\frac{-E}{T}\right)_i = \frac{e^{-E_i/T}}{\sum_j e^{-E_j/T}} = \frac{e^{-E_i/T}}{Z}\]</div>
+<p><strong><code>softmax</code> 不是「像」玻尔兹曼分布，它就是。</strong>
+这一行是全文的枢纽，第 8 节会回到它。</p>
+<h3 id="23-z-是这条线上唯一真正的障碍">2.3 <span class="arithmatex">\(Z\)</span> 是这条线上唯一真正的障碍</h3>
+<p>配分函数</p>
+<div class="arithmatex">\[Z = \sum_{j} e^{-E_j/kT}\]</div>
+<p>要对<strong>所有</strong>状态求和。5 个能级时它是 5 项；<span class="arithmatex">\(N\)</span> 个二值神经元时状态空间是 <span class="arithmatex">\(\{-1,+1\}^N\)</span>，于是</p>
+<div class="arithmatex">\[Z = \sum_{s \in \{-1,+1\}^N} e^{-E(s)/kT} \qquad (2^N \text{ 项})\]</div>
+<p><span class="arithmatex">\(N = 100\)</span> 时 <span class="arithmatex">\(2^{100} \approx 1.3\times10^{30}\)</span>，已经超过可观测宇宙的原子数了。</p>
+<p><strong>这条线上后面所有的技术（Gibbs 采样、模拟退火、对比散度、乃至 Transformer 的胜出），
+全部是在处理同一件事：<span class="arithmatex">\(Z\)</span> 算不动。</strong> 记住这句话。</p>
+<hr />
+<h2 id="3-断裂与接续神经网络的另一半渊源19431982">3. 断裂与接续：神经网络的另一半渊源（1943–1982）</h2>
+<p>玻尔兹曼这条线在物理学内部继续走：</p>
+<ul>
+<li><strong>1925</strong> 伊辛（在楞次的建议下）研究一维自旋链，能量
+  <span class="arithmatex">\(E = -J\sum_i s_i s_{i+1}\)</span>，发现一维没有相变，一度以为模型没用。</li>
+<li><strong>1944</strong> 昂萨格给出二维伊辛模型的精确解，有相变。伊辛模型成为统计物理的标准玩具。</li>
+<li><strong>1975</strong> 谢林顿-柯克帕特里克、爱德华兹-安德森提出<strong>自旋玻璃</strong>：
+  耦合 <span class="arithmatex">\(J_{ij} \sim \mathcal N(0, J^2/N)\)</span> 随机、有正有负 → 能量地形上有<strong>指数多个局部极小</strong>。
+  这个"崎岖能量地形"的图像，后来直接变成了神经网络的损失地形语言。</li>
+</ul>
+<p>同时，另一条完全独立的线在生物学和心理学里走：</p>
+<ul>
+<li><strong>1943</strong> 麦卡洛克与皮茨：神经元 = 阈值逻辑单元。第一个"人工神经元"。</li>
+<li><strong>1949</strong> 赫布：「一起放电的细胞连在一起」（<em>cells that fire together wire together</em>）。
+  这是<strong>第一条学习律</strong>，而且它是<strong>局部的</strong>——只用到突触两端的活动。</li>
+<li><strong>1958</strong> 罗森布拉特的感知机。硬件、新闻发布会、以及过度承诺。</li>
+<li><strong>1969</strong> 明斯基与佩珀特的《感知机》：单层感知机连 XOR 都学不了。
+  <strong>第一次寒冬开始。</strong> 神经网络研究在美国基本停摆十几年。</li>
+</ul>
+<p>到 1980 年为止，这两条线互不相识：
+物理学有能量地形但没有学习，心理学有学习律但没有全局的数学。</p>
+<p><strong>1982 年，一个物理学家把它们接上了。</strong></p>
+<hr />
+<h2 id="4-1982-hopfield把-ising-模型搬进神经网络">4. 1982 Hopfield：把 Ising 模型搬进神经网络</h2>
+<p>约翰·霍普菲尔德的 1982 年 PNAS 论文
+《Neural networks and physical systems with emergent collective computational abilities》
+做了一件在今天看来极简单的事：</p>
+<p><strong>把伊辛模型的耦合常数 <span class="arithmatex">\(J_{ij}\)</span> 换成「可以被写入」的权重 <span class="arithmatex">\(W_{ij}\)</span>。</strong></p>
+<div class="arithmatex">\[\underbrace{E = -\tfrac12\sum_{ij} J_{ij}\,s_i s_j}_{\text{1925 Ising：}J\text{ 是物质常数}}
+\qquad\longrightarrow\qquad
+\underbrace{E(s) = -\tfrac12\,s^{\mathsf T}Ws = -\tfrac12\sum_{ij} W_{ij}\,s_i s_j}_{\text{1982 Hopfield：}W\text{ 由 Hebb 规则写入}}\]</div>
+<p>写入用的就是赫布 1949 年那条外积律（<span class="arithmatex">\(\xi^\mu\)</span> 是要存的第 <span class="arithmatex">\(\mu\)</span> 个模式）：</p>
+<div class="arithmatex">\[W = \frac{1}{N}\sum_{\mu=1}^{P}\xi^\mu (\xi^\mu)^{\mathsf T},
+\qquad W_{ii} = 0,\quad W = W^{\mathsf T}\]</div>
+<div class="highlight"><pre><span></span><code><span class="c1"># docs/examples/boltzmann_machine_demo.py</span>
+
+<span class="k">def</span><span class="w"> </span><span class="nf">hebb_weights</span><span class="p">(</span><span class="n">P</span><span class="p">):</span>
+<span class="w">    </span><span class="sd">&quot;&quot;&quot;Hebb 规则：W = (1/N) Σ_μ ξ^μ (ξ^μ)ᵀ，对角清零。&quot;&quot;&quot;</span>
+    <span class="n">W</span> <span class="o">=</span> <span class="p">(</span><span class="n">P</span><span class="o">.</span><span class="n">t</span><span class="p">()</span> <span class="o">@</span> <span class="n">P</span><span class="p">)</span> <span class="o">/</span> <span class="n">P</span><span class="o">.</span><span class="n">shape</span><span class="p">[</span><span class="mi">1</span><span class="p">]</span>
+    <span class="n">W</span><span class="o">.</span><span class="n">fill_diagonal_</span><span class="p">(</span><span class="mf">0.0</span><span class="p">)</span>
+    <span class="k">return</span> <span class="n">W</span>
+
+<span class="k">def</span><span class="w"> </span><span class="nf">energy</span><span class="p">(</span><span class="n">s</span><span class="p">,</span> <span class="n">W</span><span class="p">):</span>
+<span class="w">    </span><span class="sd">&quot;&quot;&quot;E(s) = -½ sᵀWs —— 就是 Ising 模型的能量。&quot;&quot;&quot;</span>
+    <span class="k">return</span> <span class="o">-</span><span class="mf">0.5</span> <span class="o">*</span> <span class="p">(</span><span class="n">s</span> <span class="o">@</span> <span class="n">W</span> <span class="o">@</span> <span class="n">s</span><span class="p">)</span>
+
+<span class="k">def</span><span class="w"> </span><span class="nf">hopfield_settle</span><span class="p">(</span><span class="n">s</span><span class="p">,</span> <span class="n">W</span><span class="p">):</span>
+<span class="w">    </span><span class="sd">&quot;&quot;&quot;s_i ← sign(Σ_j W_ij s_j)。能量单调不增 → 必收敛。&quot;&quot;&quot;</span>
+    <span class="k">for</span> <span class="n">i</span> <span class="ow">in</span> <span class="n">torch</span><span class="o">.</span><span class="n">randperm</span><span class="p">(</span><span class="n">s</span><span class="o">.</span><span class="n">numel</span><span class="p">()):</span>
+        <span class="n">s</span><span class="p">[</span><span class="n">i</span><span class="p">]</span> <span class="o">=</span> <span class="mf">1.0</span> <span class="k">if</span> <span class="n">W</span><span class="p">[</span><span class="n">i</span><span class="p">]</span> <span class="o">@</span> <span class="n">s</span> <span class="o">&gt;=</span> <span class="mi">0</span> <span class="k">else</span> <span class="o">-</span><span class="mf">1.0</span>
+    <span class="o">...</span>
+</code></pre></div>
+
+<p>三行观察构成了那篇论文的全部：</p>
+<ol>
+<li>记局部场 <span class="arithmatex">\(h_i = \sum_j W_{ij}s_j\)</span>。若 <span class="arithmatex">\(W = W^{\mathsf T}\)</span> 且 <span class="arithmatex">\(W_{ii}=0\)</span>，
+   异步更新 <span class="arithmatex">\(s_i \leftarrow \operatorname{sign}(h_i)\)</span> 使能量<strong>单调不增</strong>：
+   翻转 <span class="arithmatex">\(s_i \to s_i' = -s_i\)</span> 造成的能量变化是</li>
+</ol>
+<p>$<span class="arithmatex">\(\Delta E = -\,(s_i' - s_i)\,h_i = 2\,s_i h_i \le 0
+   \quad\text{（只有当 } \operatorname{sign}(h_i)\ne s_i \text{ 时才翻转）}\)</span>$</p>
+<ol start="2">
+<li>状态空间有限（<span class="arithmatex">\(2^N\)</span> 个态）+ 能量单调不增 → <strong>必然收敛到某个局部极小</strong>。</li>
+<li>用 Hebb 外积写入的模式恰好是能量的极小点 → <strong>网络成了联想记忆</strong>：
+   给一个残缺的输入，它自己滚到最近的那个记忆上。
+   （容量有限：<span class="arithmatex">\(P_{\max} \approx 0.138\,N\)</span>，超过就开始互相干扰。）</li>
+</ol>
+<p>demo 存了 3 个 16 位模式，穷举 <span class="arithmatex">\(2^{16} = 65536\)</span> 个态验证：</p>
+<div class="highlight"><pre><span></span><code>存了 3 个 16 位模式（Hebb 外积），它们的能量：
+  模式 0: E = -6.5000
+  模式 1: E = -6.5000
+  模式 2: E = -6.5000
+
+穷举 2^16 = 65536 个状态：全局最低能量 E* = -6.5000，共 6 个态达到它
+  能量分布：min=-6.500  median=0.125  max=1.500
+</code></pre></div>
+
+<p>（6 个 = 3 个模式 + 3 个反相模式。<span class="arithmatex">\(E(s) = E(-s)\)</span> 是这个能量函数的固有对称性，
+因为 <span class="arithmatex">\(E\)</span> 对 <span class="arithmatex">\(s\)</span> 是二次型。）</p>
+<p><strong>这台机器的致命缺点也在同一句话里：它只会下山。</strong>
+自旋玻璃告诉我们能量地形上有指数多个局部极小，其中大部分是<strong>伪记忆</strong>——
+存储的模式的线性组合，网络会一头栽进去出不来。</p>
+<p>demo 里从 200 个随机初态出发跑确定性 Hopfield：</p>
+<div class="highlight"><pre><span></span><code>  更新规则              命中全局极小   平均终态能量
+  Hopfield（确定性）          85.5%       -6.2100
+</code></pre></div>
+
+<p>14.5% 的时候它停在了 <span class="arithmatex">\(E = -4.5\)</span> 这个伪极小上，再也不动。</p>
+<p><strong>这就是辛顿要解决的问题。</strong></p>
+<hr />
+<h2 id="5-19831985-辛顿玻尔兹曼机">5. 1983–1985 辛顿：玻尔兹曼机</h2>
+<h3 id="51-人">5.1 人</h3>
+<p>杰弗里·辛顿在剑桥念的是实验心理学，1978 年在爱丁堡拿的 AI 博士
+（导师是克里斯托弗·朗盖-希金斯，一个从理论化学转行做认知科学的人）。
+他是乔治·布尔的玄孙——<strong>布尔代数和玻尔兹曼机之间隔着五代人</strong>，
+这条家谱线本身就够写一篇了。</p>
+<p>1980 年代初他在加州大学圣迭戈分校和卡内基梅隆，和特里·塞诺夫斯基（一个物理学出身的神经科学家）合作。</p>
+<h3 id="52-那一步改动">5.2 那一步改动</h3>
+<p>1983 年，辛顿和塞诺夫斯基在 CVPR 上发表
+《Optimal Perceptual Inference》。<strong>"玻尔兹曼机"这个名字第一次出现。</strong>
+1985 年，阿克利、辛顿、塞诺夫斯基在 <em>Cognitive Science</em> 上发表
+《A Learning Algorithm for Boltzmann Machines》——这是那篇被引用了几万次的论文。</p>
+<p>改动只有一行：</p>
+<div class="arithmatex">\[\begin{aligned}
+\text{Hopfield (1982):}\quad &amp; s_i \leftarrow \operatorname{sign}(h_i)
+&amp;&amp; \text{确定性，只能下山}\\[4pt]
+\text{玻尔兹曼机 (1985):}\quad &amp; s_i \leftarrow +1 \;\text{以概率}\;
+\sigma\!\left(\frac{2h_i}{T}\right) &amp;&amp; \text{随机，允许上山}
+\end{aligned}\]</div>
+<p>为什么恰好是 <span class="arithmatex">\(\sigma(2h_i/T)\)</span>？推一遍就知道它没有任何自由度。
+固定其余单元 <span class="arithmatex">\(s_{-i}\)</span>，翻转 <span class="arithmatex">\(s_i\)</span> 造成的能量差是 <span class="arithmatex">\(\Delta E = 2 s_i h_i\)</span>，
+于是按玻尔兹曼分布</p>
+<div class="arithmatex">\[\frac{p(s_i = +1 \mid s_{-i})}{p(s_i = -1 \mid s_{-i})}
+= \frac{e^{+h_i/T}}{e^{-h_i/T}} = e^{2h_i/T}\]</div>
+<p>两者相加为 1，解出</p>
+<div class="arithmatex">\[p(s_i = +1 \mid s_{-i}) = \frac{e^{2h_i/T}}{1 + e^{2h_i/T}}
+= \frac{1}{1 + e^{-2h_i/T}} = \sigma\!\left(\frac{2h_i}{T}\right)\]</div>
+<p><strong>这不是启发式。sigmoid 是 <span class="arithmatex">\(e^{-E/T}/Z\)</span> 在单个自旋上的精确条件分布</strong>——
+换句话说，神经网络里那个到处都是的 <span class="arithmatex">\(\sigma\)</span>，出身就是玻尔兹曼分布的二元边缘。</p>
+<p>也就是说：<strong>这个网络不再是「找一个低能量状态」，它是在按玻尔兹曼分布采样。</strong>
+它的稳态是一个概率分布，不是一个点。</p>
+<p>再配上柯克帕特里克 1983 年在 <em>Science</em> 上刚发表的<strong>模拟退火</strong>——
+温度按几何调度 <span class="arithmatex">\(T_k = T_{\text{hi}}\,(T_{\text{lo}}/T_{\text{hi}})^{k/(K-1)}\)</span>
+从高到低降——就得到了 demo 里的：</p>
+<div class="highlight"><pre><span></span><code><span class="k">def</span><span class="w"> </span><span class="nf">boltzmann_settle</span><span class="p">(</span><span class="n">s</span><span class="p">,</span> <span class="n">W</span><span class="p">,</span> <span class="n">T_hi</span><span class="o">=</span><span class="mf">2.0</span><span class="p">,</span> <span class="n">T_lo</span><span class="o">=</span><span class="mf">0.05</span><span class="p">,</span> <span class="n">sweeps</span><span class="o">=</span><span class="mi">60</span><span class="p">):</span>
+    <span class="k">for</span> <span class="n">k</span> <span class="ow">in</span> <span class="nb">range</span><span class="p">(</span><span class="n">sweeps</span><span class="p">):</span>
+        <span class="n">T</span> <span class="o">=</span> <span class="n">T_hi</span> <span class="o">*</span> <span class="p">(</span><span class="n">T_lo</span> <span class="o">/</span> <span class="n">T_hi</span><span class="p">)</span> <span class="o">**</span> <span class="p">(</span><span class="n">k</span> <span class="o">/</span> <span class="p">(</span><span class="n">sweeps</span> <span class="o">-</span> <span class="mi">1</span><span class="p">))</span>   <span class="c1"># 几何退火</span>
+        <span class="k">for</span> <span class="n">i</span> <span class="ow">in</span> <span class="n">torch</span><span class="o">.</span><span class="n">randperm</span><span class="p">(</span><span class="n">s</span><span class="o">.</span><span class="n">numel</span><span class="p">()):</span>
+            <span class="n">p_up</span> <span class="o">=</span> <span class="n">torch</span><span class="o">.</span><span class="n">sigmoid</span><span class="p">(</span><span class="mf">2.0</span> <span class="o">*</span> <span class="p">(</span><span class="n">W</span><span class="p">[</span><span class="n">i</span><span class="p">]</span> <span class="o">@</span> <span class="n">s</span><span class="p">)</span> <span class="o">/</span> <span class="n">T</span><span class="p">)</span>
+            <span class="n">s</span><span class="p">[</span><span class="n">i</span><span class="p">]</span> <span class="o">=</span> <span class="mf">1.0</span> <span class="k">if</span> <span class="n">torch</span><span class="o">.</span><span class="n">rand</span><span class="p">(())</span> <span class="o">&lt;</span> <span class="n">p_up</span> <span class="k">else</span> <span class="o">-</span><span class="mf">1.0</span>
+</code></pre></div>
+
+<p>同样 200 个随机初态，同一个 <span class="arithmatex">\(W\)</span>，同一个 <span class="arithmatex">\(E\)</span>：</p>
+<div class="highlight"><pre><span></span><code>  更新规则              命中全局极小   平均终态能量
+  Hopfield（确定性）          85.5%       -6.2100
+  玻尔兹曼机（退火）         100.0%       -6.5000
+</code></pre></div>
+
+<p><img alt="Hopfield vs 玻尔兹曼机" src="images/boltzmann_02_hopfield_vs_boltzmann.png" /></p>
+<p>左图：Hopfield 单调下降，卡在 <span class="arithmatex">\(E = -4.50\)</span>，再也出不来。
+中图：玻尔兹曼机高温时到处乱撞（能量一度升到 <span class="arithmatex">\(+1\)</span>），冷却后落到 <span class="arithmatex">\(-6.50\)</span>。
+右图：200 次的终态分布，蓝色那一小堆就是 Hopfield 的伪记忆。</p>
+<blockquote>
+<p><strong>随机性不是噪声，是搜索工具。</strong>
+这是玻尔兹曼那句「概率就够了」在 1985 年的回声。</p>
+</blockquote>
+<h3 id="53-第二步改动隐单元">5.3 第二步改动：隐单元</h3>
+<p>Hopfield 网络的所有单元都是可见的。玻尔兹曼机把状态分成<strong>可见层 <span class="arithmatex">\(v\)</span></strong> 和<strong>隐层 <span class="arithmatex">\(h\)</span></strong>，
+即 <span class="arithmatex">\(s = (v, h)\)</span>。隐单元不对应任何数据，它们的作用是<strong>表示可见变量之间的高阶相关</strong>——
+这正是明斯基-佩珀特 1969 年指出感知机做不到的那件事。</p>
+<p>于是模型定义的不再是 <span class="arithmatex">\(p(s)\)</span>，而是把隐层求和掉之后的<strong>边缘分布</strong>：</p>
+<div class="arithmatex">\[p(v) \;=\; \sum_{h} p(v,h) \;=\; \frac{1}{Z}\sum_{h} e^{-E(v,h)},
+\qquad Z = \sum_{v'}\sum_{h'} e^{-E(v',h')}\]</div>
+<h3 id="54-第三步也是最漂亮的一步学习律">5.4 第三步，也是最漂亮的一步：学习律</h3>
+<p>要让 <span class="arithmatex">\(p(v)\)</span> 贴近数据分布 <span class="arithmatex">\(p_{\text{data}}(v)\)</span>，就最小化两者的 KL 散度</p>
+<div class="arithmatex">\[G \;=\; \mathrm{KL}\big(p_{\text{data}} \,\|\, p\big)
+\;=\; \sum_{v} p_{\text{data}}(v)\,\log\frac{p_{\text{data}}(v)}{p(v)}\]</div>
+<p>对 <span class="arithmatex">\(w_{ij}\)</span> 求导（推导见 §5.5(2c)），结果是：</p>
+<div class="arithmatex">\[\boxed{\;
+\Delta w_{ij} \;\propto\; -\frac{\partial G}{\partial w_{ij}}
+\;=\; \underbrace{\langle s_i s_j\rangle_{\text{data}}}_{\text{正相（clamped）}}
+\;-\; \underbrace{\langle s_i s_j\rangle_{\text{model}}}_{\text{负相（free-running）}}\;}\]</div>
+<p>其中 <span class="arithmatex">\(\langle\cdot\rangle_{\text{data}}\)</span> 是把数据钳在可见层、让隐层达到平衡后取的期望，
+<span class="arithmatex">\(\langle\cdot\rangle_{\text{model}}\)</span> 是让整个网络自由运行到平衡后取的期望。</p>
+<p>这条式子有三个性质，任何一个单独拿出来都值得写篇论文：</p>
+<ol>
+<li><strong>它是精确梯度</strong>，不是近似。KL 散度对权重的导数就长这样。</li>
+<li><strong>它完全是局部的</strong>。更新 <span class="arithmatex">\(w_{ij}\)</span> 只需要神经元 <span class="arithmatex">\(i\)</span> 和 <span class="arithmatex">\(j\)</span> 各自活动的相关 <span class="arithmatex">\(\langle s_i s_j\rangle\)</span>，
+   不需要误差从输出层反向传播回来。这在 1985 年是巨大的卖点——
+   <strong>它在生物学上是可实现的</strong>，而反向传播不是。</li>
+<li><strong>它有一个认知学的解释</strong>，辛顿他们自己用过：
+   正相是"清醒时看数据"，负相是"做梦时自由运行"。学习 = 让梦境贴近现实。
+   （后来 Crick &amp; Mitchison 1983 的"反向学习"睡眠假说和这个撞了个正着。）</li>
+</ol>
+<h3 id="55-为什么叫玻尔兹曼机">5.5 为什么叫「玻尔兹曼机」</h3>
+<p>这是本文最该讲清楚的一个问题，而它常被草草带过成一句"因为受了统计物理的启发"。
+<strong>不是启发。这个名字是一句可以被测量、可以被证伪的断言。</strong></p>
+<h4 id="1-字面意思这台机器的平稳分布就是玻尔兹曼分布">(1) 字面意思：这台机器的平稳分布<strong>就是</strong>玻尔兹曼分布</h4>
+<p>Hopfield 网络运行到底会<strong>停在一个状态</strong>上——它的输出是一个点。
+玻尔兹曼机运行到底<strong>永远不停</strong>，它在状态空间里一直游走；
+有意义的问题不是"它停在哪"，而是"<strong>它待在每个状态上的时间比例是多少</strong>"。</p>
+<p>答案是：</p>
+<div class="arithmatex">\[\lim_{t\to\infty} \Pr[\,s(t) = s\,] \;=\; \pi(s) \;=\; \frac{e^{-E(s)/T}}{Z}\]</div>
+<p>这不是设计目标，是数学后果。更新规则 <span class="arithmatex">\(p(s_i{=}1\mid s_{-i}) = \sigma(2h_i/T)\)</span>
+恰好是玻尔兹曼分布在单个自旋上的<strong>精确条件分布</strong>（§5.2 已经推过），
+而 <span class="arithmatex">\(W = W^{\mathsf T}\)</span> 保证了<strong>细致平衡</strong></p>
+<div class="arithmatex">\[\pi(s)\,P(s \to s') \;=\; \pi(s')\,P(s' \to s)\]</div>
+<p>于是这条 Gibbs 采样链不可约、非周期，其<strong>唯一平稳分布</strong>就是 <span class="arithmatex">\(e^{-E/T}/Z\)</span>。</p>
+<p>demo 第 3b 部分把这句话<strong>测了出来</strong>：8 个单元（<span class="arithmatex">\(2^8 = 256\)</span> 个态，真实分布可以穷举），
+对称随机 <span class="arithmatex">\(W\)</span>，定温 <span class="arithmatex">\(T = 1.0\)</span>，跑 20 万个 Gibbs sweep 数访问频率：</p>
+<div class="highlight"><pre><span></span><code>        状态      E(s)     理论 exp(−E/T)/Z         实测频率       比值
+  10100010    -4.699            0.07331      0.07276    0.992
+  01011101    -4.699            0.07331      0.07345    1.002
+  01010101    -4.030            0.03756      0.03726    0.992
+  10101010    -4.030            0.03756      0.03790    1.009
+  10101110    -3.954            0.03481      0.03458    0.993
+  ...
+
+    KL(理论‖实测)   = 0.00096
+    总变差距离 TV   = 0.01003
+    log-log 相关系数 = 0.99830
+</code></pre></div>
+
+<p><img alt="名字的由来" src="images/boltzmann_02b_why_the_name.png" /></p>
+<p>右图是最直白的证据。把平稳分布取对数：</p>
+<div class="arithmatex">\[\log \pi(s) \;=\; -\frac{1}{T}\,E(s) \;-\; \log Z\]</div>
+<p>这是一条<strong>以 <span class="arithmatex">\(E\)</span> 为自变量的直线</strong>，斜率 <span class="arithmatex">\(-1/T\)</span>，截距 <span class="arithmatex">\(-\log Z\)</span>。
+实测的 <span class="arithmatex">\(\log(\text{频率})\)</span> 点全部落在这条线上。
+「一个分布的对数是能量的线性函数」——这就是"玻尔兹曼分布"的定义，一字不差。</p>
+<blockquote>
+<p><strong>名字是描述，不是致敬。</strong> 叫它"玻尔兹曼机"，和把一个服从高斯分布的过程
+叫"高斯过程"是同一种命名：说的是它服从哪个分布，不是说它纪念谁。</p>
+</blockquote>
+<h4 id="2-由此白拿的三条性质">(2) 由此白拿的三条性质</h4>
+<p>正因为分布<strong>恰好</strong>是 <span class="arithmatex">\(e^{-E/T}/Z\)</span>，下面三件事才成立。换任何别的分布都不成立：</p>
+<p><strong>(a) 能量差 = 对数概率差</strong></p>
+<div class="arithmatex">\[\log\frac{p(s_a)}{p(s_b)}
+= \left(-\frac{E_a}{T} - \log Z\right) - \left(-\frac{E_b}{T} - \log Z\right)
+= -\frac{E_a - E_b}{T}\]</div>
+<p><span class="arithmatex">\(\log Z\)</span> 在相减时<strong>消掉了</strong>。这意味着<strong>你不需要知道那个算不动的 <span class="arithmatex">\(Z\)</span>，
+就能比较任意两个状态的相对概率</strong>——这是所有基于能量的模型能工作的根基。</p>
+<p><strong>(b) <span class="arithmatex">\(T \to 0\)</span> 时它退化成 Hopfield 网络</strong></p>
+<div class="arithmatex">\[\lim_{T\to 0^+}\sigma\!\left(\frac{2h_i}{T}\right)
+= \begin{cases} 1, &amp; h_i &gt; 0\\[2pt] 0, &amp; h_i &lt; 0\end{cases}
+\;=\; \frac{1 + \operatorname{sign}(h_i)}{2}\]</div>
+<p>也就是 <span class="arithmatex">\(s_i \leftarrow \operatorname{sign}(h_i)\)</span>。同时全部概率质量塌到最低能量态：</p>
+<div class="arithmatex">\[\lim_{T\to 0^+} \frac{e^{-E(s)/T}}{Z}
+= \frac{\mathbb 1[\,E(s) = E_{\min}\,]}{|\{s' : E(s') = E_{\min}\}|}\]</div>
+<p>所以严格地说：<strong>Hopfield 网络是玻尔兹曼机在零温下的特例</strong>，
+就像贪心解码是 <span class="arithmatex">\(\text{temperature} \to 0\)</span> 的采样。
+1982 和 1985 不是两个模型，是同一个模型的两个温度。</p>
+<p><strong>(c) 那条学习律是名字的直接后果</strong></p>
+<p>这是最深的一层理由。为什么梯度恰好是"两个相关之差"这么干净的形式？把式子写出来就看见了。</p>
+<p><strong>第一步：能量对权重是线性的。</strong></p>
+<div class="arithmatex">\[E(s) = -\frac{1}{2}\sum_{ij} w_{ij}\,s_i s_j
+\qquad\Longrightarrow\qquad
+\frac{\partial E}{\partial w_{ij}} = -\,s_i s_j\]</div>
+<p><strong>第二步：对数似然是"两个 log-sum-exp 之差"。</strong></p>
+<div class="arithmatex">\[\log p(v)
+= \log \sum_h e^{-E(v,h)} \;-\; \underbrace{\log \sum_{v'}\sum_{h'} e^{-E(v',h')}}_{\log Z}\]</div>
+<p><strong>第三步：对 <span class="arithmatex">\(\log\sum e^{-E}\)</span> 求导，指数自动变回一个期望。</strong> 对任意参数 <span class="arithmatex">\(\theta\)</span>，</p>
+<div class="arithmatex">\[\frac{\partial}{\partial\theta}\log\sum_x e^{-E(x)}
+= \frac{\sum_x e^{-E(x)}\left(-\dfrac{\partial E(x)}{\partial\theta}\right)}{\sum_x e^{-E(x)}}
+= -\left\langle \frac{\partial E}{\partial\theta}\right\rangle\]</div>
+<p>把三步合起来，并代入 <span class="arithmatex">\(\partial E/\partial w_{ij} = -s_i s_j\)</span>：</p>
+<div class="arithmatex">\[\frac{\partial \log p(v)}{\partial w_{ij}}
+= -\left\langle \frac{\partial E}{\partial w_{ij}}\right\rangle_{h \mid v}
+\;+\; \left\langle \frac{\partial E}{\partial w_{ij}}\right\rangle_{v,h}
+= \underbrace{\langle s_i s_j\rangle_{\text{data}}}_{\text{来自}\;\log\sum_h}
+\;-\; \underbrace{\langle s_i s_j\rangle_{\text{model}}}_{\text{来自}\;\log Z}\]</div>
+<p><strong>正相来自第一项（隐层被数据钳住），负相来自 <span class="arithmatex">\(\log Z\)</span>（整个网络自由运行）。</strong>
+那个折磨了这条线一百年的配分函数，在求导之后变成了一个<strong>可以采样估计的期望</strong>——
+这是 <span class="arithmatex">\(Z\)</span> 唯一一次不是纯粹的障碍。</p>
+<blockquote>
+<p>一句话总结：<strong>因为概率是能量的指数（<span class="arithmatex">\(p \propto e^{-E}\)</span>），
+而能量是权重的线性函数（<span class="arithmatex">\(\partial E/\partial w_{ij} = -s_i s_j\)</span>），
+所以梯度必然是两个相关的差。</strong> 这条学习律之所以那么漂亮、那么局部、
+那么符合赫布 1949 年的直觉，全部来自"玻尔兹曼"这三个字。
+换一个非指数族的分布，梯度里就会冒出雅可比行列式之类的东西，
+局部性立刻消失，1985 年那篇论文也就不存在了。</p>
+</blockquote>
+<h4 id="3-名字是谁起的">(3) 名字是谁起的</h4>
+<p>"Boltzmann machine" 这个词由辛顿和塞诺夫斯基在 1983 年 CVPR 那篇
+《Optimal Perceptual Inference》中首次使用，1985 年
+《A Learning Algorithm for Boltzmann Machines》把它固定下来。</p>
+<p>值得一提的是，这个名字在当时还有一层对照意味：
+同期还有 "Harmony theory"（斯莫伦斯基）、"Hopfield net"、"Cauchy machine"
+（把玻尔兹曼分布换成柯西分布以加快退火）这些名字并存。
+<strong>"某某机"这个后缀在 1980 年代特指"以某个分布为平稳分布的随机网络"</strong>，
+所以"柯西机"和"玻尔兹曼机"的区别就是柯西分布和玻尔兹曼分布的区别——
+这也从侧面说明了这个名字是<strong>技术性的</strong>，不是纪念性的。</p>
+<hr />
+<h2 id="6-为什么玻尔兹曼机当年跑不动z-的诅咒">6. 为什么玻尔兹曼机当年跑不动：<span class="arithmatex">\(Z\)</span> 的诅咒</h2>
+<p>回到第 2.3 节那句话：<strong><span class="arithmatex">\(Z\)</span> 算不动。</strong></p>
+<ul>
+<li><strong>正相</strong> <span class="arithmatex">\(\langle s_i s_j\rangle_{\text{data}}
+  = \mathbb E_{v \sim p_{\text{data}}}\,\mathbb E_{h \sim p(h\mid v)}[\,s_i s_j\,]\)</span>：
+  把数据钳在可见层上，跑 Gibbs 到平衡。慢，但还行。</li>
+<li><strong>负相</strong> <span class="arithmatex">\(\langle s_i s_j\rangle_{\text{model}}
+  = \mathbb E_{(v,h) \sim p(v,h)}[\,s_i s_j\,]\)</span>：
+  <strong>让网络完全自由地跑到热平衡</strong>，再统计相关。</li>
+</ul>
+<p>第二项是灾难。要从 <span class="arithmatex">\(2^N\)</span> 个状态的玻尔兹曼分布里取无偏样本，
+Gibbs 链的混合时间 <span class="arithmatex">\(\tau_{\text{mix}}\)</span> 在低温下随 <span class="arithmatex">\(N\)</span> <strong>指数增长</strong>
+（自旋玻璃的能量壁垒高度本身就随 <span class="arithmatex">\(N\)</span> 增长，跨越一个高度为 <span class="arithmatex">\(\Delta\)</span> 的壁垒
+平均要等 <span class="arithmatex">\(e^{\Delta/T}\)</span> 步）。1985 年的机器上，
+一个几十个单元的玻尔兹曼机就要跑几天，而且你无法确定它到底混合了没有。</p>
+<p><strong>这就是玻尔兹曼机 1985 年之后沉寂的原因。它数学上完美、生物学上合理、计算上不可行。</strong></p>
+<p>一年之后的 1986 年，鲁梅尔哈特、辛顿、威廉姆斯在 <em>Nature</em> 上发表了反向传播。
+反传在生物学上讲不通、在数学上"只是链式法则"，但它<strong>快</strong>——
+一次前向、一次反向，没有采样，没有平衡，没有 <span class="arithmatex">\(Z\)</span>。</p>
+<p>辛顿本人转去做反传了。<strong>这条线第一次断在这里，断了十六年。</strong></p>
+<hr />
+<h2 id="7-2002-cd-1-与-2006-dbn这条线第二次接上">7. 2002 CD-1 与 2006 DBN：这条线第二次接上</h2>
+<h3 id="71-受限玻尔兹曼机rbm到底是什么">7.1 受限玻尔兹曼机（RBM）到底是什么</h3>
+<p>1986 年斯莫伦斯基在 PDP 那本书里提出了 <strong>Harmonium</strong>，
+也就是后来被叫作<strong>受限玻尔兹曼机</strong>（Restricted Boltzmann Machine, RBM）的东西。
+它就是一个玻尔兹曼机，只做了一件事：<strong>把图砍成二部图。</strong></p>
+<h4 id="1-受限限的是什么">(1) 「受限」限的是什么</h4>
+<p>普通玻尔兹曼机是一张<strong>任意的</strong>无向图，任何两个单元之间都可以有边；
+RBM 只允许可见层和隐层之间有边，<strong>层内一条边都没有</strong>：</p>
+<div class="highlight"><pre><span></span><code>     一般玻尔兹曼机                       受限玻尔兹曼机（RBM）
+
+    h₁ ─────── h₂                       h₁        h₂          ← 隐层内部：无边
+     │ ╲     ╱  │                        │ ╲     ╱ │
+     │   ╲ ╱    │                        │   ╲ ╱   │
+     │   ╱ ╲    │                        │   ╱ ╲   │          ← 层间：全连接
+     │ ╱     ╲  │                        │ ╱     ╲ │
+    v₁ ─────── v₂                       v₁        v₂          ← 可见层内部：无边
+       ↑ 层内也有边
+</code></pre></div>
+
+<p>对应到能量函数上，「受限」就是<strong>只保留交叉项</strong>：</p>
+<div class="arithmatex">\[\begin{aligned}
+\text{一般玻尔兹曼机：}\quad
+E(s) &amp;= -\tfrac12\,s^{\mathsf T}Ws - b^{\mathsf T}s
+&amp;&amp;\text{（所有两两耦合）}\\[6pt]
+\text{受限玻尔兹曼机：}\quad
+E(v,h) &amp;= -\,v^{\mathsf T}Wh - b^{\mathsf T}v - c^{\mathsf T}h
+&amp;&amp;\text{（只有 } v\text{–}h \text{ 的耦合）}\\
+&amp;= -\sum_{i}\sum_{j} v_i W_{ij} h_j - \sum_i b_i v_i - \sum_j c_j h_j
+\end{aligned}\]</div>
+<p>关键是<strong>缺了什么</strong>：没有 <span class="arithmatex">\(v^{\mathsf T}Uv\)</span>，也没有 <span class="arithmatex">\(h^{\mathsf T}Vh\)</span>。</p>
+<p>概率还是同一个玻尔兹曼分布：</p>
+<div class="arithmatex">\[p(v,h) = \frac{e^{-E(v,h)}}{Z},\qquad Z = \sum_{v,h} e^{-E(v,h)}\]</div>
+<p><strong>RBM 不是一个新模型，它是玻尔兹曼机的一个受约束的特例</strong>——
+§5.5 讲的一切（平稳分布、能量差=对数概率差、正相减负相）原封不动地适用。</p>
+<h4 id="2-换来的第一个恒等式条件独立-整层并行采样">(2) 换来的第一个恒等式：条件独立 → 整层并行采样</h4>
+<p>因为 <span class="arithmatex">\(h_j\)</span> 之间没有边，给定 <span class="arithmatex">\(v\)</span> 之后每个 <span class="arithmatex">\(h_j\)</span> 只通过 <span class="arithmatex">\(v\)</span> 与外界相连。
+把能量按 <span class="arithmatex">\(h_j\)</span> 拆开就看得很清楚——它是<strong>可加可分</strong>的：</p>
+<div class="arithmatex">\[-E(v,h) = b^{\mathsf T}v + \sum_j h_j\underbrace{\Big(c_j + \sum_i v_i W_{ij}\Big)}_{\textstyle \eta_j(v)}\]</div>
+<p>指数化之后求和号变成连乘，于是<strong>条件独立</strong>：</p>
+<div class="arithmatex">\[p(h \mid v) = \prod_j p(h_j \mid v),
+\qquad p(h_j = 1 \mid v) = \sigma\big(\eta_j(v)\big) = \sigma\big(c_j + (vW)_j\big)\]</div>
+<div class="arithmatex">\[p(v \mid h) = \prod_i p(v_i \mid h),
+\qquad p(v_i = 1 \mid h) = \sigma\big(b_i + (Wh)_i\big)\]</div>
+<p>demo 第 4a 部分在一个 4 可见 / 3 隐的小 RBM 上把 <span class="arithmatex">\(p(h\mid v)\)</span> 穷举出来，
+和「每个隐单元独立 sigmoid 的乘积」逐项对照：</p>
+<div class="highlight"><pre><span></span><code>  取 v = 1101，逐个 h 对照：
+       h      穷举 p(h|v)     Π_j σ(...)          差
+     000       0.001287       0.001287   3.38e-09
+     110       0.553753       0.553753   5.96e-08
+     111       0.323830       0.323830   8.94e-08
+     ...
+    最大偏差 8.94e-08 —— 严格相等（数值误差量级）。
+</code></pre></div>
+
+<p><strong>后果：Gibbs 采样从「逐个单元串行更新 <span class="arithmatex">\(N\)</span> 次」变成「两次矩阵乘法」。</strong>
+一般玻尔兹曼机里翻转 <span class="arithmatex">\(s_i\)</span> 必须先知道所有邻居的当前值，只能一个一个来；
+RBM 里一个完整 sweep 就是</p>
+<div class="arithmatex">\[h \sim \sigma(vW + c), \qquad v \sim \sigma(hW^{\mathsf T} + b)\]</div>
+<p>两次 GEMM，天生适合向量化和 GPU。</p>
+<h4 id="3-换来的第二个恒等式隐层可以被解析地积掉">(3) 换来的第二个恒等式：隐层可以被解析地积掉</h4>
+<p>因为 <span class="arithmatex">\(h_j\)</span> 之间无耦合，<span class="arithmatex">\(\sum_h e^{-E(v,h)}\)</span> 这个 <span class="arithmatex">\(2^{n_h}\)</span> 项的求和
+可以拆成每个 <span class="arithmatex">\(h_j\)</span> 独立求和的<strong>乘积</strong>：</p>
+<div class="arithmatex">\[\sum_{h \in \{0,1\}^{n_h}} e^{-E(v,h)}
+= e^{\,b^{\mathsf T}v}\prod_{j}\;\underbrace{\sum_{h_j \in \{0,1\}} e^{\,h_j \eta_j(v)}}_{\textstyle 1 + e^{\eta_j(v)}}
+= e^{\,b^{\mathsf T}v}\prod_{j}\big(1 + e^{\eta_j(v)}\big)\]</div>
+<p>取负对数，<span class="arithmatex">\(2^{n_h}\)</span> 项的求和就塌成了 <span class="arithmatex">\(n_h\)</span> 项的求和——<strong>自由能有闭式</strong>：</p>
+<div class="arithmatex">\[\boxed{\;F(v) = -\,b^{\mathsf T}v - \sum_{j} \operatorname{softplus}\big(c_j + (vW)_j\big),
+\qquad p(v) = \frac{e^{-F(v)}}{Z}\;}\]</div>
+<div class="highlight"><pre><span></span><code><span class="k">def</span><span class="w"> </span><span class="nf">free_energy</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">v</span><span class="p">):</span>
+<span class="w">    </span><span class="sd">&quot;&quot;&quot;F(v) = -bᵀv - Σ_j softplus(c_j + (vW)_j)，满足 p(v) = exp(-F(v))/Z。&quot;&quot;&quot;</span>
+    <span class="k">return</span> <span class="o">-</span><span class="p">(</span><span class="n">v</span> <span class="o">@</span> <span class="bp">self</span><span class="o">.</span><span class="n">b</span><span class="p">)</span> <span class="o">-</span> <span class="n">F</span><span class="o">.</span><span class="n">softplus</span><span class="p">(</span><span class="n">v</span> <span class="o">@</span> <span class="bp">self</span><span class="o">.</span><span class="n">W</span> <span class="o">+</span> <span class="bp">self</span><span class="o">.</span><span class="n">c</span><span class="p">)</span><span class="o">.</span><span class="n">sum</span><span class="p">(</span><span class="mi">1</span><span class="p">)</span>
+</code></pre></div>
+
+<p>那个 <span class="arithmatex">\(\operatorname{softplus}(x) = \log(1 + e^x)\)</span> 就是上式中
+<span class="arithmatex">\(\log\big(e^{0} + e^{\eta_j}\big)\)</span> 的另一个写法——
+<strong>它是"对一个二值隐变量求和"的产物，不是谁挑出来的激活函数。</strong></p>
+<p>demo 把这个恒等式也验证了一遍（穷举 8 项 vs 解析式）：</p>
+<div class="highlight"><pre><span></span><code>       v        穷举 Σ_h（8 项）      解析 exp(−F(v))         相对误差
+    0000          15.203237          15.203236     6.27e-08
+    1100         347.901001         347.901245     7.02e-07
+  ... 全部 16 个 v 的最大相对误差：7.02e-07
+</code></pre></div>
+
+<blockquote>
+<p><strong>一个有意思的观察</strong>：
+<span class="arithmatex">\(F(v) = -b^{\mathsf T}v - \sum_j \operatorname{softplus}(c_j + (vW)_j)\)</span>
+在结构上就是<strong>一个单隐层 MLP</strong>——线性层、softplus 激活、求和输出。
+今天到处在用的 <span class="arithmatex">\(\operatorname{softplus}\)</span> / <span class="arithmatex">\(\operatorname{softmax}\)</span> 这类函数，
+血缘上都来自「对一个离散隐变量求和」这件事。
+RBM 的自由能是这条血缘最干净的化石。</p>
+</blockquote>
+<p><strong>注意 <span class="arithmatex">\(Z\)</span> 仍然算不动</strong>（它要对全部 <span class="arithmatex">\(2^{n_v}\)</span> 个 <span class="arithmatex">\(v\)</span> 求和）。
+但结合 §5.5 的性质 (a)，<span class="arithmatex">\(\log Z\)</span> 在比较两个 <span class="arithmatex">\(v\)</span> 时会消掉：</p>
+<div class="arithmatex">\[\log\frac{p(v_1)}{p(v_2)} = F(v_2) - F(v_1)\]</div>
+<p>所以 <span class="arithmatex">\(F(v)\)</span> 已经足够回答「模型认为哪个数据更可能」——
+这正是 demo 里 <span class="arithmatex">\(\Delta F = F(\text{随机}) - F(\text{数据})\)</span> 这个诊断量的依据。</p>
+<h4 id="4-代价表达力">(4) 代价：表达力</h4>
+<p>天下没有免费的午餐。砍掉层内的边意味着：</p>
+<table>
+<thead>
+<tr>
+<th>没了什么</th>
+<th>后果</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><span class="arithmatex">\(v\)</span>–<span class="arithmatex">\(v\)</span> 横向连接</td>
+<td>可见单元之间的直接相关只能<strong>绕道隐层</strong>表达；像「这两个像素必须互斥」这类约束要多花隐单元</td>
+</tr>
+<tr>
+<td><span class="arithmatex">\(h\)</span>–<span class="arithmatex">\(h\)</span> 横向连接</td>
+<td>隐单元之间不能互相 explain away，学到的特征容易冗余、重复</td>
+</tr>
+</tbody>
+</table>
+<p>弥补的办法不是把边加回来（那就退回训不动的一般 BM 了），
+而是<strong>堆叠</strong>——这直接引出 7.3 节的深度信念网络。</p>
+<h4 id="5-顺带澄清四个容易混的缩写">(5) 顺带澄清四个容易混的缩写</h4>
+<table>
+<thead>
+<tr>
+<th>名字</th>
+<th>是什么</th>
+<th>关系</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><strong>BM</strong>（玻尔兹曼机，1985）</td>
+<td>任意无向图</td>
+<td>表达力最强，负相要跑到热平衡，训不动</td>
+</tr>
+<tr>
+<td><strong>RBM</strong>（受限玻尔兹曼机，1986/2002）</td>
+<td>二部图，单隐层</td>
+<td>BM 的特例；两个恒等式让 CD-1 成为可能</td>
+</tr>
+<tr>
+<td><strong>DBN</strong>（深度信念网络，2006）</td>
+<td>多层堆叠，<strong>除最顶两层外是有向的</strong></td>
+<td>用逐层 RBM 预训练得到，但<strong>整体并不是一个玻尔兹曼机</strong></td>
+</tr>
+<tr>
+<td><strong>DBM</strong>（深度玻尔兹曼机，2009）</td>
+<td>多层堆叠，<strong>全部无向</strong></td>
+<td>才是真正的多层玻尔兹曼机，训练比 DBN 难得多</td>
+</tr>
+</tbody>
+</table>
+<p>DBN 和 DBM 差一个字母，模型性质却完全不同：
+<strong>DBN 是有向生成网络（只是拿 RBM 做初始化），DBM 是无向能量模型。</strong>
+这是这条线上最常见的一处混淆。</p>
+<p>另外，二值可见单元不适合实数输入（比如图像像素），
+实践中用的是 <strong>Gaussian-Bernoulli RBM</strong>：可见层改成高斯分布，能量写成</p>
+<div class="arithmatex">\[E(v,h) = \sum_i \frac{(v_i - b_i)^2}{2\sigma_i^2}
+- \sum_{ij}\frac{v_i}{\sigma_i}W_{ij}h_j - \sum_j c_j h_j\]</div>
+<p>原理不变，只是把可见层的指数族从伯努利换成高斯。</p>
+<h3 id="72-2002对比散度">7.2 2002：对比散度</h3>
+<p>2002 年辛顿在 <em>Neural Computation</em> 上发表
+《Training Products of Experts by Minimizing Contrastive Divergence》。
+里面那个技巧极其粗暴：</p>
+<blockquote>
+<p>负相需要跑到平衡？<strong>别跑到平衡。从数据出发，跑 <span class="arithmatex">\(k\)</span> 步 Gibbs，就用那个。</strong></p>
+</blockquote>
+<div class="arithmatex">\[\underbrace{\langle v_i h_j\rangle_{\text{model}}}_{\text{要跑到 }t=\infty}
+\;\approx\;
+\underbrace{\langle v_i h_j\rangle_{k}}_{\text{从数据出发只跑 }k\text{ 步}},
+\qquad k = 1 \;\text{就够}\]</div>
+<p>于是 1985 年那条学习律变成：</p>
+<div class="arithmatex">\[\Delta W \;\propto\; \underbrace{v_0\, p(h\mid v_0)^{\mathsf T}}_{\text{正相}}
+\;-\; \underbrace{v_k\, p(h\mid v_k)^{\mathsf T}}_{\text{负相}}\]</div>
+<div class="highlight"><pre><span></span><code><span class="k">def</span><span class="w"> </span><span class="nf">cd_k</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">v0</span><span class="p">,</span> <span class="n">k</span><span class="o">=</span><span class="mi">1</span><span class="p">,</span> <span class="n">lr</span><span class="o">=</span><span class="mf">0.1</span><span class="p">):</span>
+    <span class="n">ph0</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">h_given_v</span><span class="p">(</span><span class="n">v0</span><span class="p">)</span>                    <span class="c1"># 正相：数据钳住</span>
+    <span class="n">h</span> <span class="o">=</span> <span class="n">torch</span><span class="o">.</span><span class="n">bernoulli</span><span class="p">(</span><span class="n">ph0</span><span class="p">)</span>
+    <span class="k">for</span> <span class="n">_</span> <span class="ow">in</span> <span class="nb">range</span><span class="p">(</span><span class="n">k</span><span class="p">):</span>                          <span class="c1"># 负相：k 步 Gibbs，k=1 就够</span>
+        <span class="n">vk</span> <span class="o">=</span> <span class="n">torch</span><span class="o">.</span><span class="n">bernoulli</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">v_given_h</span><span class="p">(</span><span class="n">h</span><span class="p">))</span>
+        <span class="n">phk</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">h_given_v</span><span class="p">(</span><span class="n">vk</span><span class="p">)</span>
+        <span class="n">h</span> <span class="o">=</span> <span class="n">torch</span><span class="o">.</span><span class="n">bernoulli</span><span class="p">(</span><span class="n">phk</span><span class="p">)</span>
+    <span class="bp">self</span><span class="o">.</span><span class="n">W</span> <span class="o">+=</span> <span class="n">lr</span> <span class="o">*</span> <span class="p">(</span><span class="n">v0</span><span class="o">.</span><span class="n">t</span><span class="p">()</span> <span class="o">@</span> <span class="n">ph0</span> <span class="o">-</span> <span class="n">vk</span><span class="o">.</span><span class="n">t</span><span class="p">()</span> <span class="o">@</span> <span class="n">phk</span><span class="p">)</span> <span class="o">/</span> <span class="n">v0</span><span class="o">.</span><span class="n">shape</span><span class="p">[</span><span class="mi">0</span><span class="p">]</span>
+</code></pre></div>
+
+<p><code>v0.t() @ ph0 - vk.t() @ phk</code> —— <strong>正相减负相</strong>，1985 年那条学习律一字未改，
+只是负相那个跑到 <span class="arithmatex">\(t=\infty\)</span> 的期望，换成了一个跑了 1 步的样本。</p>
+<p>它在理论上是错的：CD 不是任何函数的梯度（Sutskever &amp; Tieleman 2010 证明了这点）。
+<strong>但它工作。</strong> demo 在 4×4 bars-and-stripes（30 个模式，16 可见 / 8 隐）上跑 CD-1：</p>
+<div class="highlight"><pre><span></span><code>  step       重构误差      F(数据)      F(随机)        ΔF
+     0     0.2583     -5.038     -5.068    -0.029
+   500     0.1668     -7.729     -6.355     1.373
+  1500     0.0252    -23.723    -17.210     6.512
+  3000     0.0091    -37.130    -26.277    10.853
+</code></pre></div>
+
+<p><span class="arithmatex">\(\Delta F = F(\text{随机}) - F(\text{数据})\)</span> 从 <span class="arithmatex">\(-0.03\)</span> 涨到 <span class="arithmatex">\(+10.85\)</span>。
+自由能低 = 概率高，所以这个数字就是「模型把多少概率质量搬到了数据所在的那 30 个态上」。
+搬运的动力就是<strong>正相 − 负相</strong>。</p>
+<p><img alt="RBM 与 CD-1" src="images/boltzmann_03_rbm_cd1.png" /></p>
+<p>右图是 8 个隐单元学到的权重，横条和竖条的模板已经能看出来了。</p>
+<blockquote>
+<p><strong>一个诚实的观察</strong>：demo 里让训练好的 RBM 自由跑 500 步 Gibbs，
+它"幻想"出的图案并不是一个合法的 bars-and-stripes 模式。
+这不是 bug，这正是 CD-1 的已知代价：
+它优化的是"数据附近的局部形状"，而不是真正的似然，
+<strong>所以模型的自发采样质量一直是 RBM 最弱的一环</strong>。
+这个缺陷在 2006 年之后被绕过去了（见下），从来没有被真正解决。</p>
+</blockquote>
+<h3 id="73-2006深度信念网络以及深度学习这个词">7.3 2006：深度信念网络，以及"深度学习"这个词</h3>
+<p>2006 年辛顿、奥辛德罗、Teh 在 <em>Neural Computation</em> 发表
+《A Fast Learning Algorithm for Deep Belief Nets》，
+同年辛顿与萨拉赫季诺夫在 <em>Science</em> 发表了深度自编码器那篇。</p>
+<p>做法：<strong>一层一层地训 RBM</strong>。第一层 RBM 训好后，把它的隐层激活当作第二层 RBM 的输入，
+如此堆叠。堆完之后，把整个栈当作一个深度网络的初始化，再用反传微调。</p>
+<p>为什么这件事重要：2006 年之前，<strong>超过三四层的网络根本训不起来</strong>——
+随机初始化 + sigmoid + 梯度消失，反传到底层已经没信号了。
+逐层 RBM 预训练第一次给了深度网络一个<strong>能用的初始化</strong>。</p>
+<p><strong>"深度学习"这个词的流行，起点就在这里。而它的技术内核，是 1877 年那个 <span class="arithmatex">\(e^{-E/T}\)</span>。</strong></p>
+<h3 id="74-然后-rbm-就退场了">7.4 然后 RBM 就退场了</h3>
+<p>2012 年 AlexNet 之后，ReLU + dropout + 好的初始化（Xavier/He）+ GPU
+让深度网络可以直接从随机初始化训到底。<strong>无监督预训练那一步不再需要了。</strong>
+RBM 和 DBM 在四五年内从每篇论文都要提，变成没人提。</p>
+<p>这条线<strong>第二次断裂</strong>发生在 2012–2015 年前后。
+但它这次没有断掉——它换了个方向走：</p>
+<ul>
+<li>玻尔兹曼机的<strong>能量视角</strong>活到了今天的<strong>能量模型 / score matching / 扩散模型</strong>里：
+  若 <span class="arithmatex">\(p(x) \propto e^{-E(x)}\)</span>，则 score <span class="arithmatex">\(\nabla_x \log p(x) = -\nabla_x E(x)\)</span>
+  ——<span class="arithmatex">\(\log Z\)</span> 求导后消失，这正是 score matching 绕开配分函数的原因；
+  而 annealed Langevin dynamics 就是模拟退火。</li>
+<li>玻尔兹曼机的<strong>采样视角</strong>活在了每一次 <code>torch.multinomial</code> 里。</li>
+<li>而"深度学习可以工作"这件事本身，是 2006 年那条线的遗产。</li>
+</ul>
+<p><strong>2024 年，诺贝尔物理学奖颁给了霍普菲尔德和辛顿。</strong>
+颁奖词是"为用人工神经网络实现机器学习所做的奠基性发现和发明"，
+诺奖委员会的背景材料里，玻尔兹曼机和统计物理占了整整一节。</p>
+<p>一个物理学奖，颁给了两个把统计力学搬进计算机科学的人。
+<strong>距离玻尔兹曼在杜伊诺的那个房间，118 年。</strong></p>
+<hr />
+<h2 id="8-今天本仓库里的玻尔兹曼">8. 今天：本仓库里的玻尔兹曼</h2>
+<p>现在这条线落到 <code>codechat/gpt.py</code>。</p>
+<h3 id="81-gptpy141-146-就是-e-ektz">8.1 <code>gpt.py:141-146</code> 就是 <span class="arithmatex">\(e^{-E/kT}/Z\)</span></h3>
+<div class="highlight"><pre><span></span><code><span class="c1"># codechat/gpt.py:141-146</span>
+<span class="n">logits</span> <span class="o">=</span> <span class="n">logits</span><span class="p">[:,</span> <span class="o">-</span><span class="mi">1</span><span class="p">,</span> <span class="p">:]</span><span class="o">.</span><span class="n">float</span><span class="p">()</span> <span class="o">/</span> <span class="nb">max</span><span class="p">(</span><span class="n">temperature</span><span class="p">,</span> <span class="mf">1e-5</span><span class="p">)</span>
+<span class="k">if</span> <span class="n">top_k</span> <span class="ow">is</span> <span class="ow">not</span> <span class="kc">None</span><span class="p">:</span>
+    <span class="n">v</span><span class="p">,</span> <span class="n">_</span> <span class="o">=</span> <span class="n">torch</span><span class="o">.</span><span class="n">topk</span><span class="p">(</span><span class="n">logits</span><span class="p">,</span> <span class="nb">min</span><span class="p">(</span><span class="n">top_k</span><span class="p">,</span> <span class="n">logits</span><span class="o">.</span><span class="n">size</span><span class="p">(</span><span class="o">-</span><span class="mi">1</span><span class="p">)))</span>
+    <span class="n">logits</span><span class="p">[</span><span class="n">logits</span> <span class="o">&lt;</span> <span class="n">v</span><span class="p">[:,</span> <span class="p">[</span><span class="o">-</span><span class="mi">1</span><span class="p">]]]</span> <span class="o">=</span> <span class="o">-</span><span class="nb">float</span><span class="p">(</span><span class="s2">&quot;inf&quot;</span><span class="p">)</span>
+<span class="n">probs</span> <span class="o">=</span> <span class="n">F</span><span class="o">.</span><span class="n">softmax</span><span class="p">(</span><span class="n">logits</span><span class="p">,</span> <span class="n">dim</span><span class="o">=-</span><span class="mi">1</span><span class="p">)</span>
+<span class="n">next_id</span> <span class="o">=</span> <span class="n">torch</span><span class="o">.</span><span class="n">multinomial</span><span class="p">(</span><span class="n">probs</span><span class="p">,</span> <span class="n">num_samples</span><span class="o">=</span><span class="mi">1</span><span class="p">)</span>
+</code></pre></div>
+
+<p>令 <span class="arithmatex">\(E_i := -\ell_i\)</span>（<span class="arithmatex">\(\ell\)</span> 是 logits），<span class="arithmatex">\(T := \texttt{temperature}\)</span>：</p>
+<div class="arithmatex">\[p_i
+= \frac{e^{\ell_i / T}}{\sum_{j} e^{\ell_j / T}}
+= \frac{e^{-E_i / T}}{\sum_{j} e^{-E_j / T}}
+= \frac{e^{-E_i/T}}{Z}\]</div>
+<p>和 §2.2 那个方框里的式子逐字符相同。</p>
+<p><strong>Transformer 的最后一层，是在给 <span class="arithmatex">\(V = 50257\)</span> 个 token 各打一个「能量」
+<span class="arithmatex">\(E_i = -\ell_i\)</span>，然后按 1877 年那条公式在这 50257 个「能级」上做一次热采样。</strong></p>
+<p>"温度"这个词在采样参数里不是比喻。它就是 <span class="arithmatex">\(kT\)</span>。</p>
+<p>demo 第 5 部分拿一组接近真实的 logits（一个"该输出 <code>def</code> 还是 <code>class</code>"的位置）扫温度：</p>
+<div class="highlight"><pre><span></span><code>    温度 T    熵 S(nats)      有效候选 e^S  top-3
+    0.01       0.0000          1.00  def=1.00, class=0.00, import=0.00
+    0.30       0.0442          1.05  def=0.99, class=0.01, import=0.00
+    0.70       0.4947          1.64  def=0.86, class=0.10, import=0.03
+    1.00       0.8330          2.30  def=0.74, class=0.16, import=0.07
+    1.50       1.2804          3.60  def=0.57, class=0.21, import=0.12
+    3.00       1.9342          6.92  def=0.33, class=0.20, import=0.15
+</code></pre></div>
+
+<p><img alt="softmax 就是玻尔兹曼分布" src="images/boltzmann_04_softmax_is_boltzmann.png" /></p>
+<p>表里那个「有效候选」是<strong>困惑度</strong> <span class="arithmatex">\(e^S\)</span>，其中 <span class="arithmatex">\(S = -\sum_i p_i\log p_i\)</span>：</p>
+<ul>
+<li><span class="arithmatex">\(T \to 0\)</span>：塌到基态，<span class="arithmatex">\(S \to 0\)</span>。这是<strong>贪心解码</strong>，物理上叫<strong>淬火</strong>（quench）。
+  它和 Hopfield 的 <span class="arithmatex">\(\operatorname{sign}(\cdot)\)</span> 是同一件事——只下山，会卡住。</li>
+<li><span class="arithmatex">\(T = 0.7\)</span>：<code>scripts/chat_cli.py:15</code> 的默认值，有效候选 <span class="arithmatex">\(e^S \approx 1.6\)</span> 个。</li>
+<li><span class="arithmatex">\(T = 1.0\)</span>：<code>scripts/chat_rl_funcall.py:242</code> 的默认值。</li>
+<li><span class="arithmatex">\(T \to \infty\)</span>：均匀分布，<span class="arithmatex">\(S \to \log 50257 = 10.82\)</span>。胡说八道。</li>
+</ul>
+<blockquote>
+<p><strong>为什么推理用 0.7 而 RL 采样用 1.0？</strong>
+策略梯度的期望是对策略 <span class="arithmatex">\(\pi_\theta\)</span> 本身取的：</p>
+<div class="arithmatex">\[\nabla_\theta J = \mathbb E_{y \sim \pi_\theta}\big[A(y)\,\nabla_\theta \log \pi_\theta(y)\big]\]</div>
+<p>采样分布必须<strong>等于</strong>策略分布，否则这个蒙特卡洛估计有偏。
+令 <span class="arithmatex">\(\pi^{(T)}(y) \propto \pi_\theta(y)^{1/T}\)</span>，则 <span class="arithmatex">\(T \ne 1\)</span> 时
+<span class="arithmatex">\(\mathbb E_{y\sim\pi^{(T)}}[\,\cdot\,] \ne \mathbb E_{y\sim\pi_\theta}[\,\cdot\,]\)</span>——
+是在对一个改过形的分布采样，却用原分布的 <span class="arithmatex">\(\log \pi_\theta\)</span> 去算梯度。
+推理时没有这个约束，<span class="arithmatex">\(0.7\)</span> 只是"少犯傻"的经验值。</p>
+<p>（注：<code>chat_rl_funcall.py</code> 的 <code>top_k=50</code> 严格说也引入了同样的偏差，
+这是这类实现里普遍接受的取舍，不是本仓库特有的问题。）</p>
+</blockquote>
+<h3 id="82-交叉熵就是自由能">8.2 交叉熵就是自由能</h3>
+<p>再深一层。<code>codechat/gpt.py:129-133</code>：</p>
+<div class="highlight"><pre><span></span><code><span class="n">loss</span> <span class="o">=</span> <span class="n">F</span><span class="o">.</span><span class="n">cross_entropy</span><span class="p">(</span>
+    <span class="n">logits</span><span class="o">.</span><span class="n">view</span><span class="p">(</span><span class="o">-</span><span class="mi">1</span><span class="p">,</span> <span class="n">logits</span><span class="o">.</span><span class="n">size</span><span class="p">(</span><span class="o">-</span><span class="mi">1</span><span class="p">))</span><span class="o">.</span><span class="n">float</span><span class="p">(),</span>
+    <span class="n">targets</span><span class="o">.</span><span class="n">view</span><span class="p">(</span><span class="o">-</span><span class="mi">1</span><span class="p">),</span>
+    <span class="n">ignore_index</span><span class="o">=-</span><span class="mi">100</span><span class="p">,</span>
+<span class="p">)</span>
+</code></pre></div>
+
+<p>展开就是<strong>能量项加配分函数</strong>：</p>
+<div class="arithmatex">\[\mathcal L = -\log p(y) = -\log\frac{e^{\ell_y}}{\sum_j e^{\ell_j}}
+= \underbrace{-\,\ell_y}_{\textstyle E_y}
+\;+\; \underbrace{\log\sum_j e^{\ell_j}}_{\textstyle \log Z}\]</div>
+<p>统计力学里 <span class="arithmatex">\(-kT\log Z\)</span> 就是<strong>自由能</strong>。所以每一步梯度下降在做两件事——
+把梯度写出来，这两件事各占一项：</p>
+<div class="arithmatex">\[\frac{\partial \mathcal L}{\partial \ell_i}
+= \underbrace{-\,\mathbb 1[i = y]}_{\text{压低正确 token 的能量}}
+\;+\; \underbrace{p_i}_{\text{抬高其余所有 token 的能量}}
+\qquad\Longrightarrow\qquad
+\nabla_{\ell}\mathcal L = p - \mathrm{onehot}(y)\]</div>
+<p><strong>这就是 1985 年的「正相 − 负相」。</strong> 把两条式子并排放：</p>
+<div class="arithmatex">\[\underbrace{\langle s_i s_j\rangle_{\text{data}} - \langle s_i s_j\rangle_{\text{model}}}_{\text{玻尔兹曼机 1985}}
+\qquad\longleftrightarrow\qquad
+\underbrace{\mathrm{onehot}(y) - p}_{\text{交叉熵梯度}}\]</div>
+<p>一模一样的结构：拉低数据的能量，抬高模型自己认为可能的那些状态的能量。</p>
+<p>区别只有一处，而这一处就是全部：</p>
+<table>
+<thead>
+<tr>
+<th></th>
+<th>玻尔兹曼机</th>
+<th>Transformer</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><span class="arithmatex">\(Z\)</span> 的形式</td>
+<td><span class="arithmatex">\(\displaystyle\sum_{s\in\{0,1\}^N} e^{-E(s)}\)</span></td>
+<td><span class="arithmatex">\(\displaystyle\sum_{j=1}^{V} e^{\ell_j}\)</span></td>
+</tr>
+<tr>
+<td><span class="arithmatex">\(Z\)</span> 的项数</td>
+<td><span class="arithmatex">\(2^N\)</span>（<span class="arithmatex">\(N\)</span> = 单元数）</td>
+<td><span class="arithmatex">\(V = 50257\)</span>（词表大小）</td>
+</tr>
+<tr>
+<td>算 <span class="arithmatex">\(Z\)</span> 的方式</td>
+<td><strong>算不了</strong>，只能 MCMC 采样近似</td>
+<td><strong>一次求和</strong>，<code>logsumexp</code> 一行搞定</td>
+</tr>
+<tr>
+<td>负相的代价</td>
+<td>Gibbs 链，混合时间指数级</td>
+<td>免费，反传自带</td>
+</tr>
+</tbody>
+</table>
+<blockquote>
+<p>★ <strong>这就是 1985 年那条路走不通、2017 年这条路走通了的全部原因。</strong>
+不是因为 Transformer 更"聪明"，而是因为<strong>自回归分解把一个 <span class="arithmatex">\(2^N\)</span> 项的配分函数，
+拆成了 <span class="arithmatex">\(T\)</span> 个各 <span class="arithmatex">\(V\)</span> 项的配分函数</strong>：</p>
+<div class="arithmatex">\[p(x_{1:T}) = \prod_{t=1}^{T} p(x_t \mid x_{&lt;t}),
+\qquad Z_t = \sum_{j=1}^{V} e^{\ell_j^{(t)}}\]</div>
+<p>每一项的归一化都是显式的、精确的、可微的。总代价 <span class="arithmatex">\(O(TV)\)</span>，不是 <span class="arithmatex">\(O(2^N)\)</span>。</p>
+<p>玻尔兹曼机输在了 <code>Z</code> 上。仅此而已。</p>
+</blockquote>
+<h3 id="83-能量地形与本仓库的-rl-失败">8.3 能量地形与本仓库的 RL 失败</h3>
+<p>第 4 节那张图里，Hopfield 卡在伪极小上出不来。
+本仓库的 <code>reports/TRAINING_REPORT_8b_a88_x8.md</code> 里记录了一次结构上一模一样的失败：</p>
+<div class="highlight"><pre><span></span><code>rl step   415 | reward 0.000 (max 0.00) | loss 0.0323 | lr 6.85e-06 | 60256s
+</code></pre></div>
+
+<p>Stage-5 的 MBPP RL 跑了 <strong>415 步、16.7 小时，reward 恒为 0</strong>。原因写在
+<code>codechat/funcall_reward.py:4-10</code> 的 docstring 里：</p>
+<blockquote>
+<p>二值奖励（全部单测通过 → 1.0，否则 0.0）。8B base 的 pass@k ≈ 0，
+于是每个 rollout 都是 0 → GRPO 的 advantage <code>rewards - rewards.mean()</code> 恒为 0
+→ 梯度恒为 0。</p>
+</blockquote>
+<p>写成式子就是：若 <span class="arithmatex">\(r(y^{(k)}) = 0\)</span> 对所有 <span class="arithmatex">\(k = 1,\dots,K\)</span> 成立，则</p>
+<div class="arithmatex">\[A^{(k)} = r(y^{(k)}) - \frac{1}{K}\sum_{k'} r(y^{(k')}) \equiv 0
+\qquad\Longrightarrow\qquad
+\nabla_\theta J = \frac{1}{K}\sum_k A^{(k)}\nabla_\theta\log\pi_\theta(y^{(k)}) \equiv 0\]</div>
+<p><strong>梯度不是"很小"，是恒等于零。</strong> 跑多久都一样。</p>
+<p><strong>用能量地形的语言说：奖励函数定义的地形是完全平的。</strong>
+没有坡度，随机性再多也没用——玻尔兹曼机能跳出局部极小，
+是因为地形<strong>有高低</strong>；一个平面上的退火，跑多久都是随机游走。</p>
+<p><code>codechat/funcall_reward.py:17-25</code> 的解法就是<strong>把平面改造成阶梯</strong>：</p>
+<div class="highlight"><pre><span></span><code>no &lt;functioncall&gt; tag at all                 → 0.00
+tag present, body not valid JSON             → 0.15
+JSON OK but missing &#39;name&#39;                   → 0.30
+JSON OK, wrong function name                 → 0.35
+right name, no/empty arguments               → 0.55
+right name, args parse, partial match        → 0.55 + 0.45 * match_frac
+right name, all arguments exactly match      → 1.00
+</code></pre></div>
+
+<p>而 <code>scripts/chat_rl_funcall.py:375</code> 的更新律：</p>
+<div class="highlight"><pre><span></span><code><span class="n">advantages</span> <span class="o">=</span> <span class="n">rewards</span> <span class="o">-</span> <span class="n">rewards</span><span class="o">.</span><span class="n">mean</span><span class="p">()</span>
+</code></pre></div>
+
+<div class="arithmatex">\[A(y) = r(y) - \langle r\rangle,
+\qquad \langle r\rangle = \mathbb E_{y\sim\pi_\theta}[\,r(y)\,] \approx \frac{1}{K}\sum_k r(y^{(k)})\]</div>
+<p><strong>又是「实测项 − 模型期望项」的那个结构</strong>：比平均好的样本被抬高概率，比平均差的被压低。
+它和 <span class="arithmatex">\(\langle s_i s_j\rangle_{\text{data}} - \langle s_i s_j\rangle_{\text{model}}\)</span>
+是同一个模板的两个实例。</p>
+<p>这个模板在这条线上出现了三次：</p>
+<table>
+<thead>
+<tr>
+<th>出处</th>
+<th>正项（实际观察到的）</th>
+<th>负项（模型自己期望的）</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>1985 玻尔兹曼机学习律</td>
+<td><span class="arithmatex">\(\langle s_i s_j\rangle_{\text{data}}\)</span></td>
+<td><span class="arithmatex">\(\langle s_i s_j\rangle_{\text{model}}\)</span></td>
+</tr>
+<tr>
+<td>交叉熵梯度</td>
+<td><span class="arithmatex">\(\mathrm{onehot}(y)\)</span></td>
+<td><span class="arithmatex">\(\operatorname{softmax}(\ell) = p\)</span></td>
+</tr>
+<tr>
+<td>GRPO / REINFORCE 基线</td>
+<td><span class="arithmatex">\(r(y)\)</span></td>
+<td><span class="arithmatex">\(\mathbb E_{y\sim\pi_\theta}[r(y)]\)</span></td>
+</tr>
+</tbody>
+</table>
+<p>三次都是同一句话：<strong>把概率质量从模型现在认为对的地方，搬到实际上对的地方。</strong></p>
+<hr />
+<h2 id="9-类比在哪里断掉">9. 类比在哪里断掉</h2>
+<p>这篇文章的整个论证靠一个等式支撑：
+<span class="arithmatex">\(\operatorname{softmax}(\ell/T)_i = e^{-E_i/T}/Z\)</span>（取 <span class="arithmatex">\(E_i = -\ell_i\)</span>）。
+这个等式是<strong>精确的</strong>。但由它推出的类比有明确的边界，说清楚才不至于变成玄学：</p>
+<ol>
+<li>
+<p><strong>Transformer 没有热库，没有细致平衡，没有平衡态。</strong>
+   <span class="arithmatex">\(T\)</span> 是一个我们手动拧的旋钮，不是系统与环境交换能量的结果。
+   <span class="arithmatex">\(p \propto e^{-E/T}\)</span> 在这里是一个<strong>分布的形式</strong>，不是一个<strong>物理过程的结论</strong>。</p>
+</li>
+<li>
+<p><strong>Transformer 是有向的自回归模型，不是无向的能量模型。</strong>
+   玻尔兹曼机有一个全局的联合配分函数 <span class="arithmatex">\(Z = \sum_{v,h} e^{-E(v,h)}\)</span>；
+   Transformer 只有逐位置的 <span class="arithmatex">\(Z_t = \sum_j e^{\ell_j^{(t)}}\)</span>。
+   一个满足 <span class="arithmatex">\(p(v) = e^{-F(v)}/Z\)</span> 的<strong>全局</strong>能量函数在 Transformer 里<strong>不存在</strong>——
+   它的 <span class="arithmatex">\(\log p(x_{1:T}) = \sum_t \log p(x_t\mid x_{&lt;t})\)</span> 是链式分解，不是玻尔兹曼形式。</p>
+</li>
+<li>
+<p><strong>CD-1 不是任何目标函数的梯度。</strong>
+   即不存在函数 <span class="arithmatex">\(\mathcal J\)</span> 使得 <span class="arithmatex">\(\Delta W_{\text{CD-1}} = -\nabla_W \mathcal J\)</span>；
+   Sutskever &amp; Tieleman (2010) 证明了这一点。它能工作是经验事实，不是定理。
+   demo 里那个"幻想不出合法图案"的现象就是这个缺陷的直接表现。</p>
+</li>
+<li>
+<p><strong>玻尔兹曼机没有回归，也不会回归。</strong>
+   这条线在今天的活体后代是扩散模型 / score-based 模型
+   （<span class="arithmatex">\(\nabla_x\log p(x) = -\nabla_x E(x)\)</span>，annealed Langevin dynamics = 模拟退火），
+   而不是 RBM。<strong>说 Transformer "是" 玻尔兹曼机是错的；
+   说它们共用同一个 1877 年的分布公式是对的。</strong></p>
+</li>
+<li>
+<p><strong><span class="arithmatex">\(S = k\log W\)</span> 里的 <span class="arithmatex">\(k = 1.38\times10^{-23}\,\mathrm{J/K}\)</span> 有量纲，
+   <code>softmax</code> 的温度没有量纲。</strong>
+   两者是同构，不是同一物。玻尔兹曼是在描述真实气体；我们是在借用一个函数形式。</p>
+</li>
+</ol>
+<hr />
+<h2 id="10-一张对照表">10. 一张对照表</h2>
+<table>
+<thead>
+<tr>
+<th>层次</th>
+<th>1877 玻尔兹曼</th>
+<th>1985 玻尔兹曼机</th>
+<th>今天 CodeChat</th>
+<th>代码位置</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><strong>状态</strong></td>
+<td>分子的位置与速度 <span class="arithmatex">\((q,p)\)</span></td>
+<td>二值单元 <span class="arithmatex">\(s\in\{\pm1\}^N\)</span></td>
+<td>下一个 token <span class="arithmatex">\(y\in\{1,\dots,V\}\)</span></td>
+<td><code>tokenizer.py:14</code></td>
+</tr>
+<tr>
+<td><strong>能量</strong></td>
+<td>力学能 <span class="arithmatex">\(E(q,p)\)</span></td>
+<td><span class="arithmatex">\(E = -\tfrac12 s^{\mathsf T}Ws - b^{\mathsf T}s\)</span></td>
+<td><span class="arithmatex">\(E_i = -\ell_i\)</span></td>
+<td><code>gpt.py:126</code></td>
+</tr>
+<tr>
+<td><strong>分布</strong></td>
+<td><span class="arithmatex">\(\dfrac{e^{-E/kT}}{Z}\)</span></td>
+<td><span class="arithmatex">\(\dfrac{e^{-E/T}}{Z}\)</span></td>
+<td><span class="arithmatex">\(\operatorname{softmax}(\ell/T)\)</span></td>
+<td><code>gpt.py:145</code></td>
+</tr>
+<tr>
+<td><strong>温度</strong></td>
+<td>真实的 <span class="arithmatex">\(kT\)</span></td>
+<td>退火调度 <span class="arithmatex">\(T_k\)</span></td>
+<td><code>--temperature</code> (<span class="arithmatex">\(0.7\)</span> / <span class="arithmatex">\(1.0\)</span>)</td>
+<td><code>chat_cli.py:15</code>, <code>chat_rl_funcall.py:242</code></td>
+</tr>
+<tr>
+<td><strong><span class="arithmatex">\(Z\)</span></strong></td>
+<td><span class="arithmatex">\(\int e^{-E/kT}\mathrm dq\,\mathrm dp\)</span></td>
+<td><span class="arithmatex">\(\sum_{s} e^{-E(s)/T}\)</span>，<span class="arithmatex">\(2^N\)</span> 项，<strong>算不动</strong></td>
+<td><span class="arithmatex">\(\sum_{j=1}^{V} e^{\ell_j}\)</span>，<span class="arithmatex">\(50257\)</span> 项，<strong>一行 logsumexp</strong></td>
+<td><code>gpt.py:129</code></td>
+</tr>
+<tr>
+<td><strong>采样</strong></td>
+<td>自然界自己在做</td>
+<td>Gibbs + 模拟退火</td>
+<td><code>torch.multinomial</code> 一次</td>
+<td><code>gpt.py:146</code></td>
+</tr>
+<tr>
+<td><strong>学习</strong></td>
+<td>无（描述性理论）</td>
+<td><span class="arithmatex">\(\langle ss\rangle_{\text{data}} - \langle ss\rangle_{\text{model}}\)</span></td>
+<td><span class="arithmatex">\(\mathrm{onehot}(y) - p\)</span></td>
+<td><code>gpt.py:129</code></td>
+</tr>
+<tr>
+<td><strong>RL 版学习</strong></td>
+<td>—</td>
+<td>正相 − 负相</td>
+<td><span class="arithmatex">\(r(y) - \langle r\rangle\)</span></td>
+<td><code>chat_rl_funcall.py:375</code></td>
+</tr>
+<tr>
+<td><strong>平坦地形的后果</strong></td>
+<td>熵最大 = 无信息</td>
+<td>无法区分记忆</td>
+<td><span class="arithmatex">\(A \equiv 0\)</span>，415 步空转</td>
+<td><code>TRAINING_REPORT_8b_a88_x8.md:197</code></td>
+</tr>
+<tr>
+<td><strong>解法</strong></td>
+<td>—</td>
+<td>退火（给随机性）</td>
+<td>阶梯奖励（给坡度）</td>
+<td><code>funcall_reward.py:17-25</code></td>
+</tr>
+<tr>
+<td><strong>贪心极限</strong></td>
+<td><span class="arithmatex">\(T\to0\)</span> 冻结到基态</td>
+<td><span class="arithmatex">\(T\to0\)</span> 退化成 Hopfield</td>
+<td><span class="arithmatex">\(T\to0\)</span> 即 <span class="arithmatex">\(\arg\max\)</span></td>
+<td><code>gpt.py:141</code></td>
+</tr>
+</tbody>
+</table>
+<hr />
+<h2 id="11-运行-demo">11. 运行 demo</h2>
+<div class="highlight"><pre><span></span><code>python<span class="w"> </span>docs/examples/boltzmann_machine_demo.py
+</code></pre></div>
+
+<p>只依赖 <code>torch</code> + <code>matplotlib</code>，无显示环境也能跑（Agg 后端），
+全部数字在终端以 ASCII 打印，同时输出五张图到 <code>docs/images/</code>。</p>
+<p>其中两段是<strong>恒等式验证</strong>，不产图或只产一张图，但它们是 §5.5 和 §7.1 的全部证据：</p>
+<ul>
+<li><strong>第 3b 部分</strong>：8 单元穷举 + 20 万 sweep Gibbs，测出平稳分布就是 <span class="arithmatex">\(e^{-E/T}/Z\)</span>
+  （TV 距离 <span class="arithmatex">\(0.010\)</span>，log-log 相关 <span class="arithmatex">\(0.998\)</span>）。</li>
+<li><strong>第 4a 部分</strong>：4×3 小 RBM 上逐项验证
+  <span class="arithmatex">\(\sum_h e^{-E(v,h)} = e^{-F(v)}\)</span>（最大相对误差 <span class="arithmatex">\(7\times10^{-7}\)</span>）
+  和 <span class="arithmatex">\(p(h\mid v) = \prod_j \sigma(\eta_j)\)</span>（最大偏差 <span class="arithmatex">\(9\times10^{-8}\)</span>）。</li>
+</ul>
+<table>
+<thead>
+<tr>
+<th>文件</th>
+<th>内容</th>
+<th>对应章节</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>boltzmann_01_entropy_and_distribution.png</code></td>
+<td><span class="arithmatex">\(S = \log W\)</span> 的钟形、<span class="arithmatex">\(e^{-E/T}\)</span> 的温度扫描、熵-能量配比</td>
+<td>§2</td>
+</tr>
+<tr>
+<td><code>boltzmann_02_hopfield_vs_boltzmann.png</code></td>
+<td>Hopfield 卡在伪极小 vs 退火跳出来（200 次统计）</td>
+<td>§4, §5</td>
+</tr>
+<tr>
+<td><code>boltzmann_02b_why_the_name.png</code></td>
+<td>Gibbs 实测频率 vs <span class="arithmatex">\(e^{-E/T}/Z\)</span>；<span class="arithmatex">\(\log p\)</span> 对 <span class="arithmatex">\(E\)</span> 是直线</td>
+<td>§5.5</td>
+</tr>
+<tr>
+<td><code>boltzmann_03_rbm_cd1.png</code></td>
+<td>CD-1 训练曲线、自由能间隙、隐单元学到的特征</td>
+<td>§7</td>
+</tr>
+<tr>
+<td><code>boltzmann_04_softmax_is_boltzmann.png</code></td>
+<td><span class="arithmatex">\(E = -\ell\)</span>、温度改分布形状、本仓库两个默认温度</td>
+<td>§8</td>
+</tr>
+</tbody>
+</table>
+<p>终端最后会打印这条线的完整时间轴。</p>
+<hr />
+<h2 id="结语">结语</h2>
+<p>玻尔兹曼一辈子在为一个命题辩护：
+<strong>你不需要知道每一个分子在哪里，你只需要知道有多少种方式可以是这样。</strong></p>
+<p>他为此写下了 <span class="arithmatex">\(S \propto \log W\)</span>，被同时代最有名的两个人（马赫、奥斯特瓦尔德）当作形而上学，
+在杜伊诺的旅馆里结束了自己的生命，然后在两年内被实验证明是对的，
+最后由普朗克把公式写成最终形式刻上了他的墓碑。</p>
+<p>一百零八年后，两个把他的公式搬进计算机的人拿了诺贝尔物理学奖。</p>
+<p>而在这个仓库里，那个公式每秒钟被执行成千上万次——
+每一次 <code>F.softmax(logits, dim=-1)</code>，都是在 50257 个"能级"上做一次</p>
+<div class="arithmatex">\[p_i = \frac{e^{-E_i/T}}{Z}\]</div>
+<p>你调 <code>--temperature</code> 的时候，你在调的就是 <span class="arithmatex">\(kT\)</span>。</p>
+<p><strong>他是对的：概率就够了。</strong></p>
+<hr />
+<h2 id="参考">参考</h2>
+<p><strong>玻尔兹曼与统计力学</strong></p>
+<ul>
+<li>L. Boltzmann, "Weitere Studien über das Wärmegleichgewicht unter Gasmolekülen", 1872（H 定理 / 玻尔兹曼方程）</li>
+<li>J. Loschmidt, "Über den Zustand des Wärmegleichgewichtes...", 1876（可逆性佯谬）</li>
+<li>L. Boltzmann, "Über die Beziehung zwischen dem zweiten Hauptsatze...und der Wahrscheinlichkeitsrechnung...", <em>Wiener Berichte</em> 76, 1877（<span class="arithmatex">\(S \propto \log W\)</span>）</li>
+<li>E. Zermelo, "Über einen Satz der Dynamik und die mechanische Wärmetheorie", 1896（回归佯谬）</li>
+<li>M. Planck, "Über das Gesetz der Energieverteilung im Normalspectrum", <em>Ann. Phys.</em> 4, 1901（引入 <span class="arithmatex">\(k\)</span>，写下 <span class="arithmatex">\(S = k\log W\)</span>）</li>
+<li>L. Boltzmann, "Reise eines deutschen Professors ins Eldorado", 1905</li>
+<li>C. Cercignani, <em>Ludwig Boltzmann: The Man Who Trusted Atoms</em>, Oxford, 1998（标准传记）</li>
+<li>E. Broda, <em>Ludwig Boltzmann: Mensch, Physiker, Philosoph</em>, 1955</li>
+</ul>
+<p><strong>从物理到神经网络</strong></p>
+<ul>
+<li>E. Ising, "Beitrag zur Theorie des Ferromagnetismus", <em>Z. Phys.</em> 31, 1925</li>
+<li>L. Onsager, "Crystal Statistics I", <em>Phys. Rev.</em> 65, 1944</li>
+<li>D. Sherrington &amp; S. Kirkpatrick, "Solvable Model of a Spin-Glass", <em>PRL</em> 35, 1975</li>
+<li>W. McCulloch &amp; W. Pitts, "A Logical Calculus of the Ideas Immanent in Nervous Activity", 1943</li>
+<li>D. Hebb, <em>The Organization of Behavior</em>, 1949</li>
+<li>F. Rosenblatt, "The Perceptron", <em>Psychological Review</em> 65, 1958</li>
+<li>M. Minsky &amp; S. Papert, <em>Perceptrons</em>, MIT Press, 1969</li>
+<li>J. J. Hopfield, "Neural networks and physical systems with emergent collective computational abilities", <em>PNAS</em> 79, 1982</li>
+<li>S. Kirkpatrick, C. Gelatt, M. Vecchi, "Optimization by Simulated Annealing", <em>Science</em> 220, 1983</li>
+</ul>
+<p><strong>玻尔兹曼机与辛顿</strong></p>
+<ul>
+<li>G. Hinton &amp; T. Sejnowski, "Optimal Perceptual Inference", <em>CVPR</em>, 1983（"Boltzmann machine" 一词首次出现）</li>
+<li>D. Ackley, G. Hinton, T. Sejnowski, "A Learning Algorithm for Boltzmann Machines", <em>Cognitive Science</em> 9(1), 1985</li>
+<li>D. Rumelhart, G. Hinton, R. Williams, "Learning representations by back-propagating errors", <em>Nature</em> 323, 1986</li>
+<li>P. Smolensky, "Information Processing in Dynamical Systems: Foundations of Harmony Theory", in <em>PDP</em> vol. 1, 1986（Harmonium = RBM）</li>
+<li>G. Hinton, "Training Products of Experts by Minimizing Contrastive Divergence", <em>Neural Computation</em> 14(8), 2002</li>
+<li>G. Hinton, S. Osindero, Y.-W. Teh, "A Fast Learning Algorithm for Deep Belief Nets", <em>Neural Computation</em> 18(7), 2006</li>
+<li>G. Hinton &amp; R. Salakhutdinov, "Reducing the Dimensionality of Data with Neural Networks", <em>Science</em> 313, 2006</li>
+<li>R. Salakhutdinov &amp; G. Hinton, "Deep Boltzmann Machines", <em>AISTATS</em>, 2009</li>
+<li>I. Sutskever &amp; T. Tieleman, "On the Convergence Properties of Contrastive Divergence", <em>AISTATS</em>, 2010</li>
+<li>The Nobel Prize in Physics 2024 — Scientific Background（Hopfield &amp; Hinton；其中有专节讲玻尔兹曼机）</li>
+</ul>
+<p><strong>本仓库</strong></p>
+<ul>
+<li><code>codechat/gpt.py</code>（<code>generate</code> 的采样、<code>cross_entropy</code>）</li>
+<li><code>codechat/funcall_reward.py</code>（阶梯奖励，以及二值奖励为什么失败）</li>
+<li><code>scripts/chat_rl_funcall.py</code>（<code>advantages = rewards - rewards.mean()</code>）</li>
+<li><code>scripts/chat_cli.py</code>（<code>--temperature</code> 默认 0.7）</li>
+<li><code>reports/TRAINING_REPORT_8b_a88_x8.md</code>（415 步 reward ≡ 0 的记录）</li>
+<li><code>docs/examples/boltzmann_machine_demo.py</code>（本文全部数字与图）</li>
+<li>相关文章：<code>docs/sft_rl_inference_mechanics.md</code>、<code>docs/why_language_is_learnable_sanskrit.md</code></li>
+</ul>
+    </div>
+  </article>
+
+</main>
+
+<!-- Floating Ask-AI chat widget -->
+<button class="ai-fab" id="ai-fab" aria-label="Ask AI about this article" title="Ask AI about this article">
+  <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+    <path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"/>
+  </svg>
+  <span class="ai-fab-label">Ask AI</span>
+</button>
+
+<div class="ai-panel" id="ai-panel" role="dialog" aria-labelledby="ai-panel-title" aria-hidden="true">
+  <header class="ai-panel-head">
+    <div class="ai-panel-title-wrap">
+      <span class="ai-dot"></span>
+      <h3 id="ai-panel-title">Ask AI about this post</h3>
+    </div>
+    <div class="ai-panel-actions">
+      <button class="ai-icon-btn" id="ai-clear" title="Clear conversation" aria-label="Clear">
+        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><polyline points="3 6 5 6 21 6"/><path d="M19 6l-1 14a2 2 0 0 1-2 2H8a2 2 0 0 1-2-2L5 6"/><path d="M10 11v6M14 11v6"/><path d="M9 6V4a1 1 0 0 1 1-1h4a1 1 0 0 1 1 1v2"/></svg>
+      </button>
+      <button class="ai-icon-btn" id="ai-close" title="Minimize" aria-label="Minimize">
+        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><polyline points="6 9 12 15 18 9"/></svg>
+      </button>
+    </div>
+  </header>
+
+  <div class="ai-messages" id="ai-messages">
+    <div class="ai-empty" id="ai-empty">
+      <p class="ai-empty-title">On-device AI · Gemini Nano</p>
+      <p class="ai-empty-sub">Ask anything about this article. Runs in your browser — nothing leaves your device.</p>
+    </div>
+  </div>
+
+  <div class="ai-status" id="ai-status" hidden></div>
+
+  <form class="ai-composer" id="ai-form">
+    <textarea id="ai-input" rows="1" placeholder="Ask about this post…" autocomplete="off"></textarea>
+    <button type="submit" id="ai-send" class="ai-send" aria-label="Send" disabled>
+      <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><line x1="22" y1="2" x2="11" y2="13"/><polygon points="22 2 15 22 11 13 2 9 22 2"/></svg>
+    </button>
+  </form>
+</div>
+
+<script>
+(function () {
+  const POST_TITLE = "\u4ece\u73bb\u5c14\u5179\u66fc\u5230\u8f9b\u987f: \u4ece \\(S = k \\log W\\) \u5230 gpt.py:145 \u7684\u4e00\u6761\u7ebf";
+  const contentEl = document.querySelector('article .content');
+
+  const fab = document.getElementById('ai-fab');
+  const panel = document.getElementById('ai-panel');
+  const closeBtn = document.getElementById('ai-close');
+  const clearBtn = document.getElementById('ai-clear');
+  const msgsEl = document.getElementById('ai-messages');
+  const emptyEl = document.getElementById('ai-empty');
+  const statusEl = document.getElementById('ai-status');
+  const formEl = document.getElementById('ai-form');
+  const inputEl = document.getElementById('ai-input');
+  const sendBtn = document.getElementById('ai-send');
+
+  function articleText() {
+    if (!contentEl) return '';
+    return (contentEl.innerText || contentEl.textContent || '')
+      .replace(/[ \t]+\n/g, '\n')
+      .replace(/\n{3,}/g, '\n\n')
+      .trim();
+  }
+
+  function setStatus(msg, cls) {
+    if (!msg) { statusEl.hidden = true; statusEl.textContent = ''; statusEl.className = 'ai-status'; return; }
+    statusEl.hidden = false;
+    statusEl.textContent = msg;
+    statusEl.className = 'ai-status' + (cls ? ' ' + cls : '');
+  }
+
+  function hideEmpty() { if (emptyEl) emptyEl.style.display = 'none'; }
+
+  function appendBubble(role, text) {
+    hideEmpty();
+    const wrap = document.createElement('div');
+    wrap.className = 'ai-msg ai-msg-' + role;
+    const bubble = document.createElement('div');
+    bubble.className = 'ai-bubble';
+    bubble.textContent = text;
+    wrap.appendChild(bubble);
+    msgsEl.appendChild(wrap);
+    msgsEl.scrollTop = msgsEl.scrollHeight;
+    return bubble;
+  }
+
+  function appendTyping() {
+    hideEmpty();
+    const wrap = document.createElement('div');
+    wrap.className = 'ai-msg ai-msg-assistant ai-typing';
+    wrap.innerHTML = '<div class="ai-bubble"><span class="ai-dots"><i></i><i></i><i></i></span></div>';
+    msgsEl.appendChild(wrap);
+    msgsEl.scrollTop = msgsEl.scrollHeight;
+    return wrap;
+  }
+
+  function autoSize() {
+    inputEl.style.height = 'auto';
+    inputEl.style.height = Math.min(inputEl.scrollHeight, 140) + 'px';
+  }
+
+  function openPanel() {
+    panel.classList.add('open');
+    panel.setAttribute('aria-hidden', 'false');
+    fab.classList.add('hidden');
+    setTimeout(() => inputEl.focus(), 50);
+  }
+  function closePanel() {
+    panel.classList.remove('open');
+    panel.setAttribute('aria-hidden', 'true');
+    fab.classList.remove('hidden');
+  }
+
+  fab.addEventListener('click', openPanel);
+  closeBtn.addEventListener('click', closePanel);
+  document.addEventListener('keydown', e => {
+    if (e.key === 'Escape' && panel.classList.contains('open')) closePanel();
+  });
+
+  // ---- LanguageModel session ----
+  let session = null;
+  let creating = null;
+  let history = [];
+
+  function buildSystemPrompt() {
+    // Keep article context modest — Gemini Nano's input quota is small.
+    const article = articleText().slice(0, 4000);
+    return (
+      'You are a concise, helpful assistant answering questions about a blog post. ' +
+      'Use the article below as your primary source. If the answer is not in it, say so briefly and answer generally. ' +
+      'Reply in the same language as the user\'s question. Keep answers short unless asked for detail.\n\n' +
+      '=== ARTICLE TITLE ===\n' + POST_TITLE + '\n\n' +
+      '=== ARTICLE CONTENT ===\n' + article
+    );
+  }
+
+  async function ensureSession() {
+    if (session) return session;
+    if (creating) return creating;
+
+    if (!('LanguageModel' in self)) {
+      throw new Error(
+        'On-device AI not available. Use Chrome 138+ on desktop, or enable ' +
+        '"Prompt API for Gemini Nano" in chrome://flags.'
+      );
+    }
+
+    setStatus('Checking model…', 'info');
+    const status = await LanguageModel.availability();
+    if (status === 'unavailable') {
+      throw new Error('Model unavailable on this device.');
+    }
+
+    creating = (async () => {
+      // Only show download UI when the model isn't already there.
+      const willDownload = (status !== 'available');
+      if (willDownload) setStatus('Preparing model (first run downloads ~2GB)…', 'info');
+      else setStatus('Warming up…', 'info');
+
+      const s = await LanguageModel.create({
+        initialPrompts: [{ role: 'system', content: buildSystemPrompt() }],
+        monitor(m) {
+          m.addEventListener('downloadprogress', e => {
+            // Skip the spurious 0% event Chrome fires for cached models.
+            if (!willDownload && e.loaded === 0) return;
+            const pct = (e.loaded * 100).toFixed(1);
+            setStatus('Downloading model: ' + pct + '%', 'info');
+          });
+        }
+      });
+      session = s;
+      setStatus('');
+      return s;
+    })();
+
+    try { return await creating; }
+    finally { creating = null; }
+  }
+
+  async function ask(q) {
+    appendBubble('user', q);
+    history.push({ role: 'user', content: q });
+
+    sendBtn.disabled = true;
+    inputEl.disabled = true;
+    const typing = appendTyping();
+
+    let answerBubble = null;
+    let acc = '';
+    try {
+      const s = await ensureSession();
+      const stream = s.promptStreaming(q);
+      for await (const chunk of stream) {
+        if (!answerBubble) {
+          typing.remove();
+          const wrap = document.createElement('div');
+          wrap.className = 'ai-msg ai-msg-assistant';
+          answerBubble = document.createElement('div');
+          answerBubble.className = 'ai-bubble';
+          wrap.appendChild(answerBubble);
+          msgsEl.appendChild(wrap);
+        }
+        acc += chunk;
+        answerBubble.textContent = acc;
+        msgsEl.scrollTop = msgsEl.scrollHeight;
+      }
+      if (acc) history.push({ role: 'assistant', content: acc });
+      else { typing.remove(); appendBubble('assistant', '(no response)'); }
+    } catch (e) {
+      if (typing && typing.parentNode) typing.remove();
+      const err = document.createElement('div');
+      err.className = 'ai-msg ai-msg-error';
+      err.innerHTML = '<div class="ai-bubble">⚠ ' + (e && e.message ? e.message : String(e)) + '</div>';
+      msgsEl.appendChild(err);
+      msgsEl.scrollTop = msgsEl.scrollHeight;
+    } finally {
+      sendBtn.disabled = !inputEl.value.trim();
+      inputEl.disabled = false;
+      inputEl.focus();
+    }
+  }
+
+  formEl.addEventListener('submit', e => {
+    e.preventDefault();
+    const q = inputEl.value.trim();
+    if (!q) return;
+    inputEl.value = '';
+    autoSize();
+    sendBtn.disabled = true;
+    ask(q);
+  });
+
+  inputEl.addEventListener('input', () => {
+    autoSize();
+    sendBtn.disabled = !inputEl.value.trim();
+  });
+  inputEl.addEventListener('keydown', e => {
+    if (e.key === 'Enter' && !e.shiftKey) {
+      e.preventDefault();
+      formEl.requestSubmit();
+    }
+  });
+
+  clearBtn.addEventListener('click', () => {
+    msgsEl.innerHTML = '';
+    msgsEl.appendChild(emptyEl);
+    emptyEl.style.display = '';
+    history = [];
+    if (session && session.destroy) { try { session.destroy(); } catch (_) {} }
+    session = null;
+    setStatus('');
+  });
+
+  if (!('LanguageModel' in self)) {
+    fab.addEventListener('click', () => {
+      openPanel();
+      setStatus('On-device AI not detected. Use Chrome 138+ desktop, or enable "Prompt API for Gemini Nano" in chrome://flags.', 'bad');
+    }, { once: true });
+  }
+})();
+</script>
+
+<!-- Outline notes / comments — DataScript + IndexedDB -->
+<script src="https://github.com/tonsky/datascript/releases/download/1.7.8/datascript-1.7.8.min.js"></script>
+<script src="../notes.js?v=6"></script>
+<script src="../theme.js"></script>
+<script src="../wechat-copy.js?v=3"></script>
+
+</body>
+</html>
