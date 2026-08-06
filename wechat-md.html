@@ -155,53 +155,114 @@ const INLINE = {
 marked.setOptions({ breaks: true, gfm: true });
 
 async function render() {
-  source.innerHTML = marked.parse(src.value || '');
+  // 关键顺序：先把公式从「原始 Markdown」里抠出来换成占位符，再交给 marked。
+  // 否则 Markdown 会先破坏 TeX（\{ → {、\_ → _、\\ 被吃掉、_i_ 变成 <em>），
+  // 而且 breaks:true 产生的 <br> 会把 $$…$$ 拆到不同文本节点里，跨行公式永远匹配不到。
+  const { text, store } = extractMath(src.value || '');
+  source.innerHTML = marked.parse(text);
   // 新版 marked 已移除 highlight 选项，这里手动高亮：
   // highlightElement 会给 <code> 加上 .hljs 类（带浅色文字）并生成带色 token
   source.querySelectorAll('pre code').forEach(el => {
     try { hljs.highlightElement(el); } catch {}
   });
   inlineStyles(source);
-  typesetMath(source);              // $...$ → SVG
+  restoreMath(source, store);       // 占位符 → MathJax SVG
   await mathSvgToImg(source);       // SVG → PNG 内嵌图（微信可收）
   buildPreview();
 }
 
-// 把正文里的 $...$ / $$...$$ 替换成 MathJax 渲染的 SVG（跳过代码块）
-function typesetMath(root) {
-  if (!(window.MathJax && MathJax.tex2svg)) return;
+// —— 公式占位符 ——
+// 用纯字母数字，Markdown 不会改写它（不会被转义、不会被识别成强调/链接）
+const MATH_PH = i => `xMaThPh${i}xEnDx`;
+const MATH_PH_RE = /xMaThPh(\d+)xEnDx/g;
+
+// 依次匹配：① 围栏代码块 ② 行内代码 ③ 块级公式 $$…$$ / \[…\] ④ 行内公式 $…$ / \(…\)
+// 代码相关的分支只是「占位不动」，保证代码里的 $ 不会被当成公式。
+const SCAN_RE = new RegExp([
+  /^[ \t]*(`{3,}|~{3,})[^\n]*\n[\s\S]*?^[ \t]*\1[ \t]*$/.source,  // 1: 围栏
+  /`[^`\n]*`/.source,
+  /\$\$([\s\S]+?)\$\$/.source,                                     // 2: 块级 $$
+  /\\\[([\s\S]+?)\\\]/.source,                                     // 3: 块级 \[ \]
+  /\$(?!\s)((?:\\.|[^\\$\n])+?)\$/.source,                         // 4: 行内 $
+  /\\\(([\s\S]+?)\\\)/.source,                                     // 5: 行内 \( \)
+].join('|'), 'gm');
+
+// 把原始 Markdown 里的公式抽出来，换成占位符
+function extractMath(md) {
+  const store = [];
+  const text = md.replace(SCAN_RE, (m, _fence, dTex, dTex2, iTex, iTex2, offset, whole) => {
+    const display = dTex != null || dTex2 != null;
+    const tex = dTex ?? dTex2 ?? iTex ?? iTex2;
+    if (tex == null) return m;                       // 代码分支：原样保留
+    store.push({ tex, display });
+    const ph = MATH_PH(store.length - 1);
+    if (!display) return ph;
+    // 块级公式若本来就独占整行，两侧补空行，让 marked 把它单独成段（而不是并进上一段）
+    const alone = (offset === 0 || whole[offset - 1] === '\n')
+      && (offset + m.length >= whole.length || whole[offset + m.length] === '\n');
+    return alone ? `\n\n${ph}\n\n` : ph;
+  });
+  return { text, store };
+}
+
+// 把占位符换回 MathJax 渲染的 SVG
+function restoreMath(root, store) {
+  if (!store.length) return;
+  const ok = !!(window.MathJax && MathJax.tex2svg);
   const walker = document.createTreeWalker(root, NodeFilter.SHOW_TEXT, {
-    acceptNode(n) {
-      if (n.parentElement.closest('pre,code')) return NodeFilter.FILTER_REJECT;
-      return n.nodeValue.includes('$') ? NodeFilter.FILTER_ACCEPT : NodeFilter.FILTER_SKIP;
-    }
+    acceptNode: n => n.nodeValue.includes('xMaThPh')
+      ? NodeFilter.FILTER_ACCEPT : NodeFilter.FILTER_SKIP
   });
   const nodes = []; for (let n; (n = walker.nextNode());) nodes.push(n);
-  const re = /\$\$([\s\S]+?)\$\$|\$([^$\n]+?)\$/g;
+
   nodes.forEach(node => {
     const text = node.nodeValue;
-    if (!re.test(text)) return; re.lastIndex = 0;
     const frag = document.createDocumentFragment();
-    let last = 0, m;
-    while ((m = re.exec(text))) {
+    let last = 0, m; MATH_PH_RE.lastIndex = 0;
+    while ((m = MATH_PH_RE.exec(text))) {
       if (m.index > last) frag.appendChild(document.createTextNode(text.slice(last, m.index)));
-      const display = m[1] != null;
-      const tex = display ? m[1] : m[2];
-      let svg;
-      try { svg = MathJax.tex2svg(tex, { display }).querySelector('svg'); } catch {}
-      if (svg) {
-        svg.style.color = '#1a1a1a';
-        if (display) {
-          const box = document.createElement('div');
-          box.style.cssText = 'text-align:center;margin:16px 0;';
-          box.appendChild(svg); frag.appendChild(box);
-        } else frag.appendChild(svg);
-      } else frag.appendChild(document.createTextNode(m[0]));
+      const item = store[+m[1]];
+      frag.appendChild(item ? renderTex(item, ok) : document.createTextNode(m[0]));
       last = m.index + m[0].length;
     }
     if (last < text.length) frag.appendChild(document.createTextNode(text.slice(last)));
     node.replaceWith(frag);
   });
+
+  // 块级公式若独占一个 <p>，把 <p> 拆掉：div 套在 p 里是非法结构，
+  // 粘到公众号会被重新解析而错位。注意只能看「直接子节点」——
+  // 含中文的公式（\text{否则}）MathJax 会吐出真的 <text> 节点，
+  // 用 p.textContent 判断会永远不为空。
+  root.querySelectorAll('p').forEach(p => {
+    const boxes = [...p.children].filter(el => el.dataset && el.dataset.mathBlock);
+    if (!boxes.length) return;
+    const rest = [...p.childNodes].filter(n =>
+      !boxes.includes(n) &&
+      !(n.nodeType === 3 && !n.nodeValue.trim()) &&    // 空白文本
+      !(n.nodeType === 1 && n.tagName === 'BR'));      // breaks:true 留下的 <br>
+    if (rest.length) return;
+    const frag = document.createDocumentFragment();
+    boxes.forEach(b => frag.appendChild(b));
+    p.replaceWith(frag);
+  });
+}
+
+// 单条 TeX → SVG 节点（失败或 MathJax 未就绪时，退回原始文本）
+function renderTex(item, ok) {
+  const { tex, display } = item;
+  let svg;
+  if (ok) { try { svg = MathJax.tex2svg(tex, { display }).querySelector('svg'); } catch {} }
+  if (!svg) {
+    const d = display ? '$$' : '$';
+    return document.createTextNode(d + tex + d);
+  }
+  svg.style.color = '#1a1a1a';
+  if (!display) { svg.style.verticalAlign = 'middle'; return svg; }
+  const box = document.createElement('div');
+  box.dataset.mathBlock = '1';
+  box.style.cssText = 'text-align:center;margin:16px 0;overflow-x:auto;';
+  box.appendChild(svg);
+  return box;
 }
 
 // 单个 SVG → PNG dataURL（SVG 无外部资源，可安全画到 canvas）
@@ -236,7 +297,8 @@ async function mathSvgToImg(root) {
     try { png = await svgToPng(svg, w, h, 3); } catch { continue; }
     const img = document.createElement('img');
     img.src = png.url;
-    img.style.cssText = `width:${png.w}px;height:${png.h}px;vertical-align:middle;`;
+    // 宽公式在手机上要能缩放，不然会把版面撑破
+    img.style.cssText = `width:${png.w}px;max-width:100%;height:auto;vertical-align:middle;`;
     svg.replaceWith(img);
   }
 }
@@ -506,6 +568,19 @@ print(x.shape, y.shape)
 行内公式 $E = mc^2$ 也会转成图片。下面是块级公式：
 
 $$\\frac{\\partial L}{\\partial w} = \\frac{1}{n}\\sum_{i=1}^{n} 2(wx_i + b - y_i)x_i$$
+
+\`$$\` 单独占一行的多行写法（GitHub 风格）同样支持，公式里的 \`\\;\` \`\\{\` \`\\\\\` 都不会被 Markdown 吃掉：
+
+$$
+\\{(i,j) : 1\\le i\\le m,\\ 1\\le j\\le n\\} \\;=\\; [m]\\times[n]
+$$
+
+$$
+\\operatorname{qsort}(S) \\;=\\; \\begin{cases}
+S & \\lvert S\\rvert\\le 1\\\\
+\\operatorname{qsort}(S_{<p}) \\,\\Vert\\, \\langle p\\rangle \\,\\Vert\\, \\operatorname{qsort}(S_{\\ge p}) & \\text{否则}
+\\end{cases}
+$$
 
 > 提示：手机端长代码行会横向滚动，缩进不会被破坏。
 
