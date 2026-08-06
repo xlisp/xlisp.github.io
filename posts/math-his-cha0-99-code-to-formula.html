@@ -1,0 +1,956 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>程序 → 公式：把你已经会的 for 循环，翻译成 \(\Sigma\) —— 程序员逆袭数学的诚意手册 · Steve Chan — xlisp</title>
+<meta name="description" content="Chapter 0.6 讲的方向是 公式 → 代码：拿到一个陌生公式，把它解压回一段能跑的 for 循环。">
+<meta name="author" content="Steve Chan">
+<link rel="icon" type="image/jpeg" href="../icon.jpeg">
+<link rel="apple-touch-icon" href="../icon.jpeg">
+<meta property="og:type" content="article">
+<meta property="og:title" content="程序 → 公式：把你已经会的 for 循环，翻译成 \(\Sigma\) —— 程序员逆袭数学的诚意手册">
+<meta property="og:description" content="Chapter 0.6 讲的方向是 公式 → 代码：拿到一个陌生公式，把它解压回一段能跑的 for 循环。">
+<meta property="og:image" content="../icon.jpeg">
+<meta property="og:site_name" content="Steve Chan — xlisp">
+<meta name="twitter:card" content="summary_large_image">
+<meta name="twitter:title" content="程序 → 公式：把你已经会的 for 循环，翻译成 \(\Sigma\) —— 程序员逆袭数学的诚意手册">
+<meta name="twitter:description" content="Chapter 0.6 讲的方向是 公式 → 代码：拿到一个陌生公式，把它解压回一段能跑的 for 循环。">
+<meta name="twitter:image" content="../icon.jpeg">
+<link rel="stylesheet" href="../style.css?v=light1">
+<script>(function(){try{if(localStorage.getItem('theme')==='light')document.documentElement.setAttribute('data-theme','light');}catch(e){}})();</script>
+<!-- Math formula rendering via MathJax -->
+<script>
+window.MathJax = {
+  tex: {
+    // arithmatex emits \(...\) / \[...\] markup, so only these delimiters
+    // are needed; plain `$` is left alone (avoids currency false positives).
+    inlineMath: [['\\(', '\\)']],
+    displayMath: [['\\[', '\\]']],
+    processEscapes: true
+  },
+  svg: {
+    // Each formula gets its own self-contained <defs>, so the copy script can
+    // serialize one <svg> and rasterize it to a PNG for WeChat.
+    fontCache: 'local'
+  },
+  options: {
+    skipHtmlTags: ['script', 'noscript', 'style', 'textarea', 'pre', 'code'],
+    ignoreHtmlClass: 'highlight'
+  }
+};
+</script>
+<script src="https://cdn.jsdelivr.net/npm/mathjax@3/es5/tex-svg.js" async></script>
+</head>
+<body>
+<main class="wrap post">
+
+  <nav class="topnav">
+    <a href="../index.html">← home</a>
+  </nav>
+
+  <article>
+    <header class="post-header">
+      <h1>程序 → 公式：把你已经会的 for 循环，翻译成 \(\Sigma\) —— 程序员逆袭数学的诚意手册</h1>
+      <p class="meta">2026-08-06 · Steve Chan</p>
+    </header>
+
+    <div class="content">
+<blockquote>
+<p>"程序是写给人看的，只是顺便让机器执行。" —— Abelson &amp; Sussman，<em>SICP</em></p>
+<p>"数学符号，是用最少的墨水表达最多的意图的一门工程学。" —— 匿名</p>
+</blockquote>
+<p>Chapter 0.6 讲的方向是 <strong>公式 → 代码</strong>：拿到一个陌生公式，把它解压回一段能跑的 <code>for</code> 循环。
+这一篇讲<strong>反过来</strong>的方向：<strong>程序 → 公式</strong> —— 你脑子里已经装了 <code>for</code> / <code>if</code> / <code>list</code> / <code>lambda</code> / 递归的直觉，那这些直觉如何<strong>平移</strong>到数学符号上，不用重新学一遍？</p>
+<p>这个方向对程序员特别重要。传统数学教学假设你从零学起，把公式当"新概念"教你；但你不是零基础，你<strong>已经会那件事了</strong>，你只是不认识它换了衣服之后的样子。公式不是外星文字，是你天天在写的循环，压缩成了一个字符。</p>
+<blockquote>
+<p><strong>本文的核心断言</strong>：所有"我看不懂公式"里的 80%，其实是"我不知道那个符号是我天天写的哪段代码"。把翻译表建起来，那 80% 立刻蒸发。</p>
+</blockquote>
+<hr />
+<h2 id="0991-为什么这个方向比公式-代码更重要">🧭 0.99.1 为什么这个方向比"公式 → 代码"更重要</h2>
+<p>数学教育的默认路径是：<strong>先讲符号 → 再讲含义 → 学生自己脑补代码</strong>。这条路径隐含地假设"符号是原生态、代码是翻译品"。对纯粹数学家可能成立，但对程序员这是<strong>倒着走的</strong>。</p>
+<p>程序员脑子里的真实存量是：</p>
+<ul>
+<li><strong>控制流</strong>：<code>for</code>, <code>while</code>, <code>if/else</code>, <code>try/except</code></li>
+<li><strong>数据结构</strong>：<code>list</code>, <code>dict</code>, <code>set</code>, <code>tuple</code>, 生成器</li>
+<li><strong>函数抽象</strong>：<code>def</code>, <code>lambda</code>, 闭包, <code>map/filter/reduce</code></li>
+<li><strong>状态与递归</strong>：可变变量、递归调用、不动点</li>
+<li><strong>类型直觉</strong>：什么进什么出，shape 对不对</li>
+</ul>
+<p>数学里的 <span class="arithmatex">\(\sum\)</span>, <span class="arithmatex">\(\forall\)</span>, <span class="arithmatex">\(\{x:P(x)\}\)</span>, <span class="arithmatex">\(\lambda\)</span>, <span class="arithmatex">\(\lim\)</span>, <span class="arithmatex">\(\arg\max\)</span> —— <strong>没有一个不是上面这些操作的另一种写法</strong>。</p>
+<p>所以正确的学习顺序是：<strong>你已经会的（代码） → 一个更紧凑的记号（公式） → 用记号写一样的东西</strong>。这一步走通了，你不是"学了数学"，你是<strong>发现你早就会了</strong>，只是没人给你介绍那个符号是谁。</p>
+<hr />
+<h2 id="0992-总翻译表程序结构-数学符号">📖 0.99.2 总翻译表：程序结构 ↔ 数学符号</h2>
+<p>先把这张表贴在显示器旁边。后面每一节都是它的一格展开。</p>
+<h3 id="循环与聚合">循环与聚合</h3>
+<table>
+<thead>
+<tr>
+<th>程序</th>
+<th>公式</th>
+<th>名字</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>s = 0; for i in range(1,n+1): s += a[i]</code></td>
+<td><span class="arithmatex">\(\displaystyle\sum_{i=1}^{n} a_i\)</span></td>
+<td>求和</td>
+</tr>
+<tr>
+<td><code>p = 1; for i in range(1,n+1): p *= a[i]</code></td>
+<td><span class="arithmatex">\(\displaystyle\prod_{i=1}^{n} a_i\)</span></td>
+<td>求积</td>
+</tr>
+<tr>
+<td><code>m = max(a[i] for i in S)</code></td>
+<td><span class="arithmatex">\(\displaystyle\max_{i\in S} a_i\)</span></td>
+<td>极大</td>
+</tr>
+<tr>
+<td><code>k = max(range(n), key=lambda i: a[i])</code></td>
+<td><span class="arithmatex">\(\displaystyle\arg\max_{i} a_i\)</span></td>
+<td>极大点</td>
+</tr>
+<tr>
+<td><code>all(P(x) for x in S)</code></td>
+<td><span class="arithmatex">\(\forall x\in S,\;P(x)\)</span></td>
+<td>全称量词</td>
+</tr>
+<tr>
+<td><code>any(P(x) for x in S)</code></td>
+<td><span class="arithmatex">\(\exists x\in S,\;P(x)\)</span></td>
+<td>存在量词</td>
+</tr>
+<tr>
+<td><code>count = sum(1 for x in S if P(x))</code></td>
+<td><span class="arithmatex">\(\lvert\{x\in S: P(x)\}\rvert\)</span></td>
+<td>集合基数</td>
+</tr>
+<tr>
+<td><code>sum(f(x) for x in S) / len(S)</code></td>
+<td><span class="arithmatex">\(\mathbb{E}_{x\sim\mathrm{Unif}(S)}[f(x)]\)</span></td>
+<td>期望（离散均匀）</td>
+</tr>
+</tbody>
+</table>
+<h3 id="集合与列表">集合与列表</h3>
+<table>
+<thead>
+<tr>
+<th>程序</th>
+<th>公式</th>
+<th>名字</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>[x for x in S if P(x)]</code></td>
+<td><span class="arithmatex">\(\{x\in S : P(x)\}\)</span></td>
+<td>集合构造式 / 内包记法</td>
+</tr>
+<tr>
+<td><code>[(i,j) for i in A for j in B]</code></td>
+<td><span class="arithmatex">\(A\times B\)</span></td>
+<td>笛卡尔积</td>
+</tr>
+<tr>
+<td><code>set(A) \| set(B)</code> / <code>set(A) &amp; set(B)</code></td>
+<td><span class="arithmatex">\(A\cup B\)</span> / <span class="arithmatex">\(A\cap B\)</span></td>
+<td>并 / 交</td>
+</tr>
+<tr>
+<td><code>set(A) - set(B)</code></td>
+<td><span class="arithmatex">\(A\setminus B\)</span></td>
+<td>差集</td>
+</tr>
+<tr>
+<td><code>set(A) &lt;= set(B)</code></td>
+<td><span class="arithmatex">\(A\subseteq B\)</span></td>
+<td>子集</td>
+</tr>
+<tr>
+<td><code>x in S</code></td>
+<td><span class="arithmatex">\(x\in S\)</span></td>
+<td>属于</td>
+</tr>
+<tr>
+<td><code>len(S)</code></td>
+<td><span class="arithmatex">\(\lvert S\rvert\)</span></td>
+<td>势 / 基数</td>
+</tr>
+<tr>
+<td><code>list(itertools.product(A, repeat=n))</code></td>
+<td><span class="arithmatex">\(A^n\)</span></td>
+<td><span class="arithmatex">\(n\)</span> 元组集合</td>
+</tr>
+</tbody>
+</table>
+<h3 id="函数与高阶函数">函数与高阶函数</h3>
+<table>
+<thead>
+<tr>
+<th>程序</th>
+<th>公式</th>
+<th>名字</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>def f(x): return x**2</code></td>
+<td><span class="arithmatex">\(f: \mathbb{R}\to\mathbb{R},\ f(x)=x^2\)</span></td>
+<td>命名函数</td>
+</tr>
+<tr>
+<td><code>lambda x: x**2</code></td>
+<td><span class="arithmatex">\(x\mapsto x^2\)</span> 或 <span class="arithmatex">\(\lambda x.\,x^2\)</span></td>
+<td>匿名函数</td>
+</tr>
+<tr>
+<td><code>f(g(x))</code></td>
+<td><span class="arithmatex">\((f\circ g)(x)\)</span></td>
+<td>函数复合</td>
+</tr>
+<tr>
+<td><code>map(f, S)</code></td>
+<td><span class="arithmatex">\(\{f(x) : x\in S\}\)</span> 或 <span class="arithmatex">\(f(S)\)</span></td>
+<td>象集</td>
+</tr>
+<tr>
+<td><code>filter(P, S)</code></td>
+<td><span class="arithmatex">\(\{x\in S : P(x)\}\)</span></td>
+<td>筛选</td>
+</tr>
+<tr>
+<td><code>reduce(op, S, e)</code></td>
+<td><span class="arithmatex">\(\bigoplus_{x\in S} x\)</span>（以 <span class="arithmatex">\(e\)</span> 为幺元）</td>
+<td>折叠</td>
+</tr>
+<tr>
+<td><code>functools.partial(f, a)</code></td>
+<td><span class="arithmatex">\(f(a,\cdot)\)</span></td>
+<td>偏应用</td>
+</tr>
+</tbody>
+</table>
+<h3 id="状态与递归">状态与递归</h3>
+<table>
+<thead>
+<tr>
+<th>程序</th>
+<th>公式</th>
+<th>名字</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>a, b = b, a+b</code> 在循环里</td>
+<td><span class="arithmatex">\(F_{n+1}=F_n+F_{n-1}\)</span></td>
+<td>递推式</td>
+</tr>
+<tr>
+<td><code>def f(n): return 1 if n==0 else n*f(n-1)</code></td>
+<td><span class="arithmatex">\(f(n)=\begin{cases}1&amp;n=0\\n\cdot f(n-1)&amp;n&gt;0\end{cases}\)</span></td>
+<td>递归定义</td>
+</tr>
+<tr>
+<td>收敛的 <code>x = update(x)</code> 循环</td>
+<td><span class="arithmatex">\(x^\* = \operatorname{FixedPoint}(\text{update})\)</span></td>
+<td>不动点</td>
+</tr>
+<tr>
+<td>无限生成器 <code>yield</code></td>
+<td><span class="arithmatex">\((a_n)_{n\ge 1}\)</span></td>
+<td>数列</td>
+</tr>
+</tbody>
+</table>
+<hr />
+<h2 id="0993-多层-for-嵌套-多重-sigma-嵌套学校学号的例子">🏫 0.99.3 多层 <code>for</code> 嵌套 ↔ 多重 <span class="arithmatex">\(\Sigma\)</span> 嵌套（学校学号的例子）</h2>
+<p>这就是你要的那个例子。想数一下一所学校<strong>所有学生学号</strong>的总人数：</p>
+<div class="highlight"><pre><span></span><code><span class="c1"># 6 个年级，每年级 10 个班，每班 50 人</span>
+<span class="n">total</span> <span class="o">=</span> <span class="mi">0</span>
+<span class="k">for</span> <span class="n">grade</span> <span class="ow">in</span> <span class="nb">range</span><span class="p">(</span><span class="mi">1</span><span class="p">,</span> <span class="mi">7</span><span class="p">):</span>          <span class="c1"># 年级 g</span>
+    <span class="k">for</span> <span class="n">class_id</span> <span class="ow">in</span> <span class="nb">range</span><span class="p">(</span><span class="mi">1</span><span class="p">,</span> <span class="mi">11</span><span class="p">):</span>  <span class="c1"># 班号 c</span>
+        <span class="k">for</span> <span class="n">student</span> <span class="ow">in</span> <span class="nb">range</span><span class="p">(</span><span class="mi">1</span><span class="p">,</span> <span class="mi">51</span><span class="p">):</span>  <span class="c1"># 学生序号 s</span>
+            <span class="n">total</span> <span class="o">+=</span> <span class="mi">1</span>
+<span class="nb">print</span><span class="p">(</span><span class="n">total</span><span class="p">)</span>   <span class="c1"># 3000</span>
+</code></pre></div>
+
+<p>公式一模一样，只不过把三个 <code>for</code> 写成三个 <span class="arithmatex">\(\Sigma\)</span>：</p>
+<div class="arithmatex">\[
+\text{total} \;=\; \sum_{g=1}^{6}\sum_{c=1}^{10}\sum_{s=1}^{50} 1 \;=\; 6\cdot 10\cdot 50 \;=\; 3000
+\]</div>
+<p><strong>规则</strong>：最外层的 <code>for</code> ↔ 最左边的 <span class="arithmatex">\(\Sigma\)</span>；最内层的 <code>for</code> ↔ 最右边的 <span class="arithmatex">\(\Sigma\)</span>；循环体里加到累加器上的那个表达式 ↔ <span class="arithmatex">\(\Sigma\)</span> 后面那一坨。</p>
+<p>如果你想算的不是"人数"而是"所有学生的分数之和"：</p>
+<div class="highlight"><pre><span></span><code><span class="n">total_score</span> <span class="o">=</span> <span class="mi">0</span>
+<span class="k">for</span> <span class="n">g</span> <span class="ow">in</span> <span class="nb">range</span><span class="p">(</span><span class="mi">1</span><span class="p">,</span> <span class="mi">7</span><span class="p">):</span>
+    <span class="k">for</span> <span class="n">c</span> <span class="ow">in</span> <span class="nb">range</span><span class="p">(</span><span class="mi">1</span><span class="p">,</span> <span class="mi">11</span><span class="p">):</span>
+        <span class="k">for</span> <span class="n">s</span> <span class="ow">in</span> <span class="nb">range</span><span class="p">(</span><span class="mi">1</span><span class="p">,</span> <span class="mi">51</span><span class="p">):</span>
+            <span class="n">total_score</span> <span class="o">+=</span> <span class="n">score</span><span class="p">[</span><span class="n">g</span><span class="p">][</span><span class="n">c</span><span class="p">][</span><span class="n">s</span><span class="p">]</span>
+</code></pre></div>
+
+<div class="arithmatex">\[
+\text{total\_score} \;=\; \sum_{g=1}^{6}\sum_{c=1}^{10}\sum_{s=1}^{50} \text{score}_{g,c,s}
+\]</div>
+<p><strong>代码里那个三重下标 <code>score[g][c][s]</code>，就是公式里的 <span class="arithmatex">\(\text{score}_{g,c,s}\)</span>。</strong> 数学的下标从 1 开始、代码的从 0 开始，这是唯一的坑（Chapter 0.6.6 的老话）。</p>
+<h3 id="31-笛卡尔积-双重循环的另一种读法">3.1 笛卡尔积 —— 双重循环的另一种读法</h3>
+<div class="highlight"><pre><span></span><code><span class="n">pairs</span> <span class="o">=</span> <span class="p">[(</span><span class="n">i</span><span class="p">,</span> <span class="n">j</span><span class="p">)</span> <span class="k">for</span> <span class="n">i</span> <span class="ow">in</span> <span class="nb">range</span><span class="p">(</span><span class="n">m</span><span class="p">)</span> <span class="k">for</span> <span class="n">j</span> <span class="ow">in</span> <span class="nb">range</span><span class="p">(</span><span class="n">n</span><span class="p">)]</span>
+</code></pre></div>
+
+<p>数学：</p>
+<div class="arithmatex">\[
+\{(i,j) : 1\le i\le m,\ 1\le j\le n\} \;=\; [m]\times[n]
+\]</div>
+<p>Python 里的 <code>itertools.product(A, B)</code> 就是 <span class="arithmatex">\(A\times B\)</span>；三层嵌套的推导式就是 <span class="arithmatex">\(A\times B\times C\)</span>。<strong>"<span class="arithmatex">\(\times\)</span>" 在这里不是数乘，是集合的乘。</strong> 这是同一个符号在两个语境中的两种用法（一词多义，Chapter 0.6.4）。</p>
+<h3 id="32-上下三角-循环边界依赖外层变量">3.2 上下三角 —— 循环边界依赖外层变量</h3>
+<p>有一个非常常见的模式：内层循环从外层变量开始，用来数<strong>无序对</strong>或<strong>上三角矩阵</strong>：</p>
+<div class="highlight"><pre><span></span><code><span class="n">count</span> <span class="o">=</span> <span class="mi">0</span>
+<span class="k">for</span> <span class="n">i</span> <span class="ow">in</span> <span class="nb">range</span><span class="p">(</span><span class="n">n</span><span class="p">):</span>
+    <span class="k">for</span> <span class="n">j</span> <span class="ow">in</span> <span class="nb">range</span><span class="p">(</span><span class="n">i</span><span class="o">+</span><span class="mi">1</span><span class="p">,</span> <span class="n">n</span><span class="p">):</span>     <span class="c1"># 只取 i &lt; j</span>
+        <span class="n">count</span> <span class="o">+=</span> <span class="mi">1</span>
+<span class="c1"># 等价于 n*(n-1)/2</span>
+</code></pre></div>
+
+<p>公式里这样写：</p>
+<div class="arithmatex">\[
+\text{count} \;=\; \sum_{i=1}^{n}\sum_{j=i+1}^{n} 1 \;=\; \sum_{1\le i&lt;j\le n} 1 \;=\; \binom{n}{2}
+\]</div>
+<p>后两种写法是<strong>同一个循环的三种记法</strong>：显式嵌套、下标条件、二项式。三种都要认识 —— 论文里换着用。</p>
+<hr />
+<h2 id="0994-if-过滤-集合构造式-指示函数">🎯 0.99.4 <code>if</code> 过滤 ↔ 集合构造式 / 指示函数</h2>
+<p>程序里的 <code>if</code> 在数学里有两种翻译，用哪一种取决于你想不想让"筛选"这一步显式出现。</p>
+<h3 id="41-集合构造式把-if-塞进求和范围">4.1 集合构造式：把 <code>if</code> 塞进求和范围</h3>
+<div class="highlight"><pre><span></span><code><span class="n">odd_sum</span> <span class="o">=</span> <span class="nb">sum</span><span class="p">(</span><span class="n">i</span> <span class="k">for</span> <span class="n">i</span> <span class="ow">in</span> <span class="nb">range</span><span class="p">(</span><span class="mi">1</span><span class="p">,</span> <span class="n">N</span><span class="o">+</span><span class="mi">1</span><span class="p">)</span> <span class="k">if</span> <span class="n">i</span> <span class="o">%</span> <span class="mi">2</span> <span class="o">==</span> <span class="mi">1</span><span class="p">)</span>
+</code></pre></div>
+
+<div class="arithmatex">\[
+\text{odd\_sum} \;=\; \sum_{\substack{1\le i\le N\\ i\ \text{奇}}} i \;=\; \sum_{i\in\{1,\dots,N\},\ 2\nmid i} i
+\]</div>
+<p><strong>求和号下面写条件，就是列表推导式里的 <code>if</code>。</strong> 只是 LaTeX 里放不下太长的条件，一般缩写成一两个符号（<span class="arithmatex">\(2\nmid i\)</span> 表示"2 不整除 i"）。</p>
+<h3 id="42-指示函数把-if-变成乘以-0-或-1">4.2 指示函数：把 <code>if</code> 变成"乘以 0 或 1"</h3>
+<p>指示函数 <span class="arithmatex">\(\mathbb{1}_{P(x)}\)</span> 定义是：<span class="arithmatex">\(P(x)\)</span> 真时为 1、假时为 0。它把布尔翻译成数字，让"筛选"变成"加权"：</p>
+<div class="highlight"><pre><span></span><code><span class="n">odd_sum</span> <span class="o">=</span> <span class="nb">sum</span><span class="p">(</span><span class="n">i</span> <span class="o">*</span> <span class="p">(</span><span class="n">i</span> <span class="o">%</span> <span class="mi">2</span> <span class="o">==</span> <span class="mi">1</span><span class="p">)</span> <span class="k">for</span> <span class="n">i</span> <span class="ow">in</span> <span class="nb">range</span><span class="p">(</span><span class="mi">1</span><span class="p">,</span> <span class="n">N</span><span class="o">+</span><span class="mi">1</span><span class="p">))</span>   <span class="c1"># True→1, False→0</span>
+</code></pre></div>
+
+<div class="arithmatex">\[
+\text{odd\_sum} \;=\; \sum_{i=1}^{N} i\cdot\mathbb{1}_{\{i\ \text{奇}\}}
+\]</div>
+<p>两种写法数学上完全等价。<strong>为什么要有指示函数这种绕圈子的写法？</strong> 因为它让<strong>期望</strong>和<strong>积分</strong>能写成一个统一的公式：</p>
+<div class="arithmatex">\[
+\Pr(X\in A) \;=\; \mathbb{E}[\mathbb{1}_{X\in A}]
+\]</div>
+<p>概率就是指示函数的期望，把"事件"和"随机变量"统一在一个记号下 —— 这是柯尔莫哥洛夫 1933 年把概率论公理化时最漂亮的一招。</p>
+<h3 id="43-分段函数-if-elif-else-的直译">4.3 分段函数 —— <code>if / elif / else</code> 的直译</h3>
+<div class="highlight"><pre><span></span><code><span class="k">def</span><span class="w"> </span><span class="nf">relu</span><span class="p">(</span><span class="n">x</span><span class="p">):</span>
+    <span class="k">return</span> <span class="n">x</span> <span class="k">if</span> <span class="n">x</span> <span class="o">&gt;</span> <span class="mi">0</span> <span class="k">else</span> <span class="mi">0</span>
+</code></pre></div>
+
+<div class="arithmatex">\[
+\operatorname{ReLU}(x) \;=\; \begin{cases} x &amp; x&gt;0 \\ 0 &amp; x\le 0\end{cases}
+\]</div>
+<p>大括号 + 分行 = <code>if/elif/else</code>。深度学习里最著名的一行 —— Hinton 2010 把它推到 CNN 里之前，人们花了 30 年迷信平滑激活函数；ReLU 用一句"就是分段线性"打破了咒语。</p>
+<hr />
+<h2 id="0995-累加器-sigma-pi状态更新-递推式">➕ 0.99.5 累加器 ↔ <span class="arithmatex">\(\Sigma\)</span> / <span class="arithmatex">\(\Pi\)</span>；状态更新 ↔ 递推式</h2>
+<p>程序里的 <code>s += x</code> / <code>p *= x</code> / <code>x = f(x)</code>，都是"用旧值算新值"。数学里这叫<strong>递推关系</strong>（recurrence），或者更抽象地叫<strong>动力系统</strong>。</p>
+<h3 id="51-累积和-累积积">5.1 累积和 / 累积积</h3>
+<div class="highlight"><pre><span></span><code><span class="n">factorial</span> <span class="o">=</span> <span class="mi">1</span>
+<span class="k">for</span> <span class="n">i</span> <span class="ow">in</span> <span class="nb">range</span><span class="p">(</span><span class="mi">1</span><span class="p">,</span> <span class="n">n</span><span class="o">+</span><span class="mi">1</span><span class="p">):</span>
+    <span class="n">factorial</span> <span class="o">*=</span> <span class="n">i</span>          <span class="c1"># 累乘</span>
+</code></pre></div>
+
+<div class="arithmatex">\[
+n! \;=\; \prod_{i=1}^{n} i
+\]</div>
+<p><code>*=</code> 就是 <span class="arithmatex">\(\Pi\)</span>。<code>+=</code> 就是 <span class="arithmatex">\(\Sigma\)</span>。任何一个可结合的二元运算 <span class="arithmatex">\(\oplus\)</span> 都能变成大写记号 <span class="arithmatex">\(\bigoplus\)</span>（例如 <span class="arithmatex">\(\bigcup\)</span>、<span class="arithmatex">\(\bigcap\)</span>、<span class="arithmatex">\(\bigoplus\)</span>、<span class="arithmatex">\(\bigotimes\)</span>）。</p>
+<h3 id="52-斐波那契-双变量状态更新">5.2 斐波那契 —— 双变量状态更新</h3>
+<div class="highlight"><pre><span></span><code><span class="n">a</span><span class="p">,</span> <span class="n">b</span> <span class="o">=</span> <span class="mi">0</span><span class="p">,</span> <span class="mi">1</span>
+<span class="k">for</span> <span class="n">_</span> <span class="ow">in</span> <span class="nb">range</span><span class="p">(</span><span class="n">n</span><span class="p">):</span>
+    <span class="n">a</span><span class="p">,</span> <span class="n">b</span> <span class="o">=</span> <span class="n">b</span><span class="p">,</span> <span class="n">a</span> <span class="o">+</span> <span class="n">b</span>
+</code></pre></div>
+
+<p>这个循环体在数学里被压缩成一行<strong>递推</strong>：</p>
+<div class="arithmatex">\[
+F_{n+1} \;=\; F_n + F_{n-1},\qquad F_0=0,\ F_1=1
+\]</div>
+<p><code>(a, b)</code> 就是"最近两项"的状态，Python 的元组交换 <code>a, b = b, a+b</code> 完美对应"把状态向前推一格"。 递推关系是<strong>离散版的微分方程</strong> —— 后者是"从当前值算下一瞬间"，前者是"从当前值算下一步"。</p>
+<h3 id="53-前缀和-itertoolsaccumulate-的公式">5.3 前缀和 —— <code>itertools.accumulate</code> 的公式</h3>
+<div class="highlight"><pre><span></span><code><span class="n">prefix</span> <span class="o">=</span> <span class="nb">list</span><span class="p">(</span><span class="n">itertools</span><span class="o">.</span><span class="n">accumulate</span><span class="p">(</span><span class="n">a</span><span class="p">))</span>
+<span class="c1"># prefix[k] = a[0] + a[1] + ... + a[k]</span>
+</code></pre></div>
+
+<div class="arithmatex">\[
+S_k \;=\; \sum_{i=0}^{k} a_i
+\]</div>
+<p>这个东西在算法竞赛里叫"前缀和"，在概率里叫"累积分布函数"（CDF），在信号处理里叫"离散积分"。<strong>同一个操作在三个学科里有三个名字</strong> —— 但它就是 <code>accumulate</code>。</p>
+<hr />
+<h2 id="0996-递归-递归定义-归纳定义">🌀 0.99.6 递归 ↔ 递归定义 / 归纳定义</h2>
+<p>Python 的递归函数几乎可以逐字翻译成数学的递归定义 —— 只需要把 <code>def f(n): return ...</code> 换成 <span class="arithmatex">\(f(n) = \dots\)</span>。</p>
+<h3 id="61-阶乘">6.1 阶乘</h3>
+<div class="highlight"><pre><span></span><code><span class="k">def</span><span class="w"> </span><span class="nf">factorial</span><span class="p">(</span><span class="n">n</span><span class="p">):</span>
+    <span class="k">return</span> <span class="mi">1</span> <span class="k">if</span> <span class="n">n</span> <span class="o">==</span> <span class="mi">0</span> <span class="k">else</span> <span class="n">n</span> <span class="o">*</span> <span class="n">factorial</span><span class="p">(</span><span class="n">n</span> <span class="o">-</span> <span class="mi">1</span><span class="p">)</span>
+</code></pre></div>
+
+<div class="arithmatex">\[
+f(n) \;=\; \begin{cases} 1 &amp; n=0 \\ n\cdot f(n-1) &amp; n&gt;0\end{cases}
+\]</div>
+<p><strong>这就是数学归纳法的定义式。</strong> 皮亚诺 1889 年给自然数的公理系统里，加法、乘法、幂全是这样"递归"定义出来的 —— 早于图灵机 50 年，"递归" 就是数学的原生概念，程序员反而是继承者。</p>
+<h3 id="62-快排-结构递归">6.2 快排 —— 结构递归</h3>
+<div class="highlight"><pre><span></span><code><span class="k">def</span><span class="w"> </span><span class="nf">qsort</span><span class="p">(</span><span class="n">xs</span><span class="p">):</span>
+    <span class="k">if</span> <span class="nb">len</span><span class="p">(</span><span class="n">xs</span><span class="p">)</span> <span class="o">&lt;=</span> <span class="mi">1</span><span class="p">:</span>
+        <span class="k">return</span> <span class="n">xs</span>
+    <span class="n">pivot</span><span class="p">,</span> <span class="n">rest</span> <span class="o">=</span> <span class="n">xs</span><span class="p">[</span><span class="mi">0</span><span class="p">],</span> <span class="n">xs</span><span class="p">[</span><span class="mi">1</span><span class="p">:]</span>
+    <span class="k">return</span> <span class="n">qsort</span><span class="p">([</span><span class="n">x</span> <span class="k">for</span> <span class="n">x</span> <span class="ow">in</span> <span class="n">rest</span> <span class="k">if</span> <span class="n">x</span> <span class="o">&lt;</span> <span class="n">pivot</span><span class="p">])</span> <span class="o">+</span> <span class="p">[</span><span class="n">pivot</span><span class="p">]</span> <span class="o">+</span> <span class="n">qsort</span><span class="p">([</span><span class="n">x</span> <span class="k">for</span> <span class="n">x</span> <span class="ow">in</span> <span class="n">rest</span> <span class="k">if</span> <span class="n">x</span> <span class="o">&gt;=</span> <span class="n">pivot</span><span class="p">])</span>
+</code></pre></div>
+
+<p>数学上这是一个<strong>分治式的定义</strong>，通常写成：</p>
+<div class="arithmatex">\[
+\operatorname{qsort}(S) \;=\; \begin{cases}
+S &amp; \lvert S\rvert\le 1\\
+\operatorname{qsort}(S_{&lt;p}) \,\Vert\, \langle p\rangle \,\Vert\, \operatorname{qsort}(S_{\ge p}) &amp; \text{否则}
+\end{cases}
+\]</div>
+<p>其中 <span class="arithmatex">\(S_{&lt;p}=\{x\in S\setminus\{p\}: x&lt;p\}\)</span>。<strong>列表推导式 <span class="arithmatex">\([x\ \text{for}\ x\ \text{in}\ \text{rest}\ \text{if}\ x&lt;p]\)</span> 就是集合构造式 <span class="arithmatex">\(\{x\in S\setminus\{p\}: x&lt;p\}\)</span>。</strong> 一模一样。</p>
+<h3 id="63-不动点-while-循环的极限">6.3 不动点 —— <code>while</code> 循环的极限</h3>
+<div class="highlight"><pre><span></span><code><span class="n">x</span> <span class="o">=</span> <span class="n">x0</span>
+<span class="k">while</span> <span class="nb">abs</span><span class="p">(</span><span class="n">f</span><span class="p">(</span><span class="n">x</span><span class="p">)</span> <span class="o">-</span> <span class="n">x</span><span class="p">)</span> <span class="o">&gt;</span> <span class="n">eps</span><span class="p">:</span>
+    <span class="n">x</span> <span class="o">=</span> <span class="n">f</span><span class="p">(</span><span class="n">x</span><span class="p">)</span>
+<span class="c1"># 收敛后 x 满足 f(x) = x</span>
+</code></pre></div>
+
+<p>数学：<span class="arithmatex">\(x^\* = \operatorname{FixedPoint}(f)\)</span>，即满足 <span class="arithmatex">\(f(x^\*) = x^\*\)</span> 的那个 <span class="arithmatex">\(x^\*\)</span>。</p>
+<p>在 <span class="arithmatex">\(\lambda\)</span> 演算里这玩意是 Y 组合子（Chapter 0.9）；在数值分析里是牛顿迭代 / 不动点迭代；在深度学习里是 DEQ（Deep Equilibrium Model）；在博弈论里是纳什均衡。<strong>"循环收敛到一个稳定点"</strong> 是同一个东西的四张脸。</p>
+<hr />
+<h2 id="0997-函数是一等公民-高阶函数-算子-泛函">🧩 0.99.7 函数是一等公民 ↔ 高阶函数 / 算子 / 泛函</h2>
+<p>Python 里函数可以当参数传、可以从函数里返回，这在数学里叫<strong>高阶</strong>。数学有两个专门名字：</p>
+<ul>
+<li><strong>算子（operator）</strong>：函数到函数的映射。例：微分算子 <span class="arithmatex">\(D: (\mathbb{R}\to\mathbb{R})\to(\mathbb{R}\to\mathbb{R})\)</span>，<span class="arithmatex">\(Df = f'\)</span>。</li>
+<li><strong>泛函（functional）</strong>：函数到标量的映射。例：定积分 <span class="arithmatex">\(I: (\mathbb{R}\to\mathbb{R})\to\mathbb{R}\)</span>，<span class="arithmatex">\(I[f] = \int_0^1 f(x)\,dx\)</span>。</li>
+</ul>
+<h3 id="71-数值微分算子">7.1 数值微分算子</h3>
+<div class="highlight"><pre><span></span><code><span class="k">def</span><span class="w"> </span><span class="nf">D</span><span class="p">(</span><span class="n">f</span><span class="p">,</span> <span class="n">h</span><span class="o">=</span><span class="mf">1e-5</span><span class="p">):</span>
+    <span class="k">return</span> <span class="k">lambda</span> <span class="n">x</span><span class="p">:</span> <span class="p">(</span><span class="n">f</span><span class="p">(</span><span class="n">x</span> <span class="o">+</span> <span class="n">h</span><span class="p">)</span> <span class="o">-</span> <span class="n">f</span><span class="p">(</span><span class="n">x</span><span class="p">))</span> <span class="o">/</span> <span class="n">h</span>
+</code></pre></div>
+
+<p>数学：</p>
+<div class="arithmatex">\[
+D \;:\; (\mathbb{R}\to\mathbb{R})\to(\mathbb{R}\to\mathbb{R}),\qquad (Df)(x) \;=\; \lim_{h\to 0}\frac{f(x+h)-f(x)}{h}
+\]</div>
+<p><strong>代码里返回的那个 <code>lambda x: ...</code> 就是数学里的 <span class="arithmatex">\((Df)\)</span></strong>。程序员本能地理解"返回一个函数"；数学家把它叫作"算子"。</p>
+<h3 id="72-map-filter-reduce-象集-集合构造-折叠">7.2 map / filter / reduce ↔ 象集 / 集合构造 / 折叠</h3>
+<div class="highlight"><pre><span></span><code><span class="nb">list</span><span class="p">(</span><span class="nb">map</span><span class="p">(</span><span class="n">f</span><span class="p">,</span> <span class="n">S</span><span class="p">))</span>              <span class="c1">#  { f(x) : x ∈ S }        —— 象集 f(S)</span>
+<span class="nb">list</span><span class="p">(</span><span class="nb">filter</span><span class="p">(</span><span class="n">P</span><span class="p">,</span> <span class="n">S</span><span class="p">))</span>           <span class="c1">#  { x ∈ S : P(x) }        —— 筛选</span>
+<span class="n">reduce</span><span class="p">(</span><span class="n">operator</span><span class="o">.</span><span class="n">mul</span><span class="p">,</span> <span class="n">S</span><span class="p">,</span> <span class="mi">1</span><span class="p">)</span>   <span class="c1">#  ∏_{x ∈ S} x             —— 折叠</span>
+</code></pre></div>
+
+<p><strong>函数式编程的三件套（map/filter/reduce）恰好对应数学的三类基本集合操作。</strong> 这不是巧合 —— 二者共享同一个源头：Church 1936 的 <span class="arithmatex">\(\lambda\)</span> 演算。程序员和数学家早在 1930 年代就在同一栋楼里工作，只是彼此没意识到。</p>
+<hr />
+<h2 id="0998-现代算法for-和公式并肩出现的场景">🧠 0.99.8 现代算法：<code>for</code> 和公式并肩出现的场景</h2>
+<p>现代论文里，一个算法的正确写法是<strong>伪代码块 + 公式</strong>混合。你要能同时读两边。下面是六个必知的样板。</p>
+<h3 id="81-梯度下降">8.1 梯度下降</h3>
+<div class="highlight"><pre><span></span><code><span class="n">theta</span> <span class="o">=</span> <span class="n">theta_0</span>
+<span class="k">for</span> <span class="n">t</span> <span class="ow">in</span> <span class="nb">range</span><span class="p">(</span><span class="n">T</span><span class="p">):</span>
+    <span class="n">theta</span> <span class="o">=</span> <span class="n">theta</span> <span class="o">-</span> <span class="n">eta</span> <span class="o">*</span> <span class="n">grad_L</span><span class="p">(</span><span class="n">theta</span><span class="p">)</span>
+</code></pre></div>
+
+<p>论文里：</p>
+<div class="arithmatex">\[
+\theta_{t+1} \;=\; \theta_t - \eta\,\nabla L(\theta_t),\qquad t=0,1,\dots,T-1
+\]</div>
+<p><strong>下标 <span class="arithmatex">\(t+1 \leftarrow t\)</span> 就是 <code>theta = ...</code> 那一步。</strong> 循环变量 <span class="arithmatex">\(t\)</span> 变成公式里的下标。这是"状态在时间上演化"这个模式的通用记法。</p>
+<h3 id="82-k-means">8.2 K-means</h3>
+<div class="highlight"><pre><span></span><code><span class="k">for</span> <span class="n">it</span> <span class="ow">in</span> <span class="nb">range</span><span class="p">(</span><span class="n">max_iter</span><span class="p">):</span>
+    <span class="c1"># E-step: 每个点分配到最近的中心</span>
+    <span class="n">labels</span> <span class="o">=</span> <span class="p">[</span><span class="n">argmin</span><span class="p">(</span><span class="n">dist</span><span class="p">(</span><span class="n">x</span><span class="p">,</span> <span class="n">c</span><span class="p">)</span> <span class="k">for</span> <span class="n">c</span> <span class="ow">in</span> <span class="n">centers</span><span class="p">)</span> <span class="k">for</span> <span class="n">x</span> <span class="ow">in</span> <span class="n">X</span><span class="p">]</span>
+    <span class="c1"># M-step: 每个类重新算中心</span>
+    <span class="n">centers</span> <span class="o">=</span> <span class="p">[</span><span class="n">mean</span><span class="p">(</span><span class="n">x</span> <span class="k">for</span> <span class="n">x</span><span class="p">,</span> <span class="n">lab</span> <span class="ow">in</span> <span class="nb">zip</span><span class="p">(</span><span class="n">X</span><span class="p">,</span> <span class="n">labels</span><span class="p">)</span> <span class="k">if</span> <span class="n">lab</span> <span class="o">==</span> <span class="n">k</span><span class="p">)</span> <span class="k">for</span> <span class="n">k</span> <span class="ow">in</span> <span class="nb">range</span><span class="p">(</span><span class="n">K</span><span class="p">)]</span>
+</code></pre></div>
+
+<p>公式：</p>
+<div class="arithmatex">\[
+\text{E:}\quad r_{i} \;=\; \arg\min_{k}\ \lVert x_i - \mu_k\rVert^2
+\]</div>
+<div class="arithmatex">\[
+\text{M:}\quad \mu_k \;=\; \frac{\sum_{i: r_i=k} x_i}{\sum_{i: r_i=k} 1}
+\]</div>
+<p><strong>M 步公式里的 <code>sum_{i: r_i=k}</code> 就是代码里的 <code>if lab == k</code>。</strong> 求和号下面的条件就是列表推导里的过滤器。</p>
+<h3 id="83-注意力attention">8.3 注意力（Attention）</h3>
+<p>代码（PyTorch，去掉批维）：</p>
+<div class="highlight"><pre><span></span><code><span class="n">scores</span> <span class="o">=</span> <span class="n">Q</span> <span class="o">@</span> <span class="n">K</span><span class="o">.</span><span class="n">T</span> <span class="o">/</span> <span class="p">(</span><span class="n">d</span> <span class="o">**</span> <span class="mf">0.5</span><span class="p">)</span>           <span class="c1"># (n, n)</span>
+<span class="n">weights</span> <span class="o">=</span> <span class="n">torch</span><span class="o">.</span><span class="n">softmax</span><span class="p">(</span><span class="n">scores</span><span class="p">,</span> <span class="n">dim</span><span class="o">=-</span><span class="mi">1</span><span class="p">)</span> <span class="c1"># (n, n)</span>
+<span class="n">out</span> <span class="o">=</span> <span class="n">weights</span> <span class="o">@</span> <span class="n">V</span>                        <span class="c1"># (n, d_v)</span>
+</code></pre></div>
+
+<p>公式：</p>
+<div class="arithmatex">\[
+\operatorname{Attention}(Q,K,V) \;=\; \operatorname{softmax}\!\left(\frac{QK^{\top}}{\sqrt{d}}\right)V
+\]</div>
+<p>再把公式拆到每一个元素上（这是理解注意力的关键）：</p>
+<div class="arithmatex">\[
+\operatorname{out}_i \;=\; \sum_{j=1}^{n} \underbrace{\frac{\exp(\langle q_i,k_j\rangle/\sqrt{d})}{\sum_{j'} \exp(\langle q_i,k_{j'}\rangle/\sqrt{d})}}_{\text{一个概率权重}}\;\cdot\;v_j
+\]</div>
+<p><strong>每一个输出，是所有输入 value 的加权平均；权重 = query 和 key 的相似度做 softmax。</strong> 加权和 = <span class="arithmatex">\(\Sigma\)</span>，权重 = softmax = 一堆 <span class="arithmatex">\(\exp\)</span> / 一堆 <span class="arithmatex">\(\exp\)</span> 的和。用循环写：</p>
+<div class="highlight"><pre><span></span><code><span class="k">for</span> <span class="n">i</span> <span class="ow">in</span> <span class="nb">range</span><span class="p">(</span><span class="n">n</span><span class="p">):</span>
+    <span class="n">s</span> <span class="o">=</span> <span class="p">[</span><span class="n">exp</span><span class="p">(</span><span class="n">dot</span><span class="p">(</span><span class="n">Q</span><span class="p">[</span><span class="n">i</span><span class="p">],</span> <span class="n">K</span><span class="p">[</span><span class="n">j</span><span class="p">])</span> <span class="o">/</span> <span class="n">sqrt</span><span class="p">(</span><span class="n">d</span><span class="p">))</span> <span class="k">for</span> <span class="n">j</span> <span class="ow">in</span> <span class="nb">range</span><span class="p">(</span><span class="n">n</span><span class="p">)]</span>
+    <span class="n">denom</span> <span class="o">=</span> <span class="nb">sum</span><span class="p">(</span><span class="n">s</span><span class="p">)</span>
+    <span class="n">out</span><span class="p">[</span><span class="n">i</span><span class="p">]</span> <span class="o">=</span> <span class="nb">sum</span><span class="p">(</span><span class="n">s</span><span class="p">[</span><span class="n">j</span><span class="p">]</span><span class="o">/</span><span class="n">denom</span> <span class="o">*</span> <span class="n">V</span><span class="p">[</span><span class="n">j</span><span class="p">]</span> <span class="k">for</span> <span class="n">j</span> <span class="ow">in</span> <span class="nb">range</span><span class="p">(</span><span class="n">n</span><span class="p">))</span>
+</code></pre></div>
+
+<p><strong>代码里的两层 <code>for</code> = 公式里的双 <span class="arithmatex">\(\Sigma\)</span></strong>（一个在 softmax 分母里，一个在最外面加权求和）。同一个算法，两种记号，一件事。</p>
+<h3 id="84-em-算法一般形式">8.4 EM 算法（一般形式）</h3>
+<div class="highlight"><pre><span></span><code>for t in range(T):
+    # E-step: 用当前参数算隐变量的后验
+    q = posterior(Z, X, theta)
+    # M-step: 最大化关于 q 的期望完整似然
+    theta = argmax over theta&#39; of  sum over z of q(z) * log p(X, z; theta&#39;)
+</code></pre></div>
+
+<p>公式：</p>
+<div class="arithmatex">\[
+\text{E:}\quad q_t(z) \;=\; p(z\mid x;\theta_t)
+\]</div>
+<div class="arithmatex">\[
+\text{M:}\quad \theta_{t+1} \;=\; \arg\max_{\theta}\ \sum_{z} q_t(z)\,\log p(x,z;\theta)
+\]</div>
+<p><span class="arithmatex">\(\arg\max\)</span> 就是代码里的 "return the value of <span class="arithmatex">\(\theta\)</span> that maximizes ..."；<span class="arithmatex">\(\Sigma_z\)</span> 就是对所有隐变量取值遍历。<strong>"数学里的 <span class="arithmatex">\(\arg\max\)</span>" = "程序里的 <code>max(..., key=...)</code> 返回 key 而不是 value"。</strong></p>
+<h3 id="85-bellman-方程动态规划的通用形式">8.5 Bellman 方程（动态规划的通用形式）</h3>
+<div class="highlight"><pre><span></span><code><span class="k">def</span><span class="w"> </span><span class="nf">V</span><span class="p">(</span><span class="n">s</span><span class="p">):</span>
+    <span class="k">return</span> <span class="nb">max</span><span class="p">(</span><span class="n">R</span><span class="p">(</span><span class="n">s</span><span class="p">,</span> <span class="n">a</span><span class="p">)</span> <span class="o">+</span> <span class="n">gamma</span> <span class="o">*</span> <span class="nb">sum</span><span class="p">(</span><span class="n">P</span><span class="p">(</span><span class="n">s2</span><span class="p">,</span> <span class="n">s</span><span class="p">,</span> <span class="n">a</span><span class="p">)</span> <span class="o">*</span> <span class="n">V</span><span class="p">(</span><span class="n">s2</span><span class="p">)</span> <span class="k">for</span> <span class="n">s2</span> <span class="ow">in</span> <span class="n">states</span><span class="p">)</span>
+               <span class="k">for</span> <span class="n">a</span> <span class="ow">in</span> <span class="n">actions</span><span class="p">)</span>
+</code></pre></div>
+
+<div class="arithmatex">\[
+V(s) \;=\; \max_{a}\ \Big[R(s,a) + \gamma\sum_{s'} P(s'\mid s,a)\,V(s')\Big]
+\]</div>
+<p><strong>这个公式几乎就是那段 Python 一比一的转写</strong>：<code>max(... for a in actions)</code> = <span class="arithmatex">\(\max_a\)</span>；<code>sum(... for s2 in states)</code> = <span class="arithmatex">\(\sum_{s'}\)</span>；<code>P(s2, s, a)</code> = <span class="arithmatex">\(P(s'\mid s,a)\)</span>。价值迭代 = 反复把上式当赋值语句跑到收敛（Chapter 0.99.6 的不动点）。</p>
+<h3 id="86-蒙特卡洛估计-把期望换成平均">8.6 蒙特卡洛估计 —— "把期望换成平均"</h3>
+<div class="highlight"><pre><span></span><code><span class="n">xs</span> <span class="o">=</span> <span class="p">[</span><span class="n">sample_from_p</span><span class="p">()</span> <span class="k">for</span> <span class="n">_</span> <span class="ow">in</span> <span class="nb">range</span><span class="p">(</span><span class="n">N</span><span class="p">)]</span>
+<span class="n">estimate</span> <span class="o">=</span> <span class="nb">sum</span><span class="p">(</span><span class="n">f</span><span class="p">(</span><span class="n">x</span><span class="p">)</span> <span class="k">for</span> <span class="n">x</span> <span class="ow">in</span> <span class="n">xs</span><span class="p">)</span> <span class="o">/</span> <span class="n">N</span>
+</code></pre></div>
+
+<div class="arithmatex">\[
+\mathbb{E}_{x\sim p}[f(x)] \;\approx\; \frac{1}{N}\sum_{i=1}^{N} f(x_i),\qquad x_i \overset{\text{iid}}{\sim} p
+\]</div>
+<p><strong>期望符号 <span class="arithmatex">\(\mathbb{E}\)</span> = 采样后取平均。</strong> 当 <span class="arithmatex">\(N\to\infty\)</span>，约等号变成等号（大数定律）。所有你见过的"期望 = ..."的公式，在代码里都长成这样：<strong>采样、算函数值、取平均、结束</strong>。</p>
+<hr />
+<h2 id="0999-反向练习把一行库函数读回公式">🔁 0.99.9 反向练习：把一行库函数读回公式</h2>
+<p>会了正向翻译，反向也要能做。下面每行都是"库函数 → 公式"的直译，请在心里补出对应的 <code>for</code>：</p>
+<table>
+<thead>
+<tr>
+<th>代码</th>
+<th>公式</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>torch.einsum('ij,jk-&gt;ik', A, B)</code></td>
+<td><span class="arithmatex">\(C_{ik} = \sum_j A_{ij} B_{jk}\)</span>（就是矩阵乘）</td>
+</tr>
+<tr>
+<td><code>torch.einsum('ii-&gt;', A)</code></td>
+<td><span class="arithmatex">\(\operatorname{tr}(A) = \sum_i A_{ii}\)</span></td>
+</tr>
+<tr>
+<td><code>torch.softmax(z, dim=-1)</code></td>
+<td><span class="arithmatex">\(p_i = e^{z_i} / \sum_j e^{z_j}\)</span></td>
+</tr>
+<tr>
+<td><code>torch.logsumexp(z, dim=-1)</code></td>
+<td><span class="arithmatex">\(\log\sum_j e^{z_j}\)</span>（数值稳定版）</td>
+</tr>
+<tr>
+<td><code>F.cross_entropy(logits, y)</code></td>
+<td><span class="arithmatex">\(-\frac{1}{N}\sum_i \log p_{i, y_i}\)</span></td>
+</tr>
+<tr>
+<td><code>torch.linalg.norm(x)</code></td>
+<td><span class="arithmatex">\(\lVert x\rVert_2 = \sqrt{\sum_i x_i^2}\)</span></td>
+</tr>
+<tr>
+<td><code>torch.trapz(y, x)</code></td>
+<td><span class="arithmatex">\(\int y\,dx\)</span>（梯形法近似）</td>
+</tr>
+<tr>
+<td><code>torch.cumsum(a, 0)</code></td>
+<td><span class="arithmatex">\(S_k = \sum_{i\le k} a_i\)</span></td>
+</tr>
+<tr>
+<td><code>(a * b).sum()</code></td>
+<td><span class="arithmatex">\(\langle a,b\rangle = \sum_i a_i b_i\)</span></td>
+</tr>
+<tr>
+<td><code>torch.outer(u, v)</code></td>
+<td><span class="arithmatex">\(M_{ij} = u_i v_j\)</span></td>
+</tr>
+<tr>
+<td><code>F.conv2d(x, w)</code></td>
+<td><span class="arithmatex">\(y_{ij} = \sum_{m,n} x_{i+m,\,j+n}\, w_{m,n}\)</span>（互相关，不翻转）</td>
+</tr>
+</tbody>
+</table>
+<p><strong>einsum 是这张表的灵魂</strong>：它就是爱因斯坦 1916 年发明的求和约定的字符串化 —— <strong>"重复的下标就求和"</strong>（爱因斯坦自嘲这是他"数学上最大的贡献"）。你写 <code>'ij,jk-&gt;ik'</code>，就是在告诉编译器 "<span class="arithmatex">\(i\)</span> 和 <span class="arithmatex">\(k\)</span> 不重复，是自由指标；<span class="arithmatex">\(j\)</span> 重复了，请对它求和"。</p>
+<hr />
+<h2 id="09910-对拍手写循环-公式-库函数">🧪 0.99.10 对拍：手写循环 = 公式 = 库函数</h2>
+<p><strong>"能写成 for 循环、能写成 <span class="arithmatex">\(\Sigma\)</span>、跟库函数对得上"</strong> 三者是同一件事的三种表达。任何时候你怀疑自己是不是理解错了，就跑一次对拍：</p>
+<div class="highlight"><pre><span></span><code><span class="kn">import</span><span class="w"> </span><span class="nn">math</span><span class="o">,</span><span class="w"> </span><span class="nn">torch</span>
+
+<span class="c1"># 目标公式：softmax_i = e^{z_i} / Σ_j e^{z_j}</span>
+
+<span class="k">def</span><span class="w"> </span><span class="nf">softmax_forloop</span><span class="p">(</span><span class="n">z</span><span class="p">):</span>
+    <span class="n">z_max</span> <span class="o">=</span> <span class="nb">max</span><span class="p">(</span><span class="n">z</span><span class="p">)</span>                              <span class="c1"># 数值稳定</span>
+    <span class="n">es</span> <span class="o">=</span> <span class="p">[</span><span class="n">math</span><span class="o">.</span><span class="n">exp</span><span class="p">(</span><span class="n">v</span> <span class="o">-</span> <span class="n">z_max</span><span class="p">)</span> <span class="k">for</span> <span class="n">v</span> <span class="ow">in</span> <span class="n">z</span><span class="p">]</span>       <span class="c1"># 一次循环</span>
+    <span class="n">s</span> <span class="o">=</span> <span class="nb">sum</span><span class="p">(</span><span class="n">es</span><span class="p">)</span>                                 <span class="c1"># 另一次循环 = Σ_j</span>
+    <span class="k">return</span> <span class="p">[</span><span class="n">e</span> <span class="o">/</span> <span class="n">s</span> <span class="k">for</span> <span class="n">e</span> <span class="ow">in</span> <span class="n">es</span><span class="p">]</span>
+
+<span class="n">z</span> <span class="o">=</span> <span class="p">[</span><span class="mf">2.0</span><span class="p">,</span> <span class="mf">1.0</span><span class="p">,</span> <span class="mf">0.1</span><span class="p">]</span>
+
+<span class="n">p_hand</span> <span class="o">=</span> <span class="n">softmax_forloop</span><span class="p">(</span><span class="n">z</span><span class="p">)</span>
+<span class="n">p_lib</span>  <span class="o">=</span> <span class="n">torch</span><span class="o">.</span><span class="n">softmax</span><span class="p">(</span><span class="n">torch</span><span class="o">.</span><span class="n">tensor</span><span class="p">(</span><span class="n">z</span><span class="p">),</span> <span class="n">dim</span><span class="o">=</span><span class="mi">0</span><span class="p">)</span><span class="o">.</span><span class="n">tolist</span><span class="p">()</span>
+
+<span class="nb">print</span><span class="p">(</span><span class="n">p_hand</span><span class="p">)</span>     <span class="c1"># [0.6590, 0.2424, 0.0986]</span>
+<span class="nb">print</span><span class="p">(</span><span class="n">p_lib</span><span class="p">)</span>      <span class="c1"># [0.6590, 0.2424, 0.0986]</span>
+<span class="k">assert</span> <span class="nb">max</span><span class="p">(</span><span class="nb">abs</span><span class="p">(</span><span class="n">a</span><span class="o">-</span><span class="n">b</span><span class="p">)</span> <span class="k">for</span> <span class="n">a</span><span class="p">,</span><span class="n">b</span> <span class="ow">in</span> <span class="nb">zip</span><span class="p">(</span><span class="n">p_hand</span><span class="p">,</span> <span class="n">p_lib</span><span class="p">))</span> <span class="o">&lt;</span> <span class="mf">1e-6</span>
+</code></pre></div>
+
+<p>三条数字重合 = 你手写的循环、心里默念的 <span class="arithmatex">\(\Sigma\)</span>、库里那行调用 —— 三者是同一件事。对拍通过的那一刻，那个公式就从"符号"变成了"我造过的东西"。</p>
+<hr />
+<h2 id="09911-常见的翻译陷阱">🪓 0.99.11 常见的翻译陷阱</h2>
+<p>新手在做"程序 → 公式"翻译时最常翻车的四处。</p>
+<p><strong>① 下标偏移。</strong> 数学的 <span class="arithmatex">\(\sum_{i=1}^{n}\)</span> 从 1 到 <span class="arithmatex">\(n\)</span>（含），共 <span class="arithmatex">\(n\)</span> 项；Python 的 <code>range(n)</code> 从 0 到 <span class="arithmatex">\(n-1\)</span>（不含 <span class="arithmatex">\(n\)</span>），也是 <span class="arithmatex">\(n\)</span> 项。<strong>项数一样，起点不一样</strong>。手写循环时脑子里要有这条平移公式：<span class="arithmatex">\(a_i^{\text{math}} = a_{i-1}^{\text{code}}\)</span>。</p>
+<p><strong>② 内外层顺序。</strong> 数学的 <span class="arithmatex">\(\sum_i \sum_j\)</span> 里，<span class="arithmatex">\(i\)</span> 在外，<span class="arithmatex">\(j\)</span> 在内 —— 对应代码的 <code>for i: for j:</code>。<strong>读公式从左向右嵌套；写代码时最外层的 <code>for</code> 对应最左边的 <span class="arithmatex">\(\Sigma\)</span>。</strong> 反了就是转置。</p>
+<p><strong>③ 求和 vs 乘积 vs 逻辑。</strong> <code>+=</code> 是 <span class="arithmatex">\(\Sigma\)</span>，<code>*=</code> 是 <span class="arithmatex">\(\Pi\)</span>，<code>or</code> 累积是 <span class="arithmatex">\(\exists\)</span>（<span class="arithmatex">\(\bigcup\)</span>），<code>and</code> 累积是 <span class="arithmatex">\(\forall\)</span>（<span class="arithmatex">\(\bigcap\)</span>）。选错运算就选错了大写字母。</p>
+<p><strong>④ 归一化常数在哪儿。</strong> 概率公式里最常见的 bug：忘了除以 <span class="arithmatex">\(\sum_j\)</span>。写代码时你会自然地算一次分母；读公式时那个分母藏在 softmax 的定义里，要显式展开出来才能对上。</p>
+<hr />
+<h2 id="09912-三条心法">🧠 0.99.12 三条心法</h2>
+<ol>
+<li><strong>每一个 <code>for</code> 循环，本质都是 <span class="arithmatex">\(\Sigma\)</span> / <span class="arithmatex">\(\Pi\)</span> / <span class="arithmatex">\(\forall\)</span> / <span class="arithmatex">\(\exists\)</span> / <span class="arithmatex">\(\{\cdot:\cdot\}\)</span> 中的一个。</strong> 循环体是被聚合的表达式，循环变量是哑变量，循环范围写在符号下面。</li>
+<li><strong>每一个"用旧值算新值"的赋值，本质都是一个递推关系。</strong> 而收敛的递推 = 不动点 = 微分方程的离散版 = 数值分析的核心。</li>
+<li><strong>每一个函数是一个 <span class="arithmatex">\(f\)</span>，每一个 lambda 是一个 <span class="arithmatex">\(\lambda\)</span>，每一个高阶函数是一个算子或泛函。</strong> 数学里没有第二种函数抽象机制。</li>
+</ol>
+<blockquote>
+<p>数学符号不是给你添麻烦的，是<strong>你早就在写的代码的压缩版</strong>。你不是"要学数学"，你是<strong>要认出那个符号是你天天用的哪一段代码</strong>。</p>
+<p>密码只有三条：<strong>for = <span class="arithmatex">\(\Sigma\)</span>，if = 集合条件 / 指示函数，递归 = 递推。</strong> 把这三条内化，一整个"高等数学"就变成了"另一套语法"。</p>
+</blockquote>
+<hr />
+<h2 id="09913-相关脚本与延伸">🎨 0.99.13 相关脚本与延伸</h2>
+<p>本项目里跟本文最相关的可运行代码：</p>
+<table>
+<thead>
+<tr>
+<th>脚本</th>
+<th>位置</th>
+<th>做什么</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>formula_to_forloop.py</code></td>
+<td><code>ch00_97_reading_formulas/</code></td>
+<td>反向：给公式写手写 <code>for</code>，跟库函数对拍</td>
+</tr>
+<tr>
+<td><code>einsum_as_einstein.py</code></td>
+<td><code>ch00_97_reading_formulas/</code></td>
+<td>爱因斯坦求和约定 ↔ 嵌套 <code>for</code> 的可视对照</td>
+</tr>
+<tr>
+<td><code>bound_variable_alpha.py</code></td>
+<td><code>ch00_97_reading_formulas/</code></td>
+<td>循环变量 = 哑变量，改名不改语义</td>
+</tr>
+<tr>
+<td><code>shape_flow_attention.py</code></td>
+<td><code>ch00_97_reading_formulas/</code></td>
+<td>注意力代码 ↔ 公式的 shape 一一对应</td>
+</tr>
+</tbody>
+</table>
+<p>以及三章相关的历史脉络：</p>
+<ul>
+<li><strong>Chapter 0.6</strong>（<code>math_his_cha0_6_symbols.md</code>）：反方向 —— 拿到陌生公式怎么读下去。本文和它互为镜像。</li>
+<li><strong>Chapter 0.9</strong>（<code>ch00_9_lambda_fixpoint/</code>）：<span class="arithmatex">\(\lambda\)</span> 演算与不动点 —— 递归、闭包、Y 组合子的数学源头，也是本文"函数 ↔ <span class="arithmatex">\(\lambda\)</span>"翻译规则的地基。</li>
+<li><strong>Chapter 0.96</strong>（<code>ch00_96_computability/</code>）：可计算性 —— "能写成程序的东西" 和 "能写成公式的东西" 到底是不是一回事（图灵与丘奇论题）。</li>
+</ul>
+<hr />
+<blockquote>
+<p><strong>本文小结</strong>：你不用"学"公式，你要<strong>把已经会的循环翻译过去</strong>。
+<code>for</code> 是 <span class="arithmatex">\(\Sigma\)</span>，<code>if</code> 是集合条件，<code>lambda</code> 是 <span class="arithmatex">\(\lambda\)</span>，递归是递推，收敛的循环是不动点。
+认出这五条，公式就从"外星文字"变回"我天天写的代码" —— 只是穿了一件更省墨水的外套。</p>
+</blockquote>
+    </div>
+  </article>
+
+</main>
+
+<!-- Floating Ask-AI chat widget -->
+<button class="ai-fab" id="ai-fab" aria-label="Ask AI about this article" title="Ask AI about this article">
+  <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+    <path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"/>
+  </svg>
+  <span class="ai-fab-label">Ask AI</span>
+</button>
+
+<div class="ai-panel" id="ai-panel" role="dialog" aria-labelledby="ai-panel-title" aria-hidden="true">
+  <header class="ai-panel-head">
+    <div class="ai-panel-title-wrap">
+      <span class="ai-dot"></span>
+      <h3 id="ai-panel-title">Ask AI about this post</h3>
+    </div>
+    <div class="ai-panel-actions">
+      <button class="ai-icon-btn" id="ai-clear" title="Clear conversation" aria-label="Clear">
+        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><polyline points="3 6 5 6 21 6"/><path d="M19 6l-1 14a2 2 0 0 1-2 2H8a2 2 0 0 1-2-2L5 6"/><path d="M10 11v6M14 11v6"/><path d="M9 6V4a1 1 0 0 1 1-1h4a1 1 0 0 1 1 1v2"/></svg>
+      </button>
+      <button class="ai-icon-btn" id="ai-close" title="Minimize" aria-label="Minimize">
+        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><polyline points="6 9 12 15 18 9"/></svg>
+      </button>
+    </div>
+  </header>
+
+  <div class="ai-messages" id="ai-messages">
+    <div class="ai-empty" id="ai-empty">
+      <p class="ai-empty-title">On-device AI · Gemini Nano</p>
+      <p class="ai-empty-sub">Ask anything about this article. Runs in your browser — nothing leaves your device.</p>
+    </div>
+  </div>
+
+  <div class="ai-status" id="ai-status" hidden></div>
+
+  <form class="ai-composer" id="ai-form">
+    <textarea id="ai-input" rows="1" placeholder="Ask about this post…" autocomplete="off"></textarea>
+    <button type="submit" id="ai-send" class="ai-send" aria-label="Send" disabled>
+      <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><line x1="22" y1="2" x2="11" y2="13"/><polygon points="22 2 15 22 11 13 2 9 22 2"/></svg>
+    </button>
+  </form>
+</div>
+
+<script>
+(function () {
+  const POST_TITLE = "\u7a0b\u5e8f \u2192 \u516c\u5f0f\uff1a\u628a\u4f60\u5df2\u7ecf\u4f1a\u7684 for \u5faa\u73af\uff0c\u7ffb\u8bd1\u6210 \\(\\Sigma\\) \u2014\u2014 \u7a0b\u5e8f\u5458\u9006\u88ad\u6570\u5b66\u7684\u8bda\u610f\u624b\u518c";
+  const contentEl = document.querySelector('article .content');
+
+  const fab = document.getElementById('ai-fab');
+  const panel = document.getElementById('ai-panel');
+  const closeBtn = document.getElementById('ai-close');
+  const clearBtn = document.getElementById('ai-clear');
+  const msgsEl = document.getElementById('ai-messages');
+  const emptyEl = document.getElementById('ai-empty');
+  const statusEl = document.getElementById('ai-status');
+  const formEl = document.getElementById('ai-form');
+  const inputEl = document.getElementById('ai-input');
+  const sendBtn = document.getElementById('ai-send');
+
+  function articleText() {
+    if (!contentEl) return '';
+    return (contentEl.innerText || contentEl.textContent || '')
+      .replace(/[ \t]+\n/g, '\n')
+      .replace(/\n{3,}/g, '\n\n')
+      .trim();
+  }
+
+  function setStatus(msg, cls) {
+    if (!msg) { statusEl.hidden = true; statusEl.textContent = ''; statusEl.className = 'ai-status'; return; }
+    statusEl.hidden = false;
+    statusEl.textContent = msg;
+    statusEl.className = 'ai-status' + (cls ? ' ' + cls : '');
+  }
+
+  function hideEmpty() { if (emptyEl) emptyEl.style.display = 'none'; }
+
+  function appendBubble(role, text) {
+    hideEmpty();
+    const wrap = document.createElement('div');
+    wrap.className = 'ai-msg ai-msg-' + role;
+    const bubble = document.createElement('div');
+    bubble.className = 'ai-bubble';
+    bubble.textContent = text;
+    wrap.appendChild(bubble);
+    msgsEl.appendChild(wrap);
+    msgsEl.scrollTop = msgsEl.scrollHeight;
+    return bubble;
+  }
+
+  function appendTyping() {
+    hideEmpty();
+    const wrap = document.createElement('div');
+    wrap.className = 'ai-msg ai-msg-assistant ai-typing';
+    wrap.innerHTML = '<div class="ai-bubble"><span class="ai-dots"><i></i><i></i><i></i></span></div>';
+    msgsEl.appendChild(wrap);
+    msgsEl.scrollTop = msgsEl.scrollHeight;
+    return wrap;
+  }
+
+  function autoSize() {
+    inputEl.style.height = 'auto';
+    inputEl.style.height = Math.min(inputEl.scrollHeight, 140) + 'px';
+  }
+
+  function openPanel() {
+    panel.classList.add('open');
+    panel.setAttribute('aria-hidden', 'false');
+    fab.classList.add('hidden');
+    setTimeout(() => inputEl.focus(), 50);
+  }
+  function closePanel() {
+    panel.classList.remove('open');
+    panel.setAttribute('aria-hidden', 'true');
+    fab.classList.remove('hidden');
+  }
+
+  fab.addEventListener('click', openPanel);
+  closeBtn.addEventListener('click', closePanel);
+  document.addEventListener('keydown', e => {
+    if (e.key === 'Escape' && panel.classList.contains('open')) closePanel();
+  });
+
+  // ---- LanguageModel session ----
+  let session = null;
+  let creating = null;
+  let history = [];
+
+  function buildSystemPrompt() {
+    // Keep article context modest — Gemini Nano's input quota is small.
+    const article = articleText().slice(0, 4000);
+    return (
+      'You are a concise, helpful assistant answering questions about a blog post. ' +
+      'Use the article below as your primary source. If the answer is not in it, say so briefly and answer generally. ' +
+      'Reply in the same language as the user\'s question. Keep answers short unless asked for detail.\n\n' +
+      '=== ARTICLE TITLE ===\n' + POST_TITLE + '\n\n' +
+      '=== ARTICLE CONTENT ===\n' + article
+    );
+  }
+
+  async function ensureSession() {
+    if (session) return session;
+    if (creating) return creating;
+
+    if (!('LanguageModel' in self)) {
+      throw new Error(
+        'On-device AI not available. Use Chrome 138+ on desktop, or enable ' +
+        '"Prompt API for Gemini Nano" in chrome://flags.'
+      );
+    }
+
+    setStatus('Checking model…', 'info');
+    const status = await LanguageModel.availability();
+    if (status === 'unavailable') {
+      throw new Error('Model unavailable on this device.');
+    }
+
+    creating = (async () => {
+      // Only show download UI when the model isn't already there.
+      const willDownload = (status !== 'available');
+      if (willDownload) setStatus('Preparing model (first run downloads ~2GB)…', 'info');
+      else setStatus('Warming up…', 'info');
+
+      const s = await LanguageModel.create({
+        initialPrompts: [{ role: 'system', content: buildSystemPrompt() }],
+        monitor(m) {
+          m.addEventListener('downloadprogress', e => {
+            // Skip the spurious 0% event Chrome fires for cached models.
+            if (!willDownload && e.loaded === 0) return;
+            const pct = (e.loaded * 100).toFixed(1);
+            setStatus('Downloading model: ' + pct + '%', 'info');
+          });
+        }
+      });
+      session = s;
+      setStatus('');
+      return s;
+    })();
+
+    try { return await creating; }
+    finally { creating = null; }
+  }
+
+  async function ask(q) {
+    appendBubble('user', q);
+    history.push({ role: 'user', content: q });
+
+    sendBtn.disabled = true;
+    inputEl.disabled = true;
+    const typing = appendTyping();
+
+    let answerBubble = null;
+    let acc = '';
+    try {
+      const s = await ensureSession();
+      const stream = s.promptStreaming(q);
+      for await (const chunk of stream) {
+        if (!answerBubble) {
+          typing.remove();
+          const wrap = document.createElement('div');
+          wrap.className = 'ai-msg ai-msg-assistant';
+          answerBubble = document.createElement('div');
+          answerBubble.className = 'ai-bubble';
+          wrap.appendChild(answerBubble);
+          msgsEl.appendChild(wrap);
+        }
+        acc += chunk;
+        answerBubble.textContent = acc;
+        msgsEl.scrollTop = msgsEl.scrollHeight;
+      }
+      if (acc) history.push({ role: 'assistant', content: acc });
+      else { typing.remove(); appendBubble('assistant', '(no response)'); }
+    } catch (e) {
+      if (typing && typing.parentNode) typing.remove();
+      const err = document.createElement('div');
+      err.className = 'ai-msg ai-msg-error';
+      err.innerHTML = '<div class="ai-bubble">⚠ ' + (e && e.message ? e.message : String(e)) + '</div>';
+      msgsEl.appendChild(err);
+      msgsEl.scrollTop = msgsEl.scrollHeight;
+    } finally {
+      sendBtn.disabled = !inputEl.value.trim();
+      inputEl.disabled = false;
+      inputEl.focus();
+    }
+  }
+
+  formEl.addEventListener('submit', e => {
+    e.preventDefault();
+    const q = inputEl.value.trim();
+    if (!q) return;
+    inputEl.value = '';
+    autoSize();
+    sendBtn.disabled = true;
+    ask(q);
+  });
+
+  inputEl.addEventListener('input', () => {
+    autoSize();
+    sendBtn.disabled = !inputEl.value.trim();
+  });
+  inputEl.addEventListener('keydown', e => {
+    if (e.key === 'Enter' && !e.shiftKey) {
+      e.preventDefault();
+      formEl.requestSubmit();
+    }
+  });
+
+  clearBtn.addEventListener('click', () => {
+    msgsEl.innerHTML = '';
+    msgsEl.appendChild(emptyEl);
+    emptyEl.style.display = '';
+    history = [];
+    if (session && session.destroy) { try { session.destroy(); } catch (_) {} }
+    session = null;
+    setStatus('');
+  });
+
+  if (!('LanguageModel' in self)) {
+    fab.addEventListener('click', () => {
+      openPanel();
+      setStatus('On-device AI not detected. Use Chrome 138+ desktop, or enable "Prompt API for Gemini Nano" in chrome://flags.', 'bad');
+    }, { once: true });
+  }
+})();
+</script>
+
+<!-- Outline notes / comments — DataScript + IndexedDB -->
+<script src="https://github.com/tonsky/datascript/releases/download/1.7.8/datascript-1.7.8.min.js"></script>
+<script src="../notes.js?v=6"></script>
+<script src="../theme.js"></script>
+<script src="../wechat-copy.js?v=3"></script>
+
+</body>
+</html>
