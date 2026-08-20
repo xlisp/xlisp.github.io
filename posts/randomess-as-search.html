@@ -1,0 +1,708 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>随机性不是噪声，是搜索工具：从 GPT 的高维搜索到物理世界的状态空间 · Steve Chan — xlisp</title>
+<meta name="description" content="上一篇文章《GPT 是更高级的“万能谷歌搜索”：从关键词到高维空间的搜索进化史》把 GPT 放进了一条搜索技术的演化线上：关键词搜索在文档库里找已有页面，语义搜索在向量空间里找相近意义，GPT 则根据上下文，在高维表示空间中逐步生成一个答案。">
+<meta name="author" content="Steve Chan">
+<link rel="icon" type="image/jpeg" href="../icon.jpeg">
+<link rel="apple-touch-icon" href="../icon.jpeg">
+<meta property="og:type" content="article">
+<meta property="og:title" content="随机性不是噪声，是搜索工具：从 GPT 的高维搜索到物理世界的状态空间">
+<meta property="og:description" content="上一篇文章《GPT 是更高级的“万能谷歌搜索”：从关键词到高维空间的搜索进化史》把 GPT 放进了一条搜索技术的演化线上：关键词搜索在文档库里找已有页面，语义搜索在向量空间里找相近意义，GPT 则根据上下文，在高维表示空间中逐步生成一个答案。">
+<meta property="og:image" content="../icon.jpeg">
+<meta property="og:site_name" content="Steve Chan — xlisp">
+<meta name="twitter:card" content="summary_large_image">
+<meta name="twitter:title" content="随机性不是噪声，是搜索工具：从 GPT 的高维搜索到物理世界的状态空间">
+<meta name="twitter:description" content="上一篇文章《GPT 是更高级的“万能谷歌搜索”：从关键词到高维空间的搜索进化史》把 GPT 放进了一条搜索技术的演化线上：关键词搜索在文档库里找已有页面，语义搜索在向量空间里找相近意义，GPT 则根据上下文，在高维表示空间中逐步生成一个答案。">
+<meta name="twitter:image" content="../icon.jpeg">
+<link rel="stylesheet" href="../style.css?v=light1">
+<script>(function(){try{if(localStorage.getItem('theme')==='light')document.documentElement.setAttribute('data-theme','light');}catch(e){}})();</script>
+<!-- Math formula rendering via MathJax -->
+<script>
+window.MathJax = {
+  tex: {
+    // arithmatex emits \(...\) / \[...\] markup, so only these delimiters
+    // are needed; plain `$` is left alone (avoids currency false positives).
+    inlineMath: [['\\(', '\\)']],
+    displayMath: [['\\[', '\\]']],
+    processEscapes: true
+  },
+  svg: {
+    // Each formula gets its own self-contained <defs>, so the copy script can
+    // serialize one <svg> and rasterize it to a PNG for WeChat.
+    fontCache: 'local'
+  },
+  options: {
+    skipHtmlTags: ['script', 'noscript', 'style', 'textarea', 'pre', 'code'],
+    ignoreHtmlClass: 'highlight'
+  }
+};
+</script>
+<script src="https://cdn.jsdelivr.net/npm/mathjax@3/es5/tex-svg.js" async></script>
+</head>
+<body>
+<main class="wrap post">
+
+  <nav class="topnav">
+    <a href="../index.html">← home</a>
+  </nav>
+
+  <article>
+    <header class="post-header">
+      <h1>随机性不是噪声，是搜索工具：从 GPT 的高维搜索到物理世界的状态空间</h1>
+      <p class="meta">2026-08-20 · Steve Chan</p>
+    </header>
+
+    <div class="content">
+<blockquote>
+<p>“随机性不是噪声，是搜索工具。”这句话并不是说噪声总是有用，也不是说随机乱试比推理更高级。它说的是一件更精确的事：<strong>当系统不知道最优路径、梯度不可靠，或者容易困在局部最优时，受约束的随机扰动可以把它带到原本到不了的区域。</strong>
+上一篇文章《GPT 是更高级的“万能谷歌搜索”：从关键词到高维空间的搜索进化史》把 GPT 放进了一条搜索技术的演化线上：关键词搜索在文档库里找已有页面，语义搜索在向量空间里找相近意义，GPT 则根据上下文，在高维表示空间中逐步生成一个答案。</p>
+</blockquote>
+<p>这篇文章补上那条线缺少的一半：<strong>搜索空间从哪里来，搜索又是怎样发生的？</strong></p>
+<p>答案分成两部分：</p>
+<ol>
+<li>神经网络学习出一个有结构的高维空间，决定“哪里更可能有好答案”；</li>
+<li>概率分布与随机采样决定“这一次沿哪条路走”。
+前者提供地图，后者提供探索。</li>
+</ol>
+<hr />
+<h2 id="1-先把搜索说清楚">1. 先把“搜索”说清楚</h2>
+<p>我们平常把很多不同的过程都叫搜索：Google 查网页、A* 找路径、梯度下降找参数、GPT 写下一句话、分子折叠成稳定结构、生物演化出眼睛。它们并不完全相同，但都可以用四个问题描述：</p>
+<table>
+<thead>
+<tr>
+<th>要素</th>
+<th>问题</th>
+<th>例子</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>状态空间</td>
+<td>有哪些可能状态？</td>
+<td>网页、棋局、token 序列、蛋白质构象</td>
+</tr>
+<tr>
+<td>评价或偏置</td>
+<td>哪些状态更可能、代价更低或适应度更高？</td>
+<td>排名分数、能量、损失、奖励、繁殖成功率</td>
+</tr>
+<tr>
+<td>转移规则</td>
+<td>怎样从当前状态到下一个状态？</td>
+<td>点击链接、落子、采样 token、分子碰撞、突变</td>
+</tr>
+<tr>
+<td>探索机制</td>
+<td>怎样避免永远走同一条路？</td>
+<td>随机采样、温度、重启、扩散、突变与重组</td>
+</tr>
+</tbody>
+</table>
+<p>这四项齐了，一个过程才具有“搜索”的结构。</p>
+<p>但还要加一个重要限定：<strong>搜索不一定意味着搜索者心里有目标。</strong>
+工程算法通常有显式目标，比如最小化损失；动物觅食也有功能性目标。物理系统却未必“想找到”任何东西。气体趋于平衡，不是分子知道平衡在哪里，而是微观动力学、能量约束和状态数共同造成了宏观结果。</p>
+<p>所以，把物理过程称为搜索，最好理解为一种观察者语言：</p>
+<blockquote>
+<p>系统在可达状态空间中演化；某些状态因为能量、熵、动力学或边界条件而更容易被访问、更常停留，或者更稳定。</p>
+</blockquote>
+<p>它有搜索的数学结构，却不必有搜索的主观意图。</p>
+<hr />
+<h2 id="2-随机性什么时候是噪声什么时候是工具">2. 随机性什么时候是噪声，什么时候是工具</h2>
+<p>随机性本身没有价值。关键在于它与结构如何配合。</p>
+<h3 id="21-只有随机没有评价漫无目的">2.1 只有随机，没有评价：漫无目的</h3>
+<p>如果在一个巨大空间里均匀乱试，而没有任何反馈，随机性只是随机游走。让猴子敲键盘当然最终可能写出莎士比亚，但等待时间大到没有实际意义。</p>
+<h3 id="22-只有评价没有随机容易困住">2.2 只有评价，没有随机：容易困住</h3>
+<p>如果系统永远选择眼前最优的一步，它会很快下降，却可能停在局部最低点。Hopfield 网络的确定性更新就是这样：能量单调下降，但一旦落入伪记忆，就再也出不来。</p>
+<h3 id="23-结构加随机探索与利用">2.3 结构加随机：探索与利用</h3>
+<p>真正有用的是<strong>有偏的随机性</strong>：</p>
+<ul>
+<li>好方向获得更高概率；</li>
+<li>坏方向不是绝对禁止，只是概率较低；</li>
+<li>随着搜索推进，可以逐渐降低随机程度。</li>
+</ul>
+<p>玻尔兹曼分布正是这种机制：</p>
+<div class="arithmatex">\[
+p(s)=\frac{e^{-E(s)/T}}{Z}.
+\]</div>
+<p>低能量状态概率高，但只要温度 <span class="arithmatex">\(T&gt;0\)</span>，较高能量状态仍有机会被访问。系统因此可以暂时“上山”，跨过能垒，再落进更深的谷底。</p>
+<p>这就是模拟退火的核心：</p>
+<ul>
+<li>高温时广泛探索；</li>
+<li>降温时逐步偏向好状态；</li>
+<li>低温时稳定在少数候选上。</li>
+</ul>
+<p>所以更准确的表述不是“随机性不是噪声”，而是：</p>
+<blockquote>
+<p><strong>未经约束的随机性通常是噪声；被评价函数塑形、被温度调节、能扩展可达范围的随机性，才是搜索工具。</strong></p>
+</blockquote>
+<hr />
+<h2 id="3-google语义搜索与-gpt搜索对象发生了什么变化">3. Google、语义搜索与 GPT：搜索对象发生了什么变化</h2>
+<p>传统搜索引擎和 GPT 的共同点，是都在从巨大候选空间中压缩不确定性；区别在于候选空间的单位不同。</p>
+<h3 id="31-关键词搜索在已有文档中检索">3.1 关键词搜索：在已有文档中检索</h3>
+<p>Google 的经典问题是：给定查询 <span class="arithmatex">\(q\)</span>，从已索引文档集合 <span class="arithmatex">\(D\)</span> 中找出排序靠前的文档：</p>
+<div class="arithmatex">\[
+d^*=\arg\max_{d\in D}\operatorname{score}(q,d).
+\]</div>
+<p>候选答案必须预先存在。搜索返回的是位置或引用。</p>
+<h3 id="32-语义搜索在表示空间中找邻居">3.2 语义搜索：在表示空间中找邻居</h3>
+<p>嵌入模型把查询和文档映射到向量空间，搜索变成寻找邻近点：</p>
+<div class="arithmatex">\[
+d^*=\arg\max_{d\in D}\operatorname{sim}(f(q),f(d)).
+\]</div>
+<p>关键词可以不同，只要语义方向相近，仍能被找到。这里升级的是坐标系，但候选仍是已有文档。</p>
+<h3 id="33-gpt在序列空间中生成路径">3.3 GPT：在序列空间中生成路径</h3>
+<p>GPT 面对的候选不是一批现成文档，而是所有可能的 token 序列。给定上下文 <span class="arithmatex">\(x_{&lt;t}\)</span>，模型为下一个 token 计算条件分布：</p>
+<p>$$
+p(x_t\mid x_{&lt;t})=\operatorname{softmax}!\left(\frac{\ell_t}{T}\right).
+$$
+整段回答的概率由逐步条件概率相乘得到：</p>
+<div class="arithmatex">\[
+p(x_{1:n})=\prod_{t=1}^{n}p(x_t\mid x_{&lt;t}).
+\]</div>
+<p>因此 GPT 的“搜索”不是一次性在数据库中命中答案，而是<strong>在序列空间中一步一步修建路径</strong>。每生成一个 token，前缀改变，下一步的概率地形也随之改变。</p>
+<p>这也是“万能谷歌搜索”这个比喻成立和失效的地方：</p>
+<ul>
+<li>成立：两者都在巨大候选空间中利用学习到的相关性压缩搜索范围；</li>
+<li>失效：Google 返回已存在的对象，GPT 会组合出训练集中从未完整出现过的新序列；</li>
+<li>更精确的说法：GPT 是一个学习了条件概率地形的序列生成器，生成过程可以被看作受概率引导的路径搜索。</li>
+</ul>
+<hr />
+<h2 id="4-两篇文章的连接点表示空间是地图随机性是走法">4. 两篇文章的连接点：表示空间是地图，随机性是走法</h2>
+<p>“高维空间搜索”容易让人误以为，GPT 在回答时真的运行了某个传统搜索算法，维护候选队列、回溯分支、比较完整答案。普通自回归采样并不是这样。</p>
+<p>一次标准生成只有两步：</p>
+<ol>
+<li>前向计算得到 logits；</li>
+<li>从 softmax 分布中选择下一个 token。
+但训练把海量语言结构压进了模型参数，使一次前向计算就能给出局部概率地形。于是大量“搜索工作”已经被摊销到了训练阶段。推理时不需要重新遍历全部文本，也不需要显式枚举所有句子。</li>
+</ol>
+<p>可以把二者的关系概括成：</p>
+<table>
+<thead>
+<tr>
+<th>层次</th>
+<th>作用</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>训练</td>
+<td>从数据中学习一张高维概率地图</td>
+</tr>
+<tr>
+<td>logits</td>
+<td>给当前位置附近的方向打分</td>
+</tr>
+<tr>
+<td>softmax</td>
+<td>把分数变成可采样的概率</td>
+</tr>
+<tr>
+<td>温度、top-k、top-p</td>
+<td>调节探索范围</td>
+</tr>
+<tr>
+<td>采样</td>
+<td>选择一条具体生成路径</td>
+</tr>
+</tbody>
+</table>
+<p>若每一步都取最大概率 token：</p>
+<p>$$
+x_t=\arg\max_i \ell_{t,i},
+$$
+模型只有“利用”，没有“探索”。输出稳定，但容易过早锁定一种措辞、结构或推理方向。</p>
+<p>若按分布采样：</p>
+<div class="arithmatex">\[
+x_t\sim \operatorname{softmax}(\ell_t/T),
+\]</div>
+<p>次优方向获得有限机会。同一个问题可以产生不同类比、不同证明路线和不同程序结构。这种差异不是模型忘了答案，而是模型从同一张概率地图上走了不同路径。</p>
+<p>温度控制这种探索的强弱：</p>
+<ul>
+<li><span class="arithmatex">\(T\to0\)</span>：接近贪心，只走最陡的下坡路；</li>
+<li>适中的 <span class="arithmatex">\(T\)</span>：保留少量分支，兼顾稳定性与新颖性；</li>
+<li><span class="arithmatex">\(T\to\infty\)</span>：趋向均匀，地图的结构被抹平，输出退化为噪声。</li>
+</ul>
+<h3 id="52-beam-search显式保留多条路径">5.2 Beam search：显式保留多条路径</h3>
+<p>Beam search 同时保留若干高分前缀，再逐步扩展和淘汰。这已经接近传统图搜索：有候选集、有累计分数、有剪枝。</p>
+<p>但 beam 太窄会错过好答案，太宽又代价高；而且最高概率文本不一定是最有用、最真实或最有创造力的文本。</p>
+<h3 id="53-推理时扩展搜索候选答案并验证">5.3 推理时扩展：搜索候选答案并验证</h3>
+<p>当系统生成多条思路、调用工具、执行代码、检查结果、根据反馈修改答案时，搜索就变得更显式：</p>
+<p>$$
+\text{提出候选}\rightarrow\text{执行或验证}\rightarrow\text{打分}\rightarrow\text{扩展或淘汰}.
+$$
+因此，随机性与高维搜索不是两个比喻，而是同一机制的两层：</p>
+<blockquote>
+<p><strong>模型参数塑造搜索空间中的地形；随机采样决定一次运行穿过这片地形的轨迹。</strong></p>
+</blockquote>
+<hr />
+<h2 id="5-gpt-真的在搜索答案吗">5. GPT 真的在“搜索答案”吗</h2>
+<p>要分三种情况。</p>
+<h3 id="51-普通采样隐式局部单向的搜索">5.1 普通采样：隐式、局部、单向的搜索</h3>
+<p>普通 GPT 生成通常不回头。某一步选错后，后续只能在错误前缀上继续。这更像有概率偏置的单向行走，而不是完整的全局搜索。</p>
+<p>称它为搜索，是因为它在候选序列空间中逐步选择；称它为严格的搜索算法，则容易夸大。
+插队
+这时随机性负责制造多样候选，验证器负责提供选择压力。只有前者是胡思乱想，只有后者则无物可选。两者结合才形成有效搜索。</p>
+<p>这与进化算法的结构非常接近：变异产生差异，选择积累改进。</p>
+<hr />
+<h2 id="6-物理世界里的搜索对应什么">6. 物理世界里的“搜索”对应什么</h2>
+<p>对于物理世界，最一般的答案是：</p>
+<blockquote>
+<p><strong>搜索对应系统在相空间或状态空间中的时间演化；所谓“找到”，对应进入高概率、低自由能、动力学稳定或能长期存续的区域。</strong></p>
+</blockquote>
+<p>这里至少有四类不同机制，不能混为一谈。</p>
+<h3 id="61-热运动在能量地形上探索">6.1 热运动：在能量地形上探索</h3>
+<p>微观粒子不停碰撞，热涨落使系统不只停在一个构型。若系统与热库平衡，状态概率由玻尔兹曼因子决定：</p>
+<div class="arithmatex">\[
+p(s)\propto e^{-E(s)/kT}.
+\]</div>
+<p>温度越高，系统越容易越过能垒；温度越低，越集中于低能态。化学反应、磁性材料翻转、晶体缺陷迁移，都可以用“在能量地形上探索”来理解。</p>
+<p>但这不是纯随机。运动受守恒律、相互作用和边界条件约束；随机性只是来自我们对巨大微观自由度的粗粒化描述，或者来自量子测量等更基础层面。</p>
+<h3 id="62-扩散用随机游走覆盖空间">6.2 扩散：用随机游走覆盖空间</h3>
+<p>花粉颗粒的布朗运动、气味分子的传播、细胞内分子的输运，都可近似为随机游走。单个粒子的路径杂乱无章，但群体尺度上服从稳定的扩散方程：</p>
+<div class="arithmatex">\[
+\frac{\partial \rho}{\partial t}=D\nabla^2\rho.
+\]</div>
+<p>随机性在这里产生覆盖能力：没有中央规划，粒子却能逐渐探索可达空间。许多生物觅食策略也利用类似机制，在局部信息不足时通过随机移动发现资源。</p>
+<h3 id="63-自组织与能量最小化找到稳定结构">6.3 自组织与能量最小化：找到稳定结构</h3>
+<p>蛋白质折叠、晶体生长、分子自组装常被描述为寻找低自由能结构。这个说法有用，但不能理解成系统穷举了所有构象。</p>
+<p>真实过程受到动力学路径限制：</p>
+<ul>
+<li>有些低能态因能垒太高而到不了；</li>
+<li>有些亚稳态会停留很久；</li>
+<li>局部相互作用会把搜索空间强烈剪枝；</li>
+<li>环境持续供能时，系统甚至不趋于热平衡。</li>
+</ul>
+<p>所以物理世界的“搜索算法”不是枚举，而是<strong>动力学本身</strong>。自然定律决定哪些转移可达，热涨落决定偶尔跨越哪些障碍，耗散决定哪些结构能够稳定下来。</p>
+<h3 id="64-生物演化随机变异加非随机选择">6.4 生物演化：随机变异加非随机选择</h3>
+<p>演化是最接近算法搜索的自然过程之一：</p>
+<table>
+<thead>
+<tr>
+<th>搜索要素</th>
+<th>演化中的对应物</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>状态空间</td>
+<td>基因型、表型及生态关系</td>
+</tr>
+<tr>
+<td>变异算子</td>
+<td>突变、重组、基因流动</td>
+</tr>
+<tr>
+<td>评价</td>
+<td>在具体环境中的繁殖成功率</td>
+</tr>
+<tr>
+<td>保留机制</td>
+<td>遗传与选择</td>
+</tr>
+</tbody>
+</table>
+<p>常见误解是“进化是随机的”。更准确地说：<strong>变异包含随机成分，选择并不随机。</strong> 变异负责提供新候选，环境负责让某些候选留下更多后代。
+不过演化没有预先设定的全局终点。适应度地形会随环境、其他物种和种群自身变化；它寻找的是当下可延续的局部解，而不是宇宙给定的最终最优解。</p>
+<hr />
+<h2 id="7-物理世界演化与-gpt-的同构">7. 物理世界、演化与 GPT 的同构</h2>
+<p>把三者并排，可以看出“随机性作为搜索工具”的共同结构：</p>
+<table>
+<thead>
+<tr>
+<th>系统</th>
+<th>状态</th>
+<th>地形或偏置</th>
+<th>随机来源</th>
+<th>保留机制</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>热力学系统</td>
+<td>微观构型</td>
+<td>能量与熵</td>
+<td>热涨落</td>
+<td>平衡分布、亚稳态</td>
+</tr>
+<tr>
+<td>生物演化</td>
+<td>基因型与表型</td>
+<td>环境相关适应度</td>
+<td>突变与重组</td>
+<td>遗传和自然选择</td>
+</tr>
+<tr>
+<td>GPT 生成</td>
+<td>token 前缀</td>
+<td>条件概率 logits</td>
+<td>概率采样</td>
+<td>前缀被写入上下文</td>
+</tr>
+<tr>
+<td>带验证器的 AI</td>
+<td>候选解与推理轨迹</td>
+<td>奖励、测试、证明检查</td>
+<td>多次采样与分支</td>
+<td>选择、回溯、更新</td>
+</tr>
+</tbody>
+</table>
+<p>共同模板是：</p>
+<div class="arithmatex">\[
+\text{结构化状态空间}+\text{有偏转移}+\text{随机探索}+\text{选择或稳定机制}.
+\]</div>
+<p>但差异同样重要：</p>
+<ol>
+<li>物理系统遵循动力学，不以“解题”为目的；</li>
+<li>演化有局部选择压力，但没有预见和终极目标；</li>
+<li>GPT 的概率地形来自人类数据与训练目标；</li>
+<li>AI 系统可以外接显式验证器，主动回溯，而普通自然过程没有统一的全局裁判。</li>
+</ol>
+<p>因此不能说“宇宙就是一个 GPT”，也不能说“GPT 复刻了自然”。更克制也更准确的结论是：<strong>它们在数学上反复使用同一种解决巨大组合空间的策略：不穷举全部可能，而让局部规则、概率偏置和选择压力共同塑造访问路径。</strong></p>
+<hr />
+<h2 id="8-为什么随机性会带来创造性">8. 为什么随机性会带来创造性</h2>
+<p>创造性经常被误解为无约束的新奇。真正有价值的创造通常满足两个条件：</p>
+<ol>
+<li>候选必须偏离最常见答案；</li>
+<li>偏离后仍要满足语义、逻辑、审美或功能约束。</li>
+</ol>
+<p>低温贪心只会反复走概率最高的道路，容易正确却平庸。高温均匀采样能制造新奇，却容易失去连贯性。创造性位于两者之间：<strong>在模型已经学会的结构内，给低概率但合理的组合一次出现机会，再用评价机制筛选。</strong></p>
+<p>这也是为什么“多采样一次”有时比“把同一个答案想得更久”更有效。第一次输出可能落在一个常见局部模式；重新采样相当于从同一问题出发，访问另一个吸引域。
+不过随机性不会自动产生真理。对于代码、数学和事实问题，候选多样性之后必须接验证：</p>
+<ul>
+<li>代码要运行测试；</li>
+<li>数学要检查推导或用形式化工具验证；</li>
+<li>事实要查询可靠来源；</li>
+<li>规划要在环境中执行并观察反馈。</li>
+</ul>
+<p>一句话：</p>
+<blockquote>
+<p><strong>随机性负责提出“也许”，验证负责决定“是不是”。</strong></p>
+</blockquote>
+<hr />
+<h2 id="9-随机性不是万能药">9. 随机性不是万能药</h2>
+<p>“随机性是搜索工具”成立，需要满足几个条件。</p>
+<h3 id="91-地形必须有信息">9.1 地形必须有信息</h3>
+<p>如果所有候选奖励都相同，随机采样只能在平面上乱走。奖励恒为零时，策略梯度的 advantage 也恒为零：</p>
+<div class="arithmatex">\[
+A(y)=r(y)-\mathbb E[r]\equiv0.
+\]</div>
+<p>这时需要先设计能区分进展的反馈，而不是提高温度。</p>
+<h3 id="92-随机尺度必须合适">9.2 随机尺度必须合适</h3>
+<p>扰动太小，跨不过能垒；扰动太大，已有结构被破坏。模拟退火、Langevin dynamics、进化策略和 token 采样都在处理同一个问题：探索尺度如何随阶段变化。</p>
+<h3 id="93-必须有保留好结果的机制">9.3 必须有保留好结果的机制</h3>
+<p>随机变化若不能被记忆、选择或验证，成功也会立即丢失。自然选择依靠遗传，优化算法依靠参数更新，搜索算法依靠候选队列，智能体依靠外部记忆和环境反馈。</p>
+<h3 id="94-搜索空间的表示比搜索次数更重要">9.4 搜索空间的表示比搜索次数更重要</h3>
+<p>在错误坐标系里随机一万亿次，可能不如换一个表示。蛋白质若逐原子任意乱动，空间大得不可处理；真实物理约束让大部分运动相关联。GPT 也不是在所有字符序列中均匀乱试，而是在训练形成的语言流形附近采样。</p>
+<p>真正强大的不是“更随机”，而是：</p>
+<div class="arithmatex">\[
+\text{更好的表示}+\text{更有信息的评价}+\text{恰当的随机探索}.
+\]</div>
+<hr />
+<h2 id="10-一个统一视角智能是对可能性的管理">10. 一个统一视角：智能是对可能性的管理</h2>
+<p>从这个角度看，Google、GPT、物理系统和生物演化都在处理同一个根本困难：<strong>可能性太多，无法穷举。</strong>
+- Google 用索引和排序压缩文档空间；
+- 向量搜索用表示学习压缩语义空间；
+- GPT 用条件概率压缩序列空间；
+- 热力学用能量与熵塑造状态分布；
+- 演化用变异产生候选，用选择积累适应；
+- 科学研究用猜想扩展空间，用实验淘汰错误。</p>
+<p>它们都不是“知道全部答案后再挑一个”。它们依赖结构，让少数路径比其他路径更值得走；又保留一定随机性，使系统不会永远被当前知识封闭。</p>
+<p>因此，“随机性不是噪声，是搜索工具”真正值得保留的含义是：</p>
+<blockquote>
+<p>当未知空间大到无法枚举时，理性不等于消灭随机性。更高级的理性，是给随机性一张有结构的地图、一个可调的尺度和一套能保留好结果的选择机制。</p>
+</blockquote>
+<p>上一篇文章讲的是地图如何从关键词升级为高维表示；这篇文章讲的是有了地图之后，系统如何真正走起来。</p>
+<p>物理世界里的对应物，不是某个藏在宇宙背后的搜索框，而是状态空间中的演化本身：热涨落提供探索，能量与熵提供偏置，动力学决定可达路径，稳定性与选择决定什么能够留下。
+GPT 里的对应物则更直接：logits 是局部地形，softmax 是玻尔兹曼形式，temperature 是探索尺度，采样是一条具体路径，而验证器决定这条路径只是新奇，还是确实通向答案。</p>
+<p>随机性单独存在时是噪声。</p>
+<p><strong>随机性被结构引导、被反馈筛选、被记忆积累时，才成为搜索。</strong></p>
+<hr />
+<h2 id="延伸阅读">延伸阅读</h2>
+<ul>
+<li>Ludwig Boltzmann, <em>Über die Beziehung zwischen dem zweiten Hauptsatze der mechanischen Wärmetheorie und der Wahrscheinlichkeitsrechnung</em>, 1877.</li>
+<li>N. Metropolis et al., “Equation of State Calculations by Fast Computing Machines,” 1953.</li>
+<li>S. Kirkpatrick, C. D. Gelatt, M. P. Vecchi, “Optimization by Simulated Annealing,” 1983.</li>
+<li>D. E. Goldberg, <em>Genetic Algorithms in Search, Optimization, and Machine Learning</em>, 1989.</li>
+<li>D. Silver et al., “Mastering the Game of Go without Human Knowledge,” 2017.</li>
+<li>站内相关文章：《GPT 是更高级的“万能谷歌搜索”：从关键词到高维空间的搜索进化史》；《从玻尔兹曼到辛顿：从 <span class="arithmatex">\(S=k\log W\)</span> 到 softmax 的一条线》。</li>
+</ul>
+    </div>
+  </article>
+
+</main>
+
+<!-- Floating Ask-AI chat widget -->
+<button class="ai-fab" id="ai-fab" aria-label="Ask AI about this article" title="Ask AI about this article">
+  <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+    <path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"/>
+  </svg>
+  <span class="ai-fab-label">Ask AI</span>
+</button>
+
+<div class="ai-panel" id="ai-panel" role="dialog" aria-labelledby="ai-panel-title" aria-hidden="true">
+  <header class="ai-panel-head">
+    <div class="ai-panel-title-wrap">
+      <span class="ai-dot"></span>
+      <h3 id="ai-panel-title">Ask AI about this post</h3>
+    </div>
+    <div class="ai-panel-actions">
+      <button class="ai-icon-btn" id="ai-clear" title="Clear conversation" aria-label="Clear">
+        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><polyline points="3 6 5 6 21 6"/><path d="M19 6l-1 14a2 2 0 0 1-2 2H8a2 2 0 0 1-2-2L5 6"/><path d="M10 11v6M14 11v6"/><path d="M9 6V4a1 1 0 0 1 1-1h4a1 1 0 0 1 1 1v2"/></svg>
+      </button>
+      <button class="ai-icon-btn" id="ai-close" title="Minimize" aria-label="Minimize">
+        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><polyline points="6 9 12 15 18 9"/></svg>
+      </button>
+    </div>
+  </header>
+
+  <div class="ai-messages" id="ai-messages">
+    <div class="ai-empty" id="ai-empty">
+      <p class="ai-empty-title">On-device AI · Gemini Nano</p>
+      <p class="ai-empty-sub">Ask anything about this article. Runs in your browser — nothing leaves your device.</p>
+    </div>
+  </div>
+
+  <div class="ai-status" id="ai-status" hidden></div>
+
+  <form class="ai-composer" id="ai-form">
+    <textarea id="ai-input" rows="1" placeholder="Ask about this post…" autocomplete="off"></textarea>
+    <button type="submit" id="ai-send" class="ai-send" aria-label="Send" disabled>
+      <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><line x1="22" y1="2" x2="11" y2="13"/><polygon points="22 2 15 22 11 13 2 9 22 2"/></svg>
+    </button>
+  </form>
+</div>
+
+<script>
+(function () {
+  const POST_TITLE = "\u968f\u673a\u6027\u4e0d\u662f\u566a\u58f0\uff0c\u662f\u641c\u7d22\u5de5\u5177\uff1a\u4ece GPT \u7684\u9ad8\u7ef4\u641c\u7d22\u5230\u7269\u7406\u4e16\u754c\u7684\u72b6\u6001\u7a7a\u95f4";
+  const contentEl = document.querySelector('article .content');
+
+  const fab = document.getElementById('ai-fab');
+  const panel = document.getElementById('ai-panel');
+  const closeBtn = document.getElementById('ai-close');
+  const clearBtn = document.getElementById('ai-clear');
+  const msgsEl = document.getElementById('ai-messages');
+  const emptyEl = document.getElementById('ai-empty');
+  const statusEl = document.getElementById('ai-status');
+  const formEl = document.getElementById('ai-form');
+  const inputEl = document.getElementById('ai-input');
+  const sendBtn = document.getElementById('ai-send');
+
+  function articleText() {
+    if (!contentEl) return '';
+    return (contentEl.innerText || contentEl.textContent || '')
+      .replace(/[ \t]+\n/g, '\n')
+      .replace(/\n{3,}/g, '\n\n')
+      .trim();
+  }
+
+  function setStatus(msg, cls) {
+    if (!msg) { statusEl.hidden = true; statusEl.textContent = ''; statusEl.className = 'ai-status'; return; }
+    statusEl.hidden = false;
+    statusEl.textContent = msg;
+    statusEl.className = 'ai-status' + (cls ? ' ' + cls : '');
+  }
+
+  function hideEmpty() { if (emptyEl) emptyEl.style.display = 'none'; }
+
+  function appendBubble(role, text) {
+    hideEmpty();
+    const wrap = document.createElement('div');
+    wrap.className = 'ai-msg ai-msg-' + role;
+    const bubble = document.createElement('div');
+    bubble.className = 'ai-bubble';
+    bubble.textContent = text;
+    wrap.appendChild(bubble);
+    msgsEl.appendChild(wrap);
+    msgsEl.scrollTop = msgsEl.scrollHeight;
+    return bubble;
+  }
+
+  function appendTyping() {
+    hideEmpty();
+    const wrap = document.createElement('div');
+    wrap.className = 'ai-msg ai-msg-assistant ai-typing';
+    wrap.innerHTML = '<div class="ai-bubble"><span class="ai-dots"><i></i><i></i><i></i></span></div>';
+    msgsEl.appendChild(wrap);
+    msgsEl.scrollTop = msgsEl.scrollHeight;
+    return wrap;
+  }
+
+  function autoSize() {
+    inputEl.style.height = 'auto';
+    inputEl.style.height = Math.min(inputEl.scrollHeight, 140) + 'px';
+  }
+
+  function openPanel() {
+    panel.classList.add('open');
+    panel.setAttribute('aria-hidden', 'false');
+    fab.classList.add('hidden');
+    setTimeout(() => inputEl.focus(), 50);
+  }
+  function closePanel() {
+    panel.classList.remove('open');
+    panel.setAttribute('aria-hidden', 'true');
+    fab.classList.remove('hidden');
+  }
+
+  fab.addEventListener('click', openPanel);
+  closeBtn.addEventListener('click', closePanel);
+  document.addEventListener('keydown', e => {
+    if (e.key === 'Escape' && panel.classList.contains('open')) closePanel();
+  });
+
+  // ---- LanguageModel session ----
+  let session = null;
+  let creating = null;
+  let history = [];
+
+  function buildSystemPrompt() {
+    // Keep article context modest — Gemini Nano's input quota is small.
+    const article = articleText().slice(0, 4000);
+    return (
+      'You are a concise, helpful assistant answering questions about a blog post. ' +
+      'Use the article below as your primary source. If the answer is not in it, say so briefly and answer generally. ' +
+      'Reply in the same language as the user\'s question. Keep answers short unless asked for detail.\n\n' +
+      '=== ARTICLE TITLE ===\n' + POST_TITLE + '\n\n' +
+      '=== ARTICLE CONTENT ===\n' + article
+    );
+  }
+
+  async function ensureSession() {
+    if (session) return session;
+    if (creating) return creating;
+
+    if (!('LanguageModel' in self)) {
+      throw new Error(
+        'On-device AI not available. Use Chrome 138+ on desktop, or enable ' +
+        '"Prompt API for Gemini Nano" in chrome://flags.'
+      );
+    }
+
+    setStatus('Checking model…', 'info');
+    const status = await LanguageModel.availability();
+    if (status === 'unavailable') {
+      throw new Error('Model unavailable on this device.');
+    }
+
+    creating = (async () => {
+      // Only show download UI when the model isn't already there.
+      const willDownload = (status !== 'available');
+      if (willDownload) setStatus('Preparing model (first run downloads ~2GB)…', 'info');
+      else setStatus('Warming up…', 'info');
+
+      const s = await LanguageModel.create({
+        initialPrompts: [{ role: 'system', content: buildSystemPrompt() }],
+        monitor(m) {
+          m.addEventListener('downloadprogress', e => {
+            // Skip the spurious 0% event Chrome fires for cached models.
+            if (!willDownload && e.loaded === 0) return;
+            const pct = (e.loaded * 100).toFixed(1);
+            setStatus('Downloading model: ' + pct + '%', 'info');
+          });
+        }
+      });
+      session = s;
+      setStatus('');
+      return s;
+    })();
+
+    try { return await creating; }
+    finally { creating = null; }
+  }
+
+  async function ask(q) {
+    appendBubble('user', q);
+    history.push({ role: 'user', content: q });
+
+    sendBtn.disabled = true;
+    inputEl.disabled = true;
+    const typing = appendTyping();
+
+    let answerBubble = null;
+    let acc = '';
+    try {
+      const s = await ensureSession();
+      const stream = s.promptStreaming(q);
+      for await (const chunk of stream) {
+        if (!answerBubble) {
+          typing.remove();
+          const wrap = document.createElement('div');
+          wrap.className = 'ai-msg ai-msg-assistant';
+          answerBubble = document.createElement('div');
+          answerBubble.className = 'ai-bubble';
+          wrap.appendChild(answerBubble);
+          msgsEl.appendChild(wrap);
+        }
+        acc += chunk;
+        answerBubble.textContent = acc;
+        msgsEl.scrollTop = msgsEl.scrollHeight;
+      }
+      if (acc) history.push({ role: 'assistant', content: acc });
+      else { typing.remove(); appendBubble('assistant', '(no response)'); }
+    } catch (e) {
+      if (typing && typing.parentNode) typing.remove();
+      const err = document.createElement('div');
+      err.className = 'ai-msg ai-msg-error';
+      err.innerHTML = '<div class="ai-bubble">⚠ ' + (e && e.message ? e.message : String(e)) + '</div>';
+      msgsEl.appendChild(err);
+      msgsEl.scrollTop = msgsEl.scrollHeight;
+    } finally {
+      sendBtn.disabled = !inputEl.value.trim();
+      inputEl.disabled = false;
+      inputEl.focus();
+    }
+  }
+
+  formEl.addEventListener('submit', e => {
+    e.preventDefault();
+    const q = inputEl.value.trim();
+    if (!q) return;
+    inputEl.value = '';
+    autoSize();
+    sendBtn.disabled = true;
+    ask(q);
+  });
+
+  inputEl.addEventListener('input', () => {
+    autoSize();
+    sendBtn.disabled = !inputEl.value.trim();
+  });
+  inputEl.addEventListener('keydown', e => {
+    if (e.key === 'Enter' && !e.shiftKey) {
+      e.preventDefault();
+      formEl.requestSubmit();
+    }
+  });
+
+  clearBtn.addEventListener('click', () => {
+    msgsEl.innerHTML = '';
+    msgsEl.appendChild(emptyEl);
+    emptyEl.style.display = '';
+    history = [];
+    if (session && session.destroy) { try { session.destroy(); } catch (_) {} }
+    session = null;
+    setStatus('');
+  });
+
+  if (!('LanguageModel' in self)) {
+    fab.addEventListener('click', () => {
+      openPanel();
+      setStatus('On-device AI not detected. Use Chrome 138+ desktop, or enable "Prompt API for Gemini Nano" in chrome://flags.', 'bad');
+    }, { once: true });
+  }
+})();
+</script>
+
+<!-- Outline notes / comments — DataScript + IndexedDB -->
+<script src="https://github.com/tonsky/datascript/releases/download/1.7.8/datascript-1.7.8.min.js"></script>
+<script src="../notes.js?v=6"></script>
+<script src="../theme.js"></script>
+<script src="../wechat-copy.js?v=3"></script>
+
+</body>
+</html>
