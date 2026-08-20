@@ -1,0 +1,581 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>math_his_cha03 · Steve Chan — xlisp</title>
+<meta name="description" content="为什么 AI、数学顶尖人才都绕不开数学分析？答案藏在微分方程里！">
+<meta name="author" content="Steve Chan">
+<link rel="icon" type="image/jpeg" href="../icon.jpeg">
+<link rel="apple-touch-icon" href="../icon.jpeg">
+<meta property="og:type" content="article">
+<meta property="og:title" content="math_his_cha03">
+<meta property="og:description" content="为什么 AI、数学顶尖人才都绕不开数学分析？答案藏在微分方程里！">
+<meta property="og:image" content="../icon.jpeg">
+<meta property="og:site_name" content="Steve Chan — xlisp">
+<meta name="twitter:card" content="summary_large_image">
+<meta name="twitter:title" content="math_his_cha03">
+<meta name="twitter:description" content="为什么 AI、数学顶尖人才都绕不开数学分析？答案藏在微分方程里！">
+<meta name="twitter:image" content="../icon.jpeg">
+<link rel="stylesheet" href="../style.css?v=light1">
+<script>(function(){try{if(localStorage.getItem('theme')==='light')document.documentElement.setAttribute('data-theme','light');}catch(e){}})();</script>
+<!-- Math formula rendering via MathJax -->
+<script>
+window.MathJax = {
+  tex: {
+    // arithmatex emits \(...\) / \[...\] markup, so only these delimiters
+    // are needed; plain `$` is left alone (avoids currency false positives).
+    inlineMath: [['\\(', '\\)']],
+    displayMath: [['\\[', '\\]']],
+    processEscapes: true
+  },
+  svg: {
+    // Each formula gets its own self-contained <defs>, so the copy script can
+    // serialize one <svg> and rasterize it to a PNG for WeChat.
+    fontCache: 'local'
+  },
+  options: {
+    skipHtmlTags: ['script', 'noscript', 'style', 'textarea', 'pre', 'code'],
+    ignoreHtmlClass: 'highlight'
+  }
+};
+</script>
+<script src="https://cdn.jsdelivr.net/npm/mathjax@3/es5/tex-svg.js" async></script>
+</head>
+<body>
+<main class="wrap post">
+
+  <nav class="topnav">
+    <a href="../index.html">← home</a>
+  </nav>
+
+  <article>
+    <header class="post-header">
+      <h1>math_his_cha03</h1>
+      <p class="meta">2026-08-20 · Steve Chan</p>
+    </header>
+
+    <div class="content">
+<p>为什么 AI、数学顶尖人才都绕不开数学分析？答案藏在微分方程里！</p>
+<blockquote>
+<p>为什么很多人学了一辈子数学，却依然无法进入 AI 和现代科学的核心？因为真正重要的不是计算，而是数学分析训练出的抽象能力。微分方程把未知数从一个数字升级为函数，也让人类第一次拥有预测世界变化的数学语言。</p>
+<p>"代数方程的未知数是数，微分方程的未知数是函数。" —— 一句话决定了 17 世纪之后整个分析学的走向。</p>
+</blockquote>
+<p>写代码的人有一个天然优势可以拿来读懂微积分：<strong>高阶函数</strong>。微分方程之所以让中学生发懵，本质上是因为它的未知数不再是某个具体的数，而是一整条<strong>函数</strong>。这个跳跃，跟编程里"函数返回函数"是同一件事的两种说法。这一章和 Chapter 0、0.5、0.7 一起，构成本项目的"如何学"四块基石。</p>
+<h4 id="081-普通方程-vs-微分方程求数还是求函数">0.8.1 普通方程 vs 微分方程：求"数"还是求"函数"？</h4>
+<table>
+<thead>
+<tr>
+<th>类型</th>
+<th>例子</th>
+<th>未知是什么</th>
+<th>编程类比</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>代数方程</td>
+<td><span class="arithmatex">\(x^2 - 5x + 6 = 0\)</span></td>
+<td>一个数 <span class="arithmatex">\(x\)</span></td>
+<td><code>solve(...)</code> 返回 <code>float</code></td>
+</tr>
+<tr>
+<td>函数方程</td>
+<td><span class="arithmatex">\(f(x+y) = f(x)+f(y)\)</span></td>
+<td>一条函数 <span class="arithmatex">\(f\)</span></td>
+<td><code>solve(...)</code> 返回 <code>Callable</code></td>
+</tr>
+<tr>
+<td>微分方程</td>
+<td><span class="arithmatex">\(\dfrac{dy}{dt} = -ky\)</span></td>
+<td>一条函数 <span class="arithmatex">\(y(t)\)</span></td>
+<td><code>solve(...)</code> 返回 <code>Callable[[t], y]</code></td>
+</tr>
+</tbody>
+</table>
+<p>代数方程问的是 "<strong>哪个数</strong>让等式成立？" —— 答案是离散的几个根（一次方程 1 个，二次 2 个，五次 5 个）。
+微分方程问的是 "<strong>哪条函数</strong>让等式成立？" —— 答案是一整条曲线，甚至是一个函数族，要靠初值条件从这个族里挑出唯一的那一条。</p>
+<p>所以<strong>解一个微分方程，返回的不是数字，而是一个能在任意时刻被调用、给出系统状态的函数</strong>。这就是高阶编程里 <code>Params → (t → State)</code> 的形式：先吃下方程和初值，吐出一条函数，然后这条函数还要再被调用一次才给出具体的数。</p>
+<div class="highlight"><pre><span></span><code><span class="c1"># 代数方程：返回数</span>
+<span class="n">roots</span> <span class="o">=</span> <span class="n">np</span><span class="o">.</span><span class="n">roots</span><span class="p">([</span><span class="mi">1</span><span class="p">,</span> <span class="o">-</span><span class="mi">5</span><span class="p">,</span> <span class="mi">6</span><span class="p">])</span>              <span class="c1"># array([3., 2.])</span>
+
+<span class="c1"># 微分方程：返回&quot;函数&quot;（数值上由 dense_output 的内插函数代理）</span>
+<span class="kn">from</span><span class="w"> </span><span class="nn">scipy.integrate</span><span class="w"> </span><span class="kn">import</span> <span class="n">solve_ivp</span>
+<span class="n">sol</span> <span class="o">=</span> <span class="n">solve_ivp</span><span class="p">(</span><span class="k">lambda</span> <span class="n">t</span><span class="p">,</span> <span class="n">y</span><span class="p">:</span> <span class="o">-</span><span class="mf">0.3</span> <span class="o">*</span> <span class="n">y</span><span class="p">,</span> <span class="p">(</span><span class="mi">0</span><span class="p">,</span> <span class="mi">10</span><span class="p">),</span> <span class="p">[</span><span class="mf">1.0</span><span class="p">],</span> <span class="n">dense_output</span><span class="o">=</span><span class="kc">True</span><span class="p">)</span>
+<span class="n">y</span> <span class="o">=</span> <span class="n">sol</span><span class="o">.</span><span class="n">sol</span>                               <span class="c1"># y 本身是一个函数：t → state</span>
+<span class="nb">print</span><span class="p">(</span><span class="n">y</span><span class="p">(</span><span class="mf">2.5</span><span class="p">))</span>                             <span class="c1"># 像调用普通函数一样在任意时刻取值</span>
+<span class="nb">print</span><span class="p">(</span><span class="n">y</span><span class="p">(</span><span class="mf">7.1</span><span class="p">))</span>                             <span class="c1"># 同一条解函数，问它任意时刻</span>
+</code></pre></div>
+
+<p>同样这件事在 <strong>Clojure / Lisp</strong> 里更赤裸 —— Lisp 把"函数即值"作为一等公民，"返回函数"是默认动作而不是特例：</p>
+<div class="highlight"><pre><span></span><code><span class="c1">;; 代数方程：返回数（这里 roots 用任意数值库；概念是 Vector → Vector）</span>
+<span class="p">(</span><span class="nf">roots</span><span class="w"> </span><span class="p">[</span><span class="mi">1</span><span class="w"> </span><span class="mi">-5</span><span class="w"> </span><span class="mi">6</span><span class="p">])</span><span class="w">                          </span><span class="c1">; → [3.0 2.0]</span>
+
+<span class="c1">;; 微分方程：solve 返回的就是 fn</span>
+<span class="p">(</span><span class="kd">defn </span><span class="nv">solve-ode</span><span class="w"> </span><span class="p">[</span><span class="nv">f</span><span class="w"> </span><span class="nv">y0</span><span class="w"> </span><span class="nv">t-end</span><span class="w"> </span><span class="nv">dt</span><span class="p">]</span>
+<span class="w">  </span><span class="p">(</span><span class="k">let </span><span class="p">[</span><span class="nv">trajectory</span><span class="w"> </span><span class="p">(</span><span class="nf">vec</span><span class="w"> </span><span class="p">(</span><span class="nf">reductions</span><span class="w">       </span><span class="c1">; reductions = scan：留下每一步快照</span>
+<span class="w">                          </span><span class="p">(</span><span class="k">fn </span><span class="p">[</span><span class="nv">y</span><span class="w"> </span><span class="nv">t</span><span class="p">]</span><span class="w"> </span><span class="p">(</span><span class="nb">+ </span><span class="nv">y</span><span class="w"> </span><span class="p">(</span><span class="nb">* </span><span class="p">(</span><span class="nf">f</span><span class="w"> </span><span class="nv">t</span><span class="w"> </span><span class="nv">y</span><span class="p">)</span><span class="w"> </span><span class="nv">dt</span><span class="p">)))</span>
+<span class="w">                          </span><span class="nv">y0</span>
+<span class="w">                          </span><span class="p">(</span><span class="nb">range </span><span class="mi">0</span><span class="w"> </span><span class="nv">t-end</span><span class="w"> </span><span class="nv">dt</span><span class="p">)))]</span>
+<span class="w">    </span><span class="p">(</span><span class="k">fn </span><span class="p">[</span><span class="nv">t</span><span class="p">]</span><span class="w"> </span><span class="p">(</span><span class="nb">nth </span><span class="nv">trajectory</span><span class="w"> </span><span class="p">(</span><span class="nb">int </span><span class="p">(</span><span class="nb">/ </span><span class="nv">t</span><span class="w"> </span><span class="nv">dt</span><span class="p">))))))</span><span class="w">   </span><span class="c1">; ← 返回值是一个 fn</span>
+
+<span class="p">(</span><span class="k">def </span><span class="nv">y</span><span class="w"> </span><span class="p">(</span><span class="nf">solve-ode</span><span class="w"> </span><span class="p">(</span><span class="k">fn </span><span class="p">[</span><span class="nv">t</span><span class="w"> </span><span class="nv">y</span><span class="p">]</span><span class="w"> </span><span class="p">(</span><span class="nb">* </span><span class="mf">-0.3</span><span class="w"> </span><span class="nv">y</span><span class="p">))</span><span class="w"> </span><span class="mf">1.0</span><span class="w"> </span><span class="mf">10.0</span><span class="w"> </span><span class="mf">0.01</span><span class="p">))</span>
+<span class="p">(</span><span class="nf">y</span><span class="w"> </span><span class="mf">2.5</span><span class="p">)</span><span class="w">        </span><span class="c1">; 像普通函数一样调用</span>
+<span class="p">(</span><span class="nf">y</span><span class="w"> </span><span class="mf">7.1</span><span class="p">)</span><span class="w">        </span><span class="c1">; 同一条解函数，任意时刻取值</span>
+</code></pre></div>
+
+<blockquote>
+<p>一句话：<strong>代数世界里 <code>solve</code> 返回 <code>float</code>；微分世界里 <code>solve</code> 返回 <code>Callable</code> / <code>fn</code>。</strong> 微积分把数学从"标量编程"升级到了"高阶编程" —— Lisp 程序员对此本能地熟悉。</p>
+</blockquote>
+<h4 id="082-ode-vs-pde独立变量数的差异">0.8.2 ODE vs PDE：独立变量数的差异</h4>
+<p>承认了"未知是函数"以后，区分<strong>常微分方程</strong>（ODE, Ordinary Differential Equation）和<strong>偏微分方程</strong>（PDE, Partial Differential Equation）就只剩一个问题：这条未知函数有<strong>几个自变量</strong>？</p>
+<table>
+<thead>
+<tr>
+<th>类型</th>
+<th>自变量数</th>
+<th>例子</th>
+<th>物理场景</th>
+<th>编程签名</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><strong>ODE</strong></td>
+<td>1 个（通常是时间 <span class="arithmatex">\(t\)</span>）</td>
+<td><span class="arithmatex">\(\dfrac{dy}{dt} = -ky\)</span></td>
+<td>放射性衰变、单摆、RC 电路、银行复利</td>
+<td><code>y: t → State</code></td>
+</tr>
+<tr>
+<td><strong>PDE</strong></td>
+<td>≥ 2 个（时间 + 空间）</td>
+<td><span class="arithmatex">\(\dfrac{\partial u}{\partial t} = \alpha\,\dfrac{\partial^2 u}{\partial x^2}\)</span></td>
+<td>蒸汽机金属杆散热（傅里叶 1807）、波传播、薛定谔方程</td>
+<td><code>u: (t, x) → State</code></td>
+</tr>
+</tbody>
+</table>
+<p>两套求导符号也忠实地反映了这件事：
+- <span class="arithmatex">\(\dfrac{d}{dt}\)</span>（直体 <span class="arithmatex">\(d\)</span>）—— 函数只有一个变量，"全导数"，没什么好"偏"的。
+- <span class="arithmatex">\(\dfrac{\partial}{\partial t}\)</span>（卷曲 <span class="arithmatex">\(\partial\)</span>）—— 函数有多个变量，<strong>固定其他变量、只对 <span class="arithmatex">\(t\)</span> 求导</strong>，所以叫"偏导数"。Python 里这正好是 <code>functools.partial</code> 干的事。</p>
+<div class="highlight"><pre><span></span><code><span class="c1"># ODE：状态在每个时刻是一个标量（或低维向量）</span>
+<span class="n">y</span> <span class="o">=</span> <span class="n">torch</span><span class="o">.</span><span class="n">zeros</span><span class="p">(</span><span class="n">N_steps</span><span class="p">)</span>                  <span class="c1"># shape: (T,)</span>
+
+<span class="c1"># PDE：状态在每个时刻本身就是&quot;整条空间上的函数&quot;</span>
+<span class="n">u</span> <span class="o">=</span> <span class="n">torch</span><span class="o">.</span><span class="n">zeros</span><span class="p">(</span><span class="n">N_steps</span><span class="p">,</span> <span class="n">N_grid</span><span class="p">)</span>          <span class="c1"># shape: (T, X)</span>
+</code></pre></div>
+
+<p>在 <strong>Clojure</strong> 里，"偏导符号 <span class="arithmatex">\(\partial / \partial t\)</span>" 几乎是字面对应到 <code>partial</code> —— 两者都在做同一件事：<strong>冻住其他参数，把多元函数降成一元函数</strong>：</p>
+<div class="highlight"><pre><span></span><code><span class="c1">;; ODE：解是一元函数  t → state</span>
+<span class="p">(</span><span class="k">def </span><span class="nv">y</span><span class="w"> </span><span class="p">(</span><span class="k">fn </span><span class="p">[</span><span class="nv">t</span><span class="p">]</span><span class="w"> </span><span class="nv">...</span><span class="p">))</span>
+
+<span class="c1">;; PDE：解是多元函数  (t, x) → state</span>
+<span class="p">(</span><span class="k">def </span><span class="nv">u</span><span class="w"> </span><span class="p">(</span><span class="k">fn </span><span class="p">[</span><span class="nv">t</span><span class="w"> </span><span class="nv">x</span><span class="p">]</span><span class="w"> </span><span class="nv">...</span><span class="p">))</span>
+
+<span class="c1">;; 数学上的 ∂/∂t 就是&quot;先 partial 再 D&quot;：</span>
+<span class="c1">;;   1) 用 partial 把 x 冻住 ——把多元函数压成一元函数</span>
+<span class="c1">;;   2) 再用 Chapter 0.9 的 D 算子求一元导数</span>
+<span class="p">(</span><span class="kd">defn </span><span class="nv">partial-t</span><span class="w"> </span><span class="p">[</span><span class="nv">u</span><span class="w"> </span><span class="nv">x0</span><span class="p">]</span>
+<span class="w">  </span><span class="p">(</span><span class="nf">D</span><span class="w"> </span><span class="p">(</span><span class="k">fn </span><span class="p">[</span><span class="nv">t</span><span class="p">]</span><span class="w"> </span><span class="p">(</span><span class="nf">u</span><span class="w"> </span><span class="nv">t</span><span class="w"> </span><span class="nv">x0</span><span class="p">))))</span><span class="w">                   </span><span class="c1">; ∂u/∂t |_(·,x₀)</span>
+
+<span class="c1">;; 同样可以冻住 t，研究&quot;某个时刻的空间形状&quot;</span>
+<span class="p">(</span><span class="k">def </span><span class="nv">u-at-t0</span><span class="w"> </span><span class="p">(</span><span class="nb">partial </span><span class="nv">u</span><span class="w"> </span><span class="mf">0.0</span><span class="p">))</span><span class="w">              </span><span class="c1">; 只剩 x → state，是一条空间曲线</span>
+</code></pre></div>
+
+<p>PDE 比 ODE 难，是因为系统的"状态"在每个时刻不再是一个数，而是<strong>整个空间上的一条函数</strong>。求解 PDE 的本质是：<strong>让一条函数随时间演化成另一条函数</strong> —— 这是"返回函数"的"返回函数"，签名约等于 <code>(x → State) → (x → State)</code>。所以热方程、波动方程、薛定谔方程才会一上来就显得吓人 —— 它们是高阶函数的高阶函数。</p>
+<h4 id="083-求解留给下一个-积分-for-循环">0.8.3 "求解留给下一个" = 积分 = <code>for</code> 循环</h4>
+<p>中学课本喜欢把"解微分方程"包装成查表 / 配技巧 / 套公式，这其实在掩盖最关键的事实：<strong>绝大多数微分方程没有解析解，它们全部靠"把答案留给下一步"的递推来求解</strong>。</p>
+<p>微分方程只告诉你<strong>变化率</strong>（<span class="arithmatex">\(\dot{y}\)</span>），不直接给你<strong>状态</strong>（<span class="arithmatex">\(y\)</span>）。要拿到状态，就必须把变化率沿时间轴<strong>累加</strong>起来 —— 这就是积分，骨子里是一个 for 循环：</p>
+<div class="highlight"><pre><span></span><code><span class="c1"># 欧拉法：最朴素的&quot;求解留给下一个&quot;</span>
+<span class="n">y</span> <span class="o">=</span> <span class="n">y0</span>
+<span class="k">for</span> <span class="n">t</span> <span class="ow">in</span> <span class="nb">range</span><span class="p">(</span><span class="n">N_steps</span><span class="p">):</span>
+    <span class="n">dy</span> <span class="o">=</span> <span class="n">f</span><span class="p">(</span><span class="n">t</span><span class="p">,</span> <span class="n">y</span><span class="p">)</span> <span class="o">*</span> <span class="n">dt</span>        <span class="c1"># 方程告诉你：当前的变化率 × 一小步时间</span>
+    <span class="n">y</span>  <span class="o">=</span> <span class="n">y</span> <span class="o">+</span> <span class="n">dy</span>              <span class="c1"># 留给下一步的，就是更新后的 y</span>
+    <span class="n">history</span><span class="o">.</span><span class="n">append</span><span class="p">(</span><span class="n">y</span><span class="p">)</span>
+</code></pre></div>
+
+<p>这段 Python <code>for</code> 循环换到 <strong>Clojure</strong> 里就<strong>消失成一行 <code>reduce</code></strong> —— 因为 Lisp 把"沿序列累积"作为语言原语：</p>
+<div class="highlight"><pre><span></span><code><span class="c1">;; 欧拉法 = reduce —— 一行就是&quot;积分&quot;</span>
+<span class="p">(</span><span class="nf">reduce</span>
+<span class="w">  </span><span class="p">(</span><span class="k">fn </span><span class="p">[</span><span class="nv">y</span><span class="w"> </span><span class="nv">t</span><span class="p">]</span><span class="w"> </span><span class="p">(</span><span class="nb">+ </span><span class="nv">y</span><span class="w"> </span><span class="p">(</span><span class="nb">* </span><span class="p">(</span><span class="nf">f</span><span class="w"> </span><span class="nv">t</span><span class="w"> </span><span class="nv">y</span><span class="p">)</span><span class="w"> </span><span class="nv">dt</span><span class="p">)))</span><span class="w">         </span><span class="c1">; 一步更新规则（= 方程）</span>
+<span class="w">  </span><span class="nv">y0</span><span class="w">                                       </span><span class="c1">; 初值</span>
+<span class="w">  </span><span class="p">(</span><span class="nb">range </span><span class="mi">0</span><span class="w"> </span><span class="nv">t-end</span><span class="w"> </span><span class="nv">dt</span><span class="p">))</span><span class="w">                      </span><span class="c1">; 时间序列</span>
+<span class="c1">;; → 末态 y(t-end)</span>
+
+<span class="c1">;; reductions 留下每一步的快照（欧拉法的完整轨迹）</span>
+<span class="p">(</span><span class="nf">reductions</span>
+<span class="w">  </span><span class="p">(</span><span class="k">fn </span><span class="p">[</span><span class="nv">y</span><span class="w"> </span><span class="nv">t</span><span class="p">]</span><span class="w"> </span><span class="p">(</span><span class="nb">+ </span><span class="nv">y</span><span class="w"> </span><span class="p">(</span><span class="nb">* </span><span class="p">(</span><span class="nf">f</span><span class="w"> </span><span class="nv">t</span><span class="w"> </span><span class="nv">y</span><span class="p">)</span><span class="w"> </span><span class="nv">dt</span><span class="p">)))</span>
+<span class="w">  </span><span class="nv">y0</span>
+<span class="w">  </span><span class="p">(</span><span class="nb">range </span><span class="mi">0</span><span class="w"> </span><span class="nv">t-end</span><span class="w"> </span><span class="nv">dt</span><span class="p">))</span>
+<span class="c1">;; → (y₀ y₁ y₂ … yₙ) —— 整条数值解函数</span>
+</code></pre></div>
+
+<p>这就是为什么 Chapter 0.9 会把"积分 = <code>reduce</code>"当成口号 —— <strong>微积分基本定理在 Lisp 里就是 <code>reduce</code> 和 <code>D</code> 互为左右逆</strong>。</p>
+<p>这段代码（无论 Python 还是 Clojure）就是<strong>牛顿 1666 年在伍尔索普庄园里干的事</strong>的现代翻译。所谓"求解留给下一个"，就是 <code>y = y + dy</code> 这一行 —— <strong>当前状态决定下一刻状态，下一刻再决定再下一刻，无穷递推</strong>。在编程世界里这叫 <code>fold</code> / <code>scan</code> / <code>unfold</code>（Clojure 里就是 <code>reduce</code> / <code>reductions</code>）；在数学世界里这叫<strong>积分</strong>；在物理世界里它就是<strong>因果律</strong>本身。</p>
+<p>更现代的求解器（Runge-Kutta、辛积分器、神经 ODE）只是把 <code>y + dy</code> 这一步换成更精巧的更新规则，骨架还是同一个 <code>reduce</code>。<strong>编程里你已经熟悉的那个迭代循环，就是积分</strong>。</p>
+<h4 id="084-编程概念-微分方程概念字典">0.8.4 编程概念 ↔ 微分方程概念字典</h4>
+<table>
+<thead>
+<tr>
+<th>通用编程世界</th>
+<th>Clojure / Lisp</th>
+<th>微分方程世界</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>高阶函数 <code>A → (B → C)</code></td>
+<td><code>(fn [a] (fn [b] ...))</code></td>
+<td>解算子 <code>初值 → 解函数 y(t)</code></td>
+</tr>
+<tr>
+<td><code>Callable</code> 作为返回值</td>
+<td><code>fn</code> 直接返回 <code>fn</code></td>
+<td>解一个 ODE / PDE</td>
+</tr>
+<tr>
+<td><code>for</code> 循环累加</td>
+<td><code>reduce</code></td>
+<td>数值积分（欧拉、RK4 的末态）</td>
+</tr>
+<tr>
+<td><code>fold</code> / <code>scan</code></td>
+<td><code>reductions</code></td>
+<td>完整解轨迹 <span class="arithmatex">\(\{y_0, y_1, \dots\}\)</span></td>
+</tr>
+<tr>
+<td>闭包（捕获参数）</td>
+<td>Lisp 一等闭包</td>
+<td>含参数的解族 <span class="arithmatex">\(y(t;\,k, y_0)\)</span></td>
+</tr>
+<tr>
+<td>递归 / 不动点</td>
+<td><code>recur</code> / Y 组合子</td>
+<td>隐式格式、Picard 迭代</td>
+</tr>
+<tr>
+<td>流（Stream）/ 生成器</td>
+<td><code>lazy-seq</code> / <code>iterate</code></td>
+<td>连续动力系统</td>
+</tr>
+<tr>
+<td><code>functools.partial</code></td>
+<td><code>partial</code></td>
+<td>偏导数 <span class="arithmatex">\(\partial u / \partial t\)</span>（冻住其他变量）</td>
+</tr>
+<tr>
+<td>函数复合 <code>f ∘ g</code></td>
+<td><code>comp</code></td>
+<td>链式法则、流形上的拉回</td>
+</tr>
+<tr>
+<td>多维张量 <code>Tensor[T, X, Y]</code></td>
+<td><code>core.matrix</code> / Neanderthal</td>
+<td>PDE 的离散化解 <span class="arithmatex">\(u(t, x, y)\)</span></td>
+</tr>
+<tr>
+<td>反向传播 <code>loss.backward()</code></td>
+<td>autograd 库</td>
+<td>伴随方程（adjoint equation）</td>
+</tr>
+</tbody>
+</table>
+<p>最后一行特别值得标记：<strong>深度学习的反向传播本质上是在解一条反向的 ODE</strong>（伴随方程）—— 神经 ODE（Chen et al. 2018）把这件事公开化了。Chapter 7 会把这条线接上。</p>
+<h4 id="085-可视化与代码">0.8.5 可视化与代码</h4>
+<ul>
+<li><strong>可视化</strong>：</li>
+<li>一个 ODE 的"解族"动画：固定方程、变化初值，看到一整族函数曲线如何被同一个方程"挑出来"</li>
+<li>ODE vs PDE 并排：ODE 的解是一条曲线 <span class="arithmatex">\(y(t)\)</span>，PDE 的解是一张随时间演化的曲面 <span class="arithmatex">\(u(t,x)\)</span></li>
+<li>欧拉法 vs RK4 vs 解析解的精度对比，看"求解留给下一个"如何被一步步精化</li>
+<li>把 <code>for t in steps: y = y + f(y)*dt</code> 这段循环和 <code>loss.backward()</code> 并排，揭示二者的同构</li>
+<li><strong>代码</strong>：<code>ch00_8_diffeq_as_higher_order/</code></li>
+<li><code>solve_returns_function.py</code> —— 用 <code>scipy.solve_ivp(dense_output=True)</code> 演示"返回值就是一个 callable"</li>
+<li><code>solver_returns_fn.clj</code> —— 同一件事的 Clojure 版：<code>solve-ode</code> 直接返回 <code>fn</code>，把"函数返回函数"变成默认而非特例</li>
+<li><code>euler_as_for_loop.py</code> —— 把欧拉法写成 10 行 for 循环，标注每一行对应数学里的什么</li>
+<li><code>euler_as_reduce.clj</code> —— 用一行 <code>(reduce ...)</code> 写出欧拉法，对照 Python for 循环看它如何"消失"</li>
+<li><code>ode_vs_pde.py</code> —— RC 衰变（ODE）和 1D 热传导（PDE）的并排数值仿真</li>
+<li><code>solution_family.py</code> —— 同一方程不同初值的解族，看初值条件如何"挑出"唯一解</li>
+<li><code>partial_as_functools.py</code> —— 用 <code>functools.partial</code> 类比偏导数：冻住其他变量后剩下的 1D 函数</li>
+<li><code>partial_as_partial.clj</code> —— Clojure 的 <code>partial</code> 与数学符号 <span class="arithmatex">\(\partial\)</span> 的字面对应</li>
+<li><code>adjoint_as_backprop.py</code> —— 用 <code>torchdiffeq</code> 演示伴随方程 = 反向传播</li>
+</ul>
+<blockquote>
+<p><strong>元教学意义</strong>：本章不教任何新公式，它教<strong>如何用编程的眼睛看微分方程</strong>。读完后再看 Chapter 5（傅里叶 / 热方程）和 Chapter 7（神经 ODE / 扩散模型），它们其实在用同一句话描述自己：<strong>"我返回的是一个函数。"</strong></p>
+</blockquote>
+    </div>
+  </article>
+
+</main>
+
+<!-- Floating Ask-AI chat widget -->
+<button class="ai-fab" id="ai-fab" aria-label="Ask AI about this article" title="Ask AI about this article">
+  <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+    <path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"/>
+  </svg>
+  <span class="ai-fab-label">Ask AI</span>
+</button>
+
+<div class="ai-panel" id="ai-panel" role="dialog" aria-labelledby="ai-panel-title" aria-hidden="true">
+  <header class="ai-panel-head">
+    <div class="ai-panel-title-wrap">
+      <span class="ai-dot"></span>
+      <h3 id="ai-panel-title">Ask AI about this post</h3>
+    </div>
+    <div class="ai-panel-actions">
+      <button class="ai-icon-btn" id="ai-clear" title="Clear conversation" aria-label="Clear">
+        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><polyline points="3 6 5 6 21 6"/><path d="M19 6l-1 14a2 2 0 0 1-2 2H8a2 2 0 0 1-2-2L5 6"/><path d="M10 11v6M14 11v6"/><path d="M9 6V4a1 1 0 0 1 1-1h4a1 1 0 0 1 1 1v2"/></svg>
+      </button>
+      <button class="ai-icon-btn" id="ai-close" title="Minimize" aria-label="Minimize">
+        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><polyline points="6 9 12 15 18 9"/></svg>
+      </button>
+    </div>
+  </header>
+
+  <div class="ai-messages" id="ai-messages">
+    <div class="ai-empty" id="ai-empty">
+      <p class="ai-empty-title">On-device AI · Gemini Nano</p>
+      <p class="ai-empty-sub">Ask anything about this article. Runs in your browser — nothing leaves your device.</p>
+    </div>
+  </div>
+
+  <div class="ai-status" id="ai-status" hidden></div>
+
+  <form class="ai-composer" id="ai-form">
+    <textarea id="ai-input" rows="1" placeholder="Ask about this post…" autocomplete="off"></textarea>
+    <button type="submit" id="ai-send" class="ai-send" aria-label="Send" disabled>
+      <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><line x1="22" y1="2" x2="11" y2="13"/><polygon points="22 2 15 22 11 13 2 9 22 2"/></svg>
+    </button>
+  </form>
+</div>
+
+<script>
+(function () {
+  const POST_TITLE = "math_his_cha03";
+  const contentEl = document.querySelector('article .content');
+
+  const fab = document.getElementById('ai-fab');
+  const panel = document.getElementById('ai-panel');
+  const closeBtn = document.getElementById('ai-close');
+  const clearBtn = document.getElementById('ai-clear');
+  const msgsEl = document.getElementById('ai-messages');
+  const emptyEl = document.getElementById('ai-empty');
+  const statusEl = document.getElementById('ai-status');
+  const formEl = document.getElementById('ai-form');
+  const inputEl = document.getElementById('ai-input');
+  const sendBtn = document.getElementById('ai-send');
+
+  function articleText() {
+    if (!contentEl) return '';
+    return (contentEl.innerText || contentEl.textContent || '')
+      .replace(/[ \t]+\n/g, '\n')
+      .replace(/\n{3,}/g, '\n\n')
+      .trim();
+  }
+
+  function setStatus(msg, cls) {
+    if (!msg) { statusEl.hidden = true; statusEl.textContent = ''; statusEl.className = 'ai-status'; return; }
+    statusEl.hidden = false;
+    statusEl.textContent = msg;
+    statusEl.className = 'ai-status' + (cls ? ' ' + cls : '');
+  }
+
+  function hideEmpty() { if (emptyEl) emptyEl.style.display = 'none'; }
+
+  function appendBubble(role, text) {
+    hideEmpty();
+    const wrap = document.createElement('div');
+    wrap.className = 'ai-msg ai-msg-' + role;
+    const bubble = document.createElement('div');
+    bubble.className = 'ai-bubble';
+    bubble.textContent = text;
+    wrap.appendChild(bubble);
+    msgsEl.appendChild(wrap);
+    msgsEl.scrollTop = msgsEl.scrollHeight;
+    return bubble;
+  }
+
+  function appendTyping() {
+    hideEmpty();
+    const wrap = document.createElement('div');
+    wrap.className = 'ai-msg ai-msg-assistant ai-typing';
+    wrap.innerHTML = '<div class="ai-bubble"><span class="ai-dots"><i></i><i></i><i></i></span></div>';
+    msgsEl.appendChild(wrap);
+    msgsEl.scrollTop = msgsEl.scrollHeight;
+    return wrap;
+  }
+
+  function autoSize() {
+    inputEl.style.height = 'auto';
+    inputEl.style.height = Math.min(inputEl.scrollHeight, 140) + 'px';
+  }
+
+  function openPanel() {
+    panel.classList.add('open');
+    panel.setAttribute('aria-hidden', 'false');
+    fab.classList.add('hidden');
+    setTimeout(() => inputEl.focus(), 50);
+  }
+  function closePanel() {
+    panel.classList.remove('open');
+    panel.setAttribute('aria-hidden', 'true');
+    fab.classList.remove('hidden');
+  }
+
+  fab.addEventListener('click', openPanel);
+  closeBtn.addEventListener('click', closePanel);
+  document.addEventListener('keydown', e => {
+    if (e.key === 'Escape' && panel.classList.contains('open')) closePanel();
+  });
+
+  // ---- LanguageModel session ----
+  let session = null;
+  let creating = null;
+  let history = [];
+
+  function buildSystemPrompt() {
+    // Keep article context modest — Gemini Nano's input quota is small.
+    const article = articleText().slice(0, 4000);
+    return (
+      'You are a concise, helpful assistant answering questions about a blog post. ' +
+      'Use the article below as your primary source. If the answer is not in it, say so briefly and answer generally. ' +
+      'Reply in the same language as the user\'s question. Keep answers short unless asked for detail.\n\n' +
+      '=== ARTICLE TITLE ===\n' + POST_TITLE + '\n\n' +
+      '=== ARTICLE CONTENT ===\n' + article
+    );
+  }
+
+  async function ensureSession() {
+    if (session) return session;
+    if (creating) return creating;
+
+    if (!('LanguageModel' in self)) {
+      throw new Error(
+        'On-device AI not available. Use Chrome 138+ on desktop, or enable ' +
+        '"Prompt API for Gemini Nano" in chrome://flags.'
+      );
+    }
+
+    setStatus('Checking model…', 'info');
+    const status = await LanguageModel.availability();
+    if (status === 'unavailable') {
+      throw new Error('Model unavailable on this device.');
+    }
+
+    creating = (async () => {
+      // Only show download UI when the model isn't already there.
+      const willDownload = (status !== 'available');
+      if (willDownload) setStatus('Preparing model (first run downloads ~2GB)…', 'info');
+      else setStatus('Warming up…', 'info');
+
+      const s = await LanguageModel.create({
+        initialPrompts: [{ role: 'system', content: buildSystemPrompt() }],
+        monitor(m) {
+          m.addEventListener('downloadprogress', e => {
+            // Skip the spurious 0% event Chrome fires for cached models.
+            if (!willDownload && e.loaded === 0) return;
+            const pct = (e.loaded * 100).toFixed(1);
+            setStatus('Downloading model: ' + pct + '%', 'info');
+          });
+        }
+      });
+      session = s;
+      setStatus('');
+      return s;
+    })();
+
+    try { return await creating; }
+    finally { creating = null; }
+  }
+
+  async function ask(q) {
+    appendBubble('user', q);
+    history.push({ role: 'user', content: q });
+
+    sendBtn.disabled = true;
+    inputEl.disabled = true;
+    const typing = appendTyping();
+
+    let answerBubble = null;
+    let acc = '';
+    try {
+      const s = await ensureSession();
+      const stream = s.promptStreaming(q);
+      for await (const chunk of stream) {
+        if (!answerBubble) {
+          typing.remove();
+          const wrap = document.createElement('div');
+          wrap.className = 'ai-msg ai-msg-assistant';
+          answerBubble = document.createElement('div');
+          answerBubble.className = 'ai-bubble';
+          wrap.appendChild(answerBubble);
+          msgsEl.appendChild(wrap);
+        }
+        acc += chunk;
+        answerBubble.textContent = acc;
+        msgsEl.scrollTop = msgsEl.scrollHeight;
+      }
+      if (acc) history.push({ role: 'assistant', content: acc });
+      else { typing.remove(); appendBubble('assistant', '(no response)'); }
+    } catch (e) {
+      if (typing && typing.parentNode) typing.remove();
+      const err = document.createElement('div');
+      err.className = 'ai-msg ai-msg-error';
+      err.innerHTML = '<div class="ai-bubble">⚠ ' + (e && e.message ? e.message : String(e)) + '</div>';
+      msgsEl.appendChild(err);
+      msgsEl.scrollTop = msgsEl.scrollHeight;
+    } finally {
+      sendBtn.disabled = !inputEl.value.trim();
+      inputEl.disabled = false;
+      inputEl.focus();
+    }
+  }
+
+  formEl.addEventListener('submit', e => {
+    e.preventDefault();
+    const q = inputEl.value.trim();
+    if (!q) return;
+    inputEl.value = '';
+    autoSize();
+    sendBtn.disabled = true;
+    ask(q);
+  });
+
+  inputEl.addEventListener('input', () => {
+    autoSize();
+    sendBtn.disabled = !inputEl.value.trim();
+  });
+  inputEl.addEventListener('keydown', e => {
+    if (e.key === 'Enter' && !e.shiftKey) {
+      e.preventDefault();
+      formEl.requestSubmit();
+    }
+  });
+
+  clearBtn.addEventListener('click', () => {
+    msgsEl.innerHTML = '';
+    msgsEl.appendChild(emptyEl);
+    emptyEl.style.display = '';
+    history = [];
+    if (session && session.destroy) { try { session.destroy(); } catch (_) {} }
+    session = null;
+    setStatus('');
+  });
+
+  if (!('LanguageModel' in self)) {
+    fab.addEventListener('click', () => {
+      openPanel();
+      setStatus('On-device AI not detected. Use Chrome 138+ desktop, or enable "Prompt API for Gemini Nano" in chrome://flags.', 'bad');
+    }, { once: true });
+  }
+})();
+</script>
+
+<!-- Outline notes / comments — DataScript + IndexedDB -->
+<script src="https://github.com/tonsky/datascript/releases/download/1.7.8/datascript-1.7.8.min.js"></script>
+<script src="../notes.js?v=6"></script>
+<script src="../theme.js"></script>
+<script src="../wechat-copy.js?v=3"></script>
+
+</body>
+</html>
