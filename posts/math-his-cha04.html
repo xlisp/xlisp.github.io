@@ -1,0 +1,539 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>为什么 AI、数学顶尖人才都绕不开高阶函数？答案藏在 λ 演算里！ · Steve Chan — xlisp</title>
+<meta name="description" content="Chapter 0.8 说微分方程的解是&quot;函数返回函数&quot;。再往前迈一步就会发现：当函数能返回函数、函数能吃函数，整个数学和编程世界就被同一种抽象贯穿 —— 这就是 1936 年阿隆佐·丘奇在《一个不可解问题的注记》里给出的 λ 演算。深度学习里堆 100 层的 Transformer、数学里求解微分方程、工程里写一个…">
+<meta name="author" content="Steve Chan">
+<link rel="icon" type="image/jpeg" href="../icon.jpeg">
+<link rel="apple-touch-icon" href="../icon.jpeg">
+<meta property="og:type" content="article">
+<meta property="og:title" content="为什么 AI、数学顶尖人才都绕不开高阶函数？答案藏在 λ 演算里！">
+<meta property="og:description" content="Chapter 0.8 说微分方程的解是&quot;函数返回函数&quot;。再往前迈一步就会发现：当函数能返回函数、函数能吃函数，整个数学和编程世界就被同一种抽象贯穿 —— 这就是 1936 年阿隆佐·丘奇在《一个不可解问题的注记》里给出的 λ 演算。深度学习里堆 100 层的 Transformer、数学里求解微分方程、工程里写一个…">
+<meta property="og:image" content="../icon.jpeg">
+<meta property="og:site_name" content="Steve Chan — xlisp">
+<meta name="twitter:card" content="summary_large_image">
+<meta name="twitter:title" content="为什么 AI、数学顶尖人才都绕不开高阶函数？答案藏在 λ 演算里！">
+<meta name="twitter:description" content="Chapter 0.8 说微分方程的解是&quot;函数返回函数&quot;。再往前迈一步就会发现：当函数能返回函数、函数能吃函数，整个数学和编程世界就被同一种抽象贯穿 —— 这就是 1936 年阿隆佐·丘奇在《一个不可解问题的注记》里给出的 λ 演算。深度学习里堆 100 层的 Transformer、数学里求解微分方程、工程里写一个…">
+<meta name="twitter:image" content="../icon.jpeg">
+<link rel="stylesheet" href="../style.css?v=light1">
+<script>(function(){try{if(localStorage.getItem('theme')==='light')document.documentElement.setAttribute('data-theme','light');}catch(e){}})();</script>
+<!-- Math formula rendering via MathJax -->
+<script>
+window.MathJax = {
+  tex: {
+    // arithmatex emits \(...\) / \[...\] markup, so only these delimiters
+    // are needed; plain `$` is left alone (avoids currency false positives).
+    inlineMath: [['\\(', '\\)']],
+    displayMath: [['\\[', '\\]']],
+    processEscapes: true
+  },
+  svg: {
+    // Each formula gets its own self-contained <defs>, so the copy script can
+    // serialize one <svg> and rasterize it to a PNG for WeChat.
+    fontCache: 'local'
+  },
+  options: {
+    skipHtmlTags: ['script', 'noscript', 'style', 'textarea', 'pre', 'code'],
+    ignoreHtmlClass: 'highlight'
+  }
+};
+</script>
+<script src="https://cdn.jsdelivr.net/npm/mathjax@3/es5/tex-svg.js" async></script>
+</head>
+<body>
+<main class="wrap post">
+
+  <nav class="topnav">
+    <a href="../index.html">← home</a>
+  </nav>
+
+  <article>
+    <header class="post-header">
+      <h1>为什么 AI、数学顶尖人才都绕不开高阶函数？答案藏在 λ 演算里！</h1>
+      <p class="meta">2026-08-20 · Steve Chan</p>
+    </header>
+
+    <div class="content">
+<blockquote>
+<p>为什么 map、递归、微分方程、神经网络看起来毫不相关，却可以用同一种抽象描述？1936 年丘奇提出的 Lambda 演算只有“变量、抽象、应用”三条规则，却一路连接了 Lisp、函数式编程、Y 组合子、自动微分和今天的 Transformer。再往前一步，不动点又把递归、ODE 求解、PageRank 和神经网络训练串成了一条线：函数吃函数，函数返回函数，再用不动点把无限过程闭合。 这可能才是理解现代 AI 底层计算思想的一把钥匙。</p>
+<p>"丘奇 1936 年用 λ 演算证明：所有可计算的东西，都是函数。这句话也适用于深度学习。"</p>
+</blockquote>
+<p>Chapter 0.8 说微分方程的解是"函数返回函数"。再往前迈一步就会发现：<strong>当函数能返回函数、函数能吃函数，整个数学和编程世界就被同一种抽象贯穿</strong> —— 这就是 1936 年阿隆佐·丘奇在《一个不可解问题的注记》里给出的 <strong>λ 演算</strong>。深度学习里堆 100 层的 Transformer、数学里求解微分方程、工程里写一个 <code>map</code> —— 都是同一个抽象的不同投影。这一节用 <strong>Clojure</strong> 来说，因为 Lisp（1958，McCarthy）是丘奇 λ 演算最直白的化身 —— 句法上几乎一对一。</p>
+<h4 id="091-一切皆函数λ-演算的三条规则">0.9.1 一切皆函数：λ 演算的三条规则</h4>
+<p>丘奇 1936 定义 λ 演算时，<strong>只有三条原语</strong>：变量、抽象（lambda）、应用。就够了 —— 自然数、布尔、数据结构、循环、递归全部能用纯函数搭出来（丘奇编码）。</p>
+<div class="highlight"><pre><span></span><code><span class="c1">;; 1. 变量</span>
+<span class="nv">x</span>
+
+<span class="c1">;; 2. 抽象：定义一个函数</span>
+<span class="p">(</span><span class="k">fn </span><span class="p">[</span><span class="nv">x</span><span class="p">]</span><span class="w"> </span><span class="p">(</span><span class="nb">* </span><span class="nv">x</span><span class="w"> </span><span class="nv">x</span><span class="p">))</span><span class="w">                       </span><span class="c1">; λx. x²</span>
+
+<span class="c1">;; 3. 应用：把函数喂给一个值</span>
+<span class="p">((</span><span class="k">fn </span><span class="p">[</span><span class="nv">x</span><span class="p">]</span><span class="w"> </span><span class="p">(</span><span class="nb">* </span><span class="nv">x</span><span class="w"> </span><span class="nv">x</span><span class="p">))</span><span class="w"> </span><span class="mi">3</span><span class="p">)</span><span class="w">                   </span><span class="c1">; → 9</span>
+</code></pre></div>
+
+<p>写代码的人每天都在用这三件事，但很少意识到：<strong>这三条规则足以构造整个数学</strong>。这件事和 Chapter 0.5 的母题完全一致 —— <strong>少数几条原语反复折射</strong>。</p>
+<h4 id="092-map-是高阶函数求导也是-它们是同一种东西">0.9.2 <code>map</code> 是高阶函数，求导也是 —— 它们是同一种东西</h4>
+<p>中学课本里的"函数"是 <span class="arithmatex">\(f(x) = x^2\)</span>，吃数、吐数。但只要承认<strong>函数也是值</strong>，就能让函数吃函数、吐函数 —— 这就是高阶函数：</p>
+<div class="highlight"><pre><span></span><code><span class="c1">;; map：经典高阶函数 —— 吃一个 lambda + 一个列表，吐一个新列表</span>
+<span class="p">(</span><span class="nb">map </span><span class="p">(</span><span class="k">fn </span><span class="p">[</span><span class="nv">x</span><span class="p">]</span><span class="w"> </span><span class="p">(</span><span class="nb">* </span><span class="nv">x</span><span class="w"> </span><span class="nv">x</span><span class="p">))</span><span class="w"> </span><span class="p">[</span><span class="mi">1</span><span class="w"> </span><span class="mi">2</span><span class="w"> </span><span class="mi">3</span><span class="w"> </span><span class="mi">4</span><span class="w"> </span><span class="mi">5</span><span class="p">])</span>
+<span class="c1">;; → (1 4 9 16 25)</span>
+
+<span class="c1">;; 求导也是高阶函数：吃 f，吐 f&#39;</span>
+<span class="p">(</span><span class="kd">defn </span><span class="nv">D</span><span class="w"> </span><span class="p">[</span><span class="nv">f</span><span class="p">]</span>
+<span class="w">  </span><span class="p">(</span><span class="k">fn </span><span class="p">[</span><span class="nv">x</span><span class="p">]</span><span class="w"> </span><span class="p">(</span><span class="nb">/ </span><span class="p">(</span><span class="nb">- </span><span class="p">(</span><span class="nf">f</span><span class="w"> </span><span class="p">(</span><span class="nb">+ </span><span class="nv">x</span><span class="w"> </span><span class="mi">1</span><span class="nv">e-6</span><span class="p">))</span><span class="w"> </span><span class="p">(</span><span class="nf">f</span><span class="w"> </span><span class="nv">x</span><span class="p">))</span><span class="w"> </span><span class="mi">1</span><span class="nv">e-6</span><span class="p">)))</span><span class="w">   </span><span class="c1">; 牛顿 1666 的&quot;流数&quot;</span>
+
+<span class="p">(</span><span class="k">def </span><span class="nv">f</span><span class="w">       </span><span class="p">(</span><span class="k">fn </span><span class="p">[</span><span class="nv">x</span><span class="p">]</span><span class="w"> </span><span class="p">(</span><span class="nb">* </span><span class="nv">x</span><span class="w"> </span><span class="nv">x</span><span class="w"> </span><span class="nv">x</span><span class="p">)))</span><span class="w">                 </span><span class="c1">; f(x) = x³</span>
+<span class="p">(</span><span class="k">def </span><span class="nv">f-prime</span><span class="w"> </span><span class="p">(</span><span class="nf">D</span><span class="w"> </span><span class="nv">f</span><span class="p">))</span><span class="w">                              </span><span class="c1">; f&#39;(x) ≈ 3x²</span>
+<span class="p">(</span><span class="nf">f-prime</span><span class="w"> </span><span class="mf">2.0</span><span class="p">)</span><span class="w">                                    </span><span class="c1">; → 12.000…</span>
+</code></pre></div>
+
+<p><strong><code>map</code> 和"求导"结构上是同一种东西</strong> —— 都是 <code>(λ → 新东西)</code> 的高阶函数。一旦戴上这副眼镜，数学和编程里到处都是相同的影子：</p>
+<table>
+<thead>
+<tr>
+<th>编程里的高阶函数</th>
+<th>数学/物理里的对应</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>map : (a → b) → [a] → [b]</code></td>
+<td>在每一点逐点应用一个变换（向量场作用）</td>
+</tr>
+<tr>
+<td><code>reduce : (b → a → b) → b → [a] → b</code></td>
+<td><strong>积分</strong>：从初值出发把函数值累加（= for 循环）</td>
+</tr>
+<tr>
+<td><code>comp : (b → c) → (a → b) → (a → c)</code></td>
+<td>链式法则 <span class="arithmatex">\((f\circ g)' = f'(g)\cdot g'\)</span></td>
+</tr>
+<tr>
+<td><code>partial : (a → b → c) → a → (b → c)</code></td>
+<td><strong>偏导数</strong>：冻住一个变量，剩下的还是函数</td>
+</tr>
+<tr>
+<td><code>D : (R → R) → (R → R)</code></td>
+<td><span class="arithmatex">\(\dfrac{d}{dx}\)</span> 算子（Chapter 0.8）</td>
+</tr>
+<tr>
+<td><code>solver : (ODE, y₀) → (t → y)</code></td>
+<td>微分方程的解算子</td>
+</tr>
+</tbody>
+</table>
+<blockquote>
+<p><strong>积分 = <code>reduce</code></strong>。一行 <code>(reduce + y0 (map f ts))</code> 就是欧拉法的全部 —— 这正是 Chapter 0.8.3 那个 for 循环的 Lisp 写法。</p>
+</blockquote>
+<h4 id="093-不动点让-lambda-把自己喂给自己">0.9.3 不动点：让 lambda 把自己喂给自己</h4>
+<p>高阶函数最迷人的玩法是<strong>让函数吃自己</strong>。若 <span class="arithmatex">\(F(x^*) = x^*\)</span>，则 <span class="arithmatex">\(x^*\)</span> 是 <span class="arithmatex">\(F\)</span> 的<strong>不动点</strong>。这听起来哲学，但它就是<strong>递归</strong>的数学基础：</p>
+<div class="highlight"><pre><span></span><code><span class="c1">;; cos 的不动点 ≈ 0.739085… —— 反复 cos(cos(cos(…))) 会收敛到它</span>
+<span class="p">(</span><span class="kd">defn </span><span class="nv">fixpoint</span><span class="w"> </span><span class="p">[</span><span class="nv">f</span><span class="w"> </span><span class="nv">x0</span><span class="w"> </span><span class="nv">tol</span><span class="p">]</span>
+<span class="w">  </span><span class="p">(</span><span class="k">let </span><span class="p">[</span><span class="nv">x1</span><span class="w"> </span><span class="p">(</span><span class="nf">f</span><span class="w"> </span><span class="nv">x0</span><span class="p">)]</span>
+<span class="w">    </span><span class="p">(</span><span class="k">if </span><span class="p">(</span><span class="nb">&lt; </span><span class="p">(</span><span class="nf">Math/abs</span><span class="w"> </span><span class="p">(</span><span class="nb">- </span><span class="nv">x1</span><span class="w"> </span><span class="nv">x0</span><span class="p">))</span><span class="w"> </span><span class="nv">tol</span><span class="p">)</span>
+<span class="w">      </span><span class="nv">x1</span>
+<span class="w">      </span><span class="p">(</span><span class="nf">recur</span><span class="w"> </span><span class="nv">f</span><span class="w"> </span><span class="nv">x1</span><span class="w"> </span><span class="nv">tol</span><span class="p">))))</span><span class="w">                </span><span class="c1">; Clojure 的 recur = &quot;把答案留给下一个&quot;</span>
+
+<span class="p">(</span><span class="nf">fixpoint</span><span class="w"> </span><span class="o">#</span><span class="p">(</span><span class="nf">Math/cos</span><span class="w"> </span><span class="nv">%</span><span class="p">)</span><span class="w"> </span><span class="mf">1.0</span><span class="w"> </span><span class="mi">1</span><span class="nv">e-10</span><span class="p">)</span>
+<span class="c1">;; → 0.7390851332151606</span>
+</code></pre></div>
+
+<p>有了不动点这副语言，<strong>很多看似不相关的事忽然变成同一件事</strong>：</p>
+<table>
+<thead>
+<tr>
+<th>现象</th>
+<th>它是哪个算子的不动点？</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>ODE 解 <span class="arithmatex">\(y(t)\)</span></td>
+<td>积分算子 <span class="arithmatex">\(T[y](t) = y_0 + \int_0^t f(s, y(s))\,ds\)</span>（<strong>Picard 迭代</strong>）</td>
+</tr>
+<tr>
+<td>训练好的神经网络权重 <span class="arithmatex">\(W^*\)</span></td>
+<td>一步 SGD 映射 <span class="arithmatex">\(W \mapsto W - \eta\nabla L(W)\)</span>（即 <span class="arithmatex">\(\nabla L = 0\)</span>）</td>
+</tr>
+<tr>
+<td>PageRank 排名向量</td>
+<td>转移矩阵 <span class="arithmatex">\(P\)</span> 的不动点 <span class="arithmatex">\(Pv^* = v^*\)</span>（特征向量）</td>
+</tr>
+<tr>
+<td>扩散模型去噪终态</td>
+<td>反向 SDE 算子的不动点</td>
+</tr>
+<tr>
+<td>递归函数 <code>factorial</code></td>
+<td><strong>Y 组合子</strong>作用在 lambda 上的不动点</td>
+</tr>
+</tbody>
+</table>
+<p>最后一行是 λ 演算的高潮 —— <strong>Y 组合子</strong>。纯 λ 演算里没有 <code>def</code>、没有名字，怎么写递归？丘奇的学生 Curry 找到了答案：让函数把自己喂给自己。</p>
+<div class="highlight"><pre><span></span><code><span class="c1">;; Y 组合子：在没有&quot;名字&quot;的世界里实现递归</span>
+<span class="c1">;; 形式上就是 λf. (λx. f (x x)) (λx. f (x x)) 的 strict 语言变体</span>
+<span class="p">(</span><span class="k">def </span><span class="nv">Y</span>
+<span class="w">  </span><span class="p">(</span><span class="k">fn </span><span class="p">[</span><span class="nv">f</span><span class="p">]</span>
+<span class="w">    </span><span class="p">((</span><span class="k">fn </span><span class="p">[</span><span class="nv">x</span><span class="p">]</span><span class="w"> </span><span class="p">(</span><span class="nf">f</span><span class="w"> </span><span class="p">(</span><span class="k">fn </span><span class="p">[</span><span class="nv">v</span><span class="p">]</span><span class="w"> </span><span class="p">((</span><span class="nf">x</span><span class="w"> </span><span class="nv">x</span><span class="p">)</span><span class="w"> </span><span class="nv">v</span><span class="p">))))</span>
+<span class="w">     </span><span class="p">(</span><span class="k">fn </span><span class="p">[</span><span class="nv">x</span><span class="p">]</span><span class="w"> </span><span class="p">(</span><span class="nf">f</span><span class="w"> </span><span class="p">(</span><span class="k">fn </span><span class="p">[</span><span class="nv">v</span><span class="p">]</span><span class="w"> </span><span class="p">((</span><span class="nf">x</span><span class="w"> </span><span class="nv">x</span><span class="p">)</span><span class="w"> </span><span class="nv">v</span><span class="p">)))))))</span>
+
+<span class="c1">;; 用 Y 实现阶乘 —— fact 自己并不知道自己叫 fact</span>
+<span class="p">(</span><span class="k">def </span><span class="nv">fact</span>
+<span class="w">  </span><span class="p">(</span><span class="nf">Y</span><span class="w"> </span><span class="p">(</span><span class="k">fn </span><span class="p">[</span><span class="nv">self</span><span class="p">]</span>
+<span class="w">       </span><span class="p">(</span><span class="k">fn </span><span class="p">[</span><span class="nv">n</span><span class="p">]</span>
+<span class="w">         </span><span class="p">(</span><span class="k">if </span><span class="p">(</span><span class="nb">zero? </span><span class="nv">n</span><span class="p">)</span><span class="w"> </span><span class="mi">1</span><span class="w"> </span><span class="p">(</span><span class="nb">* </span><span class="nv">n</span><span class="w"> </span><span class="p">(</span><span class="nf">self</span><span class="w"> </span><span class="p">(</span><span class="nb">dec </span><span class="nv">n</span><span class="p">))))))))</span>
+
+<span class="p">(</span><span class="nf">fact</span><span class="w"> </span><span class="mi">5</span><span class="p">)</span><span class="w">   </span><span class="c1">; → 120</span>
+</code></pre></div>
+
+<blockquote>
+<p>Y 把"函数返回函数"推到极限：<strong><code>λ (λ (λ ...))</code> 不断高阶化，最后用不动点把这条无限链闭合</strong>。这就是用户问的 "111 lambda lambda lambda" 的精确含义。</p>
+</blockquote>
+<h4 id="094-神经网络-lambda-的塔-训练-找不动点">0.9.4 神经网络 = lambda 的塔 + 训练 = 找不动点</h4>
+<p>从这个视角看，深度学习毫不神秘：</p>
+<ul>
+<li><strong>每一层</strong> = 一个 lambda：<code>(fn [x] (relu (+ b (matmul W x))))</code></li>
+<li><strong>整个网络</strong> = lambda 的复合：<code>(comp λ_N … λ_2 λ_1)</code> —— 字面意义上的 "111 lambda lambda lambda"</li>
+<li><strong>前向传播</strong> = 函数应用</li>
+<li><strong>反向传播</strong> = 链式法则在 <code>comp</code> 上的同伴运算（自动微分）</li>
+<li><strong>训练</strong> = 在权重空间里<strong>找梯度算子的不动点</strong>：<span class="arithmatex">\(W^* = W^* - \eta\nabla L(W^*)\)</span>，即 <span class="arithmatex">\(\nabla L(W^*) = 0\)</span></li>
+</ul>
+<div class="highlight"><pre><span></span><code><span class="c1">;; N 层网络 = lambda 的复合，这就是字面意义的 &quot;lambda lambda lambda&quot;</span>
+<span class="p">(</span><span class="kd">defn </span><span class="nv">make-net</span><span class="w"> </span><span class="p">[</span><span class="nv">layers</span><span class="p">]</span>
+<span class="w">  </span><span class="p">(</span><span class="nb">apply comp </span><span class="p">(</span><span class="nb">reverse </span><span class="nv">layers</span><span class="p">)))</span><span class="w">           </span><span class="c1">; comp 就是 ∘ 算子</span>
+
+<span class="p">(</span><span class="k">def </span><span class="nv">net</span>
+<span class="w">  </span><span class="p">(</span><span class="nf">make-net</span>
+<span class="w">    </span><span class="p">[(</span><span class="k">fn </span><span class="p">[</span><span class="nv">x</span><span class="p">]</span><span class="w"> </span><span class="p">(</span><span class="nf">relu</span><span class="w"> </span><span class="p">(</span><span class="nf">linear</span><span class="w"> </span><span class="nv">x</span><span class="w"> </span><span class="nv">W1</span><span class="w"> </span><span class="nv">b1</span><span class="p">)))</span><span class="w">      </span><span class="c1">; λ₁</span>
+<span class="w">     </span><span class="p">(</span><span class="k">fn </span><span class="p">[</span><span class="nv">h</span><span class="p">]</span><span class="w"> </span><span class="p">(</span><span class="nf">relu</span><span class="w"> </span><span class="p">(</span><span class="nf">linear</span><span class="w"> </span><span class="nv">h</span><span class="w"> </span><span class="nv">W2</span><span class="w"> </span><span class="nv">b2</span><span class="p">)))</span><span class="w">      </span><span class="c1">; λ₂</span>
+<span class="w">     </span><span class="p">(</span><span class="k">fn </span><span class="p">[</span><span class="nv">h</span><span class="p">]</span><span class="w">       </span><span class="p">(</span><span class="nf">linear</span><span class="w"> </span><span class="nv">h</span><span class="w"> </span><span class="nv">W3</span><span class="w"> </span><span class="nv">b3</span><span class="p">))]))</span><span class="w">    </span><span class="c1">; λ₃</span>
+
+<span class="c1">;; 训练 = 在权重空间里找梯度的不动点</span>
+<span class="p">(</span><span class="k">loop </span><span class="p">[</span><span class="nv">params</span><span class="w"> </span><span class="nv">init-params</span><span class="p">]</span>
+<span class="w">  </span><span class="p">(</span><span class="k">let </span><span class="p">[</span><span class="nv">grads</span><span class="w">      </span><span class="p">(</span><span class="nf">backward</span><span class="w"> </span><span class="p">(</span><span class="nf">forward</span><span class="w"> </span><span class="nv">params</span><span class="w"> </span><span class="nv">batch</span><span class="p">))</span>
+<span class="w">        </span><span class="nv">new-params</span><span class="w"> </span><span class="p">(</span><span class="nf">sub</span><span class="w"> </span><span class="nv">params</span><span class="w"> </span><span class="p">(</span><span class="nf">mul</span><span class="w"> </span><span class="nv">lr</span><span class="w"> </span><span class="nv">grads</span><span class="p">))]</span>
+<span class="w">    </span><span class="p">(</span><span class="k">if </span><span class="p">(</span><span class="nf">converged?</span><span class="w"> </span><span class="nv">params</span><span class="w"> </span><span class="nv">new-params</span><span class="p">)</span><span class="w">     </span><span class="c1">; 不动点判据：∇L ≈ 0</span>
+<span class="w">      </span><span class="nv">new-params</span>
+<span class="w">      </span><span class="p">(</span><span class="nf">recur</span><span class="w"> </span><span class="nv">new-params</span><span class="p">))))</span><span class="w">                </span><span class="c1">; recur = &quot;把答案留给下一个&quot;</span>
+</code></pre></div>
+
+<p>注意 Clojure 的 <code>recur</code> —— 它就是 Chapter 0.8.3 的<strong>"求解留给下一个"</strong>在语言层面的关键字化。每轮把当前状态丢给下一轮，直到不动点。<strong>ODE 求解、训练神经网络、求 PageRank、Picard 迭代 —— 在 Lisp 眼里是同一段代码</strong>。</p>
+<h4 id="095-抽象层级的统一从底到顶都是同一个-λ">0.9.5 抽象层级的统一：从底到顶都是同一个 λ</h4>
+<div class="highlight"><pre><span></span><code>   ┌─────────────────────────────────────────────────┐
+   │  扩散模型 / 神经 ODE / RLHF                     │  ← 高级抽象：λ 的塔
+   ├─────────────────────────────────────────────────┤
+   │  反向传播 = comp 在求导意义下的同伴             │
+   ├─────────────────────────────────────────────────┤
+   │  每一层 = λ；网络 = (comp λ₁ λ₂ … λₙ)           │
+   ├─────────────────────────────────────────────────┤
+   │  训练 = 在权重空间里找 ∇L = 0 的不动点          │
+   ├─────────────────────────────────────────────────┤
+   │  ODE / PDE 解 = 积分算子的不动点（Picard）      │  ← Chapter 0.8 的延续
+   ├─────────────────────────────────────────────────┤
+   │  积分 = reduce ；求导 = 高阶函数；map ≅ 逐点变换 │
+   ├─────────────────────────────────────────────────┤
+   │  λ 演算的三条规则：变量、抽象、应用             │  ← 底层抽象（丘奇 1936）
+   └─────────────────────────────────────────────────┘
+</code></pre></div>
+
+<p>从最底下的三条规则，到最上面的扩散模型 —— <strong>每一层用的都是同一种抽象</strong>，区别只在于 λ 叠多深、用哪种不动点逼近。这就是为什么 Lisp 程序员对深度学习有种"早就见过"的感觉 —— 他们 60 年前就在玩 lambda 和 fixpoint。</p>
+<blockquote>
+<p>McCarthy 1958 年发明 Lisp 时直接照搬丘奇 1936 的 λ 演算；今天 PyTorch 的 <code>nn.Sequential</code> 不过是 <code>(comp λ₁ λ₂ … λₙ)</code> 的另一种写法。</p>
+</blockquote>
+<h4 id="096-可视化与代码">0.9.6 可视化与代码</h4>
+<ul>
+<li><strong>可视化</strong>：</li>
+<li>不动点迭代的"蛛网图"（cobweb plot）：<span class="arithmatex">\(\cos\)</span> 不动点、Logistic 映射、Picard 迭代并排</li>
+<li>Y 组合子的展开动画：<code>Y f → f (Y f) → f (f (Y f)) → …</code>，与神经网络的 <code>(comp f f f …)</code> 同框对照</li>
+<li>ODE 解 = 积分算子不动点：用 Picard 迭代<strong>逐次逼近</strong>一条 ODE 的解函数</li>
+<li>训练曲线 = 不动点收敛：SGD 轨迹在权重空间向 <span class="arithmatex">\(\nabla L = 0\)</span> 收敛的蛛网图</li>
+<li><strong>代码</strong>：<code>ch00_9_lambda_fixpoint/</code></li>
+<li><code>clojure_lambda_basics.clj</code> —— λ 演算三条规则在 Clojure 里的最小演示</li>
+<li><code>map_reduce_as_calculus.clj</code> —— 用 <code>map</code> / <code>reduce</code> 重写数值求导与积分</li>
+<li><code>y_combinator.clj</code> —— 没有 <code>def</code> 的世界里用 Y 实现阶乘和斐波那契</li>
+<li><code>picard_iteration.py</code> —— ODE 解作为积分算子的不动点（Picard 迭代收敛动画）</li>
+<li><code>nn_as_comp_lambdas.py</code> —— 把一个 PyTorch 网络 <code>print</code> 成 <code>(comp λ₁ … λₙ)</code> 的形式</li>
+<li><code>training_as_fixpoint.py</code> —— SGD 训练的不动点蛛网图</li>
+<li><code>cobweb_plot.py</code> —— <span class="arithmatex">\(x_{n+1} = f(x_n)\)</span> 蛛网图通用工具，覆盖上述所有不动点</li>
+</ul>
+<blockquote>
+<p><strong>元教学意义</strong>：本章把 0.8 的"返回函数"再推一层。看到深度学习堆 100 层、扩散模型反复去噪、ODE 求解器迭代逼近，统统问一句：<strong>"这是哪个算子的不动点？λ 被叠了几层？"</strong> —— 答案永远是这两个原语的组合。这就是 1936 年丘奇留给我们的礼物。</p>
+</blockquote>
+    </div>
+  </article>
+
+</main>
+
+<!-- Floating Ask-AI chat widget -->
+<button class="ai-fab" id="ai-fab" aria-label="Ask AI about this article" title="Ask AI about this article">
+  <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+    <path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"/>
+  </svg>
+  <span class="ai-fab-label">Ask AI</span>
+</button>
+
+<div class="ai-panel" id="ai-panel" role="dialog" aria-labelledby="ai-panel-title" aria-hidden="true">
+  <header class="ai-panel-head">
+    <div class="ai-panel-title-wrap">
+      <span class="ai-dot"></span>
+      <h3 id="ai-panel-title">Ask AI about this post</h3>
+    </div>
+    <div class="ai-panel-actions">
+      <button class="ai-icon-btn" id="ai-clear" title="Clear conversation" aria-label="Clear">
+        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><polyline points="3 6 5 6 21 6"/><path d="M19 6l-1 14a2 2 0 0 1-2 2H8a2 2 0 0 1-2-2L5 6"/><path d="M10 11v6M14 11v6"/><path d="M9 6V4a1 1 0 0 1 1-1h4a1 1 0 0 1 1 1v2"/></svg>
+      </button>
+      <button class="ai-icon-btn" id="ai-close" title="Minimize" aria-label="Minimize">
+        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><polyline points="6 9 12 15 18 9"/></svg>
+      </button>
+    </div>
+  </header>
+
+  <div class="ai-messages" id="ai-messages">
+    <div class="ai-empty" id="ai-empty">
+      <p class="ai-empty-title">On-device AI · Gemini Nano</p>
+      <p class="ai-empty-sub">Ask anything about this article. Runs in your browser — nothing leaves your device.</p>
+    </div>
+  </div>
+
+  <div class="ai-status" id="ai-status" hidden></div>
+
+  <form class="ai-composer" id="ai-form">
+    <textarea id="ai-input" rows="1" placeholder="Ask about this post…" autocomplete="off"></textarea>
+    <button type="submit" id="ai-send" class="ai-send" aria-label="Send" disabled>
+      <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><line x1="22" y1="2" x2="11" y2="13"/><polygon points="22 2 15 22 11 13 2 9 22 2"/></svg>
+    </button>
+  </form>
+</div>
+
+<script>
+(function () {
+  const POST_TITLE = "\u4e3a\u4ec0\u4e48 AI\u3001\u6570\u5b66\u9876\u5c16\u4eba\u624d\u90fd\u7ed5\u4e0d\u5f00\u9ad8\u9636\u51fd\u6570\uff1f\u7b54\u6848\u85cf\u5728 \u03bb \u6f14\u7b97\u91cc\uff01";
+  const contentEl = document.querySelector('article .content');
+
+  const fab = document.getElementById('ai-fab');
+  const panel = document.getElementById('ai-panel');
+  const closeBtn = document.getElementById('ai-close');
+  const clearBtn = document.getElementById('ai-clear');
+  const msgsEl = document.getElementById('ai-messages');
+  const emptyEl = document.getElementById('ai-empty');
+  const statusEl = document.getElementById('ai-status');
+  const formEl = document.getElementById('ai-form');
+  const inputEl = document.getElementById('ai-input');
+  const sendBtn = document.getElementById('ai-send');
+
+  function articleText() {
+    if (!contentEl) return '';
+    return (contentEl.innerText || contentEl.textContent || '')
+      .replace(/[ \t]+\n/g, '\n')
+      .replace(/\n{3,}/g, '\n\n')
+      .trim();
+  }
+
+  function setStatus(msg, cls) {
+    if (!msg) { statusEl.hidden = true; statusEl.textContent = ''; statusEl.className = 'ai-status'; return; }
+    statusEl.hidden = false;
+    statusEl.textContent = msg;
+    statusEl.className = 'ai-status' + (cls ? ' ' + cls : '');
+  }
+
+  function hideEmpty() { if (emptyEl) emptyEl.style.display = 'none'; }
+
+  function appendBubble(role, text) {
+    hideEmpty();
+    const wrap = document.createElement('div');
+    wrap.className = 'ai-msg ai-msg-' + role;
+    const bubble = document.createElement('div');
+    bubble.className = 'ai-bubble';
+    bubble.textContent = text;
+    wrap.appendChild(bubble);
+    msgsEl.appendChild(wrap);
+    msgsEl.scrollTop = msgsEl.scrollHeight;
+    return bubble;
+  }
+
+  function appendTyping() {
+    hideEmpty();
+    const wrap = document.createElement('div');
+    wrap.className = 'ai-msg ai-msg-assistant ai-typing';
+    wrap.innerHTML = '<div class="ai-bubble"><span class="ai-dots"><i></i><i></i><i></i></span></div>';
+    msgsEl.appendChild(wrap);
+    msgsEl.scrollTop = msgsEl.scrollHeight;
+    return wrap;
+  }
+
+  function autoSize() {
+    inputEl.style.height = 'auto';
+    inputEl.style.height = Math.min(inputEl.scrollHeight, 140) + 'px';
+  }
+
+  function openPanel() {
+    panel.classList.add('open');
+    panel.setAttribute('aria-hidden', 'false');
+    fab.classList.add('hidden');
+    setTimeout(() => inputEl.focus(), 50);
+  }
+  function closePanel() {
+    panel.classList.remove('open');
+    panel.setAttribute('aria-hidden', 'true');
+    fab.classList.remove('hidden');
+  }
+
+  fab.addEventListener('click', openPanel);
+  closeBtn.addEventListener('click', closePanel);
+  document.addEventListener('keydown', e => {
+    if (e.key === 'Escape' && panel.classList.contains('open')) closePanel();
+  });
+
+  // ---- LanguageModel session ----
+  let session = null;
+  let creating = null;
+  let history = [];
+
+  function buildSystemPrompt() {
+    // Keep article context modest — Gemini Nano's input quota is small.
+    const article = articleText().slice(0, 4000);
+    return (
+      'You are a concise, helpful assistant answering questions about a blog post. ' +
+      'Use the article below as your primary source. If the answer is not in it, say so briefly and answer generally. ' +
+      'Reply in the same language as the user\'s question. Keep answers short unless asked for detail.\n\n' +
+      '=== ARTICLE TITLE ===\n' + POST_TITLE + '\n\n' +
+      '=== ARTICLE CONTENT ===\n' + article
+    );
+  }
+
+  async function ensureSession() {
+    if (session) return session;
+    if (creating) return creating;
+
+    if (!('LanguageModel' in self)) {
+      throw new Error(
+        'On-device AI not available. Use Chrome 138+ on desktop, or enable ' +
+        '"Prompt API for Gemini Nano" in chrome://flags.'
+      );
+    }
+
+    setStatus('Checking model…', 'info');
+    const status = await LanguageModel.availability();
+    if (status === 'unavailable') {
+      throw new Error('Model unavailable on this device.');
+    }
+
+    creating = (async () => {
+      // Only show download UI when the model isn't already there.
+      const willDownload = (status !== 'available');
+      if (willDownload) setStatus('Preparing model (first run downloads ~2GB)…', 'info');
+      else setStatus('Warming up…', 'info');
+
+      const s = await LanguageModel.create({
+        initialPrompts: [{ role: 'system', content: buildSystemPrompt() }],
+        monitor(m) {
+          m.addEventListener('downloadprogress', e => {
+            // Skip the spurious 0% event Chrome fires for cached models.
+            if (!willDownload && e.loaded === 0) return;
+            const pct = (e.loaded * 100).toFixed(1);
+            setStatus('Downloading model: ' + pct + '%', 'info');
+          });
+        }
+      });
+      session = s;
+      setStatus('');
+      return s;
+    })();
+
+    try { return await creating; }
+    finally { creating = null; }
+  }
+
+  async function ask(q) {
+    appendBubble('user', q);
+    history.push({ role: 'user', content: q });
+
+    sendBtn.disabled = true;
+    inputEl.disabled = true;
+    const typing = appendTyping();
+
+    let answerBubble = null;
+    let acc = '';
+    try {
+      const s = await ensureSession();
+      const stream = s.promptStreaming(q);
+      for await (const chunk of stream) {
+        if (!answerBubble) {
+          typing.remove();
+          const wrap = document.createElement('div');
+          wrap.className = 'ai-msg ai-msg-assistant';
+          answerBubble = document.createElement('div');
+          answerBubble.className = 'ai-bubble';
+          wrap.appendChild(answerBubble);
+          msgsEl.appendChild(wrap);
+        }
+        acc += chunk;
+        answerBubble.textContent = acc;
+        msgsEl.scrollTop = msgsEl.scrollHeight;
+      }
+      if (acc) history.push({ role: 'assistant', content: acc });
+      else { typing.remove(); appendBubble('assistant', '(no response)'); }
+    } catch (e) {
+      if (typing && typing.parentNode) typing.remove();
+      const err = document.createElement('div');
+      err.className = 'ai-msg ai-msg-error';
+      err.innerHTML = '<div class="ai-bubble">⚠ ' + (e && e.message ? e.message : String(e)) + '</div>';
+      msgsEl.appendChild(err);
+      msgsEl.scrollTop = msgsEl.scrollHeight;
+    } finally {
+      sendBtn.disabled = !inputEl.value.trim();
+      inputEl.disabled = false;
+      inputEl.focus();
+    }
+  }
+
+  formEl.addEventListener('submit', e => {
+    e.preventDefault();
+    const q = inputEl.value.trim();
+    if (!q) return;
+    inputEl.value = '';
+    autoSize();
+    sendBtn.disabled = true;
+    ask(q);
+  });
+
+  inputEl.addEventListener('input', () => {
+    autoSize();
+    sendBtn.disabled = !inputEl.value.trim();
+  });
+  inputEl.addEventListener('keydown', e => {
+    if (e.key === 'Enter' && !e.shiftKey) {
+      e.preventDefault();
+      formEl.requestSubmit();
+    }
+  });
+
+  clearBtn.addEventListener('click', () => {
+    msgsEl.innerHTML = '';
+    msgsEl.appendChild(emptyEl);
+    emptyEl.style.display = '';
+    history = [];
+    if (session && session.destroy) { try { session.destroy(); } catch (_) {} }
+    session = null;
+    setStatus('');
+  });
+
+  if (!('LanguageModel' in self)) {
+    fab.addEventListener('click', () => {
+      openPanel();
+      setStatus('On-device AI not detected. Use Chrome 138+ desktop, or enable "Prompt API for Gemini Nano" in chrome://flags.', 'bad');
+    }, { once: true });
+  }
+})();
+</script>
+
+<!-- Outline notes / comments — DataScript + IndexedDB -->
+<script src="https://github.com/tonsky/datascript/releases/download/1.7.8/datascript-1.7.8.min.js"></script>
+<script src="../notes.js?v=6"></script>
+<script src="../theme.js"></script>
+<script src="../wechat-copy.js?v=3"></script>
+
+</body>
+</html>
