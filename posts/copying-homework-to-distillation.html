@@ -1,0 +1,637 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>老师最痛恨的&quot;抄作业&quot;，原来是小模型追上大模型的唯一办法 · Steve Chan — xlisp</title>
+<meta name="description" content="如果只能留一句话：">
+<meta name="author" content="Steve Chan">
+<link rel="icon" type="image/jpeg" href="../icon.jpeg">
+<link rel="apple-touch-icon" href="../icon.jpeg">
+<meta property="og:type" content="article">
+<meta property="og:title" content="老师最痛恨的&quot;抄作业&quot;，原来是小模型追上大模型的唯一办法">
+<meta property="og:description" content="如果只能留一句话：">
+<meta property="og:image" content="../icon.jpeg">
+<meta property="og:site_name" content="Steve Chan — xlisp">
+<meta name="twitter:card" content="summary_large_image">
+<meta name="twitter:title" content="老师最痛恨的&quot;抄作业&quot;，原来是小模型追上大模型的唯一办法">
+<meta name="twitter:description" content="如果只能留一句话：">
+<meta name="twitter:image" content="../icon.jpeg">
+<link rel="stylesheet" href="../style.css?v=light1">
+<script>(function(){try{if(localStorage.getItem('theme')==='light')document.documentElement.setAttribute('data-theme','light');}catch(e){}})();</script>
+<!-- Math formula rendering via MathJax -->
+<script>
+window.MathJax = {
+  tex: {
+    // arithmatex emits \(...\) / \[...\] markup, so only these delimiters
+    // are needed; plain `$` is left alone (avoids currency false positives).
+    inlineMath: [['\\(', '\\)']],
+    displayMath: [['\\[', '\\]']],
+    processEscapes: true
+  },
+  svg: {
+    // Each formula gets its own self-contained <defs>, so the copy script can
+    // serialize one <svg> and rasterize it to a PNG for WeChat.
+    fontCache: 'local'
+  },
+  options: {
+    skipHtmlTags: ['script', 'noscript', 'style', 'textarea', 'pre', 'code'],
+    ignoreHtmlClass: 'highlight'
+  }
+};
+</script>
+<script src="https://cdn.jsdelivr.net/npm/mathjax@3/es5/tex-svg.js" async></script>
+</head>
+<body>
+<main class="wrap post">
+
+  <nav class="topnav">
+    <a href="../index.html">← home</a>
+  </nav>
+
+  <article>
+    <header class="post-header">
+      <h1>老师最痛恨的&quot;抄作业&quot;，原来是小模型追上大模型的唯一办法</h1>
+      <p class="meta">2026-08-20 · Steve Chan</p>
+    </header>
+
+    <div class="content">
+<blockquote>
+<p>学生时代有一条铁律：<strong>抄作业是不行的。</strong></p>
+<p>但你一定也见过这种人——他确实抄了，成绩却真的上去了。
+因为他抄的不是答案，是<strong>过程</strong>：老师这一步为什么这么走，那一步为什么排除了另一种可能。</p>
+<p>今天整个 AI 行业最赚钱的一件事，干的就是这个，名字叫<strong>知识蒸馏</strong>。
+DeepSeek-R1-Distill、Gemma、Phi、几乎所有能塞进你手机的小模型，
+<strong>全都是抄大模型作业抄出来的。</strong></p>
+<p>这篇文章不谈"模型压缩"这种黑话，全部用能跑起来的 PyTorch 代码，
+把"抄作业"这件事，一路接到知识蒸馏。顺手回答四个灵魂拷问：</p>
+<ul>
+<li>只抄答案和抄过程，差别到底有多大？可以量化吗？</li>
+<li>为什么"抄"出来的小模型，有时候比自己老老实实学的还强？</li>
+<li>蒸馏公式里那个"温度 T"到底在调什么？</li>
+<li>学生有可能超过老师吗？</li>
+</ul>
+</blockquote>
+<hr />
+<h2 id="0-一句话主线">0. 一句话主线</h2>
+<p>如果只能留一句话：</p>
+<blockquote>
+<p><strong>标准答案只告诉你"这题选 A"；老师的解题过程还告诉你"B 差一点就对了，C 一眼就该排除"。
+后面这句话里的信息量，比前面那句大得多——</strong>大模型的价值，一大半在这里。**</p>
+</blockquote>
+<p>训练一个模型，标准做法是给它<strong>硬标签</strong>（hard label）：这张图是猫，标签就是 <code>[猫=1, 狗=0, 狐狸=0]</code>。</p>
+<p>但一个训练好的大模型看到这张图，输出的是<strong>软标签</strong>（soft label）：<code>[猫=0.90, 狗=0.08, 狐狸=0.02]</code>。</p>
+<p>那个 0.08 是金子。它在说：<strong>"这张图有点像狗"</strong>——
+这是标准答案里永远不会有、但对学习极其宝贵的信息。Hinton 给它起了个名字：<strong>暗知识</strong>（dark knowledge）。</p>
+<p>记住这个画面：<strong>硬标签是答案，软标签是解题过程。</strong>下面所有东西都挂在这个差别上。</p>
+<hr />
+<h2 id="1-先把信息量量出来答案-vs-过程">1. 先把"信息量"量出来：答案 vs 过程</h2>
+<p>差别到底多大？用信息熵直接算：</p>
+<div class="highlight"><pre><span></span><code><span class="kn">import</span><span class="w"> </span><span class="nn">torch</span>
+
+<span class="n">hard</span> <span class="o">=</span> <span class="n">torch</span><span class="o">.</span><span class="n">tensor</span><span class="p">([</span><span class="mf">1.0</span><span class="p">,</span> <span class="mf">0.0</span><span class="p">,</span> <span class="mf">0.0</span><span class="p">])</span>            <span class="c1"># 标准答案：就是猫</span>
+<span class="n">soft</span> <span class="o">=</span> <span class="n">torch</span><span class="o">.</span><span class="n">tensor</span><span class="p">([</span><span class="mf">0.90</span><span class="p">,</span> <span class="mf">0.08</span><span class="p">,</span> <span class="mf">0.02</span><span class="p">])</span>         <span class="c1"># 老师的判断：像猫，有点像狗</span>
+
+<span class="k">def</span><span class="w"> </span><span class="nf">entropy</span><span class="p">(</span><span class="n">p</span><span class="p">):</span>
+    <span class="n">p</span> <span class="o">=</span> <span class="n">p</span><span class="o">.</span><span class="n">clamp_min</span><span class="p">(</span><span class="mf">1e-9</span><span class="p">)</span>
+    <span class="k">return</span> <span class="o">-</span><span class="p">(</span><span class="n">p</span> <span class="o">*</span> <span class="n">p</span><span class="o">.</span><span class="n">log</span><span class="p">())</span><span class="o">.</span><span class="n">sum</span><span class="p">()</span><span class="o">.</span><span class="n">item</span><span class="p">()</span>
+
+<span class="nb">print</span><span class="p">(</span><span class="sa">f</span><span class="s2">&quot;硬标签 熵 = </span><span class="si">{</span><span class="n">entropy</span><span class="p">(</span><span class="n">hard</span><span class="p">)</span><span class="si">:</span><span class="s2">.4f</span><span class="si">}</span><span class="s2">&quot;</span><span class="p">)</span>        <span class="c1"># 0.0000 —— 零信息，只有一个确定结论</span>
+<span class="nb">print</span><span class="p">(</span><span class="sa">f</span><span class="s2">&quot;软标签 熵 = </span><span class="si">{</span><span class="n">entropy</span><span class="p">(</span><span class="n">soft</span><span class="p">)</span><span class="si">:</span><span class="s2">.4f</span><span class="si">}</span><span class="s2">&quot;</span><span class="p">)</span>        <span class="c1"># 0.3600 —— 携带了&quot;相似度结构&quot;</span>
+</code></pre></div>
+
+<p>硬标签的熵是 <strong>0</strong>。它是一个句号，一个结论，<strong>没有任何解释</strong>。</p>
+<p>软标签的熵大于 0，因为它同时告诉你三件事：
+猫最像、狗次之、狐狸最远。<strong>这是一张关于"世界长什么样"的地图，而不是一个点。</strong></p>
+<blockquote>
+<p>一道选择题，标准答案给你 1 个 bit；
+老师讲这道题的十分钟，给你的是整个知识网络的形状。</p>
+</blockquote>
+<hr />
+<h2 id="2-每个样本都在偷偷教你别的类">2. 每个样本，都在偷偷教你别的类</h2>
+<p>最妙的地方在于：<strong>软标签让"猫"这个样本，顺便教会了模型"狗"和"狐狸"长什么样。</strong></p>
+<div class="highlight"><pre><span></span><code><span class="kn">import</span><span class="w"> </span><span class="nn">torch</span>
+
+<span class="n">classes</span> <span class="o">=</span> <span class="p">[</span><span class="s2">&quot;猫&quot;</span><span class="p">,</span> <span class="s2">&quot;狗&quot;</span><span class="p">,</span> <span class="s2">&quot;狐狸&quot;</span><span class="p">,</span> <span class="s2">&quot;汽车&quot;</span><span class="p">]</span>
+<span class="n">soft</span> <span class="o">=</span> <span class="n">torch</span><span class="o">.</span><span class="n">tensor</span><span class="p">([</span><span class="mf">0.90</span><span class="p">,</span> <span class="mf">0.07</span><span class="p">,</span> <span class="mf">0.025</span><span class="p">,</span> <span class="mf">0.005</span><span class="p">])</span>
+
+<span class="k">for</span> <span class="n">c</span><span class="p">,</span> <span class="n">p</span> <span class="ow">in</span> <span class="nb">zip</span><span class="p">(</span><span class="n">classes</span><span class="p">,</span> <span class="n">soft</span><span class="p">):</span>
+    <span class="nb">print</span><span class="p">(</span><span class="sa">f</span><span class="s2">&quot;</span><span class="si">{</span><span class="n">c</span><span class="si">:</span><span class="s2">&gt;3</span><span class="si">}</span><span class="s2">: </span><span class="si">{</span><span class="n">p</span><span class="si">:</span><span class="s2">.3f</span><span class="si">}</span><span class="s2">  </span><span class="si">{</span><span class="s1">&#39;█&#39;</span><span class="w"> </span><span class="o">*</span><span class="w"> </span><span class="nb">int</span><span class="p">(</span><span class="n">p</span><span class="w"> </span><span class="o">*</span><span class="w"> </span><span class="mi">60</span><span class="p">)</span><span class="si">}</span><span class="s2">&quot;</span><span class="p">)</span>
+</code></pre></div>
+
+<div class="highlight"><pre><span></span><code>  猫: 0.900  ██████████████████████████████████████████████████████
+  狗: 0.070  ████
+狐狸: 0.025  █
+汽车: 0.005  
+</code></pre></div>
+
+<p>模型从这<strong>一个样本</strong>里学到的不只是"这是猫"，还有：</p>
+<blockquote>
+<p><strong>猫和狗的距离 &lt; 猫和狐狸的距离 &lt;&lt; 猫和汽车的距离。</strong></p>
+</blockquote>
+<p>硬标签把狗、狐狸、汽车统统压成 0，<strong>它们之间的远近关系被彻底抹平了</strong>。
+软标签保留了这套结构。所以蒸馏的数据效率高得离谱——<strong>每个样本的信息密度大了一个数量级。</strong></p>
+<hr />
+<h2 id="疑惑点一为什么抄出来的学生有时比自己学的还强">🤔 疑惑点一：为什么"抄"出来的学生，有时比自己学的还强？</h2>
+<p><strong>因为老师的软标签自带"这题有多难"的信息，等于给学生做了一次难度分级和噪声过滤——而硬标签把所有题都当成同样确定的题在教。</strong></p>
+<p>这是最反直觉的一点。想象训练集里有一张<strong>模糊到人类都认不清</strong>的图，被标成"猫"。</p>
+<ul>
+<li><strong>硬标签教学</strong>：模型被强迫以 100% 的置信度认定它是猫 → 它只能靠死记这张图的像素来达标 → <strong>过拟合</strong>。</li>
+<li><strong>软标签教学</strong>：老师输出 <code>[猫=0.4, 狗=0.35, 狐狸=0.25]</code>，等于说"这题很难，别太当真" → 学生温和地学一点点。</li>
+</ul>
+<div class="highlight"><pre><span></span><code><span class="kn">import</span><span class="w"> </span><span class="nn">torch</span>
+
+<span class="c1"># 一张模棱两可的样本</span>
+<span class="n">hard</span> <span class="o">=</span> <span class="n">torch</span><span class="o">.</span><span class="n">tensor</span><span class="p">([</span><span class="mf">1.0</span><span class="p">,</span> <span class="mf">0.0</span><span class="p">,</span> <span class="mf">0.0</span><span class="p">])</span>          <span class="c1"># 硬标签：必须 100% 确信</span>
+<span class="n">soft</span> <span class="o">=</span> <span class="n">torch</span><span class="o">.</span><span class="n">tensor</span><span class="p">([</span><span class="mf">0.40</span><span class="p">,</span> <span class="mf">0.35</span><span class="p">,</span> <span class="mf">0.25</span><span class="p">])</span>       <span class="c1"># 老师：我也不太确定</span>
+
+<span class="nb">print</span><span class="p">(</span><span class="sa">f</span><span class="s2">&quot;硬标签要求的置信度: </span><span class="si">{</span><span class="n">hard</span><span class="o">.</span><span class="n">max</span><span class="p">()</span><span class="si">:</span><span class="s2">.0%</span><span class="si">}</span><span class="s2">  -&gt; 逼学生死记&quot;</span><span class="p">)</span>
+<span class="nb">print</span><span class="p">(</span><span class="sa">f</span><span class="s2">&quot;软标签要求的置信度: </span><span class="si">{</span><span class="n">soft</span><span class="o">.</span><span class="n">max</span><span class="p">()</span><span class="si">:</span><span class="s2">.0%</span><span class="si">}</span><span class="s2">  -&gt; 允许学生存疑&quot;</span><span class="p">)</span>
+</code></pre></div>
+
+<p><strong>软标签天然是一种正则化</strong>：它把老师见过千万样本后形成的"不确定性判断"，
+免费传给了学生。学生因此更少过拟合、泛化更好。</p>
+<blockquote>
+<p>一句话：<strong>硬标签逼你把错题也背成对的；软标签告诉你哪些题本来就没有干净的答案。</strong></p>
+</blockquote>
+<hr />
+<h2 id="3-温度-t把次优选项放大给学生看">3. 温度 T：把"次优选项"放大给学生看</h2>
+<p>问题来了：真实大模型的输出往往极其自信，<code>[0.998, 0.001, 0.0008, ...]</code>。
+那点暗知识被压得几乎为 0，<strong>学生根本看不见</strong>。</p>
+<p>于是需要一个放大镜——<strong>温度</strong>。做法是在 softmax 之前把 logits 除以 T：</p>
+<div class="highlight"><pre><span></span><code><span class="kn">import</span><span class="w"> </span><span class="nn">torch</span><span class="o">,</span><span class="w"> </span><span class="nn">torch.nn.functional</span><span class="w"> </span><span class="k">as</span><span class="w"> </span><span class="nn">F</span>
+
+<span class="n">logits</span> <span class="o">=</span> <span class="n">torch</span><span class="o">.</span><span class="n">tensor</span><span class="p">([</span><span class="mf">8.0</span><span class="p">,</span> <span class="mf">2.0</span><span class="p">,</span> <span class="mf">1.0</span><span class="p">,</span> <span class="o">-</span><span class="mf">3.0</span><span class="p">])</span>     <span class="c1"># 老师原始输出，非常自信</span>
+
+<span class="k">for</span> <span class="n">T</span> <span class="ow">in</span> <span class="p">[</span><span class="mf">1.0</span><span class="p">,</span> <span class="mf">2.0</span><span class="p">,</span> <span class="mf">4.0</span><span class="p">,</span> <span class="mf">8.0</span><span class="p">]:</span>
+    <span class="n">p</span> <span class="o">=</span> <span class="n">F</span><span class="o">.</span><span class="n">softmax</span><span class="p">(</span><span class="n">logits</span> <span class="o">/</span> <span class="n">T</span><span class="p">,</span> <span class="n">dim</span><span class="o">=</span><span class="mi">0</span><span class="p">)</span>
+    <span class="nb">print</span><span class="p">(</span><span class="sa">f</span><span class="s2">&quot;T=</span><span class="si">{</span><span class="n">T</span><span class="si">:</span><span class="s2">&gt;3</span><span class="si">}</span><span class="s2">: </span><span class="si">{</span><span class="p">[</span><span class="sa">f</span><span class="s1">&#39;</span><span class="si">{</span><span class="n">v</span><span class="si">:</span><span class="s1">.3f</span><span class="si">}</span><span class="s1">&#39;</span><span class="w"> </span><span class="k">for</span><span class="w"> </span><span class="n">v</span><span class="w"> </span><span class="ow">in</span><span class="w"> </span><span class="n">p</span><span class="p">]</span><span class="si">}</span><span class="s2">&quot;</span><span class="p">)</span>
+</code></pre></div>
+
+<div class="highlight"><pre><span></span><code>T=1.0: [&#39;0.997&#39;, &#39;0.002&#39;, &#39;0.001&#39;, &#39;0.000&#39;]   &lt;- 暗知识被压没了
+T=2.0: [&#39;0.947&#39;, &#39;0.047&#39;, &#39;0.029&#39;, &#39;0.004&#39;]
+T=4.0: [&#39;0.786&#39;, &#39;0.175&#39;, &#39;0.136&#39;, &#39;0.050&#39;]   &lt;- 相对关系清晰可见
+T=8.0: [&#39;0.554&#39;, &#39;0.261&#39;, &#39;0.230&#39;, &#39;0.126&#39;]
+</code></pre></div>
+
+<p>T=1 时，学生只看得到"选 A"；
+T=4 时，学生清楚看到"B 和 C 也有点道理，D 完全不沾边"。</p>
+<blockquote>
+<p><strong>温度不改变谁大谁小，只改变"差距有多明显"。</strong>
+它做的事，正是老师在讲台上说的那句：
+<strong>"这道题为什么不选 B？B 其实很接近，只差在这一个条件上。"</strong></p>
+</blockquote>
+<p>（如果你读过本系列讲采样温度那篇：<strong>同一个 T，采样时用来调随机性，蒸馏时用来调暗知识的可见度</strong>——同一个旋钮，两种用法。）</p>
+<hr />
+<h2 id="4-动手抄答案-vs-抄过程跑一遍看差距">4. 动手：抄答案 vs 抄过程，跑一遍看差距</h2>
+<p>下面训练一个"老师"，再让两个一模一样的"学生"分别抄它——
+<strong>A 只抄答案（硬标签），B 抄整个概率分布（软标签）</strong>。学生的数据量被故意砍得很少：</p>
+<div class="highlight"><pre><span></span><code><span class="kn">import</span><span class="w"> </span><span class="nn">torch</span><span class="o">,</span><span class="w"> </span><span class="nn">torch.nn</span><span class="w"> </span><span class="k">as</span><span class="w"> </span><span class="nn">nn</span><span class="o">,</span><span class="w"> </span><span class="nn">torch.nn.functional</span><span class="w"> </span><span class="k">as</span><span class="w"> </span><span class="nn">F</span>
+
+<span class="n">torch</span><span class="o">.</span><span class="n">manual_seed</span><span class="p">(</span><span class="mi">0</span><span class="p">)</span>
+<span class="n">D</span><span class="p">,</span> <span class="n">C</span> <span class="o">=</span> <span class="mi">20</span><span class="p">,</span> <span class="mi">5</span>
+
+<span class="c1"># 造一个有结构的任务（类别之间有真实的远近关系）</span>
+<span class="n">W</span> <span class="o">=</span> <span class="n">torch</span><span class="o">.</span><span class="n">randn</span><span class="p">(</span><span class="n">D</span><span class="p">,</span> <span class="n">C</span><span class="p">)</span>
+<span class="k">def</span><span class="w"> </span><span class="nf">make</span><span class="p">(</span><span class="n">n</span><span class="p">):</span>
+    <span class="n">X</span> <span class="o">=</span> <span class="n">torch</span><span class="o">.</span><span class="n">randn</span><span class="p">(</span><span class="n">n</span><span class="p">,</span> <span class="n">D</span><span class="p">)</span>
+    <span class="n">y</span> <span class="o">=</span> <span class="p">(</span><span class="n">X</span> <span class="o">@</span> <span class="n">W</span><span class="p">)</span><span class="o">.</span><span class="n">argmax</span><span class="p">(</span><span class="mi">1</span><span class="p">)</span>
+    <span class="k">return</span> <span class="n">X</span><span class="p">,</span> <span class="n">y</span>
+
+<span class="c1"># ---- 老师：数据充足，学得很好 ----</span>
+<span class="n">Xt</span><span class="p">,</span> <span class="n">yt</span> <span class="o">=</span> <span class="n">make</span><span class="p">(</span><span class="mi">6000</span><span class="p">)</span>
+<span class="n">teacher</span> <span class="o">=</span> <span class="n">nn</span><span class="o">.</span><span class="n">Sequential</span><span class="p">(</span><span class="n">nn</span><span class="o">.</span><span class="n">Linear</span><span class="p">(</span><span class="n">D</span><span class="p">,</span> <span class="mi">128</span><span class="p">),</span> <span class="n">nn</span><span class="o">.</span><span class="n">ReLU</span><span class="p">(),</span> <span class="n">nn</span><span class="o">.</span><span class="n">Linear</span><span class="p">(</span><span class="mi">128</span><span class="p">,</span> <span class="n">C</span><span class="p">))</span>
+<span class="n">opt</span> <span class="o">=</span> <span class="n">torch</span><span class="o">.</span><span class="n">optim</span><span class="o">.</span><span class="n">Adam</span><span class="p">(</span><span class="n">teacher</span><span class="o">.</span><span class="n">parameters</span><span class="p">(),</span> <span class="n">lr</span><span class="o">=</span><span class="mf">1e-2</span><span class="p">)</span>
+<span class="k">for</span> <span class="n">_</span> <span class="ow">in</span> <span class="nb">range</span><span class="p">(</span><span class="mi">1200</span><span class="p">):</span>
+    <span class="n">loss</span> <span class="o">=</span> <span class="n">F</span><span class="o">.</span><span class="n">cross_entropy</span><span class="p">(</span><span class="n">teacher</span><span class="p">(</span><span class="n">Xt</span><span class="p">),</span> <span class="n">yt</span><span class="p">)</span>
+    <span class="n">opt</span><span class="o">.</span><span class="n">zero_grad</span><span class="p">();</span> <span class="n">loss</span><span class="o">.</span><span class="n">backward</span><span class="p">();</span> <span class="n">opt</span><span class="o">.</span><span class="n">step</span><span class="p">()</span>
+
+<span class="c1"># ---- 学生：只有 300 条数据（抄作业的典型处境）----</span>
+<span class="n">Xs</span><span class="p">,</span> <span class="n">ys</span> <span class="o">=</span> <span class="n">make</span><span class="p">(</span><span class="mi">300</span><span class="p">)</span>
+<span class="n">Xe</span><span class="p">,</span> <span class="n">ye</span> <span class="o">=</span> <span class="n">make</span><span class="p">(</span><span class="mi">3000</span><span class="p">)</span>                                  <span class="c1"># 考试集</span>
+<span class="k">with</span> <span class="n">torch</span><span class="o">.</span><span class="n">no_grad</span><span class="p">():</span>
+    <span class="n">t_logits</span> <span class="o">=</span> <span class="n">teacher</span><span class="p">(</span><span class="n">Xs</span><span class="p">)</span>                           <span class="c1"># 老师在这 300 条上的&quot;解题过程&quot;</span>
+
+<span class="k">def</span><span class="w"> </span><span class="nf">student</span><span class="p">(</span><span class="n">mode</span><span class="p">,</span> <span class="n">T</span><span class="o">=</span><span class="mf">4.0</span><span class="p">,</span> <span class="n">steps</span><span class="o">=</span><span class="mi">1500</span><span class="p">):</span>
+    <span class="n">net</span> <span class="o">=</span> <span class="n">nn</span><span class="o">.</span><span class="n">Sequential</span><span class="p">(</span><span class="n">nn</span><span class="o">.</span><span class="n">Linear</span><span class="p">(</span><span class="n">D</span><span class="p">,</span> <span class="mi">32</span><span class="p">),</span> <span class="n">nn</span><span class="o">.</span><span class="n">ReLU</span><span class="p">(),</span> <span class="n">nn</span><span class="o">.</span><span class="n">Linear</span><span class="p">(</span><span class="mi">32</span><span class="p">,</span> <span class="n">C</span><span class="p">))</span>
+    <span class="n">opt</span> <span class="o">=</span> <span class="n">torch</span><span class="o">.</span><span class="n">optim</span><span class="o">.</span><span class="n">Adam</span><span class="p">(</span><span class="n">net</span><span class="o">.</span><span class="n">parameters</span><span class="p">(),</span> <span class="n">lr</span><span class="o">=</span><span class="mf">1e-2</span><span class="p">)</span>
+    <span class="k">for</span> <span class="n">_</span> <span class="ow">in</span> <span class="nb">range</span><span class="p">(</span><span class="n">steps</span><span class="p">):</span>
+        <span class="n">out</span> <span class="o">=</span> <span class="n">net</span><span class="p">(</span><span class="n">Xs</span><span class="p">)</span>
+        <span class="k">if</span> <span class="n">mode</span> <span class="o">==</span> <span class="s2">&quot;hard&quot;</span><span class="p">:</span>                           <span class="c1"># A：只抄答案</span>
+            <span class="n">loss</span> <span class="o">=</span> <span class="n">F</span><span class="o">.</span><span class="n">cross_entropy</span><span class="p">(</span><span class="n">out</span><span class="p">,</span> <span class="n">ys</span><span class="p">)</span>
+        <span class="k">else</span><span class="p">:</span>                                        <span class="c1"># B：抄整个分布</span>
+            <span class="n">loss</span> <span class="o">=</span> <span class="n">F</span><span class="o">.</span><span class="n">kl_div</span><span class="p">(</span><span class="n">F</span><span class="o">.</span><span class="n">log_softmax</span><span class="p">(</span><span class="n">out</span> <span class="o">/</span> <span class="n">T</span><span class="p">,</span> <span class="mi">1</span><span class="p">),</span>
+                            <span class="n">F</span><span class="o">.</span><span class="n">softmax</span><span class="p">(</span><span class="n">t_logits</span> <span class="o">/</span> <span class="n">T</span><span class="p">,</span> <span class="mi">1</span><span class="p">),</span>
+                            <span class="n">reduction</span><span class="o">=</span><span class="s2">&quot;batchmean&quot;</span><span class="p">)</span> <span class="o">*</span> <span class="n">T</span> <span class="o">*</span> <span class="n">T</span>
+        <span class="n">opt</span><span class="o">.</span><span class="n">zero_grad</span><span class="p">();</span> <span class="n">loss</span><span class="o">.</span><span class="n">backward</span><span class="p">();</span> <span class="n">opt</span><span class="o">.</span><span class="n">step</span><span class="p">()</span>
+    <span class="k">with</span> <span class="n">torch</span><span class="o">.</span><span class="n">no_grad</span><span class="p">():</span>
+        <span class="k">return</span> <span class="p">(</span><span class="n">net</span><span class="p">(</span><span class="n">Xe</span><span class="p">)</span><span class="o">.</span><span class="n">argmax</span><span class="p">(</span><span class="mi">1</span><span class="p">)</span> <span class="o">==</span> <span class="n">ye</span><span class="p">)</span><span class="o">.</span><span class="n">float</span><span class="p">()</span><span class="o">.</span><span class="n">mean</span><span class="p">()</span><span class="o">.</span><span class="n">item</span><span class="p">()</span>
+
+<span class="k">with</span> <span class="n">torch</span><span class="o">.</span><span class="n">no_grad</span><span class="p">():</span>
+    <span class="nb">print</span><span class="p">(</span><span class="sa">f</span><span class="s2">&quot;老师       考试准确率: </span><span class="si">{</span><span class="p">(</span><span class="n">teacher</span><span class="p">(</span><span class="n">Xe</span><span class="p">)</span><span class="o">.</span><span class="n">argmax</span><span class="p">(</span><span class="mi">1</span><span class="p">)</span><span class="w"> </span><span class="o">==</span><span class="w"> </span><span class="n">ye</span><span class="p">)</span><span class="o">.</span><span class="n">float</span><span class="p">()</span><span class="o">.</span><span class="n">mean</span><span class="p">()</span><span class="si">:</span><span class="s2">.1%</span><span class="si">}</span><span class="s2">&quot;</span><span class="p">)</span>
+<span class="nb">print</span><span class="p">(</span><span class="sa">f</span><span class="s2">&quot;A 只抄答案 考试准确率: </span><span class="si">{</span><span class="n">student</span><span class="p">(</span><span class="s1">&#39;hard&#39;</span><span class="p">)</span><span class="si">:</span><span class="s2">.1%</span><span class="si">}</span><span class="s2">&quot;</span><span class="p">)</span>
+<span class="nb">print</span><span class="p">(</span><span class="sa">f</span><span class="s2">&quot;B 抄解题过程 考试准确率: </span><span class="si">{</span><span class="n">student</span><span class="p">(</span><span class="s1">&#39;soft&#39;</span><span class="p">)</span><span class="si">:</span><span class="s2">.1%</span><span class="si">}</span><span class="s2">&quot;</span><span class="p">)</span>
+</code></pre></div>
+
+<p>跑完你会看到 B 明显高于 A，而且<strong>用的是同样的 300 条数据、同样的网络、同样的步数</strong>。</p>
+<p>唯一的区别是：<strong>A 抄的是句号，B 抄的是整段推导。</strong></p>
+<p>代码里那个 <code>T * T</code> 别忽略——除以 T 会让梯度缩小 T² 倍，
+乘回去只是为了让学习率保持可比，是个工程补丁，不是理论的一部分。</p>
+<hr />
+<h2 id="疑惑点二学生有可能超过老师吗">🤔 疑惑点二：学生有可能超过老师吗？</h2>
+<p><strong>在原任务上一般不会，但在"单位成本下的表现"上经常远超——而这才是实际有意义的比较。</strong></p>
+<p>蒸馏的目标从来不是造一个更强的模型，是造一个<strong>便宜到能用的模型</strong>：</p>
+<table>
+<thead>
+<tr>
+<th></th>
+<th>老师</th>
+<th>学生</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>参数量</td>
+<td>671B</td>
+<td>7B</td>
+</tr>
+<tr>
+<td>能不能跑在你手机上</td>
+<td>不能</td>
+<td>能</td>
+</tr>
+<tr>
+<td>单次推理成本</td>
+<td>1×</td>
+<td>~0.01×</td>
+</tr>
+<tr>
+<td>原任务准确率</td>
+<td>100%</td>
+<td>90~97%</td>
+</tr>
+<tr>
+<td><strong>每块钱买到的准确率</strong></td>
+<td>1×</td>
+<td><strong>~50×</strong></td>
+</tr>
+</tbody>
+</table>
+<p>DeepSeek-R1-Distill 系列就是最直白的例子：<strong>用 R1 生成的推理过程，去喂 Qwen/Llama 的小模型</strong>，
+让 7B 的模型学会写长草稿。它当然打不过 R1 本身，但它能跑在一张消费级显卡上。</p>
+<p>至于"超过老师"，有三种情况确实会发生：</p>
+<ol>
+<li><strong>老师会犯随机错误，学生学到的是老师的"平均倾向"</strong>——噪声被抹平了；</li>
+<li><strong>多个老师蒸馏给一个学生</strong>，学生集成了所有人的判断；</li>
+<li><strong>学生在老师的输出上再做强化学习</strong>，就有机会真正越过老师——这正是当前推理模型迭代的主循环。</li>
+</ol>
+<blockquote>
+<p>所以那句"抄作业没出息"，在这里是错的。
+<strong>抄到解题过程、再自己做一遍并改进，就是青出于蓝。</strong></p>
+</blockquote>
+<p>仓库里的动画脚本把这件事画了出来：</p>
+<div class="highlight"><pre><span></span><code>python<span class="w"> </span>distillation_visualization.py
+</code></pre></div>
+
+<blockquote>
+<p>左边是硬标签：一根孤零零的柱子，其余全是零，什么结构都没有；
+右边是软标签随温度升高逐渐"打开"，次优选项一个个浮出水面。
+最后一幅图把"训练数据量 vs 准确率"画成两条曲线——
+<strong>在数据很少的左半边，抄过程那条线把抄答案那条甩开一大截。</strong></p>
+</blockquote>
+<hr />
+<h2 id="缝合把所有画面接起来">缝合：把所有画面接起来</h2>
+<table>
+<thead>
+<tr>
+<th>学习概念</th>
+<th>学生时代怎么讲</th>
+<th>这篇文章怎么看</th>
+<th>在大模型里是什么</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><strong>标准答案</strong></td>
+<td>对照订正</td>
+<td>熵为 0，零解释（第 1 节）</td>
+<td>硬标签 / 交叉熵</td>
+</tr>
+<tr>
+<td><strong>解题过程</strong></td>
+<td>老师讲评</td>
+<td>携带类别间的远近结构（第 2 节）</td>
+<td>软标签 / 暗知识</td>
+</tr>
+<tr>
+<td><strong>"为什么不选 B"</strong></td>
+<td>排除法讲解</td>
+<td>把次优选项放大（第 3 节）</td>
+<td>温度 T</td>
+</tr>
+<tr>
+<td><strong>这题本来就难</strong></td>
+<td>老师说别纠结</td>
+<td>不确定性即正则化（疑惑点一）</td>
+<td>蒸馏抗过拟合</td>
+</tr>
+<tr>
+<td><strong>抄完自己再做一遍</strong></td>
+<td>唯一有效的抄法</td>
+<td>学生可越过老师（疑惑点二）</td>
+<td>蒸馏 + RL</td>
+</tr>
+</tbody>
+</table>
+<p>三句话总结：</p>
+<blockquote>
+<p><strong>硬标签是句号，软标签是推导</strong>——后者的信息密度高一个数量级（第 1、2 节）；
+<strong>温度 T 是放大镜</strong>，把被压扁的暗知识重新显影给学生看（第 3 节）；
+<strong>于是小模型能用极少的数据追上大模型</strong>，这就是你手机里那个模型的来历（第 4 节、疑惑点二）。</p>
+</blockquote>
+<p>所以老师那句"不许抄作业"，其实少说了半句。
+<strong>完整的版本是：不许抄答案——但你要是能把整个解题过程抄进脑子里，那叫学习。</strong></p>
+<p>今天几百亿美金的 AI 行业，就建立在这半句话上。</p>
+<hr />
+<blockquote>
+<p><strong>备注（选题/标题）：</strong> 本篇钩子是"被禁止的行为其实是正解"，反转感比纯知识科普更强。
+备选标题：
+1.《你手机里的那个 AI，是抄作业抄出来的》
+2.《为什么抄答案没用、抄过程有用？这个问题价值几百亿美金》</p>
+</blockquote>
+    </div>
+  </article>
+
+</main>
+
+<!-- Floating Ask-AI chat widget -->
+<button class="ai-fab" id="ai-fab" aria-label="Ask AI about this article" title="Ask AI about this article">
+  <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+    <path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"/>
+  </svg>
+  <span class="ai-fab-label">Ask AI</span>
+</button>
+
+<div class="ai-panel" id="ai-panel" role="dialog" aria-labelledby="ai-panel-title" aria-hidden="true">
+  <header class="ai-panel-head">
+    <div class="ai-panel-title-wrap">
+      <span class="ai-dot"></span>
+      <h3 id="ai-panel-title">Ask AI about this post</h3>
+    </div>
+    <div class="ai-panel-actions">
+      <button class="ai-icon-btn" id="ai-clear" title="Clear conversation" aria-label="Clear">
+        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><polyline points="3 6 5 6 21 6"/><path d="M19 6l-1 14a2 2 0 0 1-2 2H8a2 2 0 0 1-2-2L5 6"/><path d="M10 11v6M14 11v6"/><path d="M9 6V4a1 1 0 0 1 1-1h4a1 1 0 0 1 1 1v2"/></svg>
+      </button>
+      <button class="ai-icon-btn" id="ai-close" title="Minimize" aria-label="Minimize">
+        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><polyline points="6 9 12 15 18 9"/></svg>
+      </button>
+    </div>
+  </header>
+
+  <div class="ai-messages" id="ai-messages">
+    <div class="ai-empty" id="ai-empty">
+      <p class="ai-empty-title">On-device AI · Gemini Nano</p>
+      <p class="ai-empty-sub">Ask anything about this article. Runs in your browser — nothing leaves your device.</p>
+    </div>
+  </div>
+
+  <div class="ai-status" id="ai-status" hidden></div>
+
+  <form class="ai-composer" id="ai-form">
+    <textarea id="ai-input" rows="1" placeholder="Ask about this post…" autocomplete="off"></textarea>
+    <button type="submit" id="ai-send" class="ai-send" aria-label="Send" disabled>
+      <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><line x1="22" y1="2" x2="11" y2="13"/><polygon points="22 2 15 22 11 13 2 9 22 2"/></svg>
+    </button>
+  </form>
+</div>
+
+<script>
+(function () {
+  const POST_TITLE = "\u8001\u5e08\u6700\u75db\u6068\u7684\"\u6284\u4f5c\u4e1a\"\uff0c\u539f\u6765\u662f\u5c0f\u6a21\u578b\u8ffd\u4e0a\u5927\u6a21\u578b\u7684\u552f\u4e00\u529e\u6cd5";
+  const contentEl = document.querySelector('article .content');
+
+  const fab = document.getElementById('ai-fab');
+  const panel = document.getElementById('ai-panel');
+  const closeBtn = document.getElementById('ai-close');
+  const clearBtn = document.getElementById('ai-clear');
+  const msgsEl = document.getElementById('ai-messages');
+  const emptyEl = document.getElementById('ai-empty');
+  const statusEl = document.getElementById('ai-status');
+  const formEl = document.getElementById('ai-form');
+  const inputEl = document.getElementById('ai-input');
+  const sendBtn = document.getElementById('ai-send');
+
+  function articleText() {
+    if (!contentEl) return '';
+    return (contentEl.innerText || contentEl.textContent || '')
+      .replace(/[ \t]+\n/g, '\n')
+      .replace(/\n{3,}/g, '\n\n')
+      .trim();
+  }
+
+  function setStatus(msg, cls) {
+    if (!msg) { statusEl.hidden = true; statusEl.textContent = ''; statusEl.className = 'ai-status'; return; }
+    statusEl.hidden = false;
+    statusEl.textContent = msg;
+    statusEl.className = 'ai-status' + (cls ? ' ' + cls : '');
+  }
+
+  function hideEmpty() { if (emptyEl) emptyEl.style.display = 'none'; }
+
+  function appendBubble(role, text) {
+    hideEmpty();
+    const wrap = document.createElement('div');
+    wrap.className = 'ai-msg ai-msg-' + role;
+    const bubble = document.createElement('div');
+    bubble.className = 'ai-bubble';
+    bubble.textContent = text;
+    wrap.appendChild(bubble);
+    msgsEl.appendChild(wrap);
+    msgsEl.scrollTop = msgsEl.scrollHeight;
+    return bubble;
+  }
+
+  function appendTyping() {
+    hideEmpty();
+    const wrap = document.createElement('div');
+    wrap.className = 'ai-msg ai-msg-assistant ai-typing';
+    wrap.innerHTML = '<div class="ai-bubble"><span class="ai-dots"><i></i><i></i><i></i></span></div>';
+    msgsEl.appendChild(wrap);
+    msgsEl.scrollTop = msgsEl.scrollHeight;
+    return wrap;
+  }
+
+  function autoSize() {
+    inputEl.style.height = 'auto';
+    inputEl.style.height = Math.min(inputEl.scrollHeight, 140) + 'px';
+  }
+
+  function openPanel() {
+    panel.classList.add('open');
+    panel.setAttribute('aria-hidden', 'false');
+    fab.classList.add('hidden');
+    setTimeout(() => inputEl.focus(), 50);
+  }
+  function closePanel() {
+    panel.classList.remove('open');
+    panel.setAttribute('aria-hidden', 'true');
+    fab.classList.remove('hidden');
+  }
+
+  fab.addEventListener('click', openPanel);
+  closeBtn.addEventListener('click', closePanel);
+  document.addEventListener('keydown', e => {
+    if (e.key === 'Escape' && panel.classList.contains('open')) closePanel();
+  });
+
+  // ---- LanguageModel session ----
+  let session = null;
+  let creating = null;
+  let history = [];
+
+  function buildSystemPrompt() {
+    // Keep article context modest — Gemini Nano's input quota is small.
+    const article = articleText().slice(0, 4000);
+    return (
+      'You are a concise, helpful assistant answering questions about a blog post. ' +
+      'Use the article below as your primary source. If the answer is not in it, say so briefly and answer generally. ' +
+      'Reply in the same language as the user\'s question. Keep answers short unless asked for detail.\n\n' +
+      '=== ARTICLE TITLE ===\n' + POST_TITLE + '\n\n' +
+      '=== ARTICLE CONTENT ===\n' + article
+    );
+  }
+
+  async function ensureSession() {
+    if (session) return session;
+    if (creating) return creating;
+
+    if (!('LanguageModel' in self)) {
+      throw new Error(
+        'On-device AI not available. Use Chrome 138+ on desktop, or enable ' +
+        '"Prompt API for Gemini Nano" in chrome://flags.'
+      );
+    }
+
+    setStatus('Checking model…', 'info');
+    const status = await LanguageModel.availability();
+    if (status === 'unavailable') {
+      throw new Error('Model unavailable on this device.');
+    }
+
+    creating = (async () => {
+      // Only show download UI when the model isn't already there.
+      const willDownload = (status !== 'available');
+      if (willDownload) setStatus('Preparing model (first run downloads ~2GB)…', 'info');
+      else setStatus('Warming up…', 'info');
+
+      const s = await LanguageModel.create({
+        initialPrompts: [{ role: 'system', content: buildSystemPrompt() }],
+        monitor(m) {
+          m.addEventListener('downloadprogress', e => {
+            // Skip the spurious 0% event Chrome fires for cached models.
+            if (!willDownload && e.loaded === 0) return;
+            const pct = (e.loaded * 100).toFixed(1);
+            setStatus('Downloading model: ' + pct + '%', 'info');
+          });
+        }
+      });
+      session = s;
+      setStatus('');
+      return s;
+    })();
+
+    try { return await creating; }
+    finally { creating = null; }
+  }
+
+  async function ask(q) {
+    appendBubble('user', q);
+    history.push({ role: 'user', content: q });
+
+    sendBtn.disabled = true;
+    inputEl.disabled = true;
+    const typing = appendTyping();
+
+    let answerBubble = null;
+    let acc = '';
+    try {
+      const s = await ensureSession();
+      const stream = s.promptStreaming(q);
+      for await (const chunk of stream) {
+        if (!answerBubble) {
+          typing.remove();
+          const wrap = document.createElement('div');
+          wrap.className = 'ai-msg ai-msg-assistant';
+          answerBubble = document.createElement('div');
+          answerBubble.className = 'ai-bubble';
+          wrap.appendChild(answerBubble);
+          msgsEl.appendChild(wrap);
+        }
+        acc += chunk;
+        answerBubble.textContent = acc;
+        msgsEl.scrollTop = msgsEl.scrollHeight;
+      }
+      if (acc) history.push({ role: 'assistant', content: acc });
+      else { typing.remove(); appendBubble('assistant', '(no response)'); }
+    } catch (e) {
+      if (typing && typing.parentNode) typing.remove();
+      const err = document.createElement('div');
+      err.className = 'ai-msg ai-msg-error';
+      err.innerHTML = '<div class="ai-bubble">⚠ ' + (e && e.message ? e.message : String(e)) + '</div>';
+      msgsEl.appendChild(err);
+      msgsEl.scrollTop = msgsEl.scrollHeight;
+    } finally {
+      sendBtn.disabled = !inputEl.value.trim();
+      inputEl.disabled = false;
+      inputEl.focus();
+    }
+  }
+
+  formEl.addEventListener('submit', e => {
+    e.preventDefault();
+    const q = inputEl.value.trim();
+    if (!q) return;
+    inputEl.value = '';
+    autoSize();
+    sendBtn.disabled = true;
+    ask(q);
+  });
+
+  inputEl.addEventListener('input', () => {
+    autoSize();
+    sendBtn.disabled = !inputEl.value.trim();
+  });
+  inputEl.addEventListener('keydown', e => {
+    if (e.key === 'Enter' && !e.shiftKey) {
+      e.preventDefault();
+      formEl.requestSubmit();
+    }
+  });
+
+  clearBtn.addEventListener('click', () => {
+    msgsEl.innerHTML = '';
+    msgsEl.appendChild(emptyEl);
+    emptyEl.style.display = '';
+    history = [];
+    if (session && session.destroy) { try { session.destroy(); } catch (_) {} }
+    session = null;
+    setStatus('');
+  });
+
+  if (!('LanguageModel' in self)) {
+    fab.addEventListener('click', () => {
+      openPanel();
+      setStatus('On-device AI not detected. Use Chrome 138+ desktop, or enable "Prompt API for Gemini Nano" in chrome://flags.', 'bad');
+    }, { once: true });
+  }
+})();
+</script>
+
+<!-- Outline notes / comments — DataScript + IndexedDB -->
+<script src="https://github.com/tonsky/datascript/releases/download/1.7.8/datascript-1.7.8.min.js"></script>
+<script src="../notes.js?v=6"></script>
+<script src="../theme.js"></script>
+<script src="../wechat-copy.js?v=3"></script>
+
+</body>
+</html>
