@@ -1,0 +1,661 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>老师逼你&quot;写出过程&quot;，原来是大模型学会推理的全部秘密 · Steve Chan — xlisp</title>
+<meta name="description" content="如果只能留一句话：">
+<meta name="author" content="Steve Chan">
+<link rel="icon" type="image/jpeg" href="../icon.jpeg">
+<link rel="apple-touch-icon" href="../icon.jpeg">
+<meta property="og:type" content="article">
+<meta property="og:title" content="老师逼你&quot;写出过程&quot;，原来是大模型学会推理的全部秘密">
+<meta property="og:description" content="如果只能留一句话：">
+<meta property="og:image" content="../icon.jpeg">
+<meta property="og:site_name" content="Steve Chan — xlisp">
+<meta name="twitter:card" content="summary_large_image">
+<meta name="twitter:title" content="老师逼你&quot;写出过程&quot;，原来是大模型学会推理的全部秘密">
+<meta name="twitter:description" content="如果只能留一句话：">
+<meta name="twitter:image" content="../icon.jpeg">
+<link rel="stylesheet" href="../style.css?v=light1">
+<script>(function(){try{if(localStorage.getItem('theme')==='light')document.documentElement.setAttribute('data-theme','light');}catch(e){}})();</script>
+<!-- Math formula rendering via MathJax -->
+<script>
+window.MathJax = {
+  tex: {
+    // arithmatex emits \(...\) / \[...\] markup, so only these delimiters
+    // are needed; plain `$` is left alone (avoids currency false positives).
+    inlineMath: [['\\(', '\\)']],
+    displayMath: [['\\[', '\\]']],
+    processEscapes: true
+  },
+  svg: {
+    // Each formula gets its own self-contained <defs>, so the copy script can
+    // serialize one <svg> and rasterize it to a PNG for WeChat.
+    fontCache: 'local'
+  },
+  options: {
+    skipHtmlTags: ['script', 'noscript', 'style', 'textarea', 'pre', 'code'],
+    ignoreHtmlClass: 'highlight'
+  }
+};
+</script>
+<script src="https://cdn.jsdelivr.net/npm/mathjax@3/es5/tex-svg.js" async></script>
+</head>
+<body>
+<main class="wrap post">
+
+  <nav class="topnav">
+    <a href="../index.html">← home</a>
+  </nav>
+
+  <article>
+    <header class="post-header">
+      <h1>老师逼你&quot;写出过程&quot;，原来是大模型学会推理的全部秘密</h1>
+      <p class="meta">2026-08-20 · Steve Chan</p>
+    </header>
+
+    <div class="content">
+<blockquote>
+<p>中学六年，你被同一句话骂过无数遍：
+<strong>"别跳步！把过程写出来！"</strong></p>
+<p>你一直以为那是老师在为难你、或者是为了防止你抄答案。
+其实不是。那句话背后是一个极硬的事实：</p>
+<p><strong>一步算不完的东西，必须先写下来，再读回去。</strong></p>
+<p>而今天所有会"推理"的大模型——o1、DeepSeek-R1、Claude 的思考模式——
+靠的就是这一件事：<strong>给自己一张草稿纸。</strong></p>
+<p>这篇文章不谈"AI 会不会思考"，全部用能跑起来的 PyTorch 代码，
+把"写出过程"这个动作，一路接到思维链（Chain-of-Thought）。
+顺手回答四个灵魂拷问：</p>
+<ul>
+<li>模型不是有几百亿参数吗，为什么"心算"不出来？</li>
+<li>一个 Transformer 生成一个字，到底能算多少步？</li>
+<li>为什么只要加一句"让我们一步一步来"，正确率就能翻倍？</li>
+<li>o1 和 DeepSeek-R1 到底比"加一句咒语"多做了什么？</li>
+</ul>
+</blockquote>
+<hr />
+<h2 id="0-一句话主线">0. 一句话主线</h2>
+<p>如果只能留一句话：</p>
+<blockquote>
+<p><strong>Transformer 每吐出一个字，用掉的计算步数是</strong>固定的<strong>——层数是多少，就算多少步，一步不多。
+想算更多步，只有一个办法：把中间结果写成文字吐出来，下一轮再当输入读回去。
+</strong>深度不够，长度来凑。<strong>这就是草稿纸。</strong></p>
+</blockquote>
+<p>人脑遇到难题会"多想一会儿"——你可以在同一个问题上盘桓十秒、一分钟、一小时。
+Transformer 不能。它没有循环、没有"再想想"的开关。</p>
+<p><strong>它唯一能延长思考的方式，就是多写几个字。</strong></p>
+<p>记住这个画面：<strong>模型的思考深度写死在层数里，思考长度写在输出里。</strong>
+下面所有东西都挂在这个约束上。</p>
+<hr />
+<h2 id="1-先把固定深度证出来">1. 先把"固定深度"证出来</h2>
+<p>一个 Transformer 生成第 1 个 token 和第 100 个 token，走的层数完全一样。
+不管题目多难，它都是"过一遍网络，交卷"。</p>
+<div class="highlight"><pre><span></span><code><span class="kn">import</span><span class="w"> </span><span class="nn">torch</span><span class="o">,</span><span class="w"> </span><span class="nn">torch.nn</span><span class="w"> </span><span class="k">as</span><span class="w"> </span><span class="nn">nn</span>
+
+<span class="n">torch</span><span class="o">.</span><span class="n">manual_seed</span><span class="p">(</span><span class="mi">0</span><span class="p">)</span>
+<span class="n">LAYERS</span><span class="p">,</span> <span class="n">D</span> <span class="o">=</span> <span class="mi">12</span><span class="p">,</span> <span class="mi">64</span>
+<span class="n">layers</span> <span class="o">=</span> <span class="n">nn</span><span class="o">.</span><span class="n">ModuleList</span><span class="p">([</span><span class="n">nn</span><span class="o">.</span><span class="n">Linear</span><span class="p">(</span><span class="n">D</span><span class="p">,</span> <span class="n">D</span><span class="p">)</span> <span class="k">for</span> <span class="n">_</span> <span class="ow">in</span> <span class="nb">range</span><span class="p">(</span><span class="n">LAYERS</span><span class="p">)])</span>
+
+<span class="k">def</span><span class="w"> </span><span class="nf">forward_once</span><span class="p">(</span><span class="n">x</span><span class="p">,</span> <span class="n">tag</span><span class="p">):</span>
+    <span class="n">steps</span> <span class="o">=</span> <span class="mi">0</span>
+    <span class="k">for</span> <span class="n">L</span> <span class="ow">in</span> <span class="n">layers</span><span class="p">:</span>                    <span class="c1"># 每生成一个 token，就走这么多层</span>
+        <span class="n">x</span> <span class="o">=</span> <span class="n">torch</span><span class="o">.</span><span class="n">relu</span><span class="p">(</span><span class="n">L</span><span class="p">(</span><span class="n">x</span><span class="p">));</span> <span class="n">steps</span> <span class="o">+=</span> <span class="mi">1</span>
+    <span class="nb">print</span><span class="p">(</span><span class="sa">f</span><span class="s2">&quot;</span><span class="si">{</span><span class="n">tag</span><span class="si">}</span><span class="s2">: 计算步数 = </span><span class="si">{</span><span class="n">steps</span><span class="si">}</span><span class="s2">&quot;</span><span class="p">)</span>
+    <span class="k">return</span> <span class="n">x</span>
+
+<span class="n">forward_once</span><span class="p">(</span><span class="n">torch</span><span class="o">.</span><span class="n">randn</span><span class="p">(</span><span class="n">D</span><span class="p">),</span> <span class="s2">&quot;简单题 1+1&quot;</span><span class="p">)</span>
+<span class="n">forward_once</span><span class="p">(</span><span class="n">torch</span><span class="o">.</span><span class="n">randn</span><span class="p">(</span><span class="n">D</span><span class="p">),</span> <span class="s2">&quot;难题 48371+29684&quot;</span><span class="p">)</span>
+<span class="c1"># 两行都是 12 —— 题目难度对计算量毫无影响</span>
+</code></pre></div>
+
+<p>两行输出<strong>一模一样</strong>。这就是全部的问题：</p>
+<blockquote>
+<p><strong>网络的深度是一个建筑事实，不是一个可调参数。</strong>
+12 层就是 12 步串行计算，你问它"1+1"还是问它一道竞赛题，它都只算 12 步。</p>
+</blockquote>
+<p>人类做题时会不自觉地延长时间；模型不会。<strong>除非你让它多写字。</strong></p>
+<hr />
+<h2 id="2-有些问题天生就要求步数随规模增长">2. 有些问题，天生就要求"步数随规模增长"</h2>
+<p>不是所有题都能一步算完。有一类题，<strong>需要的串行步数随输入长度线性增长</strong>——
+无论你把网络堆多宽，只要深度固定，就一定有做不完的规模。</p>
+<p>最干净的例子是<strong>奇偶校验</strong>（数一串 0/1 里有多少个 1，看是奇是偶）：</p>
+<div class="highlight"><pre><span></span><code><span class="k">def</span><span class="w"> </span><span class="nf">parity</span><span class="p">(</span><span class="n">bits</span><span class="p">):</span>
+    <span class="n">state</span><span class="p">,</span> <span class="n">steps</span> <span class="o">=</span> <span class="mi">0</span><span class="p">,</span> <span class="mi">0</span>
+    <span class="k">for</span> <span class="n">b</span> <span class="ow">in</span> <span class="n">bits</span><span class="p">:</span>                       <span class="c1"># 必须一个一个过，不能并行跳过</span>
+        <span class="n">state</span> <span class="o">^=</span> <span class="n">b</span><span class="p">;</span> <span class="n">steps</span> <span class="o">+=</span> <span class="mi">1</span>
+    <span class="k">return</span> <span class="n">state</span><span class="p">,</span> <span class="n">steps</span>
+
+<span class="k">for</span> <span class="n">n</span> <span class="ow">in</span> <span class="p">[</span><span class="mi">4</span><span class="p">,</span> <span class="mi">16</span><span class="p">,</span> <span class="mi">64</span><span class="p">]:</span>
+    <span class="n">bits</span> <span class="o">=</span> <span class="p">[</span><span class="mi">1</span><span class="p">]</span> <span class="o">*</span> <span class="n">n</span>
+    <span class="n">s</span><span class="p">,</span> <span class="n">steps</span> <span class="o">=</span> <span class="n">parity</span><span class="p">(</span><span class="n">bits</span><span class="p">)</span>
+    <span class="nb">print</span><span class="p">(</span><span class="sa">f</span><span class="s2">&quot;长度 </span><span class="si">{</span><span class="n">n</span><span class="si">:</span><span class="s2">3d</span><span class="si">}</span><span class="s2"> -&gt; 需要 </span><span class="si">{</span><span class="n">steps</span><span class="si">:</span><span class="s2">3d</span><span class="si">}</span><span class="s2"> 步串行计算&quot;</span><span class="p">)</span>
+</code></pre></div>
+
+<p>需要的步数是 4、16、64——<strong>随长度线性增长</strong>。
+而模型的深度永远是 12。<strong>长度一超过深度，它就必然算错。</strong></p>
+<p>这就是为什么大模型能写出漂亮的代码，却会在"这个字符串里有几个字母 r"上翻车：
+不是知识问题，是<strong>串行步数不够</strong>。</p>
+<hr />
+<h2 id="疑惑点一参数那么多为什么不能在心里多想几步">🤔 疑惑点一：参数那么多，为什么不能"在心里多想几步"？</h2>
+<p><strong>因为 Transformer 没有工作记忆。它在一次前向传播里产生的所有中间结果，交卷的瞬间全部销毁——唯一被保留下来的，是它写在纸上的那几个字。</strong></p>
+<p>这是最反直觉的一点。人心算时，中间结果留在脑子里；
+Transformer 的中间结果留在激活值（activation）里，而<strong>激活值不会跨 token 保留</strong>。</p>
+<p>下一轮生成时，模型能看到的只有一样东西：<strong>已经生成的文本</strong>。</p>
+<div class="highlight"><pre><span></span><code><span class="c1"># 模型的&quot;记忆&quot;只有这个列表，没有别的</span>
+<span class="n">context</span> <span class="o">=</span> <span class="p">[</span><span class="s2">&quot;9.11&quot;</span><span class="p">,</span> <span class="s2">&quot;vs&quot;</span><span class="p">,</span> <span class="s2">&quot;9.9&quot;</span><span class="p">]</span>
+
+<span class="c1"># 心算：中间结果算完就没了</span>
+<span class="k">def</span><span class="w"> </span><span class="nf">mental</span><span class="p">():</span>
+    <span class="n">aligned</span> <span class="o">=</span> <span class="s2">&quot;9.90&quot;</span>            <span class="c1"># 这个中间结果只活在这一行</span>
+    <span class="k">return</span> <span class="s2">&quot;?&quot;</span>                  <span class="c1"># 下一轮完全看不到 aligned</span>
+
+<span class="c1"># 草稿纸：中间结果被写进 context，下一轮读得到</span>
+<span class="k">def</span><span class="w"> </span><span class="nf">scratchpad</span><span class="p">(</span><span class="n">ctx</span><span class="p">):</span>
+    <span class="n">ctx</span> <span class="o">=</span> <span class="n">ctx</span> <span class="o">+</span> <span class="p">[</span><span class="s2">&quot;补齐位数：9.11 vs 9.90&quot;</span><span class="p">]</span>   <span class="c1"># 写下来 = 存进记忆</span>
+    <span class="n">ctx</span> <span class="o">=</span> <span class="n">ctx</span> <span class="o">+</span> <span class="p">[</span><span class="s2">&quot;比较小数第一位：1 &lt; 9&quot;</span><span class="p">]</span>
+    <span class="k">return</span> <span class="n">ctx</span> <span class="o">+</span> <span class="p">[</span><span class="s2">&quot;结论：9.9 更大&quot;</span><span class="p">]</span>
+
+<span class="nb">print</span><span class="p">(</span><span class="n">scratchpad</span><span class="p">(</span><span class="n">context</span><span class="p">))</span>
+</code></pre></div>
+
+<p>看懂这段的差别，就看懂了 CoT 的全部：</p>
+<blockquote>
+<p><strong>写在 context 里的中间结果，等于给模型加了一层"外置内存"。
+每写一句，下一轮就多了一个可以站上去的台阶。</strong></p>
+</blockquote>
+<p>老师说"写出过程"，不是为了看你的字，是<strong>为了让第三步能踩着第二步的结果往上走</strong>。
+模型的情况一模一样，只是更极端——它<strong>除了纸上的字，什么都记不住。</strong></p>
+<hr />
+<h2 id="3-关键换算一句中间结果-一次额外的-12-层计算">3. 关键换算：一句中间结果 = 一次额外的 12 层计算</h2>
+<p>现在把两件事合起来，就得到了 CoT 的真正机制：</p>
+<ul>
+<li>深度固定 = 每个 token 只有 12 步；</li>
+<li>中间结果写进 context = 下一个 token 可以在这个结果之上再算 12 步。</li>
+</ul>
+<p><strong>于是，写 N 个 token 的草稿 ≈ 获得 N × 12 步的有效串行计算。</strong></p>
+<div class="highlight"><pre><span></span><code><span class="n">LAYERS</span> <span class="o">=</span> <span class="mi">12</span>
+
+<span class="k">def</span><span class="w"> </span><span class="nf">total_serial_steps</span><span class="p">(</span><span class="n">n_scratchpad_tokens</span><span class="p">):</span>
+    <span class="k">return</span> <span class="n">LAYERS</span> <span class="o">*</span> <span class="p">(</span><span class="mi">1</span> <span class="o">+</span> <span class="n">n_scratchpad_tokens</span><span class="p">)</span>
+
+<span class="nb">print</span><span class="p">(</span><span class="s2">&quot;直接答:      &quot;</span><span class="p">,</span> <span class="n">total_serial_steps</span><span class="p">(</span><span class="mi">0</span><span class="p">),</span>   <span class="s2">&quot;步&quot;</span><span class="p">)</span>
+<span class="nb">print</span><span class="p">(</span><span class="s2">&quot;写 5 步草稿:  &quot;</span><span class="p">,</span> <span class="n">total_serial_steps</span><span class="p">(</span><span class="mi">5</span><span class="p">),</span>  <span class="s2">&quot;步&quot;</span><span class="p">)</span>
+<span class="nb">print</span><span class="p">(</span><span class="s2">&quot;写 200 步草稿:&quot;</span><span class="p">,</span> <span class="n">total_serial_steps</span><span class="p">(</span><span class="mi">200</span><span class="p">),</span> <span class="s2">&quot;步&quot;</span><span class="p">)</span>
+</code></pre></div>
+
+<div class="highlight"><pre><span></span><code>直接答:       12 步
+写 5 步草稿:   72 步
+写 200 步草稿: 2412 步
+</code></pre></div>
+
+<p><strong>这就是"让我们一步一步来"能把正确率翻倍的全部原因。</strong>
+它不是心理暗示，不是"模型更认真了"——<strong>它实实在在地把可用计算量放大了两个数量级。</strong></p>
+<blockquote>
+<p>换句话说：<strong>CoT 是一种用"输出长度"购买"计算深度"的交易。</strong>
+你多花的每一个 token，都在给模型买一次额外的前向传播。</p>
+</blockquote>
+<hr />
+<h2 id="4-动手同一个模型给不给草稿纸差距有多大">4. 动手：同一个模型，给不给草稿纸，差距有多大</h2>
+<p>下面用一个玩具任务把这件事跑出来。任务是奇偶校验，
+两个模型深度都被限死为 2 层，唯一区别是<strong>能不能把中间状态写出来</strong>：</p>
+<div class="highlight"><pre><span></span><code><span class="kn">import</span><span class="w"> </span><span class="nn">torch</span><span class="o">,</span><span class="w"> </span><span class="nn">torch.nn</span><span class="w"> </span><span class="k">as</span><span class="w"> </span><span class="nn">nn</span>
+
+<span class="n">torch</span><span class="o">.</span><span class="n">manual_seed</span><span class="p">(</span><span class="mi">0</span><span class="p">)</span>
+<span class="n">DEPTH</span><span class="p">,</span> <span class="n">N</span> <span class="o">=</span> <span class="mi">2</span><span class="p">,</span> <span class="mi">3000</span>
+<span class="n">LEN</span> <span class="o">=</span> <span class="mi">8</span>                                        <span class="c1"># 序列长度 8 &gt; 深度 2</span>
+
+<span class="n">bits</span> <span class="o">=</span> <span class="n">torch</span><span class="o">.</span><span class="n">randint</span><span class="p">(</span><span class="mi">0</span><span class="p">,</span> <span class="mi">2</span><span class="p">,</span> <span class="p">(</span><span class="n">N</span><span class="p">,</span> <span class="n">LEN</span><span class="p">))</span><span class="o">.</span><span class="n">float</span><span class="p">()</span>
+<span class="n">label</span> <span class="o">=</span> <span class="p">(</span><span class="n">bits</span><span class="o">.</span><span class="n">sum</span><span class="p">(</span><span class="mi">1</span><span class="p">)</span> <span class="o">%</span> <span class="mi">2</span><span class="p">)</span><span class="o">.</span><span class="n">unsqueeze</span><span class="p">(</span><span class="mi">1</span><span class="p">)</span>          <span class="c1"># 目标：奇偶</span>
+
+<span class="c1"># A：直接答 —— 一次性看完整个序列，只有 DEPTH 层可用</span>
+<span class="n">netA</span> <span class="o">=</span> <span class="n">nn</span><span class="o">.</span><span class="n">Sequential</span><span class="p">(</span><span class="n">nn</span><span class="o">.</span><span class="n">Linear</span><span class="p">(</span><span class="n">LEN</span><span class="p">,</span> <span class="mi">32</span><span class="p">),</span> <span class="n">nn</span><span class="o">.</span><span class="n">ReLU</span><span class="p">(),</span> <span class="n">nn</span><span class="o">.</span><span class="n">Linear</span><span class="p">(</span><span class="mi">32</span><span class="p">,</span> <span class="mi">1</span><span class="p">))</span>
+
+<span class="c1"># B：草稿纸 —— 每次只处理一位，把&quot;当前奇偶&quot;作为中间结果传给下一步</span>
+<span class="k">class</span><span class="w"> </span><span class="nc">Scratchpad</span><span class="p">(</span><span class="n">nn</span><span class="o">.</span><span class="n">Module</span><span class="p">):</span>
+    <span class="k">def</span><span class="w"> </span><span class="fm">__init__</span><span class="p">(</span><span class="bp">self</span><span class="p">):</span>
+        <span class="nb">super</span><span class="p">()</span><span class="o">.</span><span class="fm">__init__</span><span class="p">()</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">step</span> <span class="o">=</span> <span class="n">nn</span><span class="o">.</span><span class="n">Sequential</span><span class="p">(</span><span class="n">nn</span><span class="o">.</span><span class="n">Linear</span><span class="p">(</span><span class="mi">2</span><span class="p">,</span> <span class="mi">32</span><span class="p">),</span> <span class="n">nn</span><span class="o">.</span><span class="n">ReLU</span><span class="p">(),</span> <span class="n">nn</span><span class="o">.</span><span class="n">Linear</span><span class="p">(</span><span class="mi">32</span><span class="p">,</span> <span class="mi">1</span><span class="p">))</span>
+    <span class="k">def</span><span class="w"> </span><span class="nf">forward</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">x</span><span class="p">):</span>
+        <span class="n">s</span> <span class="o">=</span> <span class="n">torch</span><span class="o">.</span><span class="n">zeros</span><span class="p">(</span><span class="n">x</span><span class="o">.</span><span class="n">shape</span><span class="p">[</span><span class="mi">0</span><span class="p">],</span> <span class="mi">1</span><span class="p">)</span>          <span class="c1"># 草稿纸上的当前状态</span>
+        <span class="k">for</span> <span class="n">i</span> <span class="ow">in</span> <span class="nb">range</span><span class="p">(</span><span class="n">x</span><span class="o">.</span><span class="n">shape</span><span class="p">[</span><span class="mi">1</span><span class="p">]):</span>             <span class="c1"># 每写一步 = 一次额外前向</span>
+            <span class="n">s</span> <span class="o">=</span> <span class="n">torch</span><span class="o">.</span><span class="n">sigmoid</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">step</span><span class="p">(</span><span class="n">torch</span><span class="o">.</span><span class="n">cat</span><span class="p">([</span><span class="n">x</span><span class="p">[:,</span> <span class="n">i</span><span class="p">:</span><span class="n">i</span><span class="o">+</span><span class="mi">1</span><span class="p">],</span> <span class="n">s</span><span class="p">],</span> <span class="n">dim</span><span class="o">=</span><span class="mi">1</span><span class="p">)))</span>
+        <span class="k">return</span> <span class="n">s</span>
+
+<span class="k">def</span><span class="w"> </span><span class="nf">train</span><span class="p">(</span><span class="n">net</span><span class="p">,</span> <span class="n">steps</span><span class="o">=</span><span class="mi">1500</span><span class="p">):</span>
+    <span class="n">opt</span> <span class="o">=</span> <span class="n">torch</span><span class="o">.</span><span class="n">optim</span><span class="o">.</span><span class="n">Adam</span><span class="p">(</span><span class="n">net</span><span class="o">.</span><span class="n">parameters</span><span class="p">(),</span> <span class="n">lr</span><span class="o">=</span><span class="mf">5e-3</span><span class="p">)</span>
+    <span class="n">lossfn</span> <span class="o">=</span> <span class="n">nn</span><span class="o">.</span><span class="n">BCEWithLogitsLoss</span><span class="p">()</span> <span class="k">if</span> <span class="nb">isinstance</span><span class="p">(</span><span class="n">net</span><span class="p">,</span> <span class="n">nn</span><span class="o">.</span><span class="n">Sequential</span><span class="p">)</span> <span class="k">else</span> <span class="n">nn</span><span class="o">.</span><span class="n">BCELoss</span><span class="p">()</span>
+    <span class="k">for</span> <span class="n">_</span> <span class="ow">in</span> <span class="nb">range</span><span class="p">(</span><span class="n">steps</span><span class="p">):</span>
+        <span class="n">out</span> <span class="o">=</span> <span class="n">net</span><span class="p">(</span><span class="n">bits</span><span class="p">)</span>
+        <span class="n">loss</span> <span class="o">=</span> <span class="n">lossfn</span><span class="p">(</span><span class="n">out</span><span class="p">,</span> <span class="n">label</span><span class="p">)</span>
+        <span class="n">opt</span><span class="o">.</span><span class="n">zero_grad</span><span class="p">();</span> <span class="n">loss</span><span class="o">.</span><span class="n">backward</span><span class="p">();</span> <span class="n">opt</span><span class="o">.</span><span class="n">step</span><span class="p">()</span>
+    <span class="n">pred</span> <span class="o">=</span> <span class="p">(</span><span class="n">torch</span><span class="o">.</span><span class="n">sigmoid</span><span class="p">(</span><span class="n">net</span><span class="p">(</span><span class="n">bits</span><span class="p">))</span> <span class="o">&gt;</span> <span class="mf">0.5</span><span class="p">)</span> <span class="k">if</span> <span class="nb">isinstance</span><span class="p">(</span><span class="n">net</span><span class="p">,</span> <span class="n">nn</span><span class="o">.</span><span class="n">Sequential</span><span class="p">)</span> <span class="k">else</span> <span class="p">(</span><span class="n">net</span><span class="p">(</span><span class="n">bits</span><span class="p">)</span> <span class="o">&gt;</span> <span class="mf">0.5</span><span class="p">)</span>
+    <span class="k">return</span> <span class="p">(</span><span class="n">pred</span><span class="o">.</span><span class="n">float</span><span class="p">()</span> <span class="o">==</span> <span class="n">label</span><span class="p">)</span><span class="o">.</span><span class="n">float</span><span class="p">()</span><span class="o">.</span><span class="n">mean</span><span class="p">()</span><span class="o">.</span><span class="n">item</span><span class="p">()</span>
+
+<span class="nb">print</span><span class="p">(</span><span class="sa">f</span><span class="s2">&quot;A 直接答   准确率: </span><span class="si">{</span><span class="n">train</span><span class="p">(</span><span class="n">netA</span><span class="p">)</span><span class="si">:</span><span class="s2">.1%</span><span class="si">}</span><span class="s2">&quot;</span><span class="p">)</span>
+<span class="nb">print</span><span class="p">(</span><span class="sa">f</span><span class="s2">&quot;B 写草稿   准确率: </span><span class="si">{</span><span class="n">train</span><span class="p">(</span><span class="n">Scratchpad</span><span class="p">())</span><span class="si">:</span><span class="s2">.1%</span><span class="si">}</span><span class="s2">&quot;</span><span class="p">)</span>
+</code></pre></div>
+
+<p>A 会稳定卡在 50% 附近——<strong>那是瞎猜的水平</strong>。
+B 能爬到接近 100%。</p>
+<p><strong>同样的参数量级、同样的数据、同样的训练步数。</strong>
+唯一的区别是 B 允许把中间状态写下来再读回去。</p>
+<blockquote>
+<p>这个 50% vs 100% 的落差，就是"写出过程"这四个字的全部价值。</p>
+</blockquote>
+<hr />
+<h2 id="疑惑点二那-o1deepseek-r1-比加一句咒语多做了什么">🤔 疑惑点二：那 o1、DeepSeek-R1 比"加一句咒语"多做了什么？</h2>
+<p><strong>咒语只是"请你打草稿"；R1 这类模型是被训练成"自己知道该打多长的草稿、草稿写歪了会自己拐回来"。前者是提示，后者写进了权重里。</strong></p>
+<p>普通 CoT 的问题是：草稿的质量完全靠运气。模型可能第二步就算错，
+然后<strong>踩着错误的台阶一路错到底</strong>——因为它没有"检查"这个习惯。</p>
+<p>R1/o1 的训练做法（强化学习）粗暴而有效：</p>
+<div class="highlight"><pre><span></span><code><span class="c1"># 训练信号只看最终答案对不对，中间过程完全放养</span>
+<span class="k">def</span><span class="w"> </span><span class="nf">reward</span><span class="p">(</span><span class="n">scratchpad</span><span class="p">,</span> <span class="n">final_answer</span><span class="p">,</span> <span class="n">truth</span><span class="p">):</span>
+    <span class="k">return</span> <span class="mf">1.0</span> <span class="k">if</span> <span class="n">final_answer</span> <span class="o">==</span> <span class="n">truth</span> <span class="k">else</span> <span class="mf">0.0</span>
+    <span class="c1"># 注意：没有一个字在监督&quot;草稿该怎么写&quot;</span>
+</code></pre></div>
+
+<p><strong>只奖励结果，不规定过程。</strong> 于是模型在千万次试错里自己发现：</p>
+<ul>
+<li>草稿写长一点，答对的概率更高 → 它开始写更长的草稿；</li>
+<li>中途回头验算一遍，答对的概率更高 → 它自发长出了"等等，我再检查一下"；</li>
+<li>换一条思路重来，有时能救回来 → 它学会了自我否定。</li>
+</ul>
+<p>这些行为<strong>没有一个是人教的</strong>，全是"只奖励最终答案"逼出来的副产品。</p>
+<blockquote>
+<p>这就是从"提示词工程"到"推理模型"的真正跨越：
+<strong>草稿纸从一句提示，变成了一种被奖励塑造出来的本能。</strong></p>
+</blockquote>
+<hr />
+<h2 id="5-代价草稿纸是要花钱的">5. 代价：草稿纸是要花钱的</h2>
+<p>天下没有免费的计算。CoT 买来的深度，是用 token 付的账：</p>
+<table>
+<thead>
+<tr>
+<th>方式</th>
+<th>输出 token</th>
+<th>有效串行步数</th>
+<th>延迟</th>
+<th>成本</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>直接答</td>
+<td>~10</td>
+<td>~12</td>
+<td>极低</td>
+<td>1×</td>
+</tr>
+<tr>
+<td>CoT 提示</td>
+<td>~200</td>
+<td>~2,400</td>
+<td>中</td>
+<td>~20×</td>
+</tr>
+<tr>
+<td>推理模型</td>
+<td>~2,000+</td>
+<td>~24,000+</td>
+<td>高</td>
+<td>~200×</td>
+</tr>
+</tbody>
+</table>
+<p>所以"要不要开思考模式"，本质上是一道很朴素的题：
+<strong>这道题需要的串行步数，超过网络深度了吗？</strong></p>
+<ul>
+<li>「把这段话翻译成英文」——不超过，直接答，开 CoT 纯属浪费；</li>
+<li>「这段代码为什么死锁」——远超，不打草稿必错。</li>
+</ul>
+<blockquote>
+<p>顺带一提，上一篇《小学一年级学的"数位对齐"》里那个 9.11 vs 9.9 的 bug，
+用的正是这里的补丁：分词器毁掉的位置信息，靠草稿纸重新写回文本里。</p>
+</blockquote>
+<p>仓库里的动画脚本把这件事画了出来：</p>
+<div class="highlight"><pre><span></span><code>python<span class="w"> </span>cot_scratchpad_visualization.py
+</code></pre></div>
+
+<blockquote>
+<p>左边是"直接答"：一个固定高度的柱子，题目再难它也就那么高；
+右边是"打草稿"：每写一句，柱子就往上叠一层，可用计算量阶梯式上升。
+最后一幅图把"草稿长度 vs 正确率"画成曲线——<strong>在某个长度上，曲线会突然从瞎猜跳到全对。</strong></p>
+</blockquote>
+<hr />
+<h2 id="缝合把所有画面接起来">缝合：把所有画面接起来</h2>
+<table>
+<thead>
+<tr>
+<th>做题概念</th>
+<th>老师怎么讲</th>
+<th>这篇文章怎么看</th>
+<th>在大模型里是什么</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><strong>心算</strong></td>
+<td>简单题可以口算</td>
+<td>只有固定 12 步（第 1 节）</td>
+<td>一次前向传播</td>
+</tr>
+<tr>
+<td><strong>写出过程</strong></td>
+<td>别跳步</td>
+<td>把中间结果外置（疑惑点一）</td>
+<td>思维链 CoT</td>
+</tr>
+<tr>
+<td><strong>草稿纸</strong></td>
+<td>演算区</td>
+<td>唯一的跨步记忆（第 3 节）</td>
+<td>context 窗口</td>
+</tr>
+<tr>
+<td><strong>一步一步来</strong></td>
+<td>老师的口头禅</td>
+<td>用长度购买深度（第 3 节）</td>
+<td>提示词里的 CoT</td>
+</tr>
+<tr>
+<td><strong>检查一遍</strong></td>
+<td>交卷前复核</td>
+<td>只奖励结果逼出来的习惯（疑惑点二）</td>
+<td>RL 训练的推理模型</td>
+</tr>
+</tbody>
+</table>
+<p>三句话总结：</p>
+<blockquote>
+<p><strong>Transformer 的思考深度写死在层数里</strong>，一次前向传播只有固定步数（第 1、2 节）；
+<strong>中间结果不写下来就会被销毁</strong>，写下来才能被下一轮踩着往上走（疑惑点一、第 3 节）；
+<strong>于是"写出过程"= 用输出长度购买计算深度</strong>，这就是 CoT 与推理模型的全部机制（第 3、4 节）。</p>
+</blockquote>
+<p>所以当年老师那句"别跳步"，不是在为难你。
+<strong>跳步之所以错，是因为第三步本来就该踩在第二步的结果上——你没写，那个结果就不存在了。</strong></p>
+<p>大模型比你更惨：<strong>它连脑子都没有，只有那张纸。</strong>
+现在把上面每段代码跑一遍，你会比 90% 谈论"AI 会不会思考"的人更懂它到底在干什么。</p>
+<hr />
+<blockquote>
+<p><strong>备注（选题/标题）：</strong> 本篇是《数位对齐 → 分词器》的下一棒，两篇互相引用形成钩子。
+备选标题：
+1.《为什么大模型要"一步一步来"？答案在老师骂你别跳步的那句话里》
+2.《大模型根本不会"多想一会儿"——它只会多写几个字》</p>
+</blockquote>
+    </div>
+  </article>
+
+</main>
+
+<!-- Floating Ask-AI chat widget -->
+<button class="ai-fab" id="ai-fab" aria-label="Ask AI about this article" title="Ask AI about this article">
+  <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+    <path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"/>
+  </svg>
+  <span class="ai-fab-label">Ask AI</span>
+</button>
+
+<div class="ai-panel" id="ai-panel" role="dialog" aria-labelledby="ai-panel-title" aria-hidden="true">
+  <header class="ai-panel-head">
+    <div class="ai-panel-title-wrap">
+      <span class="ai-dot"></span>
+      <h3 id="ai-panel-title">Ask AI about this post</h3>
+    </div>
+    <div class="ai-panel-actions">
+      <button class="ai-icon-btn" id="ai-clear" title="Clear conversation" aria-label="Clear">
+        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><polyline points="3 6 5 6 21 6"/><path d="M19 6l-1 14a2 2 0 0 1-2 2H8a2 2 0 0 1-2-2L5 6"/><path d="M10 11v6M14 11v6"/><path d="M9 6V4a1 1 0 0 1 1-1h4a1 1 0 0 1 1 1v2"/></svg>
+      </button>
+      <button class="ai-icon-btn" id="ai-close" title="Minimize" aria-label="Minimize">
+        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><polyline points="6 9 12 15 18 9"/></svg>
+      </button>
+    </div>
+  </header>
+
+  <div class="ai-messages" id="ai-messages">
+    <div class="ai-empty" id="ai-empty">
+      <p class="ai-empty-title">On-device AI · Gemini Nano</p>
+      <p class="ai-empty-sub">Ask anything about this article. Runs in your browser — nothing leaves your device.</p>
+    </div>
+  </div>
+
+  <div class="ai-status" id="ai-status" hidden></div>
+
+  <form class="ai-composer" id="ai-form">
+    <textarea id="ai-input" rows="1" placeholder="Ask about this post…" autocomplete="off"></textarea>
+    <button type="submit" id="ai-send" class="ai-send" aria-label="Send" disabled>
+      <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><line x1="22" y1="2" x2="11" y2="13"/><polygon points="22 2 15 22 11 13 2 9 22 2"/></svg>
+    </button>
+  </form>
+</div>
+
+<script>
+(function () {
+  const POST_TITLE = "\u8001\u5e08\u903c\u4f60\"\u5199\u51fa\u8fc7\u7a0b\"\uff0c\u539f\u6765\u662f\u5927\u6a21\u578b\u5b66\u4f1a\u63a8\u7406\u7684\u5168\u90e8\u79d8\u5bc6";
+  const contentEl = document.querySelector('article .content');
+
+  const fab = document.getElementById('ai-fab');
+  const panel = document.getElementById('ai-panel');
+  const closeBtn = document.getElementById('ai-close');
+  const clearBtn = document.getElementById('ai-clear');
+  const msgsEl = document.getElementById('ai-messages');
+  const emptyEl = document.getElementById('ai-empty');
+  const statusEl = document.getElementById('ai-status');
+  const formEl = document.getElementById('ai-form');
+  const inputEl = document.getElementById('ai-input');
+  const sendBtn = document.getElementById('ai-send');
+
+  function articleText() {
+    if (!contentEl) return '';
+    return (contentEl.innerText || contentEl.textContent || '')
+      .replace(/[ \t]+\n/g, '\n')
+      .replace(/\n{3,}/g, '\n\n')
+      .trim();
+  }
+
+  function setStatus(msg, cls) {
+    if (!msg) { statusEl.hidden = true; statusEl.textContent = ''; statusEl.className = 'ai-status'; return; }
+    statusEl.hidden = false;
+    statusEl.textContent = msg;
+    statusEl.className = 'ai-status' + (cls ? ' ' + cls : '');
+  }
+
+  function hideEmpty() { if (emptyEl) emptyEl.style.display = 'none'; }
+
+  function appendBubble(role, text) {
+    hideEmpty();
+    const wrap = document.createElement('div');
+    wrap.className = 'ai-msg ai-msg-' + role;
+    const bubble = document.createElement('div');
+    bubble.className = 'ai-bubble';
+    bubble.textContent = text;
+    wrap.appendChild(bubble);
+    msgsEl.appendChild(wrap);
+    msgsEl.scrollTop = msgsEl.scrollHeight;
+    return bubble;
+  }
+
+  function appendTyping() {
+    hideEmpty();
+    const wrap = document.createElement('div');
+    wrap.className = 'ai-msg ai-msg-assistant ai-typing';
+    wrap.innerHTML = '<div class="ai-bubble"><span class="ai-dots"><i></i><i></i><i></i></span></div>';
+    msgsEl.appendChild(wrap);
+    msgsEl.scrollTop = msgsEl.scrollHeight;
+    return wrap;
+  }
+
+  function autoSize() {
+    inputEl.style.height = 'auto';
+    inputEl.style.height = Math.min(inputEl.scrollHeight, 140) + 'px';
+  }
+
+  function openPanel() {
+    panel.classList.add('open');
+    panel.setAttribute('aria-hidden', 'false');
+    fab.classList.add('hidden');
+    setTimeout(() => inputEl.focus(), 50);
+  }
+  function closePanel() {
+    panel.classList.remove('open');
+    panel.setAttribute('aria-hidden', 'true');
+    fab.classList.remove('hidden');
+  }
+
+  fab.addEventListener('click', openPanel);
+  closeBtn.addEventListener('click', closePanel);
+  document.addEventListener('keydown', e => {
+    if (e.key === 'Escape' && panel.classList.contains('open')) closePanel();
+  });
+
+  // ---- LanguageModel session ----
+  let session = null;
+  let creating = null;
+  let history = [];
+
+  function buildSystemPrompt() {
+    // Keep article context modest — Gemini Nano's input quota is small.
+    const article = articleText().slice(0, 4000);
+    return (
+      'You are a concise, helpful assistant answering questions about a blog post. ' +
+      'Use the article below as your primary source. If the answer is not in it, say so briefly and answer generally. ' +
+      'Reply in the same language as the user\'s question. Keep answers short unless asked for detail.\n\n' +
+      '=== ARTICLE TITLE ===\n' + POST_TITLE + '\n\n' +
+      '=== ARTICLE CONTENT ===\n' + article
+    );
+  }
+
+  async function ensureSession() {
+    if (session) return session;
+    if (creating) return creating;
+
+    if (!('LanguageModel' in self)) {
+      throw new Error(
+        'On-device AI not available. Use Chrome 138+ on desktop, or enable ' +
+        '"Prompt API for Gemini Nano" in chrome://flags.'
+      );
+    }
+
+    setStatus('Checking model…', 'info');
+    const status = await LanguageModel.availability();
+    if (status === 'unavailable') {
+      throw new Error('Model unavailable on this device.');
+    }
+
+    creating = (async () => {
+      // Only show download UI when the model isn't already there.
+      const willDownload = (status !== 'available');
+      if (willDownload) setStatus('Preparing model (first run downloads ~2GB)…', 'info');
+      else setStatus('Warming up…', 'info');
+
+      const s = await LanguageModel.create({
+        initialPrompts: [{ role: 'system', content: buildSystemPrompt() }],
+        monitor(m) {
+          m.addEventListener('downloadprogress', e => {
+            // Skip the spurious 0% event Chrome fires for cached models.
+            if (!willDownload && e.loaded === 0) return;
+            const pct = (e.loaded * 100).toFixed(1);
+            setStatus('Downloading model: ' + pct + '%', 'info');
+          });
+        }
+      });
+      session = s;
+      setStatus('');
+      return s;
+    })();
+
+    try { return await creating; }
+    finally { creating = null; }
+  }
+
+  async function ask(q) {
+    appendBubble('user', q);
+    history.push({ role: 'user', content: q });
+
+    sendBtn.disabled = true;
+    inputEl.disabled = true;
+    const typing = appendTyping();
+
+    let answerBubble = null;
+    let acc = '';
+    try {
+      const s = await ensureSession();
+      const stream = s.promptStreaming(q);
+      for await (const chunk of stream) {
+        if (!answerBubble) {
+          typing.remove();
+          const wrap = document.createElement('div');
+          wrap.className = 'ai-msg ai-msg-assistant';
+          answerBubble = document.createElement('div');
+          answerBubble.className = 'ai-bubble';
+          wrap.appendChild(answerBubble);
+          msgsEl.appendChild(wrap);
+        }
+        acc += chunk;
+        answerBubble.textContent = acc;
+        msgsEl.scrollTop = msgsEl.scrollHeight;
+      }
+      if (acc) history.push({ role: 'assistant', content: acc });
+      else { typing.remove(); appendBubble('assistant', '(no response)'); }
+    } catch (e) {
+      if (typing && typing.parentNode) typing.remove();
+      const err = document.createElement('div');
+      err.className = 'ai-msg ai-msg-error';
+      err.innerHTML = '<div class="ai-bubble">⚠ ' + (e && e.message ? e.message : String(e)) + '</div>';
+      msgsEl.appendChild(err);
+      msgsEl.scrollTop = msgsEl.scrollHeight;
+    } finally {
+      sendBtn.disabled = !inputEl.value.trim();
+      inputEl.disabled = false;
+      inputEl.focus();
+    }
+  }
+
+  formEl.addEventListener('submit', e => {
+    e.preventDefault();
+    const q = inputEl.value.trim();
+    if (!q) return;
+    inputEl.value = '';
+    autoSize();
+    sendBtn.disabled = true;
+    ask(q);
+  });
+
+  inputEl.addEventListener('input', () => {
+    autoSize();
+    sendBtn.disabled = !inputEl.value.trim();
+  });
+  inputEl.addEventListener('keydown', e => {
+    if (e.key === 'Enter' && !e.shiftKey) {
+      e.preventDefault();
+      formEl.requestSubmit();
+    }
+  });
+
+  clearBtn.addEventListener('click', () => {
+    msgsEl.innerHTML = '';
+    msgsEl.appendChild(emptyEl);
+    emptyEl.style.display = '';
+    history = [];
+    if (session && session.destroy) { try { session.destroy(); } catch (_) {} }
+    session = null;
+    setStatus('');
+  });
+
+  if (!('LanguageModel' in self)) {
+    fab.addEventListener('click', () => {
+      openPanel();
+      setStatus('On-device AI not detected. Use Chrome 138+ desktop, or enable "Prompt API for Gemini Nano" in chrome://flags.', 'bad');
+    }, { once: true });
+  }
+})();
+</script>
+
+<!-- Outline notes / comments — DataScript + IndexedDB -->
+<script src="https://github.com/tonsky/datascript/releases/download/1.7.8/datascript-1.7.8.min.js"></script>
+<script src="../notes.js?v=6"></script>
+<script src="../theme.js"></script>
+<script src="../wechat-copy.js?v=3"></script>
+
+</body>
+</html>

@@ -1,0 +1,639 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>小学一年级学的&quot;数位对齐&quot;，原来是大模型至今算不明白数的根本原因 · Steve Chan — xlisp</title>
+<meta name="description" content="如果只能留一句话：">
+<meta name="author" content="Steve Chan">
+<link rel="icon" type="image/jpeg" href="../icon.jpeg">
+<link rel="apple-touch-icon" href="../icon.jpeg">
+<meta property="og:type" content="article">
+<meta property="og:title" content="小学一年级学的&quot;数位对齐&quot;，原来是大模型至今算不明白数的根本原因">
+<meta property="og:description" content="如果只能留一句话：">
+<meta property="og:image" content="../icon.jpeg">
+<meta property="og:site_name" content="Steve Chan — xlisp">
+<meta name="twitter:card" content="summary_large_image">
+<meta name="twitter:title" content="小学一年级学的&quot;数位对齐&quot;，原来是大模型至今算不明白数的根本原因">
+<meta name="twitter:description" content="如果只能留一句话：">
+<meta name="twitter:image" content="../icon.jpeg">
+<link rel="stylesheet" href="../style.css?v=light1">
+<script>(function(){try{if(localStorage.getItem('theme')==='light')document.documentElement.setAttribute('data-theme','light');}catch(e){}})();</script>
+<!-- Math formula rendering via MathJax -->
+<script>
+window.MathJax = {
+  tex: {
+    // arithmatex emits \(...\) / \[...\] markup, so only these delimiters
+    // are needed; plain `$` is left alone (avoids currency false positives).
+    inlineMath: [['\\(', '\\)']],
+    displayMath: [['\\[', '\\]']],
+    processEscapes: true
+  },
+  svg: {
+    // Each formula gets its own self-contained <defs>, so the copy script can
+    // serialize one <svg> and rasterize it to a PNG for WeChat.
+    fontCache: 'local'
+  },
+  options: {
+    skipHtmlTags: ['script', 'noscript', 'style', 'textarea', 'pre', 'code'],
+    ignoreHtmlClass: 'highlight'
+  }
+};
+</script>
+<script src="https://cdn.jsdelivr.net/npm/mathjax@3/es5/tex-svg.js" async></script>
+</head>
+<body>
+<main class="wrap post">
+
+  <nav class="topnav">
+    <a href="../index.html">← home</a>
+  </nav>
+
+  <article>
+    <header class="post-header">
+      <h1>小学一年级学的&quot;数位对齐&quot;，原来是大模型至今算不明白数的根本原因</h1>
+      <p class="meta">2026-08-20 · Steve Chan</p>
+    </header>
+
+    <div class="content">
+<blockquote>
+<p>问一个最强的大模型：<strong>9.11 和 9.9 哪个大？</strong>
+它有相当的概率告诉你：9.11 更大。</p>
+<p>这不是它"笨"。写得出万行代码、解得了竞赛题的模型，栽在一道一年级的题上，
+说明问题不在智力，在<strong>它根本没有"看到"这两个数</strong>。</p>
+<p>它看到的是被切碎的几个文字块。而小学一年级教的第一件事——<strong>竖式要对齐数位</strong>——
+恰恰是它这辈子都没学会的东西。</p>
+<p>这篇文章不讲大道理，全部用能跑起来的 PyTorch/Python 代码，
+把"数位对齐"这件小事，一路接到大模型的分词器（tokenizer）。
+顺手回答四个灵魂拷问：</p>
+<ul>
+<li>模型明明会解微积分，为什么会说 9.11 &gt; 9.9？</li>
+<li>"分词器"到底把一个数字切成了什么？</li>
+<li>为什么同一个数字，换个上下文就被切得不一样？</li>
+<li>既然按位切这么好，为什么没人这么干？</li>
+</ul>
+</blockquote>
+<hr />
+<h2 id="0-一句话主线">0. 一句话主线</h2>
+<p>如果只能留一句话：</p>
+<blockquote>
+<p><strong>人类算数的地基是"位置"——个位对个位、十位对十位；
+而大模型看数字的地基是"频率"——哪几个字符经常一起出现就粘成一块。
+这两套地基根本对不上。</strong></p>
+</blockquote>
+<p>你在草稿纸上写竖式的时候，做的第一个动作是<strong>对齐</strong>：</p>
+<div class="highlight"><pre><span></span><code>   9.90
++  0.01
+------
+</code></pre></div>
+
+<p>个位压个位，小数点压小数点。<strong>位置本身就是意义</strong>。</p>
+<p>大模型拿到 "9.11" 这个字符串时，第一步不是对齐，是<strong>切块</strong>。切完可能是 <code>["9", ".", "11"]</code>。
+于是"11"这个块，和 9.9 里的"9"块被摆在一起比较——<strong>11 &gt; 9，所以 9.11 更大。</strong></p>
+<p>记住这个画面：<strong>竖式靠位置，分词靠频率。</strong>下面所有东西都挂在这个错位上。</p>
+<hr />
+<h2 id="1-竖式的灵魂位置就是权重">1. 竖式的灵魂：位置就是权重</h2>
+<p>先把小学那套东西写成代码，看看它到底依赖什么。</p>
+<div class="highlight"><pre><span></span><code><span class="c1"># 竖式加法：唯一的规则就是&quot;从右往左，逐位对齐&quot;</span>
+<span class="k">def</span><span class="w"> </span><span class="nf">vertical_add</span><span class="p">(</span><span class="n">a</span><span class="p">:</span> <span class="nb">str</span><span class="p">,</span> <span class="n">b</span><span class="p">:</span> <span class="nb">str</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="nb">str</span><span class="p">:</span>
+    <span class="n">a</span><span class="p">,</span> <span class="n">b</span> <span class="o">=</span> <span class="n">a</span><span class="p">[::</span><span class="o">-</span><span class="mi">1</span><span class="p">],</span> <span class="n">b</span><span class="p">[::</span><span class="o">-</span><span class="mi">1</span><span class="p">]</span>              <span class="c1"># 翻转，让个位排在最前</span>
+    <span class="n">n</span><span class="p">,</span> <span class="n">carry</span><span class="p">,</span> <span class="n">out</span> <span class="o">=</span> <span class="nb">max</span><span class="p">(</span><span class="nb">len</span><span class="p">(</span><span class="n">a</span><span class="p">),</span> <span class="nb">len</span><span class="p">(</span><span class="n">b</span><span class="p">)),</span> <span class="mi">0</span><span class="p">,</span> <span class="p">[]</span>
+    <span class="k">for</span> <span class="n">i</span> <span class="ow">in</span> <span class="nb">range</span><span class="p">(</span><span class="n">n</span><span class="p">):</span>                   <span class="c1"># 第 i 位 = 权重 10^i，位置即意义</span>
+        <span class="n">da</span> <span class="o">=</span> <span class="nb">int</span><span class="p">(</span><span class="n">a</span><span class="p">[</span><span class="n">i</span><span class="p">])</span> <span class="k">if</span> <span class="n">i</span> <span class="o">&lt;</span> <span class="nb">len</span><span class="p">(</span><span class="n">a</span><span class="p">)</span> <span class="k">else</span> <span class="mi">0</span>
+        <span class="n">db</span> <span class="o">=</span> <span class="nb">int</span><span class="p">(</span><span class="n">b</span><span class="p">[</span><span class="n">i</span><span class="p">])</span> <span class="k">if</span> <span class="n">i</span> <span class="o">&lt;</span> <span class="nb">len</span><span class="p">(</span><span class="n">b</span><span class="p">)</span> <span class="k">else</span> <span class="mi">0</span>
+        <span class="n">s</span> <span class="o">=</span> <span class="n">da</span> <span class="o">+</span> <span class="n">db</span> <span class="o">+</span> <span class="n">carry</span>
+        <span class="n">out</span><span class="o">.</span><span class="n">append</span><span class="p">(</span><span class="nb">str</span><span class="p">(</span><span class="n">s</span> <span class="o">%</span> <span class="mi">10</span><span class="p">))</span>
+        <span class="n">carry</span> <span class="o">=</span> <span class="n">s</span> <span class="o">//</span> <span class="mi">10</span>                  <span class="c1"># 进位：位置之间唯一的通道</span>
+    <span class="k">if</span> <span class="n">carry</span><span class="p">:</span>
+        <span class="n">out</span><span class="o">.</span><span class="n">append</span><span class="p">(</span><span class="nb">str</span><span class="p">(</span><span class="n">carry</span><span class="p">))</span>
+    <span class="k">return</span> <span class="s2">&quot;&quot;</span><span class="o">.</span><span class="n">join</span><span class="p">(</span><span class="n">out</span><span class="p">[::</span><span class="o">-</span><span class="mi">1</span><span class="p">])</span>
+
+<span class="nb">print</span><span class="p">(</span><span class="n">vertical_add</span><span class="p">(</span><span class="s2">&quot;968&quot;</span><span class="p">,</span> <span class="s2">&quot;77&quot;</span><span class="p">))</span>         <span class="c1"># 1045</span>
+</code></pre></div>
+
+<p>注意这段代码里最关键的一行是 <code>a[::-1]</code>——<strong>翻转，是为了让"第几位"这个信息可靠。</strong></p>
+<p>整个算法只依赖一件事：<strong>我知道每个数字排在第几位。</strong>
+一旦这个信息丢了，进位就无从谈起，加法就彻底散架。</p>
+<blockquote>
+<p>小学老师用红笔圈你"数位没对齐"的时候，圈的不是格式，是算法的地基。</p>
+</blockquote>
+<hr />
+<h2 id="2-分词器不是按位切的是按常见块切的">2. 分词器不是按位切的，是按"常见块"切的</h2>
+<p>大模型读不到字符，它读到的是 token（词元）。把文本变成 token 的东西叫<strong>分词器</strong>，
+主流做法是 BPE：<strong>在海量语料里统计，哪两个相邻片段经常一起出现，就把它们合并成一块。</strong></p>
+<p>关键在于，它统计的是<strong>语料频率</strong>，不是<strong>数学结构</strong>。"20" "19" "100" 这些块在语料里出现得极其频繁
+（年份、价格、百分比），于是它们被固化成了单个 token；而 "437" 这种就未必。</p>
+<p>下面用一个玩具 BPE 把这个过程演一遍——不联网、不下载模型，纯 Python：</p>
+<div class="highlight"><pre><span></span><code><span class="c1"># 一个极简 BPE：只保留&quot;语料里高频&quot;的数字块作为一个 token</span>
+<span class="n">FREQUENT</span> <span class="o">=</span> <span class="p">{</span><span class="s2">&quot;20&quot;</span><span class="p">,</span> <span class="s2">&quot;19&quot;</span><span class="p">,</span> <span class="s2">&quot;11&quot;</span><span class="p">,</span> <span class="s2">&quot;100&quot;</span><span class="p">,</span> <span class="s2">&quot;000&quot;</span><span class="p">,</span> <span class="s2">&quot;12&quot;</span><span class="p">,</span> <span class="s2">&quot;10&quot;</span><span class="p">}</span>   <span class="c1"># 假装这些块在语料里超高频</span>
+
+<span class="k">def</span><span class="w"> </span><span class="nf">toy_tokenize</span><span class="p">(</span><span class="n">s</span><span class="p">:</span> <span class="nb">str</span><span class="p">):</span>
+    <span class="n">tokens</span><span class="p">,</span> <span class="n">i</span> <span class="o">=</span> <span class="p">[],</span> <span class="mi">0</span>
+    <span class="k">while</span> <span class="n">i</span> <span class="o">&lt;</span> <span class="nb">len</span><span class="p">(</span><span class="n">s</span><span class="p">):</span>
+        <span class="k">for</span> <span class="n">L</span> <span class="ow">in</span> <span class="p">(</span><span class="mi">3</span><span class="p">,</span> <span class="mi">2</span><span class="p">):</span>                      <span class="c1"># 贪心：优先匹配长块</span>
+            <span class="k">if</span> <span class="n">s</span><span class="p">[</span><span class="n">i</span><span class="p">:</span><span class="n">i</span><span class="o">+</span><span class="n">L</span><span class="p">]</span> <span class="ow">in</span> <span class="n">FREQUENT</span><span class="p">:</span>
+                <span class="n">tokens</span><span class="o">.</span><span class="n">append</span><span class="p">(</span><span class="n">s</span><span class="p">[</span><span class="n">i</span><span class="p">:</span><span class="n">i</span><span class="o">+</span><span class="n">L</span><span class="p">]);</span> <span class="n">i</span> <span class="o">+=</span> <span class="n">L</span><span class="p">;</span> <span class="k">break</span>
+        <span class="k">else</span><span class="p">:</span>
+            <span class="n">tokens</span><span class="o">.</span><span class="n">append</span><span class="p">(</span><span class="n">s</span><span class="p">[</span><span class="n">i</span><span class="p">]);</span> <span class="n">i</span> <span class="o">+=</span> <span class="mi">1</span>       <span class="c1"># 匹配不上就单字符成块</span>
+    <span class="k">return</span> <span class="n">tokens</span>
+
+<span class="k">for</span> <span class="n">num</span> <span class="ow">in</span> <span class="p">[</span><span class="s2">&quot;9.11&quot;</span><span class="p">,</span> <span class="s2">&quot;9.9&quot;</span><span class="p">,</span> <span class="s2">&quot;1234&quot;</span><span class="p">,</span> <span class="s2">&quot;2019&quot;</span><span class="p">,</span> <span class="s2">&quot;100000&quot;</span><span class="p">]:</span>
+    <span class="nb">print</span><span class="p">(</span><span class="sa">f</span><span class="s2">&quot;</span><span class="si">{</span><span class="n">num</span><span class="si">:</span><span class="s2">&gt;8</span><span class="si">}</span><span class="s2">  -&gt;  </span><span class="si">{</span><span class="n">toy_tokenize</span><span class="p">(</span><span class="n">num</span><span class="p">)</span><span class="si">}</span><span class="s2">&quot;</span><span class="p">)</span>
+</code></pre></div>
+
+<p>输出：</p>
+<div class="highlight"><pre><span></span><code>    9.11  -&gt;  [&#39;9&#39;, &#39;.&#39;, &#39;11&#39;]
+     9.9  -&gt;  [&#39;9&#39;, &#39;.&#39;, &#39;9&#39;]
+    1234  -&gt;  [&#39;12&#39;, &#39;3&#39;, &#39;4&#39;]
+    2019  -&gt;  [&#39;20&#39;, &#39;19&#39;]
+  100000  -&gt;  [&#39;100&#39;, &#39;000&#39;]
+</code></pre></div>
+
+<p>四行输出，四个灾难：</p>
+<ul>
+<li><code>9.11</code> 的小数部分是<strong>一块 "11"</strong>，<code>9.9</code> 的小数部分是<strong>一块 "9"</strong>——模型比的是这两块谁"大"；</li>
+<li><code>1234</code> 被切成 <code>12 / 3 / 4</code>，<strong>"1" 是千位"这个事实完全消失</strong>；</li>
+<li><code>2019</code> 只有两块，<code>100000</code> 也只有两块——<strong>块数和数值大小毫无关系</strong>；</li>
+<li>同一个数字字符 <code>1</code>，在不同位置属于不同的块，<strong>没有任何一个 token 稳定地代表"千位"</strong>。</li>
+</ul>
+<blockquote>
+<p>真实的 GPT-4 / Llama 分词器就是这个逻辑的加强版（Llama 3 之后不少模型改成了固定三位一组，
+缓解但没根治）。如果你本机装了 <code>tiktoken</code>，可以跑 <code>tiktoken.get_encoding("cl100k_base").encode("9.11")</code> 亲眼看一遍。</p>
+</blockquote>
+<hr />
+<h2 id="疑惑点一既然切错了模型为什么大部分时候还能算对">🤔 疑惑点一：既然切错了，模型为什么大部分时候还能算对？</h2>
+<p><strong>因为它不是在"算"，是在"回忆"——常见算式在语料里出现过千百万次，它记住了答案；一旦超出记忆范围，错误立刻暴露。</strong></p>
+<p>这是最反直觉的一点。<code>2+2=4</code>、<code>12×12=144</code> 在互联网上出现过无数次，模型把它们当作<strong>语言事实</strong>背了下来，
+和背"北京是中国的首都"没有本质区别。但只要你把数字调大、调冷门，记忆就失效了：</p>
+<div class="highlight"><pre><span></span><code><span class="c1"># 一个模型如果真的&quot;会算&quot;，位数不该影响正确率；如果是&quot;背&quot;的，位数一大就崩</span>
+<span class="n">easy</span>  <span class="o">=</span> <span class="p">(</span><span class="s2">&quot;12&quot;</span><span class="p">,</span> <span class="s2">&quot;12&quot;</span><span class="p">)</span>          <span class="c1"># 语料里出现过无数次</span>
+<span class="n">hard</span>  <span class="o">=</span> <span class="p">(</span><span class="s2">&quot;48371&quot;</span><span class="p">,</span> <span class="s2">&quot;29684&quot;</span><span class="p">)</span>    <span class="c1"># 几乎不可能被完整背过</span>
+<span class="nb">print</span><span class="p">(</span><span class="n">vertical_add</span><span class="p">(</span><span class="o">*</span><span class="n">easy</span><span class="p">),</span> <span class="n">vertical_add</span><span class="p">(</span><span class="o">*</span><span class="n">hard</span><span class="p">))</span>   <span class="c1"># 144 78055 —— 竖式对两者一视同仁</span>
+</code></pre></div>
+
+<p>竖式算法对 <code>12+12</code> 和 <code>48371+29684</code> <strong>难度完全相同</strong>（都是逐位加），
+但大模型对这两者的正确率<strong>天差地别</strong>。这个落差本身就是证据：
+<strong>它走的根本不是竖式那条路。</strong></p>
+<hr />
+<h2 id="3-致命伤同一个数字换个上下文就被切成不同的块">3. 致命伤：同一个数字，换个上下文就被切成不同的块</h2>
+<p>上一节还只是"切得不巧"。真正致命的是<strong>不一致</strong>。</p>
+<p>竖式算法能成立，前提是"个位永远是个位"。但在分词器眼里，一个数字的切法<strong>取决于它周围有什么</strong>：</p>
+<div class="highlight"><pre><span></span><code><span class="k">for</span> <span class="n">ctx</span> <span class="ow">in</span> <span class="p">[</span><span class="s2">&quot;1234&quot;</span><span class="p">,</span> <span class="s2">&quot;$1234&quot;</span><span class="p">,</span> <span class="s2">&quot;1234元&quot;</span><span class="p">,</span> <span class="s2">&quot;01234&quot;</span><span class="p">]:</span>
+    <span class="nb">print</span><span class="p">(</span><span class="sa">f</span><span class="s2">&quot;</span><span class="si">{</span><span class="n">ctx</span><span class="si">:</span><span class="s2">&gt;8</span><span class="si">}</span><span class="s2">  -&gt;  </span><span class="si">{</span><span class="n">toy_tokenize</span><span class="p">(</span><span class="n">ctx</span><span class="p">)</span><span class="si">}</span><span class="s2">&quot;</span><span class="p">)</span>
+</code></pre></div>
+
+<div class="highlight"><pre><span></span><code>    1234  -&gt;  [&#39;12&#39;, &#39;3&#39;, &#39;4&#39;]
+   $1234  -&gt;  [&#39;$&#39;, &#39;12&#39;, &#39;3&#39;, &#39;4&#39;]
+  1234元  -&gt;  [&#39;12&#39;, &#39;3&#39;, &#39;4&#39;, &#39;元&#39;]
+   01234  -&gt;  [&#39;0&#39;, &#39;12&#39;, &#39;3&#39;, &#39;4&#39;]
+</code></pre></div>
+
+<p>前面多一个 <code>0</code>，整个切分就整体错位了。这意味着：</p>
+<blockquote>
+<p><strong>模型必须在"12/3/4"这种块结构上，重新学会一套加法。
+而且每一种切法都要单独学一遍。</strong></p>
+</blockquote>
+<p>人类学会竖式，是学会了<strong>一条规则</strong>，然后对所有数字通用。
+模型学会加法，是在<strong>成千上万种切分组合</strong>上分别拟合。前者是算法，后者是插值——
+所以它必然在没见过的组合上出错。</p>
+<hr />
+<h2 id="4-动手把按位对齐喂给模型它立刻学会加法">4. 动手：把"按位对齐"喂给模型，它立刻学会加法</h2>
+<p>空口无凭。下面训练两个一模一样的小模型学三位数加法，唯一的区别是<strong>输入表示</strong>：</p>
+<ul>
+<li><strong>A（块表示）</strong>：把整个数当成一个 id，模拟"数被粘成块"；</li>
+<li><strong>B（按位对齐）</strong>：拆成个位/十位/百位三个通道，模拟"竖式对齐"。</li>
+</ul>
+<div class="highlight"><pre><span></span><code><span class="kn">import</span><span class="w"> </span><span class="nn">torch</span><span class="o">,</span><span class="w"> </span><span class="nn">torch.nn</span><span class="w"> </span><span class="k">as</span><span class="w"> </span><span class="nn">nn</span>
+
+<span class="n">torch</span><span class="o">.</span><span class="n">manual_seed</span><span class="p">(</span><span class="mi">0</span><span class="p">)</span>
+<span class="n">N</span> <span class="o">=</span> <span class="mi">4000</span>
+<span class="n">a</span> <span class="o">=</span> <span class="n">torch</span><span class="o">.</span><span class="n">randint</span><span class="p">(</span><span class="mi">0</span><span class="p">,</span> <span class="mi">1000</span><span class="p">,</span> <span class="p">(</span><span class="n">N</span><span class="p">,));</span> <span class="n">b</span> <span class="o">=</span> <span class="n">torch</span><span class="o">.</span><span class="n">randint</span><span class="p">(</span><span class="mi">0</span><span class="p">,</span> <span class="mi">1000</span><span class="p">,</span> <span class="p">(</span><span class="n">N</span><span class="p">,))</span>
+<span class="n">y</span> <span class="o">=</span> <span class="p">(</span><span class="n">a</span> <span class="o">+</span> <span class="n">b</span><span class="p">)</span><span class="o">.</span><span class="n">float</span><span class="p">()</span><span class="o">.</span><span class="n">unsqueeze</span><span class="p">(</span><span class="mi">1</span><span class="p">)</span> <span class="o">/</span> <span class="mf">2000.0</span>            <span class="c1"># 归一化的目标</span>
+
+<span class="c1"># A：块表示 —— 整个数一个&quot;块&quot;，位置信息不可见</span>
+<span class="n">XA</span> <span class="o">=</span> <span class="n">torch</span><span class="o">.</span><span class="n">stack</span><span class="p">([</span><span class="n">a</span><span class="p">,</span> <span class="n">b</span><span class="p">],</span> <span class="n">dim</span><span class="o">=</span><span class="mi">1</span><span class="p">)</span><span class="o">.</span><span class="n">float</span><span class="p">()</span> <span class="o">/</span> <span class="mf">1000.0</span>
+
+<span class="c1"># B：按位对齐 —— 个/十/百各占一个通道（这就是竖式做的事）</span>
+<span class="k">def</span><span class="w"> </span><span class="nf">digits</span><span class="p">(</span><span class="n">x</span><span class="p">):</span>
+    <span class="k">return</span> <span class="n">torch</span><span class="o">.</span><span class="n">stack</span><span class="p">([</span><span class="n">x</span> <span class="o">%</span> <span class="mi">10</span><span class="p">,</span> <span class="p">(</span><span class="n">x</span> <span class="o">//</span> <span class="mi">10</span><span class="p">)</span> <span class="o">%</span> <span class="mi">10</span><span class="p">,</span> <span class="p">(</span><span class="n">x</span> <span class="o">//</span> <span class="mi">100</span><span class="p">)</span> <span class="o">%</span> <span class="mi">10</span><span class="p">],</span> <span class="n">dim</span><span class="o">=</span><span class="mi">1</span><span class="p">)</span><span class="o">.</span><span class="n">float</span><span class="p">()</span> <span class="o">/</span> <span class="mf">9.0</span>
+<span class="n">XB</span> <span class="o">=</span> <span class="n">torch</span><span class="o">.</span><span class="n">cat</span><span class="p">([</span><span class="n">digits</span><span class="p">(</span><span class="n">a</span><span class="p">),</span> <span class="n">digits</span><span class="p">(</span><span class="n">b</span><span class="p">)],</span> <span class="n">dim</span><span class="o">=</span><span class="mi">1</span><span class="p">)</span>
+
+<span class="k">def</span><span class="w"> </span><span class="nf">train</span><span class="p">(</span><span class="n">X</span><span class="p">,</span> <span class="n">steps</span><span class="o">=</span><span class="mi">800</span><span class="p">):</span>
+    <span class="n">net</span> <span class="o">=</span> <span class="n">nn</span><span class="o">.</span><span class="n">Sequential</span><span class="p">(</span><span class="n">nn</span><span class="o">.</span><span class="n">Linear</span><span class="p">(</span><span class="n">X</span><span class="o">.</span><span class="n">shape</span><span class="p">[</span><span class="mi">1</span><span class="p">],</span> <span class="mi">64</span><span class="p">),</span> <span class="n">nn</span><span class="o">.</span><span class="n">ReLU</span><span class="p">(),</span> <span class="n">nn</span><span class="o">.</span><span class="n">Linear</span><span class="p">(</span><span class="mi">64</span><span class="p">,</span> <span class="mi">1</span><span class="p">))</span>
+    <span class="n">opt</span> <span class="o">=</span> <span class="n">torch</span><span class="o">.</span><span class="n">optim</span><span class="o">.</span><span class="n">Adam</span><span class="p">(</span><span class="n">net</span><span class="o">.</span><span class="n">parameters</span><span class="p">(),</span> <span class="n">lr</span><span class="o">=</span><span class="mf">1e-2</span><span class="p">)</span>
+    <span class="k">for</span> <span class="n">_</span> <span class="ow">in</span> <span class="nb">range</span><span class="p">(</span><span class="n">steps</span><span class="p">):</span>
+        <span class="n">loss</span> <span class="o">=</span> <span class="p">((</span><span class="n">net</span><span class="p">(</span><span class="n">X</span><span class="p">)</span> <span class="o">-</span> <span class="n">y</span><span class="p">)</span> <span class="o">**</span> <span class="mi">2</span><span class="p">)</span><span class="o">.</span><span class="n">mean</span><span class="p">()</span>
+        <span class="n">opt</span><span class="o">.</span><span class="n">zero_grad</span><span class="p">();</span> <span class="n">loss</span><span class="o">.</span><span class="n">backward</span><span class="p">();</span> <span class="n">opt</span><span class="o">.</span><span class="n">step</span><span class="p">()</span>
+    <span class="n">err</span> <span class="o">=</span> <span class="p">(</span><span class="n">net</span><span class="p">(</span><span class="n">X</span><span class="p">)</span> <span class="o">-</span> <span class="n">y</span><span class="p">)</span><span class="o">.</span><span class="n">abs</span><span class="p">()</span><span class="o">.</span><span class="n">mean</span><span class="p">()</span><span class="o">.</span><span class="n">item</span><span class="p">()</span> <span class="o">*</span> <span class="mi">2000</span>     <span class="c1"># 还原成&quot;平均差多少&quot;</span>
+    <span class="k">return</span> <span class="n">err</span>
+
+<span class="nb">print</span><span class="p">(</span><span class="sa">f</span><span class="s2">&quot;A 块表示   平均误差: </span><span class="si">{</span><span class="n">train</span><span class="p">(</span><span class="n">XA</span><span class="p">)</span><span class="si">:</span><span class="s2">.2f</span><span class="si">}</span><span class="s2">&quot;</span><span class="p">)</span>
+<span class="nb">print</span><span class="p">(</span><span class="sa">f</span><span class="s2">&quot;B 按位对齐 平均误差: </span><span class="si">{</span><span class="n">train</span><span class="p">(</span><span class="n">XB</span><span class="p">)</span><span class="si">:</span><span class="s2">.2f</span><span class="si">}</span><span class="s2">&quot;</span><span class="p">)</span>
+</code></pre></div>
+
+<p>跑完你会看到 B 的误差显著小于 A，而且 B 收敛得快得多。
+<strong>同样的网络、同样的数据、同样的步数，只是换了一种"怎么看这个数"的方式。</strong></p>
+<p>这就是全部问题所在：<strong>大模型拿到的是 A，而小学老师教你的是 B。</strong></p>
+<hr />
+<h2 id="疑惑点二既然按位切这么好为什么没人这么干">🤔 疑惑点二：既然按位切这么好，为什么没人这么干？</h2>
+<p><strong>因为 token 是要花钱的。按位切会让所有数字变长好几倍，上下文窗口被数字吃掉，训练和推理成本全线上升——这是一笔"精度 vs 成本"的买卖。</strong></p>
+<p>假设一个模型的上下文是 128K token。如果数字全部按位切：</p>
+<div class="highlight"><pre><span></span><code><span class="n">text</span> <span class="o">=</span> <span class="s2">&quot;2024年第3季度营收为1284376元，同比增长17.4%&quot;</span>
+<span class="nb">print</span><span class="p">(</span><span class="s2">&quot;按块切:&quot;</span><span class="p">,</span> <span class="nb">len</span><span class="p">(</span><span class="n">toy_tokenize</span><span class="p">(</span><span class="n">text</span><span class="p">)))</span>
+<span class="nb">print</span><span class="p">(</span><span class="s2">&quot;按位切:&quot;</span><span class="p">,</span> <span class="nb">sum</span><span class="p">(</span><span class="mi">3</span> <span class="k">if</span> <span class="n">c</span><span class="o">.</span><span class="n">isdigit</span><span class="p">()</span> <span class="k">else</span> <span class="mi">1</span> <span class="k">for</span> <span class="n">c</span> <span class="ow">in</span> <span class="n">text</span><span class="p">)</span> <span class="o">//</span> <span class="mi">3</span> <span class="o">+</span> <span class="nb">sum</span><span class="p">(</span><span class="n">c</span><span class="o">.</span><span class="n">isdigit</span><span class="p">()</span> <span class="k">for</span> <span class="n">c</span> <span class="ow">in</span> <span class="n">text</span><span class="p">))</span>
+</code></pre></div>
+
+<p>一份财报里数字占比可能超过三成，全部按位切等于<strong>凭空吃掉一大块窗口</strong>，
+而 99% 的场景里模型只是"读到"数字、不需要真算。</p>
+<p>于是主流做法是折中：</p>
+<table>
+<thead>
+<tr>
+<th>模型</th>
+<th>数字切法</th>
+<th>代价</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>GPT-2</td>
+<td>完全按 BPE 频率，1~3 位不等</td>
+<td>算术极差</td>
+</tr>
+<tr>
+<td>GPT-3.5 / 4</td>
+<td>频率合并，常见块固化</td>
+<td>中等，长数字翻车</td>
+</tr>
+<tr>
+<td>Llama 3 / Qwen</td>
+<td><strong>强制三位一组</strong></td>
+<td>好很多，但组内仍是块</td>
+</tr>
+<tr>
+<td>少数专用模型</td>
+<td>逐位 + 反向书写</td>
+<td>算术强，token 开销大</td>
+</tr>
+</tbody>
+</table>
+<p><strong>没有一个主流模型采用真正的"按位对齐"。</strong> 所以 9.11 这个坑，短期内不会消失。</p>
+<hr />
+<h2 id="5-真正的解法其实也是小学老师教你的把竖式写出来">5. 真正的解法，其实也是小学老师教你的：把竖式写出来</h2>
+<p>有意思的是，这个问题最有效的补丁，也来自小学课堂——<strong>别心算，把过程写下来。</strong></p>
+<p>模型没法在一次前向传播里做完对齐和进位，但它可以<strong>把中间结果当成文本吐出来，再读回去</strong>：</p>
+<div class="highlight"><pre><span></span><code>9.11 vs 9.9
+补齐位数：9.11 vs 9.90
+比较小数第一位：1 &lt; 9
+结论：9.9 更大
+</code></pre></div>
+
+<p>一旦逼它写出"补齐位数"这一步，<strong>位置信息就从被切碎的 token 里，重新回到了显式的文本上</strong>。
+分词器毁掉的对齐，被草稿纸救了回来。</p>
+<p>这就是思维链（CoT）真正在干的事——<strong>它不是让模型"更用心地想"，是给它一张草稿纸。</strong>
+（这条线我在《老师逼你"写出过程"，原来是大模型学会推理的全部秘密》里单独展开。）</p>
+<p>仓库里的动画脚本把整个错位过程画了出来：</p>
+<div class="highlight"><pre><span></span><code>python<span class="w"> </span>tokenizer_number_visualization.py
+</code></pre></div>
+
+<blockquote>
+<p>画面左边是竖式：数字规规矩矩对齐，进位一格一格传上去；
+右边是分词器：同一个数字被切成大小不一的块，块的边界随上下文乱跳。
+最后一幅图把"位数 vs 正确率"画成曲线——<strong>块表示那条线，在四位数之后直接跳水。</strong></p>
+</blockquote>
+<hr />
+<h2 id="缝合把所有画面接起来">缝合：把所有画面接起来</h2>
+<table>
+<thead>
+<tr>
+<th>算术概念</th>
+<th>小学怎么讲</th>
+<th>这篇文章怎么看</th>
+<th>在大模型里是什么</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><strong>数位</strong></td>
+<td>个位、十位、百位</td>
+<td>位置即权重（第 1 节）</td>
+<td>分词器里<strong>根本不存在</strong>的概念</td>
+</tr>
+<tr>
+<td><strong>对齐</strong></td>
+<td>竖式要对齐</td>
+<td>算法的地基（第 1 节）</td>
+<td>被 BPE 的频率合并打碎（第 2 节）</td>
+</tr>
+<tr>
+<td><strong>进位</strong></td>
+<td>满十进一</td>
+<td>位置之间唯一的通道</td>
+<td>跨 token 传递，极易断（第 3 节）</td>
+</tr>
+<tr>
+<td><strong>打草稿</strong></td>
+<td>别心算，写过程</td>
+<td>把中间结果外置（第 5 节）</td>
+<td>思维链 CoT</td>
+</tr>
+<tr>
+<td><strong>背口诀</strong></td>
+<td>九九乘法表</td>
+<td>记忆而非计算（疑惑点一）</td>
+<td>模型算对小数的真实原因</td>
+</tr>
+</tbody>
+</table>
+<p>三句话总结：</p>
+<blockquote>
+<p><strong>人类算数靠位置，大模型看数字靠频率</strong>——竖式的地基在分词那一步就被抽掉了（第 1、2 节）；
+<strong>同一个数字换个上下文就被切成不同的块</strong>，所以它学的不是算法而是插值（第 3、4 节）；
+<strong>唯一有效的补丁是把竖式写出来</strong>，让位置信息重新回到文本上——这就是思维链的机制（第 5 节）。</p>
+</blockquote>
+<p>所以下次看到大模型说 9.11 比 9.9 大，别急着嘲笑它。
+<strong>它只是从来没上过那节"把数位对齐"的课。</strong>
+而你上过——你在草稿纸上画的那条横线，是它花了几千亿参数都还没学会的东西。</p>
+<hr />
+<blockquote>
+<p><strong>备注（选题/标题）：</strong> 本篇走"人人做过的具体动作 → 大模型机制"钩子。
+备选标题：
+1.《9.11 比 9.9 大？一道一年级的题，问倒了最强的大模型》
+2.《为什么大模型算不对数？答案在你小学画的那条横线里》</p>
+</blockquote>
+    </div>
+  </article>
+
+</main>
+
+<!-- Floating Ask-AI chat widget -->
+<button class="ai-fab" id="ai-fab" aria-label="Ask AI about this article" title="Ask AI about this article">
+  <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+    <path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"/>
+  </svg>
+  <span class="ai-fab-label">Ask AI</span>
+</button>
+
+<div class="ai-panel" id="ai-panel" role="dialog" aria-labelledby="ai-panel-title" aria-hidden="true">
+  <header class="ai-panel-head">
+    <div class="ai-panel-title-wrap">
+      <span class="ai-dot"></span>
+      <h3 id="ai-panel-title">Ask AI about this post</h3>
+    </div>
+    <div class="ai-panel-actions">
+      <button class="ai-icon-btn" id="ai-clear" title="Clear conversation" aria-label="Clear">
+        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><polyline points="3 6 5 6 21 6"/><path d="M19 6l-1 14a2 2 0 0 1-2 2H8a2 2 0 0 1-2-2L5 6"/><path d="M10 11v6M14 11v6"/><path d="M9 6V4a1 1 0 0 1 1-1h4a1 1 0 0 1 1 1v2"/></svg>
+      </button>
+      <button class="ai-icon-btn" id="ai-close" title="Minimize" aria-label="Minimize">
+        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><polyline points="6 9 12 15 18 9"/></svg>
+      </button>
+    </div>
+  </header>
+
+  <div class="ai-messages" id="ai-messages">
+    <div class="ai-empty" id="ai-empty">
+      <p class="ai-empty-title">On-device AI · Gemini Nano</p>
+      <p class="ai-empty-sub">Ask anything about this article. Runs in your browser — nothing leaves your device.</p>
+    </div>
+  </div>
+
+  <div class="ai-status" id="ai-status" hidden></div>
+
+  <form class="ai-composer" id="ai-form">
+    <textarea id="ai-input" rows="1" placeholder="Ask about this post…" autocomplete="off"></textarea>
+    <button type="submit" id="ai-send" class="ai-send" aria-label="Send" disabled>
+      <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><line x1="22" y1="2" x2="11" y2="13"/><polygon points="22 2 15 22 11 13 2 9 22 2"/></svg>
+    </button>
+  </form>
+</div>
+
+<script>
+(function () {
+  const POST_TITLE = "\u5c0f\u5b66\u4e00\u5e74\u7ea7\u5b66\u7684\"\u6570\u4f4d\u5bf9\u9f50\"\uff0c\u539f\u6765\u662f\u5927\u6a21\u578b\u81f3\u4eca\u7b97\u4e0d\u660e\u767d\u6570\u7684\u6839\u672c\u539f\u56e0";
+  const contentEl = document.querySelector('article .content');
+
+  const fab = document.getElementById('ai-fab');
+  const panel = document.getElementById('ai-panel');
+  const closeBtn = document.getElementById('ai-close');
+  const clearBtn = document.getElementById('ai-clear');
+  const msgsEl = document.getElementById('ai-messages');
+  const emptyEl = document.getElementById('ai-empty');
+  const statusEl = document.getElementById('ai-status');
+  const formEl = document.getElementById('ai-form');
+  const inputEl = document.getElementById('ai-input');
+  const sendBtn = document.getElementById('ai-send');
+
+  function articleText() {
+    if (!contentEl) return '';
+    return (contentEl.innerText || contentEl.textContent || '')
+      .replace(/[ \t]+\n/g, '\n')
+      .replace(/\n{3,}/g, '\n\n')
+      .trim();
+  }
+
+  function setStatus(msg, cls) {
+    if (!msg) { statusEl.hidden = true; statusEl.textContent = ''; statusEl.className = 'ai-status'; return; }
+    statusEl.hidden = false;
+    statusEl.textContent = msg;
+    statusEl.className = 'ai-status' + (cls ? ' ' + cls : '');
+  }
+
+  function hideEmpty() { if (emptyEl) emptyEl.style.display = 'none'; }
+
+  function appendBubble(role, text) {
+    hideEmpty();
+    const wrap = document.createElement('div');
+    wrap.className = 'ai-msg ai-msg-' + role;
+    const bubble = document.createElement('div');
+    bubble.className = 'ai-bubble';
+    bubble.textContent = text;
+    wrap.appendChild(bubble);
+    msgsEl.appendChild(wrap);
+    msgsEl.scrollTop = msgsEl.scrollHeight;
+    return bubble;
+  }
+
+  function appendTyping() {
+    hideEmpty();
+    const wrap = document.createElement('div');
+    wrap.className = 'ai-msg ai-msg-assistant ai-typing';
+    wrap.innerHTML = '<div class="ai-bubble"><span class="ai-dots"><i></i><i></i><i></i></span></div>';
+    msgsEl.appendChild(wrap);
+    msgsEl.scrollTop = msgsEl.scrollHeight;
+    return wrap;
+  }
+
+  function autoSize() {
+    inputEl.style.height = 'auto';
+    inputEl.style.height = Math.min(inputEl.scrollHeight, 140) + 'px';
+  }
+
+  function openPanel() {
+    panel.classList.add('open');
+    panel.setAttribute('aria-hidden', 'false');
+    fab.classList.add('hidden');
+    setTimeout(() => inputEl.focus(), 50);
+  }
+  function closePanel() {
+    panel.classList.remove('open');
+    panel.setAttribute('aria-hidden', 'true');
+    fab.classList.remove('hidden');
+  }
+
+  fab.addEventListener('click', openPanel);
+  closeBtn.addEventListener('click', closePanel);
+  document.addEventListener('keydown', e => {
+    if (e.key === 'Escape' && panel.classList.contains('open')) closePanel();
+  });
+
+  // ---- LanguageModel session ----
+  let session = null;
+  let creating = null;
+  let history = [];
+
+  function buildSystemPrompt() {
+    // Keep article context modest — Gemini Nano's input quota is small.
+    const article = articleText().slice(0, 4000);
+    return (
+      'You are a concise, helpful assistant answering questions about a blog post. ' +
+      'Use the article below as your primary source. If the answer is not in it, say so briefly and answer generally. ' +
+      'Reply in the same language as the user\'s question. Keep answers short unless asked for detail.\n\n' +
+      '=== ARTICLE TITLE ===\n' + POST_TITLE + '\n\n' +
+      '=== ARTICLE CONTENT ===\n' + article
+    );
+  }
+
+  async function ensureSession() {
+    if (session) return session;
+    if (creating) return creating;
+
+    if (!('LanguageModel' in self)) {
+      throw new Error(
+        'On-device AI not available. Use Chrome 138+ on desktop, or enable ' +
+        '"Prompt API for Gemini Nano" in chrome://flags.'
+      );
+    }
+
+    setStatus('Checking model…', 'info');
+    const status = await LanguageModel.availability();
+    if (status === 'unavailable') {
+      throw new Error('Model unavailable on this device.');
+    }
+
+    creating = (async () => {
+      // Only show download UI when the model isn't already there.
+      const willDownload = (status !== 'available');
+      if (willDownload) setStatus('Preparing model (first run downloads ~2GB)…', 'info');
+      else setStatus('Warming up…', 'info');
+
+      const s = await LanguageModel.create({
+        initialPrompts: [{ role: 'system', content: buildSystemPrompt() }],
+        monitor(m) {
+          m.addEventListener('downloadprogress', e => {
+            // Skip the spurious 0% event Chrome fires for cached models.
+            if (!willDownload && e.loaded === 0) return;
+            const pct = (e.loaded * 100).toFixed(1);
+            setStatus('Downloading model: ' + pct + '%', 'info');
+          });
+        }
+      });
+      session = s;
+      setStatus('');
+      return s;
+    })();
+
+    try { return await creating; }
+    finally { creating = null; }
+  }
+
+  async function ask(q) {
+    appendBubble('user', q);
+    history.push({ role: 'user', content: q });
+
+    sendBtn.disabled = true;
+    inputEl.disabled = true;
+    const typing = appendTyping();
+
+    let answerBubble = null;
+    let acc = '';
+    try {
+      const s = await ensureSession();
+      const stream = s.promptStreaming(q);
+      for await (const chunk of stream) {
+        if (!answerBubble) {
+          typing.remove();
+          const wrap = document.createElement('div');
+          wrap.className = 'ai-msg ai-msg-assistant';
+          answerBubble = document.createElement('div');
+          answerBubble.className = 'ai-bubble';
+          wrap.appendChild(answerBubble);
+          msgsEl.appendChild(wrap);
+        }
+        acc += chunk;
+        answerBubble.textContent = acc;
+        msgsEl.scrollTop = msgsEl.scrollHeight;
+      }
+      if (acc) history.push({ role: 'assistant', content: acc });
+      else { typing.remove(); appendBubble('assistant', '(no response)'); }
+    } catch (e) {
+      if (typing && typing.parentNode) typing.remove();
+      const err = document.createElement('div');
+      err.className = 'ai-msg ai-msg-error';
+      err.innerHTML = '<div class="ai-bubble">⚠ ' + (e && e.message ? e.message : String(e)) + '</div>';
+      msgsEl.appendChild(err);
+      msgsEl.scrollTop = msgsEl.scrollHeight;
+    } finally {
+      sendBtn.disabled = !inputEl.value.trim();
+      inputEl.disabled = false;
+      inputEl.focus();
+    }
+  }
+
+  formEl.addEventListener('submit', e => {
+    e.preventDefault();
+    const q = inputEl.value.trim();
+    if (!q) return;
+    inputEl.value = '';
+    autoSize();
+    sendBtn.disabled = true;
+    ask(q);
+  });
+
+  inputEl.addEventListener('input', () => {
+    autoSize();
+    sendBtn.disabled = !inputEl.value.trim();
+  });
+  inputEl.addEventListener('keydown', e => {
+    if (e.key === 'Enter' && !e.shiftKey) {
+      e.preventDefault();
+      formEl.requestSubmit();
+    }
+  });
+
+  clearBtn.addEventListener('click', () => {
+    msgsEl.innerHTML = '';
+    msgsEl.appendChild(emptyEl);
+    emptyEl.style.display = '';
+    history = [];
+    if (session && session.destroy) { try { session.destroy(); } catch (_) {} }
+    session = null;
+    setStatus('');
+  });
+
+  if (!('LanguageModel' in self)) {
+    fab.addEventListener('click', () => {
+      openPanel();
+      setStatus('On-device AI not detected. Use Chrome 138+ desktop, or enable "Prompt API for Gemini Nano" in chrome://flags.', 'bad');
+    }, { once: true });
+  }
+})();
+</script>
+
+<!-- Outline notes / comments — DataScript + IndexedDB -->
+<script src="https://github.com/tonsky/datascript/releases/download/1.7.8/datascript-1.7.8.min.js"></script>
+<script src="../notes.js?v=6"></script>
+<script src="../theme.js"></script>
+<script src="../wechat-copy.js?v=3"></script>
+
+</body>
+</html>
