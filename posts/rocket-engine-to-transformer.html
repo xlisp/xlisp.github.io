@@ -1,0 +1,1077 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>从火箭发动机的动力循环，看懂 Transformer 的计算图 · Steve Chan — xlisp</title>
+<meta name="description" content="这张表右边那列才是重点：它们不是两个领域的巧合，是同一类问题——&quot;在守恒约束下设计一张流网络&quot;——的两个实例。">
+<meta name="author" content="Steve Chan">
+<link rel="icon" type="image/jpeg" href="../icon.jpeg">
+<link rel="apple-touch-icon" href="../icon.jpeg">
+<meta property="og:type" content="article">
+<meta property="og:title" content="从火箭发动机的动力循环，看懂 Transformer 的计算图">
+<meta property="og:description" content="这张表右边那列才是重点：它们不是两个领域的巧合，是同一类问题——&quot;在守恒约束下设计一张流网络&quot;——的两个实例。">
+<meta property="og:image" content="../icon.jpeg">
+<meta property="og:site_name" content="Steve Chan — xlisp">
+<meta name="twitter:card" content="summary_large_image">
+<meta name="twitter:title" content="从火箭发动机的动力循环，看懂 Transformer 的计算图">
+<meta name="twitter:description" content="这张表右边那列才是重点：它们不是两个领域的巧合，是同一类问题——&quot;在守恒约束下设计一张流网络&quot;——的两个实例。">
+<meta name="twitter:image" content="../icon.jpeg">
+<link rel="stylesheet" href="../style.css?v=light1">
+<script>(function(){try{if(localStorage.getItem('theme')==='light')document.documentElement.setAttribute('data-theme','light');}catch(e){}})();</script>
+<!-- Math formula rendering via MathJax -->
+<script>
+window.MathJax = {
+  tex: {
+    // arithmatex emits \(...\) / \[...\] markup, so only these delimiters
+    // are needed; plain `$` is left alone (avoids currency false positives).
+    inlineMath: [['\\(', '\\)']],
+    displayMath: [['\\[', '\\]']],
+    processEscapes: true
+  },
+  svg: {
+    // Each formula gets its own self-contained <defs>, so the copy script can
+    // serialize one <svg> and rasterize it to a PNG for WeChat.
+    fontCache: 'local'
+  },
+  options: {
+    skipHtmlTags: ['script', 'noscript', 'style', 'textarea', 'pre', 'code'],
+    ignoreHtmlClass: 'highlight'
+  }
+};
+</script>
+<script src="https://cdn.jsdelivr.net/npm/mathjax@3/es5/tex-svg.js" async></script>
+</head>
+<body>
+<main class="wrap post">
+
+  <nav class="topnav">
+    <a href="../index.html">← home</a>
+  </nav>
+
+  <article>
+    <header class="post-header">
+      <h1>从火箭发动机的动力循环，看懂 Transformer 的计算图</h1>
+      <p class="meta">2026-09-02 · Steve Chan</p>
+    </header>
+
+    <div class="content">
+<blockquote>
+<p>一台闭式循环火箭发动机和一个 Transformer block，解的是同一道题：
+<strong>一股流从上游进来，要在有限的材料强度下完成尽可能彻底的转化，
+中途抽出去做功的那部分不能丢，得原样汇回主流；
+而只要你把它汇回去，整个系统就从一条直线变成一个闭环，
+于是你必须为稳定性重新付一次钱——归一化、warmup、阻尼、时序表。</strong></p>
+<p>这篇文章把这两张图并排画开：燃气发生器循环对应 <code>detach()</code>，
+分级燃烧对应残差连接，预燃室的富燃降温对应每层的小步更新，
+喷注器对应 attention，拉瓦尔喷管的喉部对应因果掩码。</p>
+<p>但开篇要先纠正一个几乎所有人都会有的直觉误会：
+<strong>发动机的"循环"（cycle）不是计算图里的"循环"（loop）。</strong>
+废气回流听起来像个环，但在稳态下它是一张彻头彻尾的 DAG。
+它对应的不是 RNN，正是残差块那个"分流—做功—汇流"的形状。
+把这一点搞清楚，后面所有的对应才站得住。</p>
+</blockquote>
+<hr />
+<h2 id="目录">目录</h2>
+<ul>
+<li><a href="#0-先把两张图并排放好">0. 先把两张图并排放好</a></li>
+<li><a href="#1-一台发动机要解的题能量从哪来废气往哪去">1. 一台发动机要解的题：能量从哪来，废气往哪去</a></li>
+<li><a href="#2-澄清cycle-不是-loop它是分流汇流">2. 澄清：cycle 不是 loop，它是分流—汇流</a></li>
+<li><a href="#3-开式循环就是-detach">3. 开式循环就是 <code>detach()</code></a></li>
+<li><a href="#4-闭式循环就是残差连接">4. 闭式循环就是残差连接</a></li>
+<li><a href="#5-前向是质量流反向是压力链">5. 前向是质量流，反向是压力链</a></li>
+<li><a href="#6-为什么必须分级涡轮烧不住化学计量比">6. 为什么必须"分级"：涡轮烧不住化学计量比</a></li>
+<li><a href="#7-喷注器混合与反应必须分开">7. 喷注器：混合与反应必须分开</a></li>
+<li><a href="#8-喉部因果掩码本来就是一个流体力学概念">8. 喉部：因果掩码本来就是一个流体力学概念</a></li>
+<li><a href="#9-全流量分级燃烧猛禽为什么长成那样">9. 全流量分级燃烧：猛禽为什么长成那样</a></li>
+<li><a href="#10-膨胀循环和它的天花板架构也有立方-平方定律">10. 膨胀循环和它的天花板：架构也有立方-平方定律</a></li>
+<li><a href="#11-控制论闭环带来的全部麻烦">11. 控制论：闭环带来的全部麻烦</a></li>
+<li><a href="#12-为什么值得这么复杂齐奥尔科夫斯基的指数放大">12. 为什么值得这么复杂：齐奥尔科夫斯基的指数放大</a></li>
+<li><a href="#13-类比在哪里断掉">13. 类比在哪里断掉</a></li>
+<li><a href="#14-如果只记五句话">14. 如果只记五句话</a></li>
+<li><a href="#附录-a把一个-transformer-block-写成动力循环图">附录 A：把一个 Transformer block 写成动力循环图</a></li>
+<li><a href="#参考">参考</a></li>
+</ul>
+<hr />
+<h2 id="0-先把两张图并排放好">0. 先把两张图并排放好</h2>
+<table>
+<thead>
+<tr>
+<th>发动机</th>
+<th>Transformer / 计算图</th>
+<th>共同的那道题</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>主燃烧室总压 <span class="arithmatex">\(P_c\)</span></td>
+<td>残差流（residual stream）</td>
+<td>一条所有部件共读共写的高压总线</td>
+</tr>
+<tr>
+<td>预燃室 + 涡轮（抽流做功）</td>
+<td>残差分支 <code>attn(·)</code> / <code>mlp(·)</code></td>
+<td>从主流抽一股，做一件专门的功</td>
+</tr>
+<tr>
+<td>涡轮排气汇回主室</td>
+<td><code>x = x + f(x)</code></td>
+<td>做完功的中间产物不许丢</td>
+</tr>
+<tr>
+<td>燃气发生器排气舷外</td>
+<td><code>f(x.detach())</code>、目标网络、直通估计</td>
+<td>故意切断回路，拿效率换稳定</td>
+</tr>
+<tr>
+<td>富燃/富氧预燃（故意欠燃）</td>
+<td>每层只做小量更新（<span class="arithmatex">\(1/\sqrt{2N}\)</span>、ReZero）</td>
+<td>单级转化太剧烈会烧穿材料</td>
+</tr>
+<tr>
+<td>涡轮入口温度 <span class="arithmatex">\(\approx 1000\ \mathrm{K}\)</span> 上限</td>
+<td>数值范围 / 梯度范数上限</td>
+<td>材料强度是硬约束，架构围着它长</td>
+</tr>
+<tr>
+<td>喷注器（混合）</td>
+<td>attention（token mixing）</td>
+<td>混合是唯一让不同流相互作用的地方</td>
+</tr>
+<tr>
+<td>燃烧室（反应）</td>
+<td>FFN（逐位置非线性）</td>
+<td>反应在每个位置上独立发生</td>
+</tr>
+<tr>
+<td>喷注器隔板 baffles</td>
+<td>多头 / 分组 / 专家分割</td>
+<td>切碎全局模态，防共振</td>
+</tr>
+<tr>
+<td>喉部（马赫 1）</td>
+<td>因果掩码 / 瓶颈层</td>
+<td>扰动不能逆行；最窄处决定吞吐</td>
+</tr>
+<tr>
+<td>再生冷却（废热回收）</td>
+<td>KV cache / 中间量复用</td>
+<td>已经付过的成本要用第二次</td>
+</tr>
+<tr>
+<td>启动时序表（开环）</td>
+<td>warmup + LR schedule</td>
+<td>瞬态期闭环来不及，只能开环编排</td>
+</tr>
+<tr>
+<td>POGO 抑制器（蓄压器）</td>
+<td>动量 / EMA / 梯度裁剪</td>
+<td>在回路里插一个柔性节点改相位</td>
+</tr>
+<tr>
+<td>比冲 <span class="arithmatex">\(I_{sp}\)</span> 提高 3%</td>
+<td>scaling law 上挪一格</td>
+<td>收益被指数/幂律放大，所以值得</td>
+</tr>
+</tbody>
+</table>
+<p>这张表右边那列才是重点：<strong>它们不是两个领域的巧合，是同一类问题——"在守恒约束下设计一张流网络"——的两个实例。</strong></p>
+<hr />
+<h2 id="1-一台发动机要解的题能量从哪来废气往哪去">1. 一台发动机要解的题：能量从哪来，废气往哪去</h2>
+<h3 id="11-自举悖论">1.1 自举悖论</h3>
+<p>液体火箭发动机的第一性难题不是燃烧，是<strong>泵</strong>。</p>
+<p>主燃烧室压力越高，喷管膨胀比可以做得越大，比冲越高。现代发动机的室压：F-1 是 70 bar，RS-25 是 206 bar，RD-180 是 257 bar，猛禽 2 是 300 bar 左右。要把推进剂顶进 300 bar 的燃烧室，泵的出口压力还要更高——RS-25 的高压燃料涡轮泵出口约 480 bar，是室压的两倍多。这个泵有 7 万转/分、几万千瓦的功率，比一节火车头还大。</p>
+<p><strong>问题来了：这几万千瓦从哪来？</strong></p>
+<p>只能从推进剂本身来。可是推进剂要先被泵加压才能烧，而泵要先有功率才能转。这是一个自举（bootstrap）问题：<strong>系统必须自己供给让自己运转起来的能量。</strong></p>
+<p>写下来其实就是一个不动点方程：</p>
+<div class="arithmatex">\[
+P_{\text{pump}} = g\left(\dot m\right), \qquad \dot m = h\left(P_{\text{pump}}\right)
+\]</div>
+<p>发动机的"循环"（power cycle），指的就是<strong>你怎么给这个不动点方程布线</strong>。历史上一共只有四种半答案。</p>
+<h3 id="12-四种半答案">1.2 四种半答案</h3>
+<p><strong>(a) 挤压式（pressure-fed）</strong>：不要泵，直接用高压气体挤压贮箱。简单、可靠、能长期存放（很多姿控发动机、阿波罗登月舱下降级都是这样）。代价是贮箱要承受室压，壁厚 → 干重爆炸增长 → 室压只能做到几十 bar。</p>
+<blockquote>
+<p><strong>对应</strong>：不带任何中间结构的浅层网络。你可以只堆宽度，但一旦要深，成本按平方涨。</p>
+</blockquote>
+<p><strong>(b) 燃气发生器循环 / 开式（gas generator, open cycle）</strong>：抽 2%–5% 的推进剂进一个小燃烧室（燃气发生器），产生的燃气驱动涡轮，<strong>做完功直接排到舷外</strong>。F-1、Merlin、RS-68、Vulcain 都是这个循环。土星五号起飞时一号机箭体侧面那股黑烟，就是燃气发生器的排气。</p>
+<p>代价：那 3% 左右的推进剂以极低的效率排掉了，整机比冲损失约 2%–3%。</p>
+<p><strong>(c) 膨胀循环（expander cycle）</strong>：不额外燃烧。让低温燃料（通常是氢）先流过燃烧室壁的再生冷却通道，被壁面的<strong>废热</strong>加热气化、膨胀，用这股气去驱动涡轮，然后再喷进主室烧掉。RL10 是代表。闭式、干净、比冲极高（450–465 s），但有个致命的规模上限，第 10 节会讲。</p>
+<p><strong>(d) 分级燃烧 / 闭式（staged combustion, closed cycle）</strong>：预燃室里让<strong>一种推进剂的全部流量</strong>和另一种的一部分在<strong>远离化学计量比</strong>的配比下燃烧——要么极度富燃，要么极度富氧——生成大量温度可控（700–1000 K）的燃气去推涡轮；<strong>涡轮排气仍然含有绝大部分化学能，被送进主燃烧室二次燃烧。</strong>一分推进剂都不丢。RS-25（富燃）、RD-170/180（富氧）、NK-33 都是。</p>
+<p><strong>(e) 全流量分级燃烧（FFSC）</strong>：两个预燃室，一个富氧一个富燃，<strong>全部推进剂</strong>都要先过涡轮再进主室，主室做的是气-气喷注。人类只造出过三种：RD-270（1960 年代试车，未飞）、集成动力头验证机、以及猛禽。</p>
+<p>从 (a) 到 (e)，就是"<strong>中间产物有多少被复用</strong>"这条轴。</p>
+<hr />
+<h2 id="2-澄清cycle-不是-loop它是分流汇流">2. 澄清：cycle 不是 loop，它是分流—汇流</h2>
+<p>这里必须停下来纠正一个直觉。</p>
+<p>"废气重新输入回去再次燃烧"听起来像一个<strong>环</strong>，很容易让人联想到计算图里的循环、RNN 的时间展开、乃至反馈控制。但<strong>在稳态运行时，一台分级燃烧发动机的流图是一张严格的有向无环图</strong>：</p>
+<div class="highlight"><pre><span></span><code>贮箱 → 泵 → 预燃室 → 涡轮 → 主燃烧室 → 喉部 → 喷管 → 真空
+        ↑______(同轴机械功)______|
+</code></pre></div>
+
+<p>任何一个推进剂分子，<strong>只经过每个部件一次</strong>，从不回头。那条向上的箭头传的不是物质，是<strong>同轴的机械功</strong>——涡轮和泵装在同一根轴上。所以"循环"（cycle）这个词在工程上指的是<strong>能量在部件之间的拓扑走法</strong>，不是时间上的回路。</p>
+<p>那它对应计算图里的什么？</p>
+<p><strong>恰恰就是残差块：从主流分出一支 → 做一件专门的功 → 汇回主流。</strong> 一次分流、一次汇流，图仍然是 DAG。</p>
+<div class="highlight"><pre><span></span><code>x ──────────────┬──────────────(+)──→
+                │               ↑
+                └── f(x) ───────┘
+</code></pre></div>
+
+<p>这个澄清不是抠字眼，它决定了类比往哪走：</p>
+<ul>
+<li>如果你把发动机的 cycle 理解成 loop，你会去对应 RNN、对应 while 循环、对应 agent 的 loop engineering——<strong>那是错的方向</strong>，因为发动机的物质流没有时间回路。</li>
+<li>正确的对应是<strong>残差 / skip connection / 多路汇流的 DAG 拓扑</strong>。真正带时间回路的是<strong>燃烧不稳定和 POGO</strong>——那是发动机里唯一的、也是最要命的真闭环，第 11 节专门讲。</li>
+</ul>
+<p>一句话：<strong>发动机的循环设计 ≈ 计算图的残差拓扑设计；发动机的振荡问题 ≈ 训练动力学的稳定性问题。这是两件事，别混。</strong></p>
+<hr />
+<h2 id="3-开式循环就是-detach">3. 开式循环就是 <code>detach()</code></h2>
+<p>燃气发生器循环干了什么？抽一股流，让它做完功，然后<strong>排到舷外，不参与主流</strong>。</p>
+<p>在计算图里，这个动作有一个精确的名字。它同时有两副面孔：</p>
+<p><strong>前向的那一面</strong>：分支的输出不汇入主流。</p>
+<div class="highlight"><pre><span></span><code><span class="n">h</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">aux_head</span><span class="p">(</span><span class="n">x</span><span class="p">)</span>        <span class="c1"># 抽一股流</span>
+<span class="n">loss_aux</span> <span class="o">=</span> <span class="n">criterion</span><span class="p">(</span><span class="n">h</span><span class="p">,</span> <span class="n">y</span><span class="p">)</span>  <span class="c1"># 让它做功（提供梯度）</span>
+<span class="c1"># h 本身不进入主干表示——排到舷外</span>
+</code></pre></div>
+
+<p><strong>反向的那一面，才是关键</strong>：燃气发生器的涡轮排到大气，<strong>背压等于环境压力</strong>，与主燃烧室完全无关。也就是说，主室压力的变化<strong>传不回</strong>涡轮。下游的需求链在这里被切断了。</p>
+<div class="highlight"><pre><span></span><code><span class="n">h</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">branch</span><span class="p">(</span><span class="n">x</span><span class="o">.</span><span class="n">detach</span><span class="p">())</span>     <span class="c1"># 反向压力链断在这里</span>
+</code></pre></div>
+
+<p>这两副面孔是同一件事：<strong>解耦</strong>。而机器学习里所有"故意排到舷外"的设计，都是开式循环：</p>
+<table>
+<thead>
+<tr>
+<th>ML 里的做法</th>
+<th>排掉了什么</th>
+<th>换来了什么</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>DQN 的目标网络</td>
+<td>bootstrap 目标的梯度</td>
+<td>打断"估计→目标→估计"的正反馈，防发散</td>
+</tr>
+<tr>
+<td>VQ-VAE 的直通估计</td>
+<td>量化算子的真实梯度</td>
+<td>让不可导的离散瓶颈能训</td>
+</tr>
+<tr>
+<td>BYOL / MoCo 的 EMA teacher</td>
+<td>teacher 分支的梯度</td>
+<td>防表示坍缩</td>
+</tr>
+<tr>
+<td>GAN 的交替优化</td>
+<td>对方参数的梯度</td>
+<td>把一个耦合博弈拆成两个可解的子问题</td>
+</tr>
+<tr>
+<td>MoE 的负载均衡辅助损失</td>
+<td>一部分容量</td>
+<td>换路由的稳定</td>
+</tr>
+<tr>
+<td>梯度裁剪</td>
+<td>大梯度里超出阈值的部分</td>
+<td>换瞬态不炸</td>
+</tr>
+</tbody>
+</table>
+<p>而<strong>代价的形状也一模一样</strong>：燃气发生器损失 2%–3% 的比冲；目标网络让收敛变慢、有偏；直通估计的梯度是错的。<strong>你排掉的都是真能量。</strong></p>
+<p>那为什么还有人用开式循环？因为它<strong>好控制</strong>。涡轮功率由燃气发生器的混合比单独设定，和主室没有耦合；启动序列简单；工况变化时不会把整台机器一起带跑。Merlin 之所以能做到极高的推重比、极低的成本、9 台并联还能容忍单机失效，很大程度上就是因为它的循环拓扑简单到近乎解耦。</p>
+<p><strong>这条经验直接可以搬过来：当你没把握驯服一个闭环时，先 detach 它。先让它飞起来，再谈比冲。</strong></p>
+<hr />
+<h2 id="4-闭式循环就是残差连接">4. 闭式循环就是残差连接</h2>
+<p>现在看分级燃烧。</p>
+<p>预燃室的燃气，做完功之后<strong>仍然含有 60%–90% 的化学能</strong>（因为它是故意富燃/富氧的，没烧完）。把它排掉是巨大的浪费。闭式循环的做法是：<strong>把涡轮排气接进主燃烧室，让它二次燃烧。</strong></p>
+<div class="highlight"><pre><span></span><code>                ┌── 预燃室 → 涡轮 ──┐   （抽流、做功、部分燃烧）
+推进剂 → 泵 ────┤                    ├──→ 主燃烧室 → 喷管
+                └────────直通────────┘   （主流）
+</code></pre></div>
+
+<p>把这张图和残差块并排：</p>
+<div class="highlight"><pre><span></span><code><span class="n">x</span> <span class="o">=</span> <span class="n">x</span> <span class="o">+</span> <span class="bp">self</span><span class="o">.</span><span class="n">attn</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">ln1</span><span class="p">(</span><span class="n">x</span><span class="p">))</span>   <span class="c1"># 抽流 → 做&quot;混合&quot;这件功 → 汇回主室</span>
+<span class="n">x</span> <span class="o">=</span> <span class="n">x</span> <span class="o">+</span> <span class="bp">self</span><span class="o">.</span><span class="n">mlp</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">ln2</span><span class="p">(</span><span class="n">x</span><span class="p">))</span>    <span class="c1"># 抽流 → 做&quot;逐位置反应&quot;这件功 → 汇回主室</span>
+</code></pre></div>
+
+<p>对应关系是逐项的：</p>
+<table>
+<thead>
+<tr>
+<th>分级燃烧</th>
+<th>残差块</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>主流（直通到主室的那一路）</td>
+<td>恒等映射 <code>x</code></td>
+</tr>
+<tr>
+<td>预燃室 + 涡轮</td>
+<td>子层 <code>f(·)</code></td>
+</tr>
+<tr>
+<td>涡轮排气汇入主室</td>
+<td><code>+</code></td>
+</tr>
+<tr>
+<td>主室总压 <span class="arithmatex">\(P_c\)</span></td>
+<td>残差流</td>
+</tr>
+<tr>
+<td>"一分推进剂都不丢"</td>
+<td>"梯度有一条不衰减的路"</td>
+</tr>
+</tbody>
+</table>
+<p>Kaiming He 2015 年给残差的理由是"学残差比学恒等容易"；工程上更硬的理由是<strong>梯度传播</strong>：<span class="arithmatex">\(\partial x_{l+1}/\partial x_l = I + \partial f/\partial x_l\)</span>，那个 <span class="arithmatex">\(I\)</span> 保证了 100 层之后梯度还在。翻译成发动机语言：<strong>主流是一条不经过任何做功部件的直通管路，它的总压不会因为你在旁边挂了 100 级涡轮而掉光。</strong></p>
+<h3 id="41-残差流就是主燃烧室一条共享总线">4.1 残差流就是主燃烧室：一条共享总线</h3>
+<p>主燃烧室不是一根管子，是一个<strong>所有部件共同读写的公共容积</strong>：两个预燃室的排气在这里汇合，冷却套的燃料在这里注入，每一个部件感受到的都是同一个 <span class="arithmatex">\(P_c\)</span>。改动任何一个零件，所有其他零件的工作点都会变。</p>
+<p>机制可解释性对残差流的描述几乎是同一句话：残差流是一条<strong>共享的通信总线</strong>，每个注意力头从里面读、往里面写，不同的特征在同一个向量空间里叠加（superposition）。所以：</p>
+<ul>
+<li><strong>写入冲突</strong>：两个头往同一个方向写会互相干扰 ↔ 两股燃气在主室里局部配比失衡，出现富氧条纹、烧穿。</li>
+<li><strong>总压会一路涨</strong>：残差流的范数随层数单调增长，需要 LayerNorm 反复稳压 ↔ 主室压力由所有入流共同决定，必须靠喷注压降来隔离。</li>
+</ul>
+<h3 id="42-pre-ln-vs-post-ln主管路上要不要串一个阀门">4.2 Pre-LN vs Post-LN：主管路上要不要串一个阀门</h3>
+<p>这是整个类比里最实用的一条。</p>
+<p><strong>Post-LN</strong>（原始 Transformer）：</p>
+<div class="highlight"><pre><span></span><code><span class="n">x</span> <span class="o">=</span> <span class="n">LN</span><span class="p">(</span><span class="n">x</span> <span class="o">+</span> <span class="n">attn</span><span class="p">(</span><span class="n">x</span><span class="p">))</span>     <span class="c1"># 归一化串在主管路上</span>
+</code></pre></div>
+
+<p><strong>Pre-LN</strong>（GPT-2 之后几乎所有模型）：</p>
+<div class="highlight"><pre><span></span><code><span class="n">x</span> <span class="o">=</span> <span class="n">x</span> <span class="o">+</span> <span class="n">attn</span><span class="p">(</span><span class="n">LN</span><span class="p">(</span><span class="n">x</span><span class="p">))</span>     <span class="c1"># 归一化只在支路上</span>
+</code></pre></div>
+
+<p>差别在于：<strong>LayerNorm 是串在主管路上，还是只装在抽流的支路上。</strong></p>
+<p>一个串在主管路上的部件，无论它多有用，都会带来<strong>压降</strong>。串 12 级还行，串 96 级，上游得多高的压力才顶得住？Post-LN 深了必须配 warmup 才不炸，原因就是这个——主线上每一级都有衰减，反向的"压力"传不到顶。Pre-LN 把归一化挪到支路，主管路成了一条<strong>从头到尾无阻的高压直通道</strong>，于是可以不用 warmup、可以堆到几百层。</p>
+<p><strong>设计准则（两个领域通用）</strong>：<em>主管路上什么都别串，所有部件都挂在支路上。</em> 这条准则还解释了后来的一堆做法——RMSNorm（把压降做小）、DeepNorm 与各种残差缩放（控制每一级汇入主流的流量）、乃至 Highway Network 的门控（在支路上装节流阀）。</p>
+<hr />
+<h2 id="5-前向是质量流反向是压力链">5. 前向是质量流，反向是压力链</h2>
+<p>这一节是全文的技术核心。</p>
+<p>设计一台闭式循环发动机时，你要同时解两个方向的方程：</p>
+<p><strong>顺流方向（上游 → 下游）：质量与能量守恒。</strong></p>
+<div class="arithmatex">\[
+\dot m_{\text{泵}} = \dot m_{\text{预燃室}} = \dot m_{\text{涡轮}} \to \dot m_{\text{主室}}
+\]</div>
+<p><strong>逆流方向（下游 → 上游）：压力需求。</strong></p>
+<div class="arithmatex">\[
+P_{\text{泵出口}} = P_c + \Delta P_{\text{喷注}} + \Delta P_{\text{涡轮}} + \Delta P_{\text{预燃喷注}} + \Delta P_{\text{冷却套}} + \Delta P_{\text{管路}}
+\]</div>
+<p>第二个方程说的是：<strong>下游要多少压力，是从最下游一级一级往上游加出来的。</strong>你想把 <span class="arithmatex">\(P_c\)</span> 提到 300 bar，泵就得做到 600 bar 以上，因为路上每一个部件都要吃掉一段压降。这就是为什么闭式循环的泵比开式循环的泵难造一个数量级——涡轮的背压不再是大气压，而是主燃烧室，<strong>你把下游接回来的那一刻，就把整条压力需求链接通了。</strong></p>
+<p>现在看训练：</p>
+<div class="arithmatex">\[
+\text{前向：} \quad x_{l+1} = x_l + f_l(x_l) \qquad (\text{上游} \to \text{下游})
+\]</div>
+<div class="arithmatex">\[
+\text{反向：} \quad \frac{\partial L}{\partial x_l} = \frac{\partial L}{\partial x_{l+1}}\left(I + \frac{\partial f_l}{\partial x_l}\right) \qquad (\text{下游} \to \text{上游})
+\]</div>
+<p><strong>前向传的是"流量"（激活），反向传的是"需求"（梯度）；两者方向相反、共用同一张图、必须同时满足。</strong>这不是修辞，是同一种数学结构：一张网络上的双向约束传播问题。管网分析里叫 Hardy Cross 迭代，电路里叫基尔霍夫定律 + 戴维南等效，神经网络里叫反向传播。</p>
+<p>由此立刻得到几条推论：</p>
+<ol>
+<li><strong>每加一个串联部件，你就往整条压力链上加了一段压降。</strong> → 别在主线上串东西（§4.2）。</li>
+<li><strong>切断一条支路的回流，就切断了它的压力链。</strong> → <code>detach()</code> 就是开式循环（§3）。</li>
+<li><strong>闭环让"局部改动"变成"全局改动"。</strong> RS-25 改一个喷注器孔径，泵、涡轮、冷却套的工作点全变。同理，在残差流上加一个新分支，所有层的有效输入分布都会变——这就是为什么架构改动很难"只改一处"，也是为什么消融实验经常给出反直觉的结果。</li>
+</ol>
+<hr />
+<h2 id="6-为什么必须分级涡轮烧不住化学计量比">6. 为什么必须"分级"：涡轮烧不住化学计量比</h2>
+<p>问一个天真的问题：<strong>既然最后都要在主室里完全燃烧，为什么不干脆一步烧完，再拿高温燃气去推涡轮？</strong></p>
+<p>因为<strong>涡轮会瞬间气化</strong>。</p>
+<ul>
+<li>主燃烧室的燃气温度：3300–3600 K。</li>
+<li>高温合金涡轮叶片能长期承受的温度：1000–1200 K（还得靠冷却）。</li>
+</ul>
+<p>差了三倍。所以分级燃烧的核心手法是：<strong>在预燃室里故意不烧完。</strong>把混合比推到远离化学计量比的地方（极度富燃或极度富氧），大量未反应的推进剂本身就是稀释剂和冷却剂，把燃气温度压到 700–1000 K。剩下的化学能不释放，<strong>留到主燃烧室，那里没有转动部件，可以承受 3500 K。</strong></p>
+<blockquote>
+<p><strong>能量不是不释放，是分两级释放；分级的唯一理由是中间那一级的材料扛不住一次性释放。</strong></p>
+</blockquote>
+<p>这句话原样搬到深度网络上：</p>
+<p><strong>为什么不用一层巨大的 MLP 做完全部变换，而要堆 96 层？</strong></p>
+<p>因为<strong>优化过程扛不住</strong>。一次性完成全部非线性变换，要求单层权重承担极大的变换量，其 Jacobian 的谱半径会远离 1，梯度不是爆炸就是消失；数值精度（bf16 的动态范围）、优化器的稳定域，都是有强度上限的"材料"。</p>
+<p>于是现代深度网络的标准做法是：<strong>故意让每一层只做一点点。</strong></p>
+<table>
+<thead>
+<tr>
+<th>发动机</th>
+<th>网络</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>预燃室混合比远离化学计量</td>
+<td>残差分支输出被初始化成小量</td>
+</tr>
+<tr>
+<td>涡轮入口温度 <span class="arithmatex">\(\approx 900\ \mathrm{K}\)</span></td>
+<td>每层残差更新的范数 <span class="arithmatex">\(\ll \|x\|\)</span></td>
+</tr>
+<tr>
+<td>剩余能量留到主室</td>
+<td>变换量被摊到 <span class="arithmatex">\(N\)</span> 层上</td>
+</tr>
+<tr>
+<td>提高涡轮温度 → 寿命骤降</td>
+<td>提高单层更新幅度 → 训练发散</td>
+</tr>
+</tbody>
+</table>
+<p>这在代码里就是那些看着莫名其妙的缩放系数：</p>
+<div class="highlight"><pre><span></span><code><span class="c1"># GPT-2 / nanoGPT：对写回残差流的投影层，按 1/sqrt(2N) 缩小初始化</span>
+<span class="k">for</span> <span class="n">pn</span><span class="p">,</span> <span class="n">p</span> <span class="ow">in</span> <span class="bp">self</span><span class="o">.</span><span class="n">named_parameters</span><span class="p">():</span>
+    <span class="k">if</span> <span class="n">pn</span><span class="o">.</span><span class="n">endswith</span><span class="p">(</span><span class="s1">&#39;c_proj.weight&#39;</span><span class="p">):</span>
+        <span class="n">torch</span><span class="o">.</span><span class="n">nn</span><span class="o">.</span><span class="n">init</span><span class="o">.</span><span class="n">normal_</span><span class="p">(</span><span class="n">p</span><span class="p">,</span> <span class="n">mean</span><span class="o">=</span><span class="mf">0.0</span><span class="p">,</span> <span class="n">std</span><span class="o">=</span><span class="mf">0.02</span> <span class="o">/</span> <span class="n">math</span><span class="o">.</span><span class="n">sqrt</span><span class="p">(</span><span class="mi">2</span> <span class="o">*</span> <span class="n">n_layer</span><span class="p">))</span>
+</code></pre></div>
+
+<p><code>2 * n_layer</code> 是残差写入点的总数（每 block 两个：attn 和 mlp）。<strong>这一行的物理含义就是"把预燃室温度按级数压下去"</strong>：层数越多，每一级允许的"燃烧强度"越小，才能保证汇总到主流上的总量不失控。ReZero（分支上乘一个初值为 0 的可学习标量）、LayerScale、DeepNorm 走的是同一条路——<strong>它们都是在调预燃室的混合比。</strong></p>
+<p>还有一个更漂亮的对应。涡轮功率 <span class="arithmatex">\(P = \dot m\, c_p\, \Delta T\)</span>。要输出同样的功率，<strong>质量流量越大，需要的温降/温升就越小，涡轮就越凉、寿命越长。</strong>这正是全流量循环（全部推进剂都过涡轮，<span class="arithmatex">\(\dot m\)</span> 最大）能做到可重复使用的原因。翻译过来：<strong>在总变换量固定的前提下，参与的并行单元越多，每个单元的负荷越低，系统越稳。</strong> 更宽的模型可以用更小的相对更新训练更久——μP 那一套宽度缩放规则，本质上是同一条守恒式的另一种写法。</p>
+<hr />
+<h2 id="7-喷注器混合与反应必须分开">7. 喷注器：混合与反应必须分开</h2>
+<p>火箭发动机里最难的零件，不是涡轮泵，是<strong>喷注器</strong>（injector）——燃烧室顶上那块布满几千个孔的板子。它唯一的任务是：<strong>把氧化剂和燃料混合均匀。</strong></p>
+<p>发动机绝大多数的性能和绝大多数的事故都出在这块板上。混合不均，就会有局部富氧区烧穿壁面，或者出现"条纹"（streaking）导致效率下降，或者激发起燃烧不稳定。F-1 发动机的研制花了七年、上千次试车，几乎全部消耗在喷注器上。</p>
+<p>注意这里的分工：</p>
+<ul>
+<li><strong>喷注器负责混合（不同的流之间相互作用）</strong></li>
+<li><strong>燃烧室负责反应（混合物在每一点上各自释放能量）</strong></li>
+</ul>
+<p>这正是 Transformer block 的分工，而且是 MetaFormer 那篇论文的中心论点：</p>
+<div class="arithmatex">\[
+\text{Transformer block} = \underbrace{\text{token mixer}}_{\text{喷注器}} + \underbrace{\text{channel MLP}}_{\text{燃烧室}}
+\]</div>
+<ul>
+<li><strong>attention 是唯一让不同位置的信息相互作用的地方</strong>（混合器）。</li>
+<li><strong>FFN 完全是逐位置（position-wise）的</strong>——每个 token 独立地过同一个两层 MLP，位置之间零交互（反应器）。</li>
+</ul>
+<p>参数量的分布也吻合直觉：FFN 占了一个 block 里三分之二的参数（<span class="arithmatex">\(8d^2\)</span> vs attention 的 <span class="arithmatex">\(4d^2\)</span>），<strong>大部分"能量"确实是在燃烧室里释放的</strong>；但决定这台机器成不成、稳不稳的，是那块喷注板。MetaFormer 的实验结论——把 attention 换成池化都还能 work，只要"有个混合器"——正对应着火箭工程里那句老话：<strong>喷注器的形式可以有很多种（同轴旋流、撞击式、针栓式），但你不能没有喷注器。</strong></p>
+<h3 id="71-气-气喷注-vs-液-液雾化soft-attention-vs-hard-routing">7.1 气-气喷注 vs 液-液雾化：soft attention vs hard routing</h3>
+<p>再往下一层。喷注器有一个根本的难度分级：</p>
+<ul>
+<li><strong>液-液喷注</strong>：两股液体撞击、破碎成雾滴、蒸发、再混合。中间有相变，尺度跨好几个量级，混合不均是常态，局部热点难以避免。</li>
+<li><strong>气-气喷注</strong>（只有全流量分级燃烧才能做到，因为两股推进剂在预燃室里都已经气化了）：两股气体直接混合，<strong>扩散快、均匀、稳定裕度大</strong>。</li>
+</ul>
+<p>这就是猛禽敢用 300 bar 室压还能反复点火的原因之一。</p>
+<p>对应到计算图上：</p>
+<table>
+<thead>
+<tr>
+<th>喷注方式</th>
+<th>计算图里的对应</th>
+<th>共同的性质</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>气-气喷注</td>
+<td>soft attention（连续加权平均）</td>
+<td>处处可混合，梯度平滑，不存在"没混上"的区域</td>
+</tr>
+<tr>
+<td>液-液雾化</td>
+<td>hard routing / MoE top-<span class="arithmatex">\(k\)</span></td>
+<td>离散、有"雾化质量"问题、会出现局部热点</td>
+</tr>
+</tbody>
+</table>
+<p>MoE 的负载不均衡（有的专家被打爆、有的没人用）<strong>就是喷注器的混合不均</strong>：某几个孔流量过大，局部富氧烧穿。而工程上的解法也惊人地一致——<strong>限流孔（capacity factor）、配比调整（辅助均衡损失）、把孔分区（expert group）</strong>。</p>
+<h3 id="72-隔板多头就是在防共振">7.2 隔板：多头就是在防共振</h3>
+<p>F-1 的燃烧不稳定问题最后是怎么解决的？在喷注面上焊了一圈<strong>隔板</strong>（baffles）——把一个大燃烧室的顶部切成若干互不连通的扇形小区。</p>
+<p>原理是<strong>声学的</strong>：燃烧室是一个共鸣腔，它的横向声学模态（切向、径向）会和燃烧的放热率耦合，形成自激振荡（瑞利判据）。隔板的作用不是改善燃烧，而是<strong>破坏全局的声学模态</strong>——把腔体切碎，让低阶的、能量最大的那些振型不再存在。</p>
+<p>工程师们当时甚至在燃烧室里引爆炸弹，要求发动机在 45 毫秒内自动恢复稳定，才算通过。</p>
+<p>这个思路在神经网络里到处都是：</p>
+<ul>
+<li><strong>多头注意力</strong>：与其让一个 <span class="arithmatex">\(d\)</span> 维的大注意力去自由共振，不如切成 <span class="arithmatex">\(h\)</span> 个独立子空间。</li>
+<li><strong>分组卷积 / GQA</strong>：同样是切腔体。</li>
+<li><strong>MoE 专家分割</strong>：同样。</li>
+</ul>
+<p>它们的官方理由通常是"让不同的头学不同的模式"或者"省显存"，但还有一层收益跟隔板完全一样：<strong>把一个大的、容易整体共振的均匀结构，切成若干个耦合较弱的小结构，破坏掉全局的失稳模态。</strong>表示坍缩（所有头学成一样）就是"隔板没起作用"。</p>
+<hr />
+<h2 id="8-喉部因果掩码本来就是一个流体力学概念">8. 喉部：因果掩码本来就是一个流体力学概念</h2>
+<p>拉瓦尔喷管（收敛-扩张喷管）是火箭最反直觉的零件：<strong>收敛段加速亚音速气流，喉部达到马赫 1，扩张段继续加速超音速气流。</strong></p>
+<p>两件事在这里同时发生，而且都在计算图里有严格对应。</p>
+<h3 id="81-喉部决定流量瓶颈就是吞吐">8.1 喉部决定流量：瓶颈就是吞吐</h3>
+<p>一旦喉部<strong>壅塞</strong>（choked，马赫数 = 1），质量流量就完全由喉部面积和上游滞止参数决定：</p>
+<div class="arithmatex">\[
+\dot m = \frac{A_t P_c}{\sqrt{T_c}}\sqrt{\frac{\gamma}{R}\left(\frac{2}{\gamma+1}\right)^{\frac{\gamma+1}{\gamma-1}}}
+\]</div>
+<p><strong>注意这个式子里没有下游的任何参数。</strong>你在喷管出口做什么都不影响流量。整台发动机的吞吐，由最窄的那个截面唯一决定。</p>
+<p>对应：<strong>网络的容量由最窄的那一层决定。</strong>信息瓶颈、LoRA 的秩 <span class="arithmatex">\(r\)</span>、GQA 里 KV 头的数量、autoencoder 的隐层维度——你在瓶颈之后堆再多参数，能通过的信息也不会变多。这也是为什么"某一层特别窄"往往是模型能力的隐藏天花板，而不是显式的参数量。</p>
+<h3 id="82-喉部之后扰动不能逆行这就是因果掩码">8.2 喉部之后，扰动不能逆行：这就是因果掩码</h3>
+<p>超音速流动最关键的性质：<strong>扰动以声速传播，而流速已经超过声速，所以任何下游的扰动都无法向上游传播。</strong>你在喷管出口点一根火柴，燃烧室完全不知道。</p>
+<p>这在数学上叫<strong>依赖域</strong>（domain of dependence）：双曲型方程的解在某点的值，只依赖于它过去特征锥内的区域。</p>
+<p>而因果掩码是什么？</p>
+<div class="highlight"><pre><span></span><code><span class="n">att</span> <span class="o">=</span> <span class="n">att</span><span class="o">.</span><span class="n">masked_fill</span><span class="p">(</span><span class="n">mask</span><span class="p">[:,</span> <span class="p">:,</span> <span class="p">:</span><span class="n">T</span><span class="p">,</span> <span class="p">:</span><span class="n">T</span><span class="p">]</span> <span class="o">==</span> <span class="mi">0</span><span class="p">,</span> <span class="nb">float</span><span class="p">(</span><span class="s1">&#39;-inf&#39;</span><span class="p">))</span>
+</code></pre></div>
+
+<p>位置 <span class="arithmatex">\(t\)</span> 的表示只允许依赖 <span class="arithmatex">\(\le t\)</span> 的位置。<strong>这也是一个依赖域约束，而且是同一个数学对象。</strong></p>
+<p>于是有了这张对应表：</p>
+<table>
+<thead>
+<tr>
+<th>流动状态</th>
+<th>信息能否逆行</th>
+<th>对应架构</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>亚音速（收敛段、燃烧室）</td>
+<td>能，双向传播</td>
+<td>双向注意力：BERT / encoder</td>
+</tr>
+<tr>
+<td>超音速（喉部之后）</td>
+<td>不能，只向下游</td>
+<td>因果注意力：GPT / decoder</td>
+</tr>
+<tr>
+<td>喉部（马赫 1）</td>
+<td>临界面</td>
+<td>掩码的对角线</td>
+</tr>
+</tbody>
+</table>
+<p>这个对应还能继续推：<strong>正因为超音速段不能逆行，喷管的设计可以"逐站推进"，一站一站往下算，不必回头迭代。</strong>而正因为因果掩码切断了未来对过去的影响，<strong>KV cache 才是合法的</strong>——已经算过的 <span class="arithmatex">\(K,V\)</span> 永远不会因为后面来了新 token 而改变，所以可以缓存。</p>
+<blockquote>
+<p><strong>KV cache 的正确性证明，和"超音速喷管可以用特征线法逐站求解"是同一个论证。</strong></p>
+</blockquote>
+<p>顺带，双向注意力之所以不能做 KV cache、必须整段重算，也和亚音速流场必须整体求解（椭圆型/双向耦合）是同一个原因。</p>
+<h3 id="83-膨胀比要匹配环境训练分布-vs-推理分布">8.3 膨胀比要匹配环境：训练分布 vs 推理分布</h3>
+<p>喷管的面积比 <span class="arithmatex">\(\varepsilon = A_e/A_t\)</span> 决定出口压力 <span class="arithmatex">\(P_e\)</span>。理想情况是 <span class="arithmatex">\(P_e = P_{\text{ambient}}\)</span>（完全膨胀）。</p>
+<ul>
+<li><span class="arithmatex">\(P_e \gg P_a\)</span>：<strong>欠膨胀</strong>，气流出了喷管还在膨胀，浪费了推力。</li>
+<li><span class="arithmatex">\(P_e \ll P_a\)</span>：<strong>过膨胀</strong>，严重时<strong>流动在喷管内部分离</strong>，产生剧烈的侧向载荷，能把喷管撕裂。</li>
+</ul>
+<p>所以海平面发动机用小喷管，真空发动机用大喷管（猛禽真空版那个巨大的裙边）。<strong>一台发动机只在它的设计点最优，偏离设计点会损失，偏离太远会结构性失效。</strong></p>
+<p>对应：<strong>训练分布与部署分布的匹配。</strong>模型在训练分布上是"完全膨胀"的；部署到分布外，轻则性能下降（欠膨胀），重则输出崩溃、复读、走进永远不会恢复的状态（流动分离）。采样温度、校准、RLHF 对齐，做的都是"调整膨胀比去匹配实际环境压力"。而 Chinchilla 那条 compute-optimal 曲线，本身就是一条<strong>设计点曲线</strong>：给定推力（算力预算），参数量和数据量有一个唯一的最优配比，偏离两边都掉效率。</p>
+<hr />
+<h2 id="9-全流量分级燃烧猛禽为什么长成那样">9. 全流量分级燃烧：猛禽为什么长成那样</h2>
+<p>把前面所有原则推到极限，你会得到猛禽。</p>
+<p>FFSC 的拓扑：</p>
+<div class="highlight"><pre><span></span><code>        ┌→ 富氧预燃室 → 氧涡轮 → 氧泵 ─┐
+LOX ────┤                                ├─→ 主燃烧室（气-气）→ 喉部 → 喷管
+CH4 ────┤                                ├─→
+        └→ 富燃预燃室 → 燃涡轮 → 燃泵 ─┘
+</code></pre></div>
+
+<p>四个设计决策，每一个在计算图上都有对应：</p>
+<p><strong>(1) 全部推进剂都过涡轮。</strong> 复用率 100%，没有任何一股流被丢弃。
+→ 计算图：所有中间结果都对最终输出有贡献，没有 dead branch，没有 detach。</p>
+<p><strong>(2) 两个预燃室，一富氧一富燃，各自驱动自己那侧的泵。</strong> 于是<strong>氧涡轮里流的是富氧燃气，燃涡轮里流的是富燃燃气</strong>——两条路径互不污染，<strong>不需要在涡轮泵中间做那个折磨了工程师半个世纪的"燃-氧隔离密封"</strong>（RS-25 那个中间密封腔要靠氦气吹扫，是整机最脆弱的环节之一）。
+→ 计算图：<strong>关注点分离</strong>。QKV 各自投影、多头各占独立子空间、MoE 专家彼此不共享参数——<strong>把两种性质不同的流放在两条物理上分开的路径里，比在一条路径里靠密封去隔离要可靠得多。</strong>（同一个道理：与其在一个表示里靠正则去解耦，不如在架构上直接给它们分开的通道。）</p>
+<p><strong>(3) 涡轮流量最大 → 同功率下温降最小 → 涡轮最凉 → 可重复使用。</strong>
+→ 计算图：更宽的并行 → 每单元负荷更低 → 更长的稳定运行（§6 末尾）。</p>
+<p><strong>(4) 气-气喷注 → 混合最均匀 → 燃烧效率高、稳定裕度大 → 敢上 300 bar。</strong>
+→ 计算图：soft、连续、处处可微的混合，胜过离散路由（§7.1）。</p>
+<p>而代价是<strong>控制复杂度的爆炸</strong>：两个预燃室、两条涡轮泵轴、十几个主阀，全部通过共享的主室压力互相耦合，任何一处扰动都会传遍全机。RD-270 在 1960 年代就把 FFSC 试车成功过，但没能飞——<strong>当时没有能实时驾驭这个耦合系统的控制手段。</strong>猛禽能成，一半功劳在冶金和增材制造，另一半在传感器密度和闭环控制算法。</p>
+<p>这一条也原样成立：<strong>很多架构不是想不出来，是当时训不动。</strong>残差网络的想法早就有（Highway Network、甚至更早的 skip connection），真正让它 work 的是 BatchNorm/LayerNorm、Adam、合适的初始化——<strong>是控制系统追上来了，架构才敢做复杂。</strong></p>
+<hr />
+<h2 id="10-膨胀循环和它的天花板架构也有立方-平方定律">10. 膨胀循环和它的天花板：架构也有立方-平方定律</h2>
+<p>膨胀循环是所有循环里最优雅的：不额外燃烧，靠燃烧室壁的<strong>废热</strong>把氢加热气化去驱动涡轮，做完功再进主室烧掉。零浪费，比冲极高，而且极其可靠（涡轮里流的是几百 K 的温氢，没有燃烧，启动温和）。</p>
+<p><strong>但它有一个不可逾越的规模上限。</strong></p>
+<p>可用的涡轮功率来自壁面传热，正比于<strong>换热面积</strong> <span class="arithmatex">\(\propto d^2\)</span>；而推力正比于<strong>燃烧室体积/喉部面积</strong> <span class="arithmatex">\(\propto d^3\)</span>（等比例放大时）。于是：</p>
+<div class="arithmatex">\[
+\frac{\text{可用泵功}}{\text{所需泵功}} \propto \frac{d^2}{d^3} = \frac{1}{d}
+\]</div>
+<p><strong>发动机越大，这个比值越小。</strong>所以膨胀循环卡在百千牛级（RL10 约 110 kN），做不成主级发动机。这不是工艺问题，是几何问题——<strong>换个材料、换个供应商都没用，因为这是标度律。</strong></p>
+<p>计算图里有完全同构的天花板：</p>
+<ul>
+<li><strong>注意力的 <span class="arithmatex">\(O(n^2)\)</span></strong>：序列长度翻倍，收益（能看到的上下文）线性涨，成本平方涨。这就是长上下文这条路上所有工作的起点——线性注意力、稀疏注意力、SSM，本质都是"改变标度指数"，而不是"优化常数"。FlashAttention 优化的是常数和访存，改变不了指数，所以它让 <span class="arithmatex">\(n\)</span> 大了几倍，但没有取消这堵墙。</li>
+<li><strong>KV cache <span class="arithmatex">\(\propto\)</span> 层数 × 头数 × 序列长</strong>：显存增长快于有效性提升，于是有了 MQA/GQA/MLA——<strong>降维打击标度指数，而不是抠常数。</strong></li>
+</ul>
+<p><strong>判据是通用的：当你发现一个方案"小规模特别漂亮但大规模就是上不去"，先去比较分子分母的标度指数，别在常数上耗。</strong> 膨胀循环的教训是，工程史上有大量方案不是被做错了，是被标度律判了死刑。</p>
+<hr />
+<h2 id="11-控制论闭环带来的全部麻烦">11. 控制论：闭环带来的全部麻烦</h2>
+<p>第 2 节说过，发动机的物质流是 DAG，没有回路。但<strong>动力学上</strong>它有回路，而且是最难的那种。</p>
+<h3 id="111-自举正反馈与启动瞬态">11.1 自举正反馈与启动瞬态</h3>
+<p>涡轮泵的回路：</p>
+<div class="arithmatex">\[
+\text{转速}\uparrow \Rightarrow \text{流量}\uparrow \Rightarrow \text{预燃室压力}\uparrow \Rightarrow \text{涡轮功率}\uparrow \Rightarrow \text{转速}\uparrow\uparrow
+\]</div>
+<p><strong>这是一个正反馈环。</strong>闭环增益大于 1，涡轮就超转飞散。所以<strong>启动是液体火箭发动机最危险的阶段</strong>——统计上大部分试车台事故发生在点火后两秒内。</p>
+<p>启动怎么做？答案很反直觉：<strong>用一张开环时序表。</strong>RS-25 的启动是一段预先编排死的阀门开度序列（配合严格的预冷 chill-down），因为在几百毫秒的瞬态里，闭环控制的带宽根本来不及；只有等到系统进入额定工况附近，才切到闭环调节。</p>
+<p><strong>这就是 warmup。</strong></p>
+<div class="highlight"><pre><span></span><code><span class="n">lr</span> <span class="o">=</span> <span class="n">base_lr</span> <span class="o">*</span> <span class="nb">min</span><span class="p">(</span><span class="n">step</span> <span class="o">/</span> <span class="n">warmup_steps</span><span class="p">,</span> <span class="mf">1.0</span><span class="p">)</span>     <span class="c1"># 开环时序表</span>
+</code></pre></div>
+
+<p>学习率 warmup 不是超参数玄学，它是<strong>一段开环启动序列</strong>：在训练初期，网络的统计量（激活范数、梯度方差、Adam 的二阶矩估计）还没进入自洽状态，此时任何"自适应"都在拿噪声当信号（Adam 的 <span class="arithmatex">\(v\)</span> 在前几十步几乎是空的，等效步长巨大）。<strong>这时候不能让系统自己调自己，只能按表走。</strong>等进入稳态，再交给调度器和自适应优化器。</p>
+<p>同样对应的还有：</p>
+<ul>
+<li><strong>预冷（chill-down）</strong>：泵在启动前必须用低温推进剂预冷，否则液体会在热金属上汽化，泵抽到气泡就会<strong>空转失速</strong>（cavitation）。→ 初始化。权重初始化不对（尺度太大或太小），前几步就会把系统推到梯度消失/爆炸区，之后再怎么调都救不回来——<strong>这就是"起动挂起"（hang start）：点着了，但推不上额定工况。</strong></li>
+<li><strong>节流曲线</strong>：不能猛推油门，要按预定斜率。→ LR schedule、batch size ramp-up。</li>
+</ul>
+<h3 id="112-pogo结构和推进的耦合振荡">11.2 POGO：结构和推进的耦合振荡</h3>
+<p>POGO 是这样一个环：箭体纵向振动 → 贮箱底部压力波动 → 泵入口压力波动 → 推力波动 → 箭体振动。如果这个回路的相位对上了，振幅就指数增长。阿波罗 13 号上升段中央发动机就是因为 POGO 提前关机；双子座的泰坦二号早期振动到宇航员看不清仪表。</p>
+<p>解法很有启发性：<strong>不是把结构做硬，而是在氧化剂管路上装一个充氦的蓄压器</strong>——人为在回路里插入一个<strong>柔性节点</strong>，改变传递函数的相位，让正反馈的相位条件不再满足。</p>
+<p>→ 训练里的对应：<strong>动量、EMA、梯度裁剪、学习率下降</strong>，全都是<strong>在回路里加阻尼/加惯性以改变闭环相位</strong>。损失曲线上那种周期性的尖峰（loss spike），性质上就是 POGO：<strong>优化器、参数尺度、数据顺序三者耦合出来的自激振荡。</strong>而工程上的止损办法也一样土：加阻尼（降 lr）、跳过那批数据（隔离扰动源）、从上一个 checkpoint 重启（复位）。</p>
+<h3 id="113-燃烧不稳定共振与破坏模态">11.3 燃烧不稳定：共振与破坏模态</h3>
+<p>见 §7.2。补充一句判据：<strong>瑞利判据</strong>说，当放热的相位与压力振荡的相位一致时，振荡获得能量。稳定性问题从来不是"能量太多"，而是"<strong>能量在错误的相位上注入</strong>"。</p>
+<p>训练里也是：loss spike 不是因为梯度大，而是因为<strong>大梯度恰好和某个已经偏离的参数方向对齐</strong>。</p>
+<h3 id="114-深度节流为什么动态计算这么难">11.4 深度节流：为什么"动态计算"这么难</h3>
+<p>发动机很难深度节流。原因很物理：喷注器的压降 <span class="arithmatex">\(\Delta P \propto \dot m^2\)</span>，而<strong>喷注压降正是隔离燃烧室扰动、维持稳定的东西</strong>。流量降到 50%，压降只剩 25%，隔离能力骤降，燃烧室里的压力波动开始反向影响供应系统——不稳定就来了。猛禽能节流到 40% 左右已属顶尖。</p>
+<p>→ <strong>推理时的动态计算（early exit、投机解码、MoE 稀疏激活、动态深度）面对的是同一类问题</strong>：系统的稳定裕度是在满负荷设计点上建立的，低负荷时裕度自动变小。所以稀疏激活的模型在低激活率下更容易出现路由抖动、质量塌方——<strong>不是实现问题，是"裕度来自压降，压降来自流量"这条物理链决定的。</strong></p>
+<h3 id="115-n-1-的教训并联三十台">11.5 N-1 的教训：并联三十台</h3>
+<p>苏联 N-1 用了 30 台 NK-15 并联，靠一套叫 KORD 的控制系统监测和关停故障发动机。四次发射，四次失败。失败的原因不是单台发动机不行（NK-33 后来被证明是极优秀的发动机，美国人买去用了几十年），而是<strong>30 台机器通过共同的供应管路、箭体结构和控制系统强耦合，控制系统本身成了新的故障源</strong>——第二次发射时 KORD 误判关停了几乎所有发动机。</p>
+<p>→ <strong>MoE 的路由器就是 KORD。</strong>专家本身可能都很好，但路由器要在每一步为每个 token 做调度决策，它自己会抖动、会崩塌到少数专家、会和被它训练出来的专家分布互相强化。<strong>"多个部件 + 一个调度器"的系统，复杂度的增长在调度器上，不在部件上。</strong></p>
+<p>对照 Falcon 9 的 9 台 Merlin：发动机用的是<strong>解耦最彻底的开式循环</strong>，控制逻辑简单到可以做到真正的 engine-out 容错。<strong>结构简单的部件才允许你在上层做复杂的调度。</strong>这是 MoE 设计的一条真经验：专家越简单越同质，路由才越好训。</p>
+<hr />
+<h2 id="12-为什么值得这么复杂齐奥尔科夫斯基的指数放大">12. 为什么值得这么复杂：齐奥尔科夫斯基的指数放大</h2>
+<p>最后一个问题：分级燃烧比燃气发生器循环复杂一个数量级，比冲只提高 2%–3%。<strong>为什么值得？</strong></p>
+<p>因为齐奥尔科夫斯基公式里，比冲在指数的位置上：</p>
+<div class="arithmatex">\[
+\Delta v = I_{sp}\, g_0 \ln\frac{m_0}{m_f}
+\]</div>
+<p>算一个玩具例子。设入轨需要 <span class="arithmatex">\(\Delta v = 9400\ \mathrm{m/s}\)</span>，起飞质量 100 t，干结构质量固定 4.5 t：</p>
+<table>
+<thead>
+<tr>
+<th><span class="arithmatex">\(I_{sp}\)</span></th>
+<th><span class="arithmatex">\(v_e = I_{sp}g_0\)</span></th>
+<th>质量比 <span class="arithmatex">\(m_0/m_f\)</span></th>
+<th>关机质量 <span class="arithmatex">\(m_f\)</span></th>
+<th>载荷 = <span class="arithmatex">\(m_f - 4.5\)</span></th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>340 s</td>
+<td>3334 m/s</td>
+<td>16.77</td>
+<td>5.96 t</td>
+<td><strong>1.46 t</strong></td>
+</tr>
+<tr>
+<td>350 s</td>
+<td>3432 m/s</td>
+<td>15.47</td>
+<td>6.46 t</td>
+<td><strong>1.96 t</strong></td>
+</tr>
+</tbody>
+</table>
+<p><strong>比冲 +2.9%，载荷 +34%。</strong></p>
+<p>这就是全部答案：<strong>当一个指标处在指数（或幂律）放大的位置上时，为最后几个百分点付出巨大的结构复杂度是理性的。</strong></p>
+<p>深度学习里的对应，是 scaling law：</p>
+<div class="arithmatex">\[
+L(N, D) \approx E + \frac{A}{N^{\alpha}} + \frac{B}{D^{\beta}}
+\]</div>
+<p>损失是幂律下降的，而<strong>下游能力对损失的依赖往往极其陡峭</strong>——loss 从 2.00 降到 1.95 看起来微不足道，但它可能正好跨过某个任务从"不会做"到"会做"的位置。所以：</p>
+<ul>
+<li>为什么值得为 attention 付 <span class="arithmatex">\(O(n^2)\)</span> 的代价？</li>
+<li>为什么值得有人手写 CUDA 去抠 FlashAttention 的访存？</li>
+<li>为什么值得为了 1% 的 MFU 去重写通信重叠？</li>
+</ul>
+<p><strong>和为什么值得造分级燃烧发动机，是同一个理由：你的收益在指数上，成本在多项式上。</strong></p>
+<p>反过来这条判据也能用来否定：<strong>如果一个改动的收益不在指数位置上，就不该为它付结构复杂度。</strong>发动机史上塞满了这类尸体——比冲提高 1 秒但可靠性下降一个量级的方案，全都没飞起来。深度学习论文里那些"+0.3 BLEU，架构复杂一倍"的东西，同理。</p>
+<hr />
+<h2 id="13-类比在哪里断掉">13. 类比在哪里断掉</h2>
+<p>本站的规矩：类比必须交代它的边界，否则就是修辞。</p>
+<p><strong>(1) 发动机有守恒律，网络没有。</strong> 质量和能量是硬守恒的，这是发动机所有约束的来源。残差流里的"信息"<strong>不守恒</strong>——它可以被放大、被复制、被凭空造出来（一个随机初始化的层就能往里写噪声）。所以"废气不能丢"是物理定律，"中间表示不该丢"只是一条经验上很好用的启发。<strong>前者是定理，后者是设计偏好。</strong></p>
+<p><strong>(2) 压力链是设计期求解的，梯度是运行期求解的。</strong> 二者数学结构相同（下游需求向上游传播），但发动机的那个方程组是工程师在设计阶段解一次，之后硬件就冻结了；梯度是每一步都要重解，而且解的结果会<strong>改变系统本身</strong>。<strong>发动机不学习。</strong>这也是类比只在<strong>架构层</strong>成立、在<strong>参数层</strong>不成立的原因：可类比的是"网络怎么连"，不是"权重是多少"。</p>
+<p><strong>(3) "循环"是词义碰撞。</strong> 已在 §2 说过：发动机的 cycle 是能量拓扑，不是时间回路。真正对应 RNN/agent loop 的是<strong>燃烧振荡</strong>这类动力学回路，而那在发动机里是被当作故障消灭的对象，不是特性。</p>
+<p><strong>(4) 发动机是定常流，网络是一次通过。</strong> 发动机在稳态下每一时刻的状态都相同，是一个稳态解；一次前向传播是一个瞬态事件。所以"发动机的稳态" ↔ "训练收敛后的参数"，"发动机的启动瞬态" ↔ "训练过程"——<strong>别把两者的时间轴对齐。</strong></p>
+<p><strong>(5) 类比的强度分三档。</strong> 我把本文出现的对应分个级，免得读者高估：</p>
+<table>
+<thead>
+<tr>
+<th>强度</th>
+<th>条目</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><strong>同构</strong>（同一个数学结构）</td>
+<td>喉部/因果掩码（都是双曲型方程的依赖域）；正反馈回路的稳定性分析（都是环路增益与相位裕度）；标度律天花板（都是指数比较）</td>
+</tr>
+<tr>
+<td><strong>强类比</strong>（机制平行，可推论）</td>
+<td>闭式循环/残差；开式循环/detach；分级降温/小步更新；喷注器/attention；隔板/多头</td>
+</tr>
+<tr>
+<td><strong>启发</strong>（形似，仅供直觉）</td>
+<td>膨胀比/分布匹配；节流深度/动态计算；KORD/MoE 路由</td>
+</tr>
+</tbody>
+</table>
+<hr />
+<h2 id="14-如果只记五句话">14. 如果只记五句话</h2>
+<ol>
+<li><strong>发动机的"循环"不是计算图的"循环"，是残差块那个分流—做功—汇流的拓扑。</strong> 把废气接回主室，和把 <code>f(x)</code> 加回 <code>x</code>，是同一个动作。</li>
+<li><strong>闭式循环和残差连接换来的是同一样东西：一条不衰减的主管路。</strong> 所以主线上什么都别串（Pre-LN 而不是 Post-LN），所有部件挂支路上。</li>
+<li><strong>分级的唯一理由是中间那一级的材料扛不住一次性转化。</strong> 预燃室故意富燃降温 = 每层残差故意只做小量更新；温度上限 = 更新幅度上限。</li>
+<li><strong>只要你把下游接回上游，就必须为闭环再付一次稳定性的钱。</strong> warmup 是开环启动时序表，动量是 POGO 蓄压器，多头是喷注器隔板，梯度裁剪是限流孔。</li>
+<li><strong>值不值得复杂，看收益在不在指数位置上。</strong> 比冲在齐奥尔科夫斯基的指数里，所以值三十年工程；loss 在 scaling law 的幂律里，所以值手写 CUDA。不在的，别付。</li>
+</ol>
+<hr />
+<h2 id="附录-a把一个-transformer-block-写成动力循环图">附录 A：把一个 Transformer block 写成动力循环图</h2>
+<p>用注释把两张图钉在一起。这段代码就是一个标准的 pre-LN block，只是换了一套命名。</p>
+<div class="highlight"><pre><span></span><code><span class="kn">import</span><span class="w"> </span><span class="nn">math</span>
+<span class="kn">import</span><span class="w"> </span><span class="nn">torch</span>
+<span class="kn">import</span><span class="w"> </span><span class="nn">torch.nn</span><span class="w"> </span><span class="k">as</span><span class="w"> </span><span class="nn">nn</span>
+
+
+<span class="k">class</span><span class="w"> </span><span class="nc">StagedCombustionBlock</span><span class="p">(</span><span class="n">nn</span><span class="o">.</span><span class="n">Module</span><span class="p">):</span>
+<span class="w">    </span><span class="sd">&quot;&quot;&quot;一个 Transformer block = 一级分级燃烧循环。</span>
+
+<span class="sd">    主燃烧室总压  = 残差流 x         （所有部件共读共写的高压总线）</span>
+<span class="sd">    预燃室 A     = attention        （混合器：唯一让 token 之间相互作用的地方）</span>
+<span class="sd">    预燃室 B     = FFN              （反应器：逐位置独立释放能量）</span>
+<span class="sd">    喷注压降     = LayerNorm        （装在支路上，绝不串进主管路）</span>
+<span class="sd">    富燃降温     = 1/sqrt(2N) 缩放  （每一级只允许释放一小部分能量）</span>
+<span class="sd">    &quot;&quot;&quot;</span>
+
+    <span class="k">def</span><span class="w"> </span><span class="fm">__init__</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">d_model</span><span class="p">,</span> <span class="n">n_head</span><span class="p">,</span> <span class="n">n_layer</span><span class="p">):</span>
+        <span class="nb">super</span><span class="p">()</span><span class="o">.</span><span class="fm">__init__</span><span class="p">()</span>
+        <span class="c1"># —— 喷注压降：两处 LN 都只在支路上，主管路全程无阻 ——</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">ln_1</span> <span class="o">=</span> <span class="n">nn</span><span class="o">.</span><span class="n">LayerNorm</span><span class="p">(</span><span class="n">d_model</span><span class="p">)</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">ln_2</span> <span class="o">=</span> <span class="n">nn</span><span class="o">.</span><span class="n">LayerNorm</span><span class="p">(</span><span class="n">d_model</span><span class="p">)</span>
+
+        <span class="c1"># —— 预燃室 A：混合（喷注器）——</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">attn</span> <span class="o">=</span> <span class="n">nn</span><span class="o">.</span><span class="n">MultiheadAttention</span><span class="p">(</span><span class="n">d_model</span><span class="p">,</span> <span class="n">n_head</span><span class="p">,</span> <span class="n">batch_first</span><span class="o">=</span><span class="kc">True</span><span class="p">)</span>
+
+        <span class="c1"># —— 预燃室 B：反应（燃烧室），4x 扩张后收回 ——</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">mlp</span> <span class="o">=</span> <span class="n">nn</span><span class="o">.</span><span class="n">Sequential</span><span class="p">(</span>
+            <span class="n">nn</span><span class="o">.</span><span class="n">Linear</span><span class="p">(</span><span class="n">d_model</span><span class="p">,</span> <span class="mi">4</span> <span class="o">*</span> <span class="n">d_model</span><span class="p">),</span>
+            <span class="n">nn</span><span class="o">.</span><span class="n">GELU</span><span class="p">(),</span>
+            <span class="n">nn</span><span class="o">.</span><span class="n">Linear</span><span class="p">(</span><span class="mi">4</span> <span class="o">*</span> <span class="n">d_model</span><span class="p">,</span> <span class="n">d_model</span><span class="p">),</span>
+        <span class="p">)</span>
+
+        <span class="c1"># —— 富燃/富氧配比：层数越多，每级允许的燃烧强度越低 ——</span>
+        <span class="c1"># 涡轮入口温度 = 每层写回主流的更新幅度，材料上限是硬约束</span>
+        <span class="n">scale</span> <span class="o">=</span> <span class="mf">0.02</span> <span class="o">/</span> <span class="n">math</span><span class="o">.</span><span class="n">sqrt</span><span class="p">(</span><span class="mi">2</span> <span class="o">*</span> <span class="n">n_layer</span><span class="p">)</span>
+        <span class="n">nn</span><span class="o">.</span><span class="n">init</span><span class="o">.</span><span class="n">normal_</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">mlp</span><span class="p">[</span><span class="mi">2</span><span class="p">]</span><span class="o">.</span><span class="n">weight</span><span class="p">,</span> <span class="n">mean</span><span class="o">=</span><span class="mf">0.0</span><span class="p">,</span> <span class="n">std</span><span class="o">=</span><span class="n">scale</span><span class="p">)</span>
+        <span class="n">nn</span><span class="o">.</span><span class="n">init</span><span class="o">.</span><span class="n">normal_</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">attn</span><span class="o">.</span><span class="n">out_proj</span><span class="o">.</span><span class="n">weight</span><span class="p">,</span> <span class="n">mean</span><span class="o">=</span><span class="mf">0.0</span><span class="p">,</span> <span class="n">std</span><span class="o">=</span><span class="n">scale</span><span class="p">)</span>
+
+    <span class="k">def</span><span class="w"> </span><span class="nf">forward</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">x</span><span class="p">,</span> <span class="n">attn_mask</span><span class="p">):</span>
+        <span class="c1"># attn_mask 是喉部：超音速之后扰动不能逆行，所以 KV cache 合法</span>
+        <span class="n">h</span><span class="p">,</span> <span class="n">_</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">attn</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">ln_1</span><span class="p">(</span><span class="n">x</span><span class="p">),</span> <span class="bp">self</span><span class="o">.</span><span class="n">ln_1</span><span class="p">(</span><span class="n">x</span><span class="p">),</span> <span class="bp">self</span><span class="o">.</span><span class="n">ln_1</span><span class="p">(</span><span class="n">x</span><span class="p">),</span>
+                         <span class="n">attn_mask</span><span class="o">=</span><span class="n">attn_mask</span><span class="p">,</span> <span class="n">need_weights</span><span class="o">=</span><span class="kc">False</span><span class="p">)</span>
+        <span class="n">x</span> <span class="o">=</span> <span class="n">x</span> <span class="o">+</span> <span class="n">h</span>                     <span class="c1"># 涡轮 A 排气汇回主室（闭式，一分不丢）</span>
+        <span class="n">x</span> <span class="o">=</span> <span class="n">x</span> <span class="o">+</span> <span class="bp">self</span><span class="o">.</span><span class="n">mlp</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">ln_2</span><span class="p">(</span><span class="n">x</span><span class="p">))</span>  <span class="c1"># 涡轮 B 排气汇回主室</span>
+        <span class="k">return</span> <span class="n">x</span>
+</code></pre></div>
+
+<p>而如果你把它写成<strong>开式循环</strong>：</p>
+<div class="highlight"><pre><span></span><code>    <span class="k">def</span><span class="w"> </span><span class="nf">forward_open_cycle</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">x</span><span class="p">,</span> <span class="n">attn_mask</span><span class="p">):</span>
+        <span class="c1"># 燃气发生器：抽一股流做功，排到舷外——反向的压力链断在这里</span>
+        <span class="n">h</span><span class="p">,</span> <span class="n">_</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">attn</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">ln_1</span><span class="p">(</span><span class="n">x</span><span class="p">)</span><span class="o">.</span><span class="n">detach</span><span class="p">(),</span> <span class="o">...</span><span class="p">)</span>
+        <span class="n">x</span> <span class="o">=</span> <span class="n">x</span> <span class="o">+</span> <span class="n">h</span>
+        <span class="k">return</span> <span class="n">x</span>
+</code></pre></div>
+
+<p>它照样能跑，甚至在某些设定下<strong>更稳</strong>（正是目标网络、EMA teacher 的道理）。但它把一部分能量排掉了：反向传播时，attention 的输入路径拿不到梯度，这一级的"混合"永远学不会去适配主流。<strong>这就是 2%–3% 的比冲损失长在计算图上的样子。</strong></p>
+<p>要看这两条路的差别有多大，可以直接量一下"主管路的总压"沿层数的衰减——把 LN 从支路挪到主路（Post-LN），再打印每一层的梯度范数：</p>
+<div class="highlight"><pre><span></span><code><span class="c1"># 主管路上串阀门 vs 不串：反向&quot;压力&quot;能传到第几级</span>
+<span class="k">for</span> <span class="n">name</span><span class="p">,</span> <span class="n">p</span> <span class="ow">in</span> <span class="n">model</span><span class="o">.</span><span class="n">named_parameters</span><span class="p">():</span>
+    <span class="k">if</span> <span class="n">p</span><span class="o">.</span><span class="n">grad</span> <span class="ow">is</span> <span class="ow">not</span> <span class="kc">None</span> <span class="ow">and</span> <span class="s1">&#39;ln_1&#39;</span> <span class="ow">in</span> <span class="n">name</span><span class="p">:</span>
+        <span class="nb">print</span><span class="p">(</span><span class="n">name</span><span class="p">,</span> <span class="n">p</span><span class="o">.</span><span class="n">grad</span><span class="o">.</span><span class="n">norm</span><span class="p">()</span><span class="o">.</span><span class="n">item</span><span class="p">())</span>
+</code></pre></div>
+
+<p>Post-LN 深了之后，靠近输入那几级的数字会掉到看不见——<strong>上游压力顶不上来，就是这个意思。</strong></p>
+<hr />
+<h2 id="参考">参考</h2>
+<p><strong>推进</strong></p>
+<ul>
+<li>G.P. Sutton &amp; O. Biblarz, <em>Rocket Propulsion Elements</em>, 9th ed., Wiley (2016) — 循环类型、喷注器、喷管的标准教科书</li>
+<li>G.P. Sutton, <em>History of Liquid Propellant Rocket Engines</em>, AIAA (2006) — RD-270、NK-33、分级燃烧的发展史</li>
+<li>D.K. Huzel &amp; D.H. Huang, <em>Modern Engineering for Design of Liquid-Propellant Rocket Engines</em>, AIAA (1992) — 启动瞬态与压力平衡计算</li>
+<li>NASA SP-8113, <em>Liquid Rocket Engine Combustion Stabilization Devices</em> (1974) — 隔板与声腔</li>
+<li>NASA SP-8055, <em>Prevention of Coupled Structure-Propulsion Instability (POGO)</em> (1970)</li>
+<li>R.E. Biggs, <em>Space Shuttle Main Engine: The First Ten Years</em>, AAS History Series (1989) — RS-25 的启动时序与故障史</li>
+<li>关于 F-1 燃烧不稳定的研制史，见 R.E. Bilstein, <em>Stages to Saturn</em>, NASA SP-4206 (1980)</li>
+</ul>
+<p><strong>架构</strong></p>
+<ul>
+<li>A. Vaswani et al., <em>Attention Is All You Need</em>, NeurIPS (2017)</li>
+<li>K. He et al., <em>Deep Residual Learning for Image Recognition</em>, CVPR (2016)</li>
+<li>R. Xiong et al., <em>On Layer Normalization in the Transformer Architecture</em>, ICML (2020) — Pre-LN 为什么不需要 warmup</li>
+<li>H. Wang et al., <em>DeepNet: Scaling Transformers to 1000 Layers</em> (2022) — 残差缩放即"预燃室配比"</li>
+<li>T. Bachlechner et al., <em>ReZero is All You Need</em> (2021)</li>
+<li>W. Yu et al., <em>MetaFormer Is Actually What You Need for Vision</em>, CVPR (2022) — mixer + MLP 的分解</li>
+<li>N. Elhage et al., <em>A Mathematical Framework for Transformer Circuits</em>, Anthropic (2021) — 残差流作为共享总线</li>
+<li>N. Shazeer et al., <em>Outrageously Large Neural Networks: The Sparsely-Gated MoE Layer</em>, ICLR (2017)</li>
+<li>J. Kaplan et al., <em>Scaling Laws for Neural Language Models</em> (2020)；J. Hoffmann et al., <em>Chinchilla</em> (2022)</li>
+<li>G. Yang &amp; E. Hu, <em>Tensor Programs V: Tuning Large Neural Networks via Zero-Shot Hyperparameter Transfer</em> (μP, 2022)</li>
+</ul>
+<p><strong>本站相关</strong></p>
+<ul>
+<li><a href="physics-and-deep-learning.html">物理学的影子：量子力学与统计力学如何塑造了深度学习</a> — 配分函数、Langevin、重整化</li>
+<li><a href="from-linear-to-nonlinear.html">从线性到非线性</a> — 为什么要堆层</li>
+<li><a href="mask-causal-triangular.html">因果掩码那个三角形</a> — 喉部那一节的代数版本</li>
+<li><a href="gradient-field-to-phase.html">梯度场与相位</a> — 回路增益与相位裕度的另一面</li>
+<li><a href="emergence-three-faces.html">涌现的三副面孔</a> — 什么时候"更多"才真的"不同"</li>
+</ul>
+    </div>
+  </article>
+
+</main>
+
+<!-- Floating Ask-AI chat widget -->
+<button class="ai-fab" id="ai-fab" aria-label="Ask AI about this article" title="Ask AI about this article">
+  <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+    <path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"/>
+  </svg>
+  <span class="ai-fab-label">Ask AI</span>
+</button>
+
+<div class="ai-panel" id="ai-panel" role="dialog" aria-labelledby="ai-panel-title" aria-hidden="true">
+  <header class="ai-panel-head">
+    <div class="ai-panel-title-wrap">
+      <span class="ai-dot"></span>
+      <h3 id="ai-panel-title">Ask AI about this post</h3>
+    </div>
+    <div class="ai-panel-actions">
+      <button class="ai-icon-btn" id="ai-clear" title="Clear conversation" aria-label="Clear">
+        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><polyline points="3 6 5 6 21 6"/><path d="M19 6l-1 14a2 2 0 0 1-2 2H8a2 2 0 0 1-2-2L5 6"/><path d="M10 11v6M14 11v6"/><path d="M9 6V4a1 1 0 0 1 1-1h4a1 1 0 0 1 1 1v2"/></svg>
+      </button>
+      <button class="ai-icon-btn" id="ai-close" title="Minimize" aria-label="Minimize">
+        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><polyline points="6 9 12 15 18 9"/></svg>
+      </button>
+    </div>
+  </header>
+
+  <div class="ai-messages" id="ai-messages">
+    <div class="ai-empty" id="ai-empty">
+      <p class="ai-empty-title">On-device AI · Gemini Nano</p>
+      <p class="ai-empty-sub">Ask anything about this article. Runs in your browser — nothing leaves your device.</p>
+    </div>
+  </div>
+
+  <div class="ai-status" id="ai-status" hidden></div>
+
+  <form class="ai-composer" id="ai-form">
+    <textarea id="ai-input" rows="1" placeholder="Ask about this post…" autocomplete="off"></textarea>
+    <button type="submit" id="ai-send" class="ai-send" aria-label="Send" disabled>
+      <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><line x1="22" y1="2" x2="11" y2="13"/><polygon points="22 2 15 22 11 13 2 9 22 2"/></svg>
+    </button>
+  </form>
+</div>
+
+<script>
+(function () {
+  const POST_TITLE = "\u4ece\u706b\u7bad\u53d1\u52a8\u673a\u7684\u52a8\u529b\u5faa\u73af\uff0c\u770b\u61c2 Transformer \u7684\u8ba1\u7b97\u56fe";
+  const contentEl = document.querySelector('article .content');
+
+  const fab = document.getElementById('ai-fab');
+  const panel = document.getElementById('ai-panel');
+  const closeBtn = document.getElementById('ai-close');
+  const clearBtn = document.getElementById('ai-clear');
+  const msgsEl = document.getElementById('ai-messages');
+  const emptyEl = document.getElementById('ai-empty');
+  const statusEl = document.getElementById('ai-status');
+  const formEl = document.getElementById('ai-form');
+  const inputEl = document.getElementById('ai-input');
+  const sendBtn = document.getElementById('ai-send');
+
+  function articleText() {
+    if (!contentEl) return '';
+    return (contentEl.innerText || contentEl.textContent || '')
+      .replace(/[ \t]+\n/g, '\n')
+      .replace(/\n{3,}/g, '\n\n')
+      .trim();
+  }
+
+  function setStatus(msg, cls) {
+    if (!msg) { statusEl.hidden = true; statusEl.textContent = ''; statusEl.className = 'ai-status'; return; }
+    statusEl.hidden = false;
+    statusEl.textContent = msg;
+    statusEl.className = 'ai-status' + (cls ? ' ' + cls : '');
+  }
+
+  function hideEmpty() { if (emptyEl) emptyEl.style.display = 'none'; }
+
+  function appendBubble(role, text) {
+    hideEmpty();
+    const wrap = document.createElement('div');
+    wrap.className = 'ai-msg ai-msg-' + role;
+    const bubble = document.createElement('div');
+    bubble.className = 'ai-bubble';
+    bubble.textContent = text;
+    wrap.appendChild(bubble);
+    msgsEl.appendChild(wrap);
+    msgsEl.scrollTop = msgsEl.scrollHeight;
+    return bubble;
+  }
+
+  function appendTyping() {
+    hideEmpty();
+    const wrap = document.createElement('div');
+    wrap.className = 'ai-msg ai-msg-assistant ai-typing';
+    wrap.innerHTML = '<div class="ai-bubble"><span class="ai-dots"><i></i><i></i><i></i></span></div>';
+    msgsEl.appendChild(wrap);
+    msgsEl.scrollTop = msgsEl.scrollHeight;
+    return wrap;
+  }
+
+  function autoSize() {
+    inputEl.style.height = 'auto';
+    inputEl.style.height = Math.min(inputEl.scrollHeight, 140) + 'px';
+  }
+
+  function openPanel() {
+    panel.classList.add('open');
+    panel.setAttribute('aria-hidden', 'false');
+    fab.classList.add('hidden');
+    setTimeout(() => inputEl.focus(), 50);
+  }
+  function closePanel() {
+    panel.classList.remove('open');
+    panel.setAttribute('aria-hidden', 'true');
+    fab.classList.remove('hidden');
+  }
+
+  fab.addEventListener('click', openPanel);
+  closeBtn.addEventListener('click', closePanel);
+  document.addEventListener('keydown', e => {
+    if (e.key === 'Escape' && panel.classList.contains('open')) closePanel();
+  });
+
+  // ---- LanguageModel session ----
+  let session = null;
+  let creating = null;
+  let history = [];
+
+  function buildSystemPrompt() {
+    // Keep article context modest — Gemini Nano's input quota is small.
+    const article = articleText().slice(0, 4000);
+    return (
+      'You are a concise, helpful assistant answering questions about a blog post. ' +
+      'Use the article below as your primary source. If the answer is not in it, say so briefly and answer generally. ' +
+      'Reply in the same language as the user\'s question. Keep answers short unless asked for detail.\n\n' +
+      '=== ARTICLE TITLE ===\n' + POST_TITLE + '\n\n' +
+      '=== ARTICLE CONTENT ===\n' + article
+    );
+  }
+
+  async function ensureSession() {
+    if (session) return session;
+    if (creating) return creating;
+
+    if (!('LanguageModel' in self)) {
+      throw new Error(
+        'On-device AI not available. Use Chrome 138+ on desktop, or enable ' +
+        '"Prompt API for Gemini Nano" in chrome://flags.'
+      );
+    }
+
+    setStatus('Checking model…', 'info');
+    const status = await LanguageModel.availability();
+    if (status === 'unavailable') {
+      throw new Error('Model unavailable on this device.');
+    }
+
+    creating = (async () => {
+      // Only show download UI when the model isn't already there.
+      const willDownload = (status !== 'available');
+      if (willDownload) setStatus('Preparing model (first run downloads ~2GB)…', 'info');
+      else setStatus('Warming up…', 'info');
+
+      const s = await LanguageModel.create({
+        initialPrompts: [{ role: 'system', content: buildSystemPrompt() }],
+        monitor(m) {
+          m.addEventListener('downloadprogress', e => {
+            // Skip the spurious 0% event Chrome fires for cached models.
+            if (!willDownload && e.loaded === 0) return;
+            const pct = (e.loaded * 100).toFixed(1);
+            setStatus('Downloading model: ' + pct + '%', 'info');
+          });
+        }
+      });
+      session = s;
+      setStatus('');
+      return s;
+    })();
+
+    try { return await creating; }
+    finally { creating = null; }
+  }
+
+  async function ask(q) {
+    appendBubble('user', q);
+    history.push({ role: 'user', content: q });
+
+    sendBtn.disabled = true;
+    inputEl.disabled = true;
+    const typing = appendTyping();
+
+    let answerBubble = null;
+    let acc = '';
+    try {
+      const s = await ensureSession();
+      const stream = s.promptStreaming(q);
+      for await (const chunk of stream) {
+        if (!answerBubble) {
+          typing.remove();
+          const wrap = document.createElement('div');
+          wrap.className = 'ai-msg ai-msg-assistant';
+          answerBubble = document.createElement('div');
+          answerBubble.className = 'ai-bubble';
+          wrap.appendChild(answerBubble);
+          msgsEl.appendChild(wrap);
+        }
+        acc += chunk;
+        answerBubble.textContent = acc;
+        msgsEl.scrollTop = msgsEl.scrollHeight;
+      }
+      if (acc) history.push({ role: 'assistant', content: acc });
+      else { typing.remove(); appendBubble('assistant', '(no response)'); }
+    } catch (e) {
+      if (typing && typing.parentNode) typing.remove();
+      const err = document.createElement('div');
+      err.className = 'ai-msg ai-msg-error';
+      err.innerHTML = '<div class="ai-bubble">⚠ ' + (e && e.message ? e.message : String(e)) + '</div>';
+      msgsEl.appendChild(err);
+      msgsEl.scrollTop = msgsEl.scrollHeight;
+    } finally {
+      sendBtn.disabled = !inputEl.value.trim();
+      inputEl.disabled = false;
+      inputEl.focus();
+    }
+  }
+
+  formEl.addEventListener('submit', e => {
+    e.preventDefault();
+    const q = inputEl.value.trim();
+    if (!q) return;
+    inputEl.value = '';
+    autoSize();
+    sendBtn.disabled = true;
+    ask(q);
+  });
+
+  inputEl.addEventListener('input', () => {
+    autoSize();
+    sendBtn.disabled = !inputEl.value.trim();
+  });
+  inputEl.addEventListener('keydown', e => {
+    if (e.key === 'Enter' && !e.shiftKey) {
+      e.preventDefault();
+      formEl.requestSubmit();
+    }
+  });
+
+  clearBtn.addEventListener('click', () => {
+    msgsEl.innerHTML = '';
+    msgsEl.appendChild(emptyEl);
+    emptyEl.style.display = '';
+    history = [];
+    if (session && session.destroy) { try { session.destroy(); } catch (_) {} }
+    session = null;
+    setStatus('');
+  });
+
+  if (!('LanguageModel' in self)) {
+    fab.addEventListener('click', () => {
+      openPanel();
+      setStatus('On-device AI not detected. Use Chrome 138+ desktop, or enable "Prompt API for Gemini Nano" in chrome://flags.', 'bad');
+    }, { once: true });
+  }
+})();
+</script>
+
+<!-- Outline notes / comments — DataScript + IndexedDB -->
+<script src="https://github.com/tonsky/datascript/releases/download/1.7.8/datascript-1.7.8.min.js"></script>
+<script src="../notes.js?v=6"></script>
+<script src="../theme.js"></script>
+<script src="../wechat-copy.js?v=3"></script>
+
+</body>
+</html>
