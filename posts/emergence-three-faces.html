@@ -1,0 +1,1152 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>涌现的三副面孔：超导、蛋白质、大模型，只有一个是真正的相变 · Steve Chan — xlisp</title>
+<meta name="description" content="最后一行三个&quot;实际不可行&quot;是这篇文章唯一无争议的共同点。">
+<meta name="author" content="Steve Chan">
+<link rel="icon" type="image/jpeg" href="../icon.jpeg">
+<link rel="apple-touch-icon" href="../icon.jpeg">
+<meta property="og:type" content="article">
+<meta property="og:title" content="涌现的三副面孔：超导、蛋白质、大模型，只有一个是真正的相变">
+<meta property="og:description" content="最后一行三个&quot;实际不可行&quot;是这篇文章唯一无争议的共同点。">
+<meta property="og:image" content="../icon.jpeg">
+<meta property="og:site_name" content="Steve Chan — xlisp">
+<meta name="twitter:card" content="summary_large_image">
+<meta name="twitter:title" content="涌现的三副面孔：超导、蛋白质、大模型，只有一个是真正的相变">
+<meta name="twitter:description" content="最后一行三个&quot;实际不可行&quot;是这篇文章唯一无争议的共同点。">
+<meta name="twitter:image" content="../icon.jpeg">
+<link rel="stylesheet" href="../style.css?v=light1">
+<script>(function(){try{if(localStorage.getItem('theme')==='light')document.documentElement.setAttribute('data-theme','light');}catch(e){}})();</script>
+<!-- Math formula rendering via MathJax -->
+<script>
+window.MathJax = {
+  tex: {
+    // arithmatex emits \(...\) / \[...\] markup, so only these delimiters
+    // are needed; plain `$` is left alone (avoids currency false positives).
+    inlineMath: [['\\(', '\\)']],
+    displayMath: [['\\[', '\\]']],
+    processEscapes: true
+  },
+  svg: {
+    // Each formula gets its own self-contained <defs>, so the copy script can
+    // serialize one <svg> and rasterize it to a PNG for WeChat.
+    fontCache: 'local'
+  },
+  options: {
+    skipHtmlTags: ['script', 'noscript', 'style', 'textarea', 'pre', 'code'],
+    ignoreHtmlClass: 'highlight'
+  }
+};
+</script>
+<script src="https://cdn.jsdelivr.net/npm/mathjax@3/es5/tex-svg.js" async></script>
+</head>
+<body>
+<main class="wrap post">
+
+  <nav class="topnav">
+    <a href="../index.html">← home</a>
+  </nav>
+
+  <article>
+    <header class="post-header">
+      <h1>涌现的三副面孔：超导、蛋白质、大模型，只有一个是真正的相变</h1>
+      <p class="meta">2026-09-02 · Steve Chan</p>
+    </header>
+
+    <div class="content">
+<blockquote>
+<p>"涌现"是过去三年被滥用得最厉害的词。它同时指着三样不同的东西：
+凝聚态物理里一个<strong>有严格定义、能被证明的数学事实</strong>；
+生物学里一套<strong>有具体分子机制、可实验干预的过程</strong>；
+以及大模型圈里一个<strong>2022 年提出、2023 年被证明有一半是度量假象</strong>的经验观察。</p>
+<p>这三样东西共用一个词，但强度差了不止一个量级。本文把它们并排放好，
+说清楚各自的机制是什么、哪些地方真的同构、哪些地方只是修辞。</p>
+<p>结论先说：<strong>在严格意义上，三者里只有量子多体系统真的有"相变"</strong>——
+因为只有它取了 <span class="arithmatex">\(N \to \infty\)</span> 的极限。大模型的"能力跃升"大部分是度量造出来的台阶，
+但训练过程中确实有真的相变（induction head 的形成），只是不在参数规模那根轴上。
+蛋白质和 DNA 里没有"智能涌现"，但有<strong>货真价实的分子计算</strong>——
+而且提出它的人，和 1982 年提出 Hopfield 网络的是同一个人。</p>
+</blockquote>
+<hr />
+<h2 id="目录">目录</h2>
+<ul>
+<li><a href="#0-先把结论摆出来">0. 先把结论摆出来</a></li>
+<li><a href="#1-涌现这个词被用坏了">1. "涌现"这个词被用坏了</a></li>
+<li><a href="#2-量子涌现机制到底是什么">2. 量子涌现：机制到底是什么</a></li>
+<li><a href="#3-大模型的涌现能力一个被证伪了一半的说法">3. 大模型的"涌现能力"：一个被证伪了一半的说法</a></li>
+<li><a href="#4-蛋白质与-dna分子层面有没有智能">4. 蛋白质与 DNA：分子层面有没有智能</a></li>
+<li><a href="#5-三者共有的四个零件">5. 三者共有的四个零件</a></li>
+<li><a href="#6-类比在哪里断掉">6. 类比在哪里断掉</a></li>
+<li><a href="#7-一张对照表">7. 一张对照表</a></li>
+<li><a href="#8-如果只记三句话">8. 如果只记三句话</a></li>
+<li><a href="#参考文献">参考文献</a></li>
+</ul>
+<hr />
+<h2 id="0-先把结论摆出来">0. 先把结论摆出来</h2>
+<table>
+<thead>
+<tr>
+<th></th>
+<th>量子多体</th>
+<th>生物分子</th>
+<th>大模型</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><strong>微观单元</strong></td>
+<td>电子、自旋</td>
+<td>氨基酸、碱基</td>
+<td>参数、token</td>
+</tr>
+<tr>
+<td><strong>数量级 <span class="arithmatex">\(N\)</span></strong></td>
+<td><span class="arithmatex">\(10^{23}\)</span></td>
+<td><span class="arithmatex">\(10^2 \sim 10^9\)</span></td>
+<td><span class="arithmatex">\(10^9 \sim 10^{12}\)</span></td>
+</tr>
+<tr>
+<td><strong>耦合</strong></td>
+<td>库仑力、交换作用</td>
+<td>氢键、疏水作用</td>
+<td>注意力、矩阵乘</td>
+</tr>
+<tr>
+<td><strong>选择原则</strong></td>
+<td>自由能极小</td>
+<td>自然选择（40 亿年）</td>
+<td>SGD 极小化交叉熵</td>
+</tr>
+<tr>
+<td><strong>宏观新变量</strong></td>
+<td>序参量、准粒子</td>
+<td>折叠构象、细胞类型</td>
+<td>电路（circuit）、特征</td>
+</tr>
+<tr>
+<td><strong>有没有真·相变</strong></td>
+<td><strong>有</strong>，<span class="arithmatex">\(N\to\infty\)</span> 时自由能非解析</td>
+<td><strong>有</strong>（Turing 失稳是真分岔）</td>
+<td><strong>参数轴上基本没有</strong>；训练轴上有</td>
+</tr>
+<tr>
+<td><strong>尖锐性来自</strong></td>
+<td>热力学极限</td>
+<td>动力学分岔</td>
+<td>大部分来自<strong>度量的不连续</strong></td>
+</tr>
+<tr>
+<td><strong>可否从微观推出宏观</strong></td>
+<td>原则上可以，实际不可行</td>
+<td>原则上可以，实际不可行</td>
+<td>原则上可以，实际不可行</td>
+</tr>
+</tbody>
+</table>
+<p>最后一行三个"实际不可行"是这篇文章唯一无争议的共同点。
+Anderson 1972 年那篇文章的整个论点就是这一行：
+<strong>还原论成立，并不意味着建构论成立</strong>（reductionism ≠ constructionism）。</p>
+<hr />
+<h2 id="1-涌现这个词被用坏了">1. "涌现"这个词被用坏了</h2>
+<h3 id="11-anderson-1972more-is-different">1.1 Anderson 1972：More Is Different</h3>
+<p>1972 年 P.W. Anderson 在 <em>Science</em> 上发表 <em>More Is Different</em>，
+这是"涌现"作为一个物理概念的奠基文献。他的论证只有一句话：</p>
+<blockquote>
+<p>把一切还原为简单基本定律的能力，<strong>并不蕴含</strong>从这些定律出发重建宇宙的能力。</p>
+</blockquote>
+<p>他给的技术例子不是哲学，是<strong>自发对称破缺</strong>：
+氨分子 <span class="arithmatex">\(\mathrm{NH_3}\)</span> 的哈密顿量有空间反演对称性，它的基态是两个金字塔构型的对称叠加，
+所以单个氨分子<strong>没有</strong>电偶极矩。但一块糖（手性分子晶体）会旋转偏振光，
+它的基态<strong>破坏</strong>了原本哈密顿量具有的对称性。</p>
+<p>差别在哪？在 <span class="arithmatex">\(N\)</span>。分子越大，两个构型之间的隧穿劈裂越小，
+到宏观尺度时劈裂小于任何实验能分辨的能标，对称态在物理上不再可及。</p>
+<p><strong>这是全文的起点：涌现的强度由 <span class="arithmatex">\(N\)</span> 控制，而且这句话可以写成公式。</strong></p>
+<h3 id="12-三种被混为一谈的涌现">1.2 三种被混为一谈的"涌现"</h3>
+<table>
+<thead>
+<tr>
+<th>名称</th>
+<th>含义</th>
+<th>谁在用</th>
+<th>是否有争议</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><strong>弱涌现</strong>（认识论）</td>
+<td>原则上可从微观推出，实际算不动</td>
+<td>物理、生物、ML 都在用</td>
+<td>无争议</td>
+</tr>
+<tr>
+<td><strong>强涌现</strong>（本体论）</td>
+<td>宏观有新的、不可还原的因果力</td>
+<td>哲学、少数科普</td>
+<td>物理学界基本不接受</td>
+</tr>
+<tr>
+<td><strong>度量涌现</strong></td>
+<td>指标曲线上出现了台阶</td>
+<td>ML 论文（2022 后）</td>
+<td><strong>这是争议的全部来源</strong></td>
+</tr>
+</tbody>
+</table>
+<p>大模型圈说的"涌现"，Wei et al. 2022 的原始定义是第三种：</p>
+<blockquote>
+<p>一种能力如果在小模型上不存在、在大模型上存在，且<strong>无法通过外推小模型的表现来预测</strong>，
+就称为 emergent。</p>
+</blockquote>
+<p>注意这个定义里<strong>没有任何机制</strong>，它完全是关于曲线形状的。
+而物理学里的涌现有机制、有序参量、有可以证明的定理。
+把两者用同一个词说出来，是绝大多数混乱的源头。</p>
+<h3 id="13-一个能用的判据">1.3 一个能用的判据</h3>
+<p>判断"这里是不是真有涌现"，我用三个问题：</p>
+<ol>
+<li><strong>宏观描述能不能自我闭合？</strong> 也就是：不引用微观量，能不能写出宏观量的完整演化方程？
+   （超导：能，Ginzburg–Landau 方程；蛋白质：部分能，反应坐标；大模型：目前不能。）</li>
+<li><strong>新变量是不是微观变量的简单函数？</strong> 如果只是求和平均，那是统计，不是涌现。</li>
+<li><strong>尖锐性经得起换指标吗？</strong> 如果换一个连续指标台阶就没了，那台阶是你画上去的。</li>
+</ol>
+<p>第 3 条会在 §3 直接干掉大模型"涌现能力"的大半江山。</p>
+<hr />
+<h2 id="2-量子涌现机制到底是什么">2. 量子涌现：机制到底是什么</h2>
+<p>这一节讲物理，但目的是提取<strong>机制模板</strong>，后面两节要反复用它。</p>
+<h3 id="21-自发对称破缺有限系统里根本没有相变">2.1 自发对称破缺：有限系统里根本没有相变</h3>
+<p>取最简单的例子，横场 Ising 模型：</p>
+<div class="arithmatex">\[H = -J\sum_{i} \sigma^z_i \sigma^z_{i+1} - h\sum_i \sigma^x_i\]</div>
+<p><span class="arithmatex">\(H\)</span> 对全局翻转 <span class="arithmatex">\(\sigma^z \to -\sigma^z\)</span> 是对称的。当 <span class="arithmatex">\(h &lt; J\)</span> 时，
+系统"应该"选择全部朝上或全部朝下——磁化 <span class="arithmatex">\(m = \langle \sigma^z\rangle \ne 0\)</span>。</p>
+<p>但对<strong>任何有限的 <span class="arithmatex">\(N\)</span></strong>，真正的基态是两者的对称叠加：</p>
+<div class="arithmatex">\[|\text{GS}\rangle = \frac{1}{\sqrt2}\left(|{\uparrow\uparrow\cdots\uparrow}\rangle + |{\downarrow\downarrow\cdots\downarrow}\rangle\right),
+\qquad \langle \text{GS}|\,m\,|\text{GS}\rangle = 0\]</div>
+<p>对称态和反对称态之间的能隙随 <span class="arithmatex">\(N\)</span> <strong>指数衰减</strong>：<span class="arithmatex">\(\Delta E \sim e^{-cN}\)</span>。</p>
+<p>所以：</p>
+<ul>
+<li><span class="arithmatex">\(N\)</span> 有限 → 基态不破缺对称性，<span class="arithmatex">\(m = 0\)</span>，没有铁磁相。</li>
+<li><span class="arithmatex">\(N \to \infty\)</span> → 隧穿时间超过宇宙年龄，两个态成为独立的世界，<span class="arithmatex">\(m \ne 0\)</span>。</li>
+</ul>
+<p><strong>对称破缺不是"<span class="arithmatex">\(N\)</span> 很大时近似成立"，它是"<span class="arithmatex">\(N\)</span> 无穷时精确成立、<span class="arithmatex">\(N\)</span> 有限时精确不成立"。</strong></p>
+<p>这一点还有更硬的版本。配分函数</p>
+<div class="arithmatex">\[Z_N(\beta) = \sum_{s} e^{-\beta E(s)}\]</div>
+<p>对有限 <span class="arithmatex">\(N\)</span> 是有限多个正指数函数之和，因此 <span class="arithmatex">\(\log Z_N\)</span> 是 <span class="arithmatex">\(\beta\)</span> 的<strong>解析函数</strong>——
+解析函数没有奇点，没有折角，没有台阶。
+自由能的非解析性（也就是相变的数学定义）<strong>只能</strong>在 <span class="arithmatex">\(N \to \infty\)</span> 时出现。
+这是 Yang–Lee 1952 年的结果：相变对应配分函数零点在热力学极限下逼近实轴。</p>
+<blockquote>
+<p><strong>记住这句话，它是全文最锋利的一刀：</strong>
+真正的相变要求 <span class="arithmatex">\(N \to \infty\)</span>。任何有限系统的曲线都是光滑的。
+大模型的参数量是有限的，所以它的损失曲线在数学上<strong>必然</strong>是光滑的。
+你看到的台阶只可能来自两个地方：度量，或者训练动力学。</p>
+</blockquote>
+<h3 id="22-元激发没有一个电子带-13-电荷">2.2 元激发：没有一个电子带 1/3 电荷</h3>
+<p>分数量子霍尔效应（Laughlin 1983）里，二维电子气在强磁场下的低能激发
+带有 <span class="arithmatex">\(e/3\)</span> 的电荷。而构成它的每一个电子都带 <span class="arithmatex">\(e\)</span>。</p>
+<p><span class="arithmatex">\(e/3\)</span> 不是"平均下来"的，它是可测的：1997 年两组独立的散粒噪声实验
+（de-Picciotto 等；Saminadayar 等）直接测出了 <span class="arithmatex">\(e/3\)</span> 的电荷量子。</p>
+<p>这是"more is different"最干净的实验证据：
+<strong>宏观的自由度不是微观自由度的重新排列，它是新的东西。</strong>
+准粒子（声子、磁振子、Cooper 对、任意子）是涌现出的"新粒子"，
+它们只在集体态里存在，把系统拆开就找不到。</p>
+<h3 id="23-拓扑序连序参量都没有">2.3 拓扑序：连序参量都没有</h3>
+<p>Landau 范式说：相变 = 对称破缺 = 出现一个局域序参量。
+拓扑序（文小刚，1989 起）是这个范式外的东西：</p>
+<ul>
+<li>基态简并度依赖于系统所在流形的<strong>拓扑</strong>（环面上 <span class="arithmatex">\(\nu=1/3\)</span> 的 Laughlin 态是 3 重简并）；</li>
+<li>没有任何局域算符能区分这些简并基态；</li>
+<li>特征是<strong>长程纠缠</strong>，用拓扑纠缠熵 <span class="arithmatex">\(S = \alpha L - \gamma\)</span> 里的 <span class="arithmatex">\(\gamma\)</span> 刻画。</li>
+</ul>
+<p>意义在于：涌现出的性质可以<strong>完全没有局域的对应物</strong>。
+你在任何有限区域内做任何测量，都读不出这个"序"。</p>
+<h3 id="24-重整化群为什么宏观可以不管微观">2.4 重整化群：为什么宏观可以不管微观</h3>
+<p>前面三节讲的是"涌现存在"。RG 讲的是<strong>"涌现为什么是科学而不是玄学"</strong>——
+它给出了宏观描述可以脱离微观的<strong>推导</strong>。</p>
+<p>粗粒化的操作：把短波长自由度积掉，再把尺度重标回去。
+在这个过程中，哈密顿量里的耦合常数会"流动"：</p>
+<div class="arithmatex">\[\frac{d g_i}{d \ell} = \beta_i(\{g\})\]</div>
+<p>关键在于流的<strong>不动点</strong>附近，算符分成三类：
+相关（relevant，越流越大）、无关（irrelevant，指数衰减到零）、边缘。</p>
+<p><strong>微观细节几乎全都是无关算符。</strong> 粗粒化几步之后它们就死了。
+留下来的只有几个相关方向——它们决定宏观行为。</p>
+<p>结果是<strong>普适类</strong>：微观上毫不相干的系统，宏观上完全一样。
+三维 Ising 普适类里同时装着：</p>
+<ul>
+<li>单轴铁磁体的居里点，</li>
+<li>液–气临界点（水在 <span class="arithmatex">\(647\,\mathrm K\)</span>、<span class="arithmatex">\(22.1\,\mathrm{MPa}\)</span>），</li>
+<li>二元合金的相分离临界点。</li>
+</ul>
+<p>它们的临界指数是同一套：<span class="arithmatex">\(\beta \approx 0.326\)</span>，<span class="arithmatex">\(\nu \approx 0.630\)</span>，<span class="arithmatex">\(\gamma \approx 1.237\)</span>。
+水分子和铁原子毫无共同之处，但它们在临界点附近服从同一个数。
+Wilson 因为这套东西拿了 1982 年诺贝尔物理学奖。</p>
+<blockquote>
+<p><strong>这是本文最重要的一个概念。</strong>
+RG 说的是：宏观理论之所以能不管微观，不是因为我们偷懒，
+而是因为<strong>微观信息在粗粒化下被证明是指数衰减的</strong>。
+涌现是可推导的，只是推导的方向是"往上"而不是"往下"。</p>
+</blockquote>
+<h3 id="25-顺便为什么量子系统没有被指数爆炸压垮">2.5 顺便：为什么量子系统没有被指数爆炸压垮</h3>
+<p><span class="arithmatex">\(N\)</span> 个自旋的希尔伯特空间维度是 <span class="arithmatex">\(2^N\)</span>。<span class="arithmatex">\(N = 300\)</span> 就超过了宇宙原子数。
+但我们能算、能模拟、能理解真实材料。为什么？</p>
+<p>因为<strong>有能隙的局域哈密顿量的基态满足纠缠面积律</strong>：
+一个区域和外界的纠缠熵正比于<strong>边界面积</strong>而不是体积。
+面积律意味着基态住在 <span class="arithmatex">\(2^N\)</span> 维空间里一个维度低得多的流形上，
+可以被矩阵乘积态（MPS）/ 张量网络高效表示——DMRG 就是靠这个跑起来的。</p>
+<p><strong>这一点在 §5 会再出现一次，因为它是三个领域最深的共同点。</strong></p>
+<h3 id="26-量子涌现的机制模板">2.6 量子涌现的机制模板</h3>
+<p>抽出来是四条：</p>
+<ol>
+<li>大 <span class="arithmatex">\(N\)</span> + 局域非线性耦合；</li>
+<li>一个<strong>选择原则</strong>（自由能极小）挑出实际出现的宏观态；</li>
+<li>一个<strong>尺度分离</strong>（能隙 / 关联长度），使粗粒化描述自我闭合；</li>
+<li>结果是<strong>新的自由度 + 新的有效定律</strong>，且对微观细节不敏感（普适性）。</li>
+</ol>
+<hr />
+<h2 id="3-大模型的涌现能力一个被证伪了一半的说法">3. 大模型的"涌现能力"：一个被证伪了一半的说法</h2>
+<h3 id="31-2022-年的主张">3.1 2022 年的主张</h3>
+<p>Wei et al. 2022（TMLR）报告：在三位数加法、MMLU、词语重排等任务上，
+模型在某个规模之前几乎是随机水平，越过某个规模后突然跳到高分。
+论文列了 100 多个这样的任务，图上全是折角。</p>
+<p>这个结论传播极广，也直接催生了"规模就是一切""GPT-4 里可能已经涌现了某种理解"这类说法。</p>
+<h3 id="32-2023-年尖锐是度量造出来的">3.2 2023 年：尖锐是度量造出来的</h3>
+<p>Schaeffer、Miranda、Koyejo 的 <em>Are Emergent Abilities of Large Language Models a Mirage?</em>
+（NeurIPS 2023 最佳论文之一）给出了一个极其简单的解释。</p>
+<p>考虑一个需要输出 <span class="arithmatex">\(k\)</span> 个 token 才算对的任务，用 <strong>exact match</strong> 打分。
+设模型每个 token 正确的概率是 <span class="arithmatex">\(p\)</span>（<span class="arithmatex">\(p\)</span> 随规模<strong>平滑</strong>上升），那么</p>
+<div class="arithmatex">\[\text{Accuracy} \approx p^{\,k}\]</div>
+<p><span class="arithmatex">\(k = 5\)</span>、<span class="arithmatex">\(p\)</span> 从 <span class="arithmatex">\(0.3\)</span> 平滑升到 <span class="arithmatex">\(0.9\)</span> 时，准确率从 <span class="arithmatex">\(0.002\)</span> 升到 <span class="arithmatex">\(0.59\)</span>——
+在对数横轴上画出来就是一个陡峭的台阶。
+<strong>底层能力是平滑的，台阶是 <span class="arithmatex">\((\cdot)^k\)</span> 这个不连续度量制造的。</strong></p>
+<p>他们做了三件事，逐条钉死：</p>
+<ol>
+<li>把 exact match 换成连续指标（token edit distance、Brier score、log-prob），
+   同一批模型、同一批任务，<strong>台阶消失，曲线变平滑</strong>；</li>
+<li>统计发现"涌现"高度集中在少数几个<strong>不连续</strong>指标上
+   （Multiple Choice Grade、Exact String Match），
+   而在连续指标上几乎不出现——如果涌现是模型的性质，它不该挑指标；</li>
+<li><strong>反向构造</strong>：在一个完全没有任何"涌现"的浅层视觉自编码器上，
+   人为换用一个苛刻的阈值指标，硬生生造出了教科书式的涌现曲线。</li>
+</ol>
+<p>第 3 条是关键的对照实验。它证明这套曲线形状<strong>不需要</strong>模型里发生任何事情就能产生。</p>
+<p>这和 §2.1 的结论完全一致：有限系统的自由能是解析的，
+你不可能在一个 <span class="arithmatex">\(10^{11}\)</span> 参数的有限模型里得到数学意义上的非解析性。</p>
+<h3 id="33-那什么是真的scaling-law-光滑得惊人">3.3 那什么是真的：scaling law 光滑得惊人</h3>
+<p>真正稳健的经验事实不是台阶，是<strong>没有台阶</strong>。</p>
+<p>Kaplan et al. 2020、Hoffmann et al. 2022（Chinchilla）发现，
+交叉熵损失对参数量 <span class="arithmatex">\(N\)</span>、数据量 <span class="arithmatex">\(D\)</span>、算力 <span class="arithmatex">\(C\)</span> 是干净的幂律：</p>
+<div class="arithmatex">\[L(N, D) = E + \frac{A}{N^{\alpha}} + \frac{B}{D^{\beta}}\]</div>
+<p>跨 <strong>7 个数量级</strong>都成立，而且对深宽比、具体架构细节相当不敏感——
+只要是 Transformer 家族，指数就在那个附近。</p>
+<p><strong>这种"对微观细节不敏感"的性质，才是和 RG 普适类真正对应的东西。</strong>
+而且这条类比不只是修辞：</p>
+<ul>
+<li>Bahri、Dyer、Kaplan、Lee、Sharma 的 <em>Explaining Neural Scaling Laws</em>（PNAS 2024）
+  把幂律指数和<strong>数据流形的内蕴维数</strong> <span class="arithmatex">\(d\)</span> 联系起来，给出 <span class="arithmatex">\(\alpha \approx 4/d\)</span> 这类关系；</li>
+<li>Maloney、Roberts、Sully 2022 给了一个可解模型，用随机矩阵理论推出幂律；</li>
+<li>Roberts、Yaida、Hanin 的《The Principles of Deep Learning Theory》
+  直接用 <span class="arithmatex">\(1/\text{width}\)</span> 展开做微扰场论：无穷宽是"自由理论"（NNGP / NTK），
+  有限宽修正就是"相互作用"。</li>
+</ul>
+<p>这是物理方法在深度学习里<strong>字面意义上</strong>的应用，不是比喻。</p>
+<blockquote>
+<p>讽刺的地方在于：大模型身上真正像物理的部分，是<strong>光滑的那一半</strong>（普适的幂律），
+而不是被到处宣传的<strong>尖锐的那一半</strong>（能力台阶）。</p>
+</blockquote>
+<h3 id="34-真的相变在训练时间轴上">3.4 真的相变在训练时间轴上</h3>
+<p>但如果就此说"大模型没有任何相变"，那是过头了。有两个反例，而且都有机制。</p>
+<p><strong>（a）Induction head 的形成</strong>（Olsson et al. 2022，Anthropic）</p>
+<p>训练早期，损失曲线上有一个可见的<strong>凸起</strong>（bump），发生在很窄的一段步数里。
+在这个窗口内：</p>
+<ul>
+<li>模型内部形成了 <strong>induction head</strong>——一种两层注意力电路，
+  它做的事是"在上文里找到上一次出现 <code>A</code> 的地方，看它后面跟的是 <code>B</code>，
+  于是预测这次 <code>A</code> 后面也是 <code>B</code>"；</li>
+<li><strong>上下文学习（in-context learning）能力同时出现</strong>，两条曲线在时间上重合；</li>
+<li>消融掉这些头，in-context learning 大幅退化。</li>
+</ul>
+<p>这是目前最接近"真相变"的东西：有尖锐的转变、有明确的序参量（电路的存在与否）、
+有因果验证（消融）。而且它发生在<strong>训练步数</strong>这根轴上，不是参数规模那根轴上。</p>
+<p><strong>（b）Grokking</strong>（Power et al. 2022）</p>
+<p>在模加法这类任务上，模型先<strong>记住</strong>训练集（训练准确率 100%，测试准确率仍随机），
+然后在过拟合之后又训练很久，测试准确率<strong>突然</strong>跳到 100%。</p>
+<p>Nanda et al. 2023 把这个过程逆向工程了：模型学到的是一个<strong>离散傅里叶算法</strong>——
+把数字嵌入到单位圆上的若干频率，用三角恒等式做加法，再读出。
+关键是他们定义了"进度度量"（progress measure），
+发现在这些度量下<strong>转变是渐进的</strong>：电路早就在悄悄形成，
+只是测试准确率这个指标在电路完成前一直读作 0。</p>
+<p><strong>又是同一个故事：底层连续，指标离散。</strong>
+但和 §3.2 不同的是，这里底层确实发生了结构性的变化——
+不是能力线性变强，而是一个新的<strong>算法</strong>被装配起来了。</p>
+<h3 id="35-这一节的结论">3.5 这一节的结论</h3>
+<table>
+<thead>
+<tr>
+<th>说法</th>
+<th>判定</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>参数规模到某个阈值会突然涌现新能力</td>
+<td><strong>大部分是度量假象</strong></td>
+</tr>
+<tr>
+<td>损失随规模平滑幂律下降</td>
+<td><strong>稳健事实</strong>，跨 7 个数量级</td>
+</tr>
+<tr>
+<td>训练过程中会形成新的内部电路，且转变很快</td>
+<td><strong>真的</strong>，且有因果证据</td>
+</tr>
+<tr>
+<td>这些转变在数学上是相变（非解析）</td>
+<td><strong>不是</strong>，有限系统不可能</td>
+</tr>
+<tr>
+<td>大模型的涌现是"量子的"</td>
+<td><strong>完全错误</strong>，见 §6</td>
+</tr>
+</tbody>
+</table>
+<hr />
+<h2 id="4-蛋白质与-dna分子层面有没有智能">4. 蛋白质与 DNA：分子层面有没有智能</h2>
+<p>这是本文最容易失控的一节，所以先划一条线：
+<strong>单个蛋白质、单条 DNA 没有智能。但它们确实在做计算，而且是可以精确定义的计算。</strong></p>
+<h3 id="41-levinthal-佯谬和梯度下降是同一个解法">4.1 Levinthal 佯谬：和梯度下降是同一个解法</h3>
+<p>1969 年 Levinthal 提出了这个佯谬。一条 100 残基的多肽，
+每个骨架二面角粗略取 3 个构象，总状态数</p>
+<div class="arithmatex">\[3^{99} \approx 1.7 \times 10^{47}\]</div>
+<p>即使每 <span class="arithmatex">\(10^{-13}\,\mathrm s\)</span> 试一个，穷举也要 <span class="arithmatex">\(10^{27}\)</span> 年——远超宇宙年龄。
+可实际折叠只需要<strong>微秒到秒</strong>。</p>
+<p>解决方案是 Bryngelson &amp; Wolynes（1987）的<strong>漏斗地形</strong>与<strong>最小挫败原理</strong>：
+能量地形不是随机崎岖的，而是整体向天然态倾斜的漏斗。
+蛋白质不"搜索"构象空间，它<strong>沿着地形往下滚</strong>。
+局域的、贪心的移动就足够了，因为地形本身被进化雕刻成了有全局偏置的形状。</p>
+<blockquote>
+<p>把这段话里的"构象"换成"参数"、"天然态"换成"低损失区"、
+"进化雕刻"换成"架构 + 数据分布"，你得到的就是深度学习为什么能训得动的标准解释。
+参见 <a href="combinatorics-to-generalization.html">高中背到头秃的排列组合…</a>：
+<strong>两个领域面对的是同一个组合爆炸，用的是同一个逃生口——地形不是随机的。</strong></p>
+</blockquote>
+<p>这是本文里我认为最扎实的一条跨领域对应。它不是比喻，
+两边的数学对象都是"高维空间上的非凸地形 + 一阶局域下降"。</p>
+<h3 id="42-折叠是自发的但不可推导">4.2 折叠是自发的，但不可推导</h3>
+<p>Anfinsen（1961，1972 年诺贝尔化学奖）证明：
+核糖核酸酶变性后去掉变性剂，能<strong>自发</strong>折回天然构象且恢复活性。
+结论是<strong>热力学假说</strong>：天然构象所需的全部信息都编码在氨基酸序列里。</p>
+<p>这是标准的弱涌现：信息全在微观里，但你盯着序列看一辈子也推不出结构。</p>
+<p>有意思的是 2020 年之后的事：AlphaFold2（Jumper et al., <em>Nature</em> 2021）
+在 CASP14 上把预测精度做到了实验级（中位 GDT_TS 92.4），AlphaFold3（2024）扩展到复合物。
+但它<strong>没有解出折叠的物理</strong>——它是从 PDB 里的十几万个结构学出来的统计映射。</p>
+<blockquote>
+<p><strong>这本身是一个关于涌现的数据点：</strong>
+当微观推导不可行时，宏观规律仍然可能是<strong>可学的</strong>。
+这恰好是大模型在做的事——不推导，只拟合，
+参见 <a href="universal-function-approximator.html">万能函数模拟器</a>。</p>
+</blockquote>
+<p>而"一个残基改变可以彻底废掉功能"这件事（比如镰刀型贫血症只是 β 珠蛋白第 6 位
+谷氨酸换成缬氨酸），说明功能是<strong>整体折叠</strong>的性质，不属于任何单个残基。
+这是教科书级的 more is different。</p>
+<h3 id="43-分子确实在计算三个具体机制">4.3 分子确实在计算：三个具体机制</h3>
+<p><strong>（a）别构效应 = 逻辑门。</strong> Monod、Wyman、Changeux 1965 的 MWC 模型：
+蛋白在两个构象态之间平衡，配体结合改变平衡。
+血红蛋白结合氧的曲线是 S 形（Hill 系数约 2.8）而不是双曲线——
+这是<strong>协同性</strong>，四个亚基互相"通气"。一个 S 形响应函数就是一个软阈值门。</p>
+<p><strong>（b）lac 操纵子 = 一个真实的布尔电路。</strong> Jacob &amp; Monod 1961（1965 年诺奖）：</p>
+<div class="arithmatex">\[\text{转录} = (\text{有乳糖}) \wedge \lnot(\text{有葡萄糖})\]</div>
+<p>阻遏蛋白实现 <span class="arithmatex">\(\lnot\)</span>，CAP–cAMP 实现另一个输入，两者组合出 AND-NOT。
+这不是类比，这就是一个物理实现的逻辑门。</p>
+<p><strong>（c）动力学校对（kinetic proofreading）——本文最好的一个巧合。</strong></p>
+<p>DNA 复制的错误率约 <span class="arithmatex">\(10^{-8} \sim 10^{-10}\)</span>，翻译的错误率约 <span class="arithmatex">\(10^{-4}\)</span>。
+但正确与错误底物的结合自由能差只够支撑 <span class="arithmatex">\(10^{-2}\)</span> 量级的区分。
+<strong>平衡态热力学根本给不出这个精度。</strong></p>
+<p>1974 年 J.J. Hopfield 在 PNAS 上给出了解答（Ninio 1975 独立提出）：
+在识别和产物形成之间插入一个<strong>不可逆的、耗 ATP 的中间步骤</strong>，
+让错误底物有额外的机会解离。代价是能量，收益是错误率被<strong>平方</strong>：</p>
+<div class="arithmatex">\[f_{\text{校对后}} \approx f_{\text{平衡}}^{\,2}\]</div>
+<p><strong>这是分子在用能量换信息</strong>，是一个严格的非平衡计算过程。</p>
+<p>而这个 J.J. Hopfield，就是 1982 年提出 Hopfield 网络、
+2024 年和 Hinton 一起拿诺贝尔物理学奖的那个人。
+同一个人，先在分子层面定义了"生物如何用耗散换取精度"，
+八年后在网络层面定义了"能量地形如何存储记忆"。
+这条线本站另有一篇专门讲：<a href="boltzmann-to-hinton.html">从玻尔兹曼到辛顿</a>。</p>
+<h3 id="44-dna-不是蓝图c-值悖论">4.4 DNA 不是蓝图：C 值悖论</h3>
+<p>如果复杂度写在序列里，那么基因组越大越复杂。事实完全不是这样。</p>
+<table>
+<thead>
+<tr>
+<th>物种</th>
+<th>基因组大小</th>
+<th>蛋白编码基因数</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>人</td>
+<td><span class="arithmatex">\(\approx 3.1\)</span> Gb</td>
+<td><span class="arithmatex">\(\approx 20{,}000\)</span></td>
+</tr>
+<tr>
+<td>秀丽隐杆线虫（959 个体细胞）</td>
+<td><span class="arithmatex">\(\approx 100\)</span> Mb</td>
+<td><span class="arithmatex">\(\approx 20{,}000\)</span></td>
+</tr>
+<tr>
+<td><em>Paris japonica</em>（一种重楼）</td>
+<td><span class="arithmatex">\(\approx 149\)</span> Gb</td>
+<td>—</td>
+</tr>
+</tbody>
+</table>
+<p>人和线虫的蛋白编码基因数<strong>基本一样</strong>。一株植物的基因组是人的 50 倍。
+这就是 <strong>C 值悖论</strong>：基因组大小与生物复杂度不相关。</p>
+<p>复杂度不在序列长度里，在<strong>调控网络</strong>里：</p>
+<ul>
+<li>同一段 DNA 在不同细胞里被读成完全不同的东西；</li>
+<li>你身上每一个细胞的基因组<strong>完全相同</strong>，但有几百种细胞类型；</li>
+<li>差别来自基因调控网络（GRN）落在了不同的<strong>吸引子</strong>上。</li>
+</ul>
+<p>Waddington 1957 年的"表观遗传地形"就是这个图像：小球从山顶滚下，
+分岔选择决定它最终落进哪条沟。Kauffman 的随机布尔网络把它形式化为
+"细胞类型 = 动力系统的吸引子"（这仍是一个有影响力的<strong>假说</strong>，不是定论）。</p>
+<blockquote>
+<p><strong>这是最干净的涌现例子：微观规格完全相同（同一份 DNA），
+宏观状态有几百种（细胞类型），由动力学和历史选择。</strong>
+信息不在参数里，在参数决定的那个动力系统的相空间结构里。</p>
+</blockquote>
+<h3 id="45-turing-1952生物学里真正的对称破缺">4.5 Turing 1952：生物学里真正的对称破缺</h3>
+<p>图灵最后一篇论文 <em>The Chemical Basis of Morphogenesis</em>（1952）问的是：
+一个<strong>完全均匀</strong>的受精卵，怎么长出有花纹、有手指、有前后轴的东西？</p>
+<p>他的答案是反应–扩散方程：</p>
+<div class="arithmatex">\[\partial_t u = f(u,v) + D_u \nabla^2 u, \qquad
+\partial_t v = g(u,v) + D_v \nabla^2 v\]</div>
+<p>反直觉的地方在于：<strong>扩散通常抹平差异，但在这里它制造差异</strong>。
+当"激活剂扩散慢、抑制剂扩散快"（<span class="arithmatex">\(D_v \gg D_u\)</span>）时，
+均匀态对某个波长的扰动变得<strong>不稳定</strong>，系统自发长出周期性图案。</p>
+<p>这是货真价实的自发对称破缺——平移对称的初态，
+自发选出了一个特征波长 <span class="arithmatex">\(\lambda\)</span> 和一个相位。它有分岔点，有序参量，
+数学结构和 §2.1 的铁磁相变是同一类。</p>
+<p>实验上也被证实了：Castets 等 1990 年在 CIMA 反应里第一次做出了真正的 Turing 斑图；
+Sheth 等 2012 年在 <em>Science</em> 上给出证据，<strong>小鼠的指头就是一个 Turing 图案</strong>，
+Hox 基因的作用是调节它的波长（敲掉后指头变多变细）。</p>
+<h3 id="46-直接回答分子层面有没有智能涌现">4.6 直接回答：分子层面有没有智能涌现</h3>
+<p>分开回答：</p>
+<table>
+<thead>
+<tr>
+<th>问题</th>
+<th>回答</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>单个蛋白质会思考吗？</td>
+<td><strong>不会。</strong></td>
+</tr>
+<tr>
+<td>分子在做信息处理吗？</td>
+<td><strong>是</strong>，而且可精确定义：逻辑门、放大器、纠错、阈值</td>
+</tr>
+<tr>
+<td>有没有"超出编码信息"的东西冒出来？</td>
+<td><strong>没有</strong>（Anfinsen）；有的是"无法从编码推导"的东西</td>
+</tr>
+<tr>
+<td>细胞层面呢？</td>
+<td>细胞有记忆、有决策、有适应，这些有明确机制</td>
+</tr>
+<tr>
+<td>有人主张细胞有"基础认知"</td>
+<td>是（Levin 等的生物电研究），<strong>这是活跃但有争议的领域</strong>，别当定论引用</td>
+</tr>
+<tr>
+<td>那智能在哪一层冒出来？</td>
+<td>目前有证据的最低层级是<strong>神经网络</strong>，不是分子</td>
+</tr>
+</tbody>
+</table>
+<p>我的判断是：<strong>分子层面有计算，没有智能。</strong>
+计算和智能之间隔着的东西，正是这篇文章反复在说的那三样——
+大 <span class="arithmatex">\(N\)</span>、可塑的耦合、以及一个持续施加的选择压力。
+核糖体是一台读带子的机器，它精确、可靠、可编程，但它没有目标函数。</p>
+<hr />
+<h2 id="5-三者共有的四个零件">5. 三者共有的四个零件</h2>
+<p>把 §2.6 的模板套到三个领域上：</p>
+<table>
+<thead>
+<tr>
+<th>零件</th>
+<th>量子多体</th>
+<th>生物</th>
+<th>大模型</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><strong>① 大 <span class="arithmatex">\(N\)</span></strong></td>
+<td><span class="arithmatex">\(10^{23}\)</span> 个电子</td>
+<td><span class="arithmatex">\(10^2\)</span> 残基 / <span class="arithmatex">\(10^{10}\)</span> 碱基</td>
+<td><span class="arithmatex">\(10^{11}\)</span> 参数</td>
+</tr>
+<tr>
+<td><strong>② 非线性耦合</strong></td>
+<td>交换作用、库仑</td>
+<td>疏水塌缩、别构、调控</td>
+<td>注意力（token 之间乘性耦合）</td>
+</tr>
+<tr>
+<td><strong>③ 尺度分离</strong></td>
+<td>能隙 / 关联长度</td>
+<td>折叠时标 vs 化学时标</td>
+<td>？<strong>这一条最弱</strong></td>
+</tr>
+<tr>
+<td><strong>④ 选择原则</strong></td>
+<td>自由能极小</td>
+<td>自然选择</td>
+<td>SGD 极小化交叉熵</td>
+</tr>
+</tbody>
+</table>
+<h3 id="51-②-必须是乘性的否则什么也不会发生">5.1 ② 必须是"乘性"的，否则什么也不会发生</h3>
+<p>如果单元之间只是相加，那么 <span class="arithmatex">\(N\)</span> 再大也只得到统计涨落（中心极限定理），
+不会有新东西。涌现需要<strong>耦合项</strong>。</p>
+<p>值得注意的是三个领域的耦合都是<strong>成对乘性</strong>的：</p>
+<div class="arithmatex">\[\underbrace{-J\, s_i s_j}_{\text{Ising}}
+\qquad
+\underbrace{\text{配体结合改变另一个位点的亲和力}}_{\text{别构}}
+\qquad
+\underbrace{\operatorname{softmax}(q_i^{\mathsf T} k_j / \sqrt{d})}_{\text{注意力}}\]</div>
+<p>注意力做的事情，在结构上就是"让第 <span class="arithmatex">\(i\)</span> 个位置的表示依赖于它和第 <span class="arithmatex">\(j\)</span> 个位置的乘积"。
+这是 Transformer 相比 MLP 的关键差异，也是它能表达长程组合结构的原因。</p>
+<h3 id="52-④-是最被忽略的那个也是最重要的">5.2 ④ 是最被忽略的那个，也是最重要的</h3>
+<p>科普文章讲涌现时几乎只讲 ①：<strong>"规模大了就会涌现"</strong>。这是错的。</p>
+<p>把 <span class="arithmatex">\(10^{23}\)</span> 个原子随机堆在一起，你得到的是一团气体，不是超导体。
+超导需要的是<strong>自由能极小</strong>这个选择原则，把系统推到 BCS 基态上去。
+随机初始化一个 <span class="arithmatex">\(10^{11}\)</span> 参数的 Transformer，你得到的是噪声。</p>
+<p><strong>规模提供的是可能性空间，选择原则决定你实际落在哪。</strong></p>
+<p>而三个领域的选择原则强度差别巨大：</p>
+<table>
+<thead>
+<tr>
+<th></th>
+<th>选择原则</th>
+<th>作用时长</th>
+<th>目标</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>物理</td>
+<td>自由能极小</td>
+<td>瞬时（弛豫时间）</td>
+<td>由哈密顿量给定，不可改</td>
+</tr>
+<tr>
+<td>生物</td>
+<td>差异化繁殖</td>
+<td><span class="arithmatex">\(\approx 4 \times 10^9\)</span> 年</td>
+<td>无显式目标，只有"活下来"</td>
+</tr>
+<tr>
+<td>大模型</td>
+<td>SGD 极小化 CE</td>
+<td><span class="arithmatex">\(10^5 \sim 10^6\)</span> 步</td>
+<td><strong>人写的，显式的</strong></td>
+</tr>
+</tbody>
+</table>
+<p>最后一格是大模型和另外两者最本质的分歧：
+<strong>它的宏观行为是被"设计"出来的，不是被"发现"的。</strong>
+物理学家发现超导，生物学家发现折叠，
+而大模型的能力是我们写下一个损失函数，然后去优化它得到的。</p>
+<p>顺带说，进化和 SGD 的差别可以说得更精确：
+进化没有梯度，它是零阶方法（类似进化策略），
+每一代只能靠采样估计改进方向，所以样本效率比 SGD 差若干个数量级。
+SGD 有反向传播，能一次拿到全部参数的偏导。
+<strong>这就是为什么 40 亿年才做出人脑，而我们几个月能训一个模型。</strong></p>
+<h3 id="53-③-是大模型最缺的一环也是最值得做的方向">5.3 ③ 是大模型最缺的一环，也是最值得做的方向</h3>
+<p>物理学之所以能把涌现讲清楚，全靠 RG 提供的尺度分离（§2.4）。
+生物学有部分的尺度分离（分子 → 通路 → 细胞 → 组织）。</p>
+<p>大模型目前<strong>没有</strong>。我们没有一个"粗粒化 Transformer"的操作，
+没有算符相关/无关的分类，没有不动点。
+机械可解释性（mechanistic interpretability）在做的事——
+从权重里找出电路、特征、叠加（superposition）——
+本质上就是在<strong>手工寻找那个粗粒化描述</strong>。</p>
+<p>§2.5 那个面积律的伏笔在这里收：</p>
+<ul>
+<li>量子多体：希尔伯特空间是 <span class="arithmatex">\(2^N\)</span> 维，但物理态因为面积律住在低维流形上；</li>
+<li>语言：长度 <span class="arithmatex">\(T\)</span> 的 token 序列有 <span class="arithmatex">\(V^T\)</span> 种，但合法的自然语言住在极小的一角；</li>
+<li>蛋白质：<span class="arithmatex">\(20^{L}\)</span> 条序列，但能稳定折叠的只是极小一撮。</li>
+</ul>
+<p><strong>三个领域都在对抗同一个指数爆炸，都靠"真实态只占一个低维子集"逃生。</strong>
+量子那边这件事有定理（面积律、MPS 表示定理）；
+另外两边目前只有经验证据。谁把后两者的"面积律"证出来，
+谁就拿到了这个领域的 RG。</p>
+<hr />
+<h2 id="6-类比在哪里断掉">6. 类比在哪里断掉</h2>
+<p>前面五节建立了对应关系，这一节负责拆掉不成立的部分。不说清楚就会变成玄学。</p>
+<p><strong>1. 大模型和量子力学没有任何关系。</strong>
+Transformer 是纯经典的浮点运算。没有叠加、没有纠缠、没有 <span class="arithmatex">\(\hbar\)</span>、没有波函数坍缩。
+"大模型的涌现是量子效应""意识来自量子相干"这类说法，在大模型这一侧是<strong>明确错误</strong>的。
+本文借用的是<strong>量子多体物理</strong>发展出的<strong>涌现方法论</strong>（对称破缺、序参量、RG、普适类），
+不是量子力学本身。这两件事必须分开。</p>
+<p><strong>2. 大模型没有热力学极限，所以不可能有数学意义上的相变。</strong>
+§2.1 已经证明：有限 <span class="arithmatex">\(N\)</span> 的配分函数是解析的。
+<span class="arithmatex">\(10^{12}\)</span> 参数在数学上和 <span class="arithmatex">\(10\)</span> 参数一样是"有限"。
+所谓"涌现临界点"没有非解析性，只有陡峭。</p>
+<p><strong>3. 大模型没有哈密顿量，没有能量守恒，没有平衡态。</strong>
+训练是一个<strong>非平衡的、有外部驱动的优化过程</strong>，
+不是系统弛豫到自由能极小。唯一严格成立的对应在推理端：
+<span class="arithmatex">\(\operatorname{softmax}(\ell/T)\)</span> 精确等于 <span class="arithmatex">\(e^{-E/T}/Z\)</span>（取 <span class="arithmatex">\(E_i = -\ell_i\)</span>）——
+这条已经在 <a href="boltzmann-to-hinton.html">从玻尔兹曼到辛顿</a> 里讲透了，
+但那是<strong>分布形式</strong>的同构，不是<strong>物理过程</strong>的同构。</p>
+<p><strong>4. 大模型里没有 Landau 意义上的序参量。</strong>
+权重空间确实有对称性（神经元置换、缩放不变），但那是<strong>规范冗余</strong>，
+不是物理自由度，破缺它不产生任何可观测后果。
+induction head 的"有 / 无"勉强算一个序参量，但它没有对应的守恒律或 Goldstone 模式。</p>
+<p><strong>5. "蛋白质折叠 = 梯度下降"这条类比有边界。</strong>
+两者都是高维非凸地形上的局域下降，这部分成立。
+但蛋白质的地形是<strong>固定的</strong>（由物理和序列决定），
+而神经网络的损失地形随数据分布变化，且训练同时在改变地形本身的有效形状（如 BN、残差）。
+另外蛋白质折叠是<strong>布朗动力学 + 热噪声</strong>，天然带温度；
+SGD 的"噪声"来自 minibatch 采样，其协方差结构和热噪声不同（各向异性、与梯度相关）。</p>
+<p><strong>6. C 值悖论不能推出"参数量不重要"。</strong>
+生物学的教训是"复杂度在调控结构里而不在序列长度里"，
+但这<strong>不等于</strong>"大模型的参数量不重要"——scaling law 是硬的经验事实。
+正确的类比是：基因组 ≈ 参数，调控网络 ≈ 架构 + 训练过程。
+两者都重要，但生物学告诉我们<strong>不要只看第一个数字</strong>。</p>
+<p><strong>7. 别把 Wei 2022 和 Schaeffer 2023 讲成"谁赢了"。</strong>
+Schaeffer 等证明的是"<strong>尖锐性</strong>是度量假象"，
+<strong>不是</strong>"大模型没有随规模变强"。能力确实随规模上升，
+只是上升是平滑的、可外推的——这对安全和预测其实是<strong>好消息</strong>。</p>
+<p><strong>8. 分子计算 ≠ 分子智能。</strong>
+§4.3 里所有例子都是<strong>固定电路</strong>：lac 操纵子不会学习新的逻辑，
+核糖体不会改变自己的读码方式。可塑性发生在进化的时间尺度上，不在个体分子上。
+把"会计算"说成"有智能"，是这个领域最常见的滑坡。</p>
+<hr />
+<h2 id="7-一张对照表">7. 一张对照表</h2>
+<table>
+<thead>
+<tr>
+<th>层次</th>
+<th>量子多体</th>
+<th>蛋白质 / DNA</th>
+<th>大模型</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><strong>微观定律</strong></td>
+<td>薛定谔方程</td>
+<td>分子力场、化学动力学</td>
+<td>前向传播 + 反向传播</td>
+</tr>
+<tr>
+<td><strong>组合爆炸</strong></td>
+<td><span class="arithmatex">\(2^N\)</span> 维希尔伯特空间</td>
+<td><span class="arithmatex">\(3^{99}\)</span> 构象 / <span class="arithmatex">\(20^L\)</span> 序列</td>
+<td><span class="arithmatex">\(V^T\)</span> token 序列</td>
+</tr>
+<tr>
+<td><strong>逃生口</strong></td>
+<td>纠缠面积律 → MPS</td>
+<td>漏斗地形（最小挫败）</td>
+<td>数据流形低内蕴维数</td>
+</tr>
+<tr>
+<td><strong>有没有定理</strong></td>
+<td><strong>有</strong></td>
+<td>无，只有经验</td>
+<td>无，只有经验</td>
+</tr>
+<tr>
+<td><strong>选择原则</strong></td>
+<td>自由能极小</td>
+<td>自然选择</td>
+<td>SGD 极小化交叉熵</td>
+</tr>
+<tr>
+<td><strong>宏观新变量</strong></td>
+<td>序参量、准粒子</td>
+<td>折叠态、细胞类型</td>
+<td>电路、特征方向</td>
+</tr>
+<tr>
+<td><strong>对称破缺</strong></td>
+<td>Ising / BCS / Higgs</td>
+<td>Turing 失稳（1952）</td>
+<td>无（只有规范冗余）</td>
+</tr>
+<tr>
+<td><strong>粗粒化理论</strong></td>
+<td><strong>RG，有不动点</strong></td>
+<td>部分（层级模块化）</td>
+<td><strong>没有</strong>（mech interp 在手工找）</td>
+</tr>
+<tr>
+<td><strong>普适性证据</strong></td>
+<td>临界指数跨物质相同</td>
+<td>折叠速率与接触序相关</td>
+<td>scaling law 跨架构稳定</td>
+</tr>
+<tr>
+<td><strong>真·相变</strong></td>
+<td>有（<span class="arithmatex">\(N\to\infty\)</span>）</td>
+<td>有（Turing 分岔）</td>
+<td>无（参数轴）/ 有（训练轴，induction head）</td>
+</tr>
+<tr>
+<td><strong>尖锐性来源</strong></td>
+<td>自由能非解析</td>
+<td>动力系统分岔</td>
+<td><strong>多数来自不连续度量</strong></td>
+</tr>
+<tr>
+<td><strong>关键人物</strong></td>
+<td>Anderson、Wilson</td>
+<td>Anfinsen、Hopfield(1974)</td>
+<td>Kaplan、Olsson、Schaeffer</td>
+</tr>
+</tbody>
+</table>
+<hr />
+<h2 id="8-如果只记三句话">8. 如果只记三句话</h2>
+<p><strong>1. 涌现的强度由 <span class="arithmatex">\(N\)</span> 和"选择原则"共同决定，不是只由 <span class="arithmatex">\(N\)</span> 决定。</strong>
+规模给的是可能性空间，选择原则（自由能 / 自然选择 / 损失函数）决定你落在哪。
+"参数量到了就会涌现"是把四个零件里的一个当成了全部。</p>
+<p><strong>2. 严格意义上的相变要求 <span class="arithmatex">\(N \to \infty\)</span>，所以大模型不可能有。</strong>
+你在指标曲线上看到的台阶，先检查是不是 exact match 之类的不连续度量造出来的。
+换成 log-prob 再看一次——多数情况下它会变平。
+真正的结构性转变发生在<strong>训练时间轴</strong>上（induction head、grokking），那些是真的。</p>
+<p><strong>3. 分子层面有计算，没有智能；而"计算"这件事在分子层面是精确的，不是比喻。</strong>
+lac 操纵子是逻辑门，血红蛋白是阈值函数，动力学校对是用 ATP 换错误率的平方下降。
+但它们都是固定电路。智能需要的是<strong>可塑的耦合 + 持续的选择压力</strong>，
+目前有证据的最低层级是神经网络，不是蛋白质。</p>
+<p>最后一句题外话。这三个领域里，物理学是唯一一个把涌现讲<strong>清楚</strong>的——
+因为它有 RG，能证明微观细节在粗粒化下指数衰减。
+生物学和深度学习都还没有自己的 RG。
+机械可解释性在做的，本质上就是手工去找那个粗粒化描述；
+如果哪天有人给出了 Transformer 的重整化群流和不动点，
+"涌现"这个词在 AI 里才会第一次有它在物理学里那样的分量。</p>
+<hr />
+<h2 id="参考文献">参考文献</h2>
+<p><strong>涌现与凝聚态</strong></p>
+<ul>
+<li>P.W. Anderson, <em>More Is Different</em>, Science 177, 393 (1972)</li>
+<li>C.N. Yang &amp; T.D. Lee, <em>Statistical Theory of Equations of State and Phase Transitions</em>, Phys. Rev. 87, 404 (1952)</li>
+<li>R.B. Laughlin, Phys. Rev. Lett. 50, 1395 (1983)；de-Picciotto et al., Nature 389, 162 (1997)（<span class="arithmatex">\(e/3\)</span> 散粒噪声）</li>
+<li>X.-G. Wen, <em>Quantum Field Theory of Many-Body Systems</em>（拓扑序）</li>
+<li>K.G. Wilson, Nobel Lecture 1982（重整化群与普适类）</li>
+<li>J. Eisert, M. Cramer, M.B. Plenio, <em>Area laws for the entanglement entropy</em>, RMP 82, 277 (2010)</li>
+</ul>
+<p><strong>大模型的涌现与 scaling</strong></p>
+<ul>
+<li>J. Wei et al., <em>Emergent Abilities of Large Language Models</em>, TMLR (2022)</li>
+<li>R. Schaeffer, B. Miranda, S. Koyejo, <em>Are Emergent Abilities of Large Language Models a Mirage?</em>, NeurIPS (2023)</li>
+<li>J. Kaplan et al., <em>Scaling Laws for Neural Language Models</em> (2020)</li>
+<li>J. Hoffmann et al., <em>Training Compute-Optimal Large Language Models</em>（Chinchilla, 2022）</li>
+<li>Y. Bahri, E. Dyer, J. Kaplan, J. Lee, U. Sharma, <em>Explaining Neural Scaling Laws</em>, PNAS 121 (2024)</li>
+<li>A. Maloney, D.A. Roberts, J. Sully, <em>A Solvable Model of Neural Scaling Laws</em> (2022)</li>
+<li>D.A. Roberts, S. Yaida, B. Hanin, <em>The Principles of Deep Learning Theory</em>, CUP (2022)</li>
+<li>C. Olsson et al., <em>In-context Learning and Induction Heads</em>, Anthropic (2022)</li>
+<li>A. Power et al., <em>Grokking</em> (2022)；N. Nanda et al., <em>Progress Measures for Grokking via Mechanistic Interpretability</em>, ICLR (2023)</li>
+</ul>
+<p><strong>生物</strong></p>
+<ul>
+<li>C. Levinthal, <em>How to Fold Graciously</em> (1969)</li>
+<li>C.B. Anfinsen, <em>Principles that Govern the Folding of Protein Chains</em>, Science 181, 223 (1973)</li>
+<li>J.D. Bryngelson &amp; P.G. Wolynes, PNAS 84, 7524 (1987)（漏斗地形 / 最小挫败）</li>
+<li>J.J. Hopfield, <em>Kinetic Proofreading</em>, PNAS 71, 4135 (1974)；J. Ninio, Biochimie 57, 587 (1975)</li>
+<li>J. Monod, J. Wyman, J.-P. Changeux, JMB 12, 88 (1965)（MWC 别构模型）</li>
+<li>F. Jacob &amp; J. Monod, JMB 3, 318 (1961)（lac 操纵子）</li>
+<li>A.M. Turing, <em>The Chemical Basis of Morphogenesis</em>, Phil. Trans. R. Soc. B 237, 37 (1952)</li>
+<li>V. Castets et al., PRL 64, 2953 (1990)（首个实验 Turing 斑图）</li>
+<li>R. Sheth et al., <em>Hox Genes Regulate Digit Patterning</em>, Science 338, 1476 (2012)</li>
+<li>S.A. Kauffman, <em>The Origins of Order</em> (1993)（随机布尔网络与吸引子）</li>
+<li>J. Jumper et al., <em>Highly accurate protein structure prediction with AlphaFold</em>, Nature 596, 583 (2021)</li>
+</ul>
+<p><strong>本站相关</strong></p>
+<ul>
+<li><a href="boltzmann-to-hinton.html">从玻尔兹曼到辛顿</a> — softmax 就是 1877 年那个 <span class="arithmatex">\(e^{-E/T}/Z\)</span></li>
+<li><a href="combinatorics-to-generalization.html">高中背到头秃的排列组合…</a> — 组合爆炸与泛化</li>
+<li><a href="universal-function-approximator.html">万能函数模拟器</a> — 不推导、只拟合</li>
+<li><a href="randomess-as-search.html">随机性不是噪声，是搜索工具</a> — 地形上的随机搜索</li>
+</ul>
+    </div>
+  </article>
+
+</main>
+
+<!-- Floating Ask-AI chat widget -->
+<button class="ai-fab" id="ai-fab" aria-label="Ask AI about this article" title="Ask AI about this article">
+  <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+    <path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"/>
+  </svg>
+  <span class="ai-fab-label">Ask AI</span>
+</button>
+
+<div class="ai-panel" id="ai-panel" role="dialog" aria-labelledby="ai-panel-title" aria-hidden="true">
+  <header class="ai-panel-head">
+    <div class="ai-panel-title-wrap">
+      <span class="ai-dot"></span>
+      <h3 id="ai-panel-title">Ask AI about this post</h3>
+    </div>
+    <div class="ai-panel-actions">
+      <button class="ai-icon-btn" id="ai-clear" title="Clear conversation" aria-label="Clear">
+        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><polyline points="3 6 5 6 21 6"/><path d="M19 6l-1 14a2 2 0 0 1-2 2H8a2 2 0 0 1-2-2L5 6"/><path d="M10 11v6M14 11v6"/><path d="M9 6V4a1 1 0 0 1 1-1h4a1 1 0 0 1 1 1v2"/></svg>
+      </button>
+      <button class="ai-icon-btn" id="ai-close" title="Minimize" aria-label="Minimize">
+        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><polyline points="6 9 12 15 18 9"/></svg>
+      </button>
+    </div>
+  </header>
+
+  <div class="ai-messages" id="ai-messages">
+    <div class="ai-empty" id="ai-empty">
+      <p class="ai-empty-title">On-device AI · Gemini Nano</p>
+      <p class="ai-empty-sub">Ask anything about this article. Runs in your browser — nothing leaves your device.</p>
+    </div>
+  </div>
+
+  <div class="ai-status" id="ai-status" hidden></div>
+
+  <form class="ai-composer" id="ai-form">
+    <textarea id="ai-input" rows="1" placeholder="Ask about this post…" autocomplete="off"></textarea>
+    <button type="submit" id="ai-send" class="ai-send" aria-label="Send" disabled>
+      <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><line x1="22" y1="2" x2="11" y2="13"/><polygon points="22 2 15 22 11 13 2 9 22 2"/></svg>
+    </button>
+  </form>
+</div>
+
+<script>
+(function () {
+  const POST_TITLE = "\u6d8c\u73b0\u7684\u4e09\u526f\u9762\u5b54\uff1a\u8d85\u5bfc\u3001\u86cb\u767d\u8d28\u3001\u5927\u6a21\u578b\uff0c\u53ea\u6709\u4e00\u4e2a\u662f\u771f\u6b63\u7684\u76f8\u53d8";
+  const contentEl = document.querySelector('article .content');
+
+  const fab = document.getElementById('ai-fab');
+  const panel = document.getElementById('ai-panel');
+  const closeBtn = document.getElementById('ai-close');
+  const clearBtn = document.getElementById('ai-clear');
+  const msgsEl = document.getElementById('ai-messages');
+  const emptyEl = document.getElementById('ai-empty');
+  const statusEl = document.getElementById('ai-status');
+  const formEl = document.getElementById('ai-form');
+  const inputEl = document.getElementById('ai-input');
+  const sendBtn = document.getElementById('ai-send');
+
+  function articleText() {
+    if (!contentEl) return '';
+    return (contentEl.innerText || contentEl.textContent || '')
+      .replace(/[ \t]+\n/g, '\n')
+      .replace(/\n{3,}/g, '\n\n')
+      .trim();
+  }
+
+  function setStatus(msg, cls) {
+    if (!msg) { statusEl.hidden = true; statusEl.textContent = ''; statusEl.className = 'ai-status'; return; }
+    statusEl.hidden = false;
+    statusEl.textContent = msg;
+    statusEl.className = 'ai-status' + (cls ? ' ' + cls : '');
+  }
+
+  function hideEmpty() { if (emptyEl) emptyEl.style.display = 'none'; }
+
+  function appendBubble(role, text) {
+    hideEmpty();
+    const wrap = document.createElement('div');
+    wrap.className = 'ai-msg ai-msg-' + role;
+    const bubble = document.createElement('div');
+    bubble.className = 'ai-bubble';
+    bubble.textContent = text;
+    wrap.appendChild(bubble);
+    msgsEl.appendChild(wrap);
+    msgsEl.scrollTop = msgsEl.scrollHeight;
+    return bubble;
+  }
+
+  function appendTyping() {
+    hideEmpty();
+    const wrap = document.createElement('div');
+    wrap.className = 'ai-msg ai-msg-assistant ai-typing';
+    wrap.innerHTML = '<div class="ai-bubble"><span class="ai-dots"><i></i><i></i><i></i></span></div>';
+    msgsEl.appendChild(wrap);
+    msgsEl.scrollTop = msgsEl.scrollHeight;
+    return wrap;
+  }
+
+  function autoSize() {
+    inputEl.style.height = 'auto';
+    inputEl.style.height = Math.min(inputEl.scrollHeight, 140) + 'px';
+  }
+
+  function openPanel() {
+    panel.classList.add('open');
+    panel.setAttribute('aria-hidden', 'false');
+    fab.classList.add('hidden');
+    setTimeout(() => inputEl.focus(), 50);
+  }
+  function closePanel() {
+    panel.classList.remove('open');
+    panel.setAttribute('aria-hidden', 'true');
+    fab.classList.remove('hidden');
+  }
+
+  fab.addEventListener('click', openPanel);
+  closeBtn.addEventListener('click', closePanel);
+  document.addEventListener('keydown', e => {
+    if (e.key === 'Escape' && panel.classList.contains('open')) closePanel();
+  });
+
+  // ---- LanguageModel session ----
+  let session = null;
+  let creating = null;
+  let history = [];
+
+  function buildSystemPrompt() {
+    // Keep article context modest — Gemini Nano's input quota is small.
+    const article = articleText().slice(0, 4000);
+    return (
+      'You are a concise, helpful assistant answering questions about a blog post. ' +
+      'Use the article below as your primary source. If the answer is not in it, say so briefly and answer generally. ' +
+      'Reply in the same language as the user\'s question. Keep answers short unless asked for detail.\n\n' +
+      '=== ARTICLE TITLE ===\n' + POST_TITLE + '\n\n' +
+      '=== ARTICLE CONTENT ===\n' + article
+    );
+  }
+
+  async function ensureSession() {
+    if (session) return session;
+    if (creating) return creating;
+
+    if (!('LanguageModel' in self)) {
+      throw new Error(
+        'On-device AI not available. Use Chrome 138+ on desktop, or enable ' +
+        '"Prompt API for Gemini Nano" in chrome://flags.'
+      );
+    }
+
+    setStatus('Checking model…', 'info');
+    const status = await LanguageModel.availability();
+    if (status === 'unavailable') {
+      throw new Error('Model unavailable on this device.');
+    }
+
+    creating = (async () => {
+      // Only show download UI when the model isn't already there.
+      const willDownload = (status !== 'available');
+      if (willDownload) setStatus('Preparing model (first run downloads ~2GB)…', 'info');
+      else setStatus('Warming up…', 'info');
+
+      const s = await LanguageModel.create({
+        initialPrompts: [{ role: 'system', content: buildSystemPrompt() }],
+        monitor(m) {
+          m.addEventListener('downloadprogress', e => {
+            // Skip the spurious 0% event Chrome fires for cached models.
+            if (!willDownload && e.loaded === 0) return;
+            const pct = (e.loaded * 100).toFixed(1);
+            setStatus('Downloading model: ' + pct + '%', 'info');
+          });
+        }
+      });
+      session = s;
+      setStatus('');
+      return s;
+    })();
+
+    try { return await creating; }
+    finally { creating = null; }
+  }
+
+  async function ask(q) {
+    appendBubble('user', q);
+    history.push({ role: 'user', content: q });
+
+    sendBtn.disabled = true;
+    inputEl.disabled = true;
+    const typing = appendTyping();
+
+    let answerBubble = null;
+    let acc = '';
+    try {
+      const s = await ensureSession();
+      const stream = s.promptStreaming(q);
+      for await (const chunk of stream) {
+        if (!answerBubble) {
+          typing.remove();
+          const wrap = document.createElement('div');
+          wrap.className = 'ai-msg ai-msg-assistant';
+          answerBubble = document.createElement('div');
+          answerBubble.className = 'ai-bubble';
+          wrap.appendChild(answerBubble);
+          msgsEl.appendChild(wrap);
+        }
+        acc += chunk;
+        answerBubble.textContent = acc;
+        msgsEl.scrollTop = msgsEl.scrollHeight;
+      }
+      if (acc) history.push({ role: 'assistant', content: acc });
+      else { typing.remove(); appendBubble('assistant', '(no response)'); }
+    } catch (e) {
+      if (typing && typing.parentNode) typing.remove();
+      const err = document.createElement('div');
+      err.className = 'ai-msg ai-msg-error';
+      err.innerHTML = '<div class="ai-bubble">⚠ ' + (e && e.message ? e.message : String(e)) + '</div>';
+      msgsEl.appendChild(err);
+      msgsEl.scrollTop = msgsEl.scrollHeight;
+    } finally {
+      sendBtn.disabled = !inputEl.value.trim();
+      inputEl.disabled = false;
+      inputEl.focus();
+    }
+  }
+
+  formEl.addEventListener('submit', e => {
+    e.preventDefault();
+    const q = inputEl.value.trim();
+    if (!q) return;
+    inputEl.value = '';
+    autoSize();
+    sendBtn.disabled = true;
+    ask(q);
+  });
+
+  inputEl.addEventListener('input', () => {
+    autoSize();
+    sendBtn.disabled = !inputEl.value.trim();
+  });
+  inputEl.addEventListener('keydown', e => {
+    if (e.key === 'Enter' && !e.shiftKey) {
+      e.preventDefault();
+      formEl.requestSubmit();
+    }
+  });
+
+  clearBtn.addEventListener('click', () => {
+    msgsEl.innerHTML = '';
+    msgsEl.appendChild(emptyEl);
+    emptyEl.style.display = '';
+    history = [];
+    if (session && session.destroy) { try { session.destroy(); } catch (_) {} }
+    session = null;
+    setStatus('');
+  });
+
+  if (!('LanguageModel' in self)) {
+    fab.addEventListener('click', () => {
+      openPanel();
+      setStatus('On-device AI not detected. Use Chrome 138+ desktop, or enable "Prompt API for Gemini Nano" in chrome://flags.', 'bad');
+    }, { once: true });
+  }
+})();
+</script>
+
+<!-- Outline notes / comments — DataScript + IndexedDB -->
+<script src="https://github.com/tonsky/datascript/releases/download/1.7.8/datascript-1.7.8.min.js"></script>
+<script src="../notes.js?v=6"></script>
+<script src="../theme.js"></script>
+<script src="../wechat-copy.js?v=3"></script>
+
+</body>
+</html>

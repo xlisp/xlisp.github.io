@@ -6,4 +6,4 @@ venv/
 .idea/
 .vscode/
 logs/
-#docs/*.md
+docs/*.md
