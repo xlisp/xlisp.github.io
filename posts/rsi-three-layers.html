@@ -1,0 +1,1247 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>RSI 的三层账本：软件层已经开始了，物理层还没开始 · Steve Chan — xlisp</title>
+<meta name="description" content="2026 年的递归自我改进：Codex 参与造出了自己，Claude 写掉了 Anthropic 80% 的代码并在 11 天里形式化了费马大定理，Ilya 的 SSI 拿着 50 亿美金什么都没发。把这些事实和硅、电、热、原子四本硬账放在一起算，结论是——无限的智能加有限的物理周期，得到的不是奇点，是一条倍增时间由最慢那个闭环决定的指数。">
+<meta name="author" content="Steve Chan">
+<link rel="icon" type="image/jpeg" href="../icon.jpeg">
+<link rel="apple-touch-icon" href="../icon.jpeg">
+<meta property="og:type" content="article">
+<meta property="og:title" content="RSI 的三层账本：软件层已经开始了，物理层还没开始">
+<meta property="og:description" content="2026 年的递归自我改进：Codex 参与造出了自己，Claude 写掉了 Anthropic 80% 的代码并在 11 天里形式化了费马大定理，Ilya 的 SSI 拿着 50 亿美金什么都没发。把这些事实和硅、电、热、原子四本硬账放在一起算，结论是——无限的智能加有限的物理周期，得到的不是奇点，是一条倍增时间由最慢那个闭环决定的指数。">
+<meta property="og:image" content="../icon.jpeg">
+<meta property="og:site_name" content="Steve Chan — xlisp">
+<meta name="twitter:card" content="summary_large_image">
+<meta name="twitter:title" content="RSI 的三层账本：软件层已经开始了，物理层还没开始">
+<meta name="twitter:description" content="2026 年的递归自我改进：Codex 参与造出了自己，Claude 写掉了 Anthropic 80% 的代码并在 11 天里形式化了费马大定理，Ilya 的 SSI 拿着 50 亿美金什么都没发。把这些事实和硅、电、热、原子四本硬账放在一起算，结论是——无限的智能加有限的物理周期，得到的不是奇点，是一条倍增时间由最慢那个闭环决定的指数。">
+<meta name="twitter:image" content="../icon.jpeg">
+<link rel="stylesheet" href="../style.css?v=light1">
+<script>(function(){try{if(localStorage.getItem('theme')==='light')document.documentElement.setAttribute('data-theme','light');}catch(e){}})();</script>
+<!-- Math formula rendering via MathJax -->
+<script>
+window.MathJax = {
+  tex: {
+    // arithmatex emits \(...\) / \[...\] markup, so only these delimiters
+    // are needed; plain `$` is left alone (avoids currency false positives).
+    inlineMath: [['\\(', '\\)']],
+    displayMath: [['\\[', '\\]']],
+    processEscapes: true
+  },
+  svg: {
+    // Each formula gets its own self-contained <defs>, so the copy script can
+    // serialize one <svg> and rasterize it to a PNG for WeChat.
+    fontCache: 'local'
+  },
+  options: {
+    skipHtmlTags: ['script', 'noscript', 'style', 'textarea', 'pre', 'code'],
+    ignoreHtmlClass: 'highlight'
+  }
+};
+</script>
+<script src="https://cdn.jsdelivr.net/npm/mathjax@3/es5/tex-svg.js" async></script>
+</head>
+<body>
+<main class="wrap post">
+
+  <nav class="topnav">
+    <a href="../index.html">← home</a>
+  </nav>
+
+  <article>
+    <header class="post-header">
+      <h1>RSI 的三层账本：软件层已经开始了，物理层还没开始</h1>
+      <p class="meta">2026-09-15 · Steve Chan</p>
+    </header>
+
+    <div class="content">
+<blockquote>
+<p>2026 年 2 月 5 日，OpenAI 在 GPT-5.3-Codex 的发布说明里写下一句以前没人敢写的话：
+这个模型的早期版本 <strong>"instrumental in creating itself"</strong>（在创造它自己的过程中起了关键作用）。
+2026 年 5 月，Anthropic 公布 Claude 写掉了公司 80% 以上的合入代码。
+2026 年 9 月 5 日，几十个 Claude agent 用 11 天写出 1300 万行 Lean，
+完成了费马大定理的第一个端到端机器验证证明。
+而 Ilya Sutskever 的 SSI 拿着 80 亿美金、英伟达的 Vera Rubin 集群，
+到今天为止<strong>一篇论文、一个模型、一个 API 都没有发</strong>。</p>
+<p>这四件事看起来在讲同一个故事，其实在讲四个不同的故事。
+本文要做的是把"递归自我改进"（Recursive Self-Improvement, RSI）这个词拆开，
+分成<strong>软件层、研究层、物理层</strong>三本账，每本账单独算。</p>
+<p>结论先说：<strong>软件层的 RSI 已经在跑，而且跑得比多数人预期快；
+物理层的 RSI 连起跑线都还没到。</strong>
+而整个系统的速度由最慢的那个闭环决定——这不是一句修辞，是一个可以写成公式的 Amdahl 上界。
+无限的智能 + 有限的物理周期 = <strong>指数，不是奇点</strong>。</p>
+</blockquote>
+<hr />
+<h2 id="目录">目录</h2>
+<ul>
+<li><a href="#0-先把结论摆出来">0. 先把结论摆出来</a></li>
+<li><a href="#1-rsi-是五个东西共用一个词">1. "RSI" 是五个东西共用一个词</a></li>
+<li><a href="#2-验证层级全文的主轴">2. 验证层级：全文的主轴</a></li>
+<li><a href="#3-2026-年的实证账三家公司分别在哪一层">3. 2026 年的实证账：三家公司分别在哪一层</a></li>
+<li><a href="#4-ilya-的赌注为什么什么都没发本身是个信息">4. Ilya 的赌注：为什么"什么都没发"本身是个信息</a></li>
+<li><a href="#5-反方曲线不等于爆炸">5. 反方：曲线不等于爆炸</a></li>
+<li><a href="#6-数学什么条件下才真的炸">6. 数学：什么条件下才真的"炸"</a></li>
+<li><a href="#7-物理层的四本硬账">7. 物理层的四本硬账</a></li>
+<li><a href="#8-时间常数表谁卡住了谁">8. 时间常数表：谁卡住了谁</a></li>
+<li><a href="#9-安全问题就是验证器问题">9. 安全问题就是验证器问题</a></li>
+<li><a href="#10-如果只记五句话">10. 如果只记五句话</a></li>
+<li><a href="#参考文献">参考文献</a></li>
+</ul>
+<hr />
+<h2 id="0-先把结论摆出来">0. 先把结论摆出来</h2>
+<table>
+<thead>
+<tr>
+<th>层</th>
+<th>改进的是什么</th>
+<th>回路闭合了吗</th>
+<th>验证器</th>
+<th>2026 年的证据</th>
+<th>周期时间</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><strong>L0 推理层</strong></td>
+<td>单次输出</td>
+<td>是</td>
+<td>自评 / 测试</td>
+<td>Self-Refine、reflection，已工业化</td>
+<td>秒</td>
+</tr>
+<tr>
+<td><strong>L1 训练层</strong></td>
+<td>模型权重</td>
+<td>半闭</td>
+<td>奖励模型 / 可验证奖励</td>
+<td>RLVR、self-rewarding、合成数据</td>
+<td>天～周</td>
+</tr>
+<tr>
+<td><strong>L2 代码层</strong></td>
+<td>agent 自己的源码</td>
+<td>半闭</td>
+<td>benchmark 分数</td>
+<td>Darwin Gödel Machine（ICLR 2026）</td>
+<td>小时</td>
+</tr>
+<tr>
+<td><strong>L3 研究层</strong></td>
+<td>研究过程本身</td>
+<td><strong>否</strong>（人选题）</td>
+<td>人类判断 + 形式验证</td>
+<td>Codex 参与造自己、Claude 自动对齐研究、费马大定理</td>
+<td>月</td>
+</tr>
+<tr>
+<td><strong>L4 物理层</strong></td>
+<td>芯片、电力、机器人</td>
+<td><strong>否</strong></td>
+<td>物理定律</td>
+<td>自动实验室 Level 2–3，闭合率≈0</td>
+<td>年</td>
+</tr>
+</tbody>
+</table>
+<p>这张表里最重要的是<strong>最后两列的耦合</strong>：
+从 L0 到 L4，每下一层，周期时间涨一到两个数量级，而回路的闭合程度反而下降。</p>
+<p>L0–L2 已经是真的 RSI，只是<strong>有界</strong>（bounded）——它们收敛，不发散。
+L3 是 2026 年正在发生的事，但选题权还在人手里。
+L4 基本没动——一台人形机器人造不出自己的谐波减速器，更造不出自己的芯片和自己的电。</p>
+<p><strong>全文最重要的一句话在第 6 节</strong>：当思考时间趋于零而建造时间不变时，
+能力增长不会变成有限时间奇点，而会变成一条<strong>倍增时间等于物理建造周期</strong>的指数曲线。
+奇点需要的是"周期本身也趋于零"，而周期的下界是物理的。</p>
+<hr />
+<h2 id="1-rsi-是五个东西共用一个词">1. "RSI" 是五个东西共用一个词</h2>
+<p>这个毛病和<a href="emergence-three-faces.html">《涌现的三副面孔》</a>里说的一模一样：
+一个词同时指着强度差了好几个量级的东西，于是所有争论都变成了定义之争。</p>
+<p>2026 年 7 月挂出、9 月修订的那篇综述（Chen, Wang &amp; Qu, arXiv:2607.07663）
+扫了 2024–2026 年的 1250 篇 arXiv 论文，做的第一件事就是拆词。
+它提出两个正交的轴：</p>
+<p><strong>轴一：改进的是什么？</strong></p>
+<ol>
+<li><strong>部署时的行为</strong>——不改权重，只改这一次的输出。Self-Refine 这一类。</li>
+<li><strong>策略 / 权重</strong>——通过训练改。STaR、Self-Rewarding LM、RLVR 这一类。</li>
+<li><strong>评估器本身</strong>——改的是打分的那个东西。</li>
+<li><strong>研究过程</strong>——改的是"怎么做研究"这件事。</li>
+</ol>
+<p><strong>轴二：回路闭合到什么程度？</strong>从 human-in-the-loop 一直到完全自治。</p>
+<p>这篇综述的核心区分是：</p>
+<blockquote>
+<p><strong>有界自我精炼（bounded self-refinement）</strong>：收敛、可评估、已经是工业实践。
+<strong>开放式递归自我改进（open-ended RSI）</strong>：受限于 grounding、坍缩动力学、算力三者。</p>
+</blockquote>
+<p>翻译成大白话：<strong>你今天用的每一个 coding agent 都在做 RSI，但做的是收敛的那种。</strong>
+它把输出从 70 分推到 85 分然后停住。
+真正让人紧张的是那种不收敛、每一轮的产物变成下一轮更强的生成器的版本。</p>
+<p>历史的起点是 I.J. Good 1966 年的那段话：
+一台超智能机器可以设计更好的机器，于是会出现"智能爆炸"。
+六十年了，这句话的形式一直没变，变的只是我们能填进去多少实数。</p>
+<hr />
+<h2 id="2-验证层级全文的主轴">2. 验证层级：全文的主轴</h2>
+<p>综述里最有价值的一个结论，值得单独拎出来：</p>
+<blockquote>
+<p><strong>每一个改进回路，本质上都是在声称：某个信号可以替代人类判断。</strong></p>
+</blockquote>
+<p>于是可以把所有 RSI 系统按"它用什么当打分器"排成一个序：</p>
+<table>
+<thead>
+<tr>
+<th>强度</th>
+<th>验证器</th>
+<th>性质</th>
+<th>典型系统</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><strong>最强</strong></td>
+<td>形式验证器（Lean、SMT、编译器）</td>
+<td>无法被欺骗，<span class="arithmatex">\(O(1)\)</span> 可信</td>
+<td>费马大定理形式化</td>
+</tr>
+<tr>
+<td>强</td>
+<td>单元测试 / 可执行结果</td>
+<td>可被过拟合，但作弊留痕</td>
+<td>SWE-bench 类、AlphaEvolve</td>
+</tr>
+<tr>
+<td>中</td>
+<td>过程奖励模型（PRM）</td>
+<td>需要额外训练，会漂移</td>
+<td>数学推理 RL</td>
+</tr>
+<tr>
+<td>弱</td>
+<td>LLM-as-judge / rubric</td>
+<td>与被评者同源，共享盲点</td>
+<td>大部分 agent 自改进</td>
+</tr>
+<tr>
+<td><strong>最弱</strong></td>
+<td>内在自评（"我觉得这版更好"）</td>
+<td>自证回路，必然坍缩</td>
+<td>纯 self-reflection</td>
+</tr>
+</tbody>
+</table>
+<p>综述给的实证结论是一句很干净的话：
+<strong>已展示的自我改进强度，严格跟随这个层级；失败都发生在层级被违反的时候。</strong></p>
+<p>这件事和本站<a href="randomness-is-a-search-tool.html">《随机性不是噪声，是搜索工具》</a>是同一个骨架。
+那篇的公式是：</p>
+<div class="arithmatex">\[
+\text{搜索} = \text{生成候选} + \text{打分}
+\]</div>
+<p>RSI 只是在后面接了一项：</p>
+<div class="arithmatex">\[
+\text{RSI} = \underbrace{\text{生成候选} + \text{打分}}_{\text{搜索}} + \underbrace{\text{把打分结果写回生成器}}_{\text{递归}}
+\]</div>
+<p>多出来的这一项是全部的风险来源。
+因为一旦打分器不可靠，写回去的就是噪声的放大，而不是信号的积累。
+这就是<a href="synthetic-data.html">《合成数据》</a>那篇里 model collapse 的同一个机制：
+<strong>生成器吃自己的输出，分布方差单调收缩。</strong></p>
+<p>把这三句话连起来就是本文的方法论：</p>
+<blockquote>
+<p><strong>搜索的质量由打分器决定；RSI 的可持续性由打分器决定；
+RSI 的安全性也由打分器决定。三件事是一件事。</strong></p>
+</blockquote>
+<p>所以，<strong>去看一个 RSI 系统最快的办法，不是看它的生成器多强，是看它的 verifier 是什么。</strong></p>
+<hr />
+<h2 id="3-2026-年的实证账三家公司分别在哪一层">3. 2026 年的实证账：三家公司分别在哪一层</h2>
+<h3 id="31-openai第一次官方承认">3.1 OpenAI：第一次官方承认</h3>
+<p>2026 年 2 月 5 日，GPT-5.3-Codex 发布。发布说明里写了这么件事：
+Codex 团队用它的早期版本来<strong>调试它自己的训练、管理它自己的部署、诊断它自己的评测结果</strong>。
+Sam Altman 的原话是，用 5.3-Codex 来造 5.3-Codex 让团队快了很多，"a sign of things to come"。</p>
+<p>具体数字：SWE-Bench Pro 56.8%，比前代快约 25%，
+并且是 OpenAI 第一个在网络安全方向被内部框架标为 "high capability" 的模型。</p>
+<p>但要说清楚这是哪一层：<strong>这是 L3 的一小块，而且回路是开的。</strong>
+工程师仍然在做每一个决策，Codex 做的是"perspiration"（汗水）那部分。
+Futurism 当时的标题式提问——这是不是那个等了很久的递归自我改进？——
+自己给的答案是 "not quite"。这个判断到今天仍然成立。</p>
+<h3 id="32-anthropic把曲线公布出来">3.2 Anthropic：把曲线公布出来</h3>
+<p>2026 年 5 月，Anthropic 发了一篇叫 <em>When AI builds itself</em> 的东西，
+把内部数据摊开了。这是目前公开信息里密度最高的一份 RSI 实证材料：</p>
+<table>
+<thead>
+<tr>
+<th>指标</th>
+<th>数值</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>Claude 写的生产代码占比（2026-05）</td>
+<td><strong>&gt;80%</strong>（2025 年 2 月前还是个位数）</td>
+</tr>
+<tr>
+<td>工程师日均合入代码量（2026 Q2 vs 2024）</td>
+<td><strong>8×</strong></td>
+</tr>
+<tr>
+<td>模型能完成的任务时长（Sonnet 3.7 → Opus 4.6）</td>
+<td>1.5 小时 → <strong>12 小时</strong></td>
+</tr>
+<tr>
+<td>任务时长的倍增周期</td>
+<td><strong>约 4 个月</strong></td>
+</tr>
+<tr>
+<td>代码优化任务的加速比（2025-05 → 2026-04）</td>
+<td>3× → <strong>52×</strong></td>
+</tr>
+<tr>
+<td>"下一步该做什么"判断优于人类研究员的比例</td>
+<td>51%（2025-11）→ <strong>64%</strong>（2026-04）</td>
+</tr>
+<tr>
+<td>自动对齐研究实验：性能差距恢复率</td>
+<td><strong>97%</strong>（AI）vs <strong>23%</strong>（两位资深研究员）</td>
+</tr>
+</tbody>
+</table>
+<p>最后那一行是 2026 年 8 月 28 日单独发的：
+九个 Claude Opus 4.6 agent 自主跑五天，在一个 AI 安全问题上做到 97% 的性能差距恢复，
+而两位资深人类研究员一周做到 23%。</p>
+<p>然后是 9 月 5 日的费马大定理：几十个 Claude agent 协作，<strong>11 天</strong>，
+写出 <strong>1300 万行 Lean</strong>，证明 <strong>30300 条定理</strong>（其中 29500 条用在最终证明里），
+消耗约 <strong>60 亿 output token</strong>，产出物是 Mathlib 的五倍多，
+Lean 只用三条标准公理就验证通过。Kevin Buzzard 审阅后称之为"非凡的自动形式化成就"。</p>
+<p><strong>这件事严格坐落在第 2 节那张表的最顶格，这不是巧合。</strong>
+唯一一个跑出了"几十个 agent、11 天、几乎无人干预"的项目，
+恰恰是唯一一个打分器是形式验证器的项目。
+Lean 不会被说服，不会被 reward hack，不会漂移。
+<strong>验证器强度决定了回路能开多久无人值守——这就是第 2 节那条定律的实物证据。</strong></p>
+<p>Anthropic 自己列的 caveat 同样重要，而且比多数批评者更狠：</p>
+<ul>
+<li>代码行数会高估真实产出（数量≠质量），Claude 的代码质量到 2026 年 5 月只是"大致持平"；</li>
+<li>研究判断那个 51%→64%，是在<strong>刻意挑选的人类走过弯路的节点</strong>上测的，不是公平对照（n=129）；</li>
+<li>自动对齐研究的结果<strong>没有干净地迁移到生产规模的模型上</strong>，而且问题和评分标准都是人定的；</li>
+<li>这些趋势<strong>可能是 S 曲线而不是持续指数</strong>，约束可能来自能源、芯片或别的基础设施。</li>
+</ul>
+<p>最后一条是本文第 7 节要展开的全部内容。而且请注意：<strong>这是 Anthropic 自己写的。</strong></p>
+<h3 id="33-学术界真正在改自己代码的那条线">3.3 学术界：真正在改自己代码的那条线</h3>
+<p>L2 这一层的主线是 Schmidhuber 的 Gödel machine 的实证化。
+理论版的 Gödel machine 要求"可证明有益"才做自我修改——
+这在实践中不可能，因为大多数修改的净收益无法被证明。</p>
+<p>Sakana 的 <strong>Darwin Gödel Machine</strong>（arXiv:2505.22954，ICLR 2026）
+把"证明"换成了"实证验证"：agent 修改自己的 Python 源码，
+用 coding benchmark 打分，维护一个不断增长的 agent 档案库（archive），
+自我修改与下游评测交替进行。它自己长出来的改进包括 patch 验证步骤、更好的文件查看、更强的编辑工具。
+论文报告：<strong>给的算力越多，它改自己改得越好。</strong></p>
+<p>2026 年的后续：</p>
+<ul>
+<li><strong>DGM-Hyperagents</strong>：把 task agent 和 meta agent 合并成一个可修改的 hyperagent，
+  解决原版 DGM 的死穴——驱动自我改进的指令生成机制本身是手写死的。</li>
+<li><strong>Red Queen Gödel Machine</strong>：让 agent 和<strong>它的评估器</strong>协同进化。</li>
+</ul>
+<p>Red Queen 这个方向值得警惕一下：按第 2 节的层级，
+<strong>让被评者去进化评估器，正好是层级最弱的那一端</strong>。
+它可能是必要的（固定 benchmark 一定会被刷爆），但它也正是 self-confirming loop 的定义。</p>
+<h3 id="34-三家对照">3.4 三家对照</h3>
+<table>
+<thead>
+<tr>
+<th></th>
+<th>OpenAI</th>
+<th>Anthropic</th>
+<th>SSI</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>公开证据</td>
+<td>发布说明一句话</td>
+<td>一整套内部曲线</td>
+<td><strong>零</strong></td>
+</tr>
+<tr>
+<td>最高层级</td>
+<td>L3 局部</td>
+<td>L3，且有形式验证的 L3</td>
+<td>未知</td>
+</tr>
+<tr>
+<td>验证器</td>
+<td>测试 / 评测</td>
+<td>测试 + 人类判断 + <strong>Lean</strong></td>
+<td>未知</td>
+</tr>
+<tr>
+<td>公开姿态</td>
+<td>产品叙事</td>
+<td>既宣传又自我拆台</td>
+<td>完全沉默</td>
+</tr>
+<tr>
+<td>赌的是什么</td>
+<td>规模 + 工程闭环</td>
+<td>规模 + 可解释性 + 自动对齐</td>
+<td><strong>一个新的研究方向</strong></td>
+</tr>
+</tbody>
+</table>
+<hr />
+<h2 id="4-ilya-的赌注为什么什么都没发本身是个信息">4. Ilya 的赌注：为什么"什么都没发"本身是个信息</h2>
+<p>SSI 的事实很短，而且必须把<strong>确认的</strong>和<strong>传闻的</strong>分开写：</p>
+<p><strong>确认的：</strong></p>
+<ul>
+<li>2024 年 6 月 19 日成立，Ilya Sutskever 与 Daniel Levy 创办。
+  2025 年 7 月 Daniel Gross 离开后，Ilya 出任 CEO。</li>
+<li>自称世界上第一个 "straight-shot" 实验室：一个目标、一个产品——安全的超级智能。
+  <strong>不发中间产品，不做短期收入。</strong></li>
+<li>三轮融资约 80 亿美元：2024 年 9 月 10 亿（估值 50 亿）、
+  2025 年 4 月 20 亿（估值 320 亿）、2026 年 7 月英伟达约 50 亿。</li>
+<li>2026 年 7 月 27 日，英伟达宣布长期战略合作，SSI 获得下一代 Vera Rubin 平台，
+  算力提升"一个数量级"。英伟达的说法是，它是在罕见地拿到 SSI 内部研究的访问权之后才决定投的。</li>
+<li>英伟达公告里那句唯一的官方研究方向描述：
+  <strong>过去两年 SSI 一直在悄悄推进一个"新的研究方向"，
+  目标是解锁强大且稳健对齐（robustly aligned）的人工智能。</strong></li>
+<li>Ilya 自己的话：<strong>"We have research that is worthy of scaling up."</strong></li>
+<li>截至今天（2026-09-15）：<strong>零论文、零权重、零 API、零公开 demo。</strong></li>
+</ul>
+<p><strong>没确认的：</strong> 8 月初 Gavin Baker 在播客里说 SSI 计划当月发首个模型——
+单一信源，SSI 从未确认，8 月已经过去了，什么都没有。
+网上那些写着 SSI 收入、SSI 融资 141 亿的页面基本是 SEO 生成的垃圾，别信。</p>
+<p>那么这件事和 RSI 有什么关系？关系很大，而且是本文里唯一一个需要推理而不是引用的判断：</p>
+<p><strong>Ilya 赌的是 RSI 那个分数的分子，别人赌的是分母。</strong></p>
+<p>把能力增长率粗写成：</p>
+<div class="arithmatex">\[
+\frac{dI}{dt} \;=\; \underbrace{\frac{\partial I}{\partial C}}_{\text{每单位算力的能力增益}} \times \underbrace{\frac{dC}{dt}}_{\text{算力增长率}}
+\]</div>
+<p>2020–2026 年的主流路线，是把全部力量压在 <span class="arithmatex">\(dC/dt\)</span> 上：
+更多 GPU、更多电、更大集群。这条路线现在正撞上第 7 节要讲的那四堵墙。</p>
+<p>SSI 的公开线索——"大脑学习中未被充分探索的性质"——
+外界普遍把它连到<strong>样本效率、无灾难性遗忘的持续学习、内在价值系统</strong>这几件事上
+（注意：这是外界的连线，SSI 没有确认过任何具体方法）。
+这几件事如果成立，改的全是 <span class="arithmatex">\(\partial I / \partial C\)</span>。</p>
+<p>这个区分在 RSI 语境里是决定性的：</p>
+<ul>
+<li>如果 RSI 靠 <span class="arithmatex">\(dC/dt\)</span>，那么 RSI 的上限是<strong>物理层的上限</strong>——
+  电网、fab、散热，也就是第 7 节的四本账。</li>
+<li>如果 RSI 靠 <span class="arithmatex">\(\partial I/\partial C\)</span>，那么 RSI 的上限是<strong>算法空间的上限</strong>，
+  而算法空间的搜索本身可以被 AI 加速——<strong>这才是真正的递归</strong>。</li>
+</ul>
+<p>换句话说：<strong>只有分子上的进步才能真正递归，分母上的进步必然撞墙。</strong>
+SSI 两年不发东西、拿 50 亿去换一个数量级算力的行为，
+是一个可以这样解读的信号：他们认为自己找到了分子上的东西，现在需要验证它能 scale。</p>
+<p>但也必须说清楚：<strong>这是一个尚未被任何公开证据支持的赌注。</strong>
+FutureSearch 给 SSI 2026 年内公开发布任何东西的概率是 38%，
+而且首个公开产物更可能是一篇论文（35%）而不是一个模型（29%）。
+在它发出来之前，SSI 在 RSI 的账本上是一个<strong>值为零的条目</strong>——
+只不过是一个方差极大的零。</p>
+<hr />
+<h2 id="5-反方曲线不等于爆炸">5. 反方：曲线不等于爆炸</h2>
+<h3 id="51-mit-technology-review-的降温实验">5.1 MIT Technology Review 的降温实验</h3>
+<p>2026 年 8 月 18 日，MIT Tech Review 发了篇文章，论点是"RSI 可能没那么快"。
+依据的实验：让 Claude Opus 4.8 跑在开源软件 OpenClaw 上，
+去做两篇投给 NeurIPS 2026 的论文里的研究问题。</p>
+<p>这个实验的局限文章自己列了，而且很致命：<strong>只覆盖两篇论文</strong>，
+原作者<strong>知道</strong>自己在给 AI 生成的工作打分，研究者在设计和执行上有很大自由度。
+所以这篇文章的证据强度，其实和它要反驳的那些乐观宣传是一个量级的——都不够。
+但它提出的问题是对的。</p>
+<h3 id="52-cacm-收集的结构性瓶颈">5.2 CACM 收集的结构性瓶颈</h3>
+<p>这一组论证比上面那个实验强得多，因为它们是关于<strong>回路结构</strong>的，不是关于某次测量：</p>
+<ol>
+<li><strong>算力约束不是编程能力约束。</strong> 连超参搜索这种事，
+   卡的都是"有没有卡"，不是"会不会写"。AI 把写代码的时间压到零，
+   压不掉跑实验的时间。</li>
+<li><strong>数字世界和物理世界的可观测性鸿沟。</strong> MIT FutureTech 的 Jonathan Rosenfeld 的说法：
+   AI <strong>装不了一块 GPU</strong>，也参与不了一场它不在场的走廊对话。
+   RSI 的每一轮迭代最终都要落到物理动作上，而 AI 在物理世界的"手"和"眼"都还很差。</li>
+<li><strong>选题权。</strong> Anthropic 自己承认，瓶颈已经从"做"转移到"选做什么"——
+   "the doing now costs almost nothing in human time"。
+   而选题是整个研究流程里最难被验证的一环（回到第 2 节：它的 verifier 是"十年后回头看"）。</li>
+</ol>
+<h3 id="53-度量问题benchmark-饱和不等于能力">5.3 度量问题：benchmark 饱和不等于能力</h3>
+<p>这是<a href="emergence-three-faces.html">《涌现的三副面孔》</a>那篇里"度量涌现"的直接重演。
+SWE-bench 两年从个位数到饱和，CORE-Bench 十五个月从 20% 到饱和——
+这些曲线里有多少是能力，有多少是<strong>基准本身的天花板太低</strong>？</p>
+<p>一个基准被刷爆时，你无法区分这两种情况：
+（a）模型真的变强了；（b）模型学会了这个基准的分布。
+而 RSI 回路会<strong>系统性地</strong>偏向 (b)，因为回路的梯度就是基准分数。
+这是 Goodhart 定律在训练循环里的形式化版本。</p>
+<h3 id="54-坍缩动力学">5.4 坍缩动力学</h3>
+<p>综述点名的三个失败模式：<strong>grounding 不足、坍缩动力学、算力约束</strong>。
+中间那个是数学上最干净的：
+自我生成数据 + 自我评分 → 分布方差单调收缩 → 多样性归零 → 回路停在一个自洽但错误的点上。</p>
+<p>这就是为什么第 2 节的层级重要：
+<strong>外部验证器（测试、编译器、Lean、物理实验）是唯一能给回路注入新信息的东西。</strong>
+没有它，RSI 只是在自己的先验里做布朗运动。</p>
+<hr />
+<h2 id="6-数学什么条件下才真的炸">6. 数学：什么条件下才真的"炸"</h2>
+<h3 id="61-最小模型">6.1 最小模型</h3>
+<p>设 <span class="arithmatex">\(I(t)\)</span> 为系统能力。智能爆炸的最小模型是：</p>
+<div class="arithmatex">\[
+\frac{dI}{dt} = A\, I^{\alpha}
+\]</div>
+<p>意思是：能力越强，改进自己越快。解出来：</p>
+<ul>
+<li><span class="arithmatex">\(\alpha &gt; 1\)</span>：<strong>有限时间奇点</strong>。
+  $<span class="arithmatex">\(I(t) = \left[ I_0^{1-\alpha} - A(\alpha-1)t \right]^{\frac{1}{1-\alpha}},\qquad
+  t^* = \frac{I_0^{1-\alpha}}{A(\alpha-1)}\)</span>$
+  在 <span class="arithmatex">\(t^*\)</span> 处发散。这是 I.J. Good 那个论证的微分方程版本。</li>
+<li><span class="arithmatex">\(\alpha = 1\)</span>：纯指数 <span class="arithmatex">\(I = I_0 e^{At}\)</span>。快，但不发散。</li>
+<li><span class="arithmatex">\(\alpha &lt; 1\)</span>：次指数，<span class="arithmatex">\(I \sim t^{1/(1-\alpha)}\)</span>。多项式增长。</li>
+</ul>
+<p><strong>所有关于 RSI 的争论，本质上是在争 <span class="arithmatex">\(\alpha\)</span> 到底大于还是小于 1。</strong></p>
+<h3 id="62-经验证据指向-alpha-1">6.2 经验证据指向 <span class="arithmatex">\(\alpha &lt; 1\)</span></h3>
+<p>Bloom, Jones, Van Reenen &amp; Webb 的 <em>Are Ideas Getting Harder to Find?</em>（AER 2020）
+是这条线上最硬的一份经验数据，而且用的恰好是半导体：</p>
+<blockquote>
+<p>要维持摩尔定律"每两年翻一番"这个<strong>恒定</strong>速率，
+今天需要的研究人员数量是 1970 年代初的 <strong>18 倍以上</strong>。
+半导体的研究生产率<strong>年均下降约 6.8%</strong>。</p>
+</blockquote>
+<p>换句话说：过去五十年，芯片行业一直在跑一个 RSI 回路（用芯片设计更好的芯片），
+产出是<strong>恒定的</strong>倍增速率，投入是<strong>指数增长</strong>的研究力量。
+这在上面的模型里正好对应 <span class="arithmatex">\(\alpha &lt; 1\)</span>：</p>
+<div class="arithmatex">\[
+\frac{dI}{dt} = A \, I^{\alpha} \cdot R(t),\qquad \alpha&lt;1
+\]</div>
+<p>要让 <span class="arithmatex">\(dI/dt / I\)</span> 保持常数，<span class="arithmatex">\(R(t)\)</span>（研究投入）必须指数增长。</p>
+<p>这是对"EDA 先例"最重要的注脚：
+<strong>EDA 是一个跑了三十年的真闭环，它从来没有点燃过。</strong>
+它交付了几十年的复利式变革——这已经非常了不起——但它不是奇点。
+AI 圈今天讨论的 AlphaChip / "从 fabless 到 designless" 这条路线，
+先验上应该假设它长得像 EDA，而不是长得像 Good 的论证，
+除非有人给出为什么这次 <span class="arithmatex">\(\alpha\)</span> 会跨过 1 的理由。</p>
+<p>至于 AI 能否把 <span class="arithmatex">\(R(t)\)</span> 本身变成 AI——那正是 L3 在试的事，也是唯一有可能改变这个结论的事。</p>
+<h3 id="63-把周期时间放进去本文的核心公式">6.3 把周期时间放进去：本文的核心公式</h3>
+<p>上面的连续模型掩盖了一个关键结构：<strong>改进是一轮一轮发生的，每一轮有一个周期。</strong></p>
+<p>设一轮改进的周期为</p>
+<div class="arithmatex">\[
+T_{\text{cycle}} = t_{\text{think}}(I) + t_{\text{build}}
+\]</div>
+<p>其中 <span class="arithmatex">\(t_{\text{think}}\)</span> 是想清楚该改什么（随 <span class="arithmatex">\(I\)</span> 增大而减小），
+<span class="arithmatex">\(t_{\text{build}}\)</span> 是把它造出来、训出来、流片、通电、验证（物理常数）。
+设每轮能力乘以 <span class="arithmatex">\(g &gt; 1\)</span>，则</p>
+<div class="arithmatex">\[
+\frac{dI}{dt} \approx \frac{I \ln g}{t_{\text{think}}(I) + t_{\text{build}}}
+\]</div>
+<p>现在取极限 <span class="arithmatex">\(t_{\text{think}} \to 0\)</span>，也就是<strong>假设智能无限</strong>：</p>
+<div class="arithmatex">\[
+\boxed{\;\frac{dI}{dt} = \frac{I \ln g}{t_{\text{build}}}
+\quad\Longrightarrow\quad
+T_{\text{double}} = t_{\text{build}}\cdot\frac{\ln 2}{\ln g}\;}
+\]</div>
+<p><strong>这是全文的结论。</strong></p>
+<p>无限的智能不给你奇点，给你的是一条<strong>倍增时间由物理建造周期设定的指数曲线</strong>。
+奇点需要 <span class="arithmatex">\(T_{\text{cycle}} \to 0\)</span>，而 <span class="arithmatex">\(T_{\text{cycle}}\)</span> 的下界不在算法里，在硅、电、热、原子里。</p>
+<h3 id="64-amdahl-上界">6.4 Amdahl 上界</h3>
+<p>同一件事的另一种写法。设一个研究-工程流程里，
+比例 <span class="arithmatex">\(p\)</span> 的时间可以被 AI 加速（加速比 <span class="arithmatex">\(s\)</span>），<span class="arithmatex">\(1-p\)</span> 不能：</p>
+<div class="arithmatex">\[
+S = \frac{1}{(1-p) + p/s} \;\xrightarrow{\;s\to\infty\;}\; \frac{1}{1-p}
+\]</div>
+<p>即使 AI 把软件部分加速到<strong>无限快</strong>：</p>
+<table>
+<thead>
+<tr>
+<th><span class="arithmatex">\(p\)</span>（可加速比例）</th>
+<th>整体加速上限</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>0.5</td>
+<td>2×</td>
+</tr>
+<tr>
+<td>0.8</td>
+<td>5×</td>
+</tr>
+<tr>
+<td>0.9</td>
+<td>10×</td>
+</tr>
+<tr>
+<td>0.95</td>
+<td>20×</td>
+</tr>
+<tr>
+<td>0.99</td>
+<td>100×</td>
+</tr>
+</tbody>
+</table>
+<p>Anthropic 报告的 8× 合入量、12 小时任务，落在 <span class="arithmatex">\(p \approx 0.85\text{–}0.9\)</span> 这个区间里，
+和这张表是自洽的。<strong>要继续往上走，唯一的办法不是让 <span class="arithmatex">\(s\)</span> 更大，是让 <span class="arithmatex">\(p\)</span> 更大</strong>——
+也就是把越来越多"不可加速"的事情变成可加速的。
+而 <span class="arithmatex">\(1-p\)</span> 里剩下的东西，正在越来越纯粹地变成物理：等 GPU、等电、等流片、等实验。</p>
+<p>这也顺带解释了为什么 <a href="harness-is-everything.html">harness 是一切</a>、
+<a href="loop-engineering.html">循环工程</a> 这类工程问题在 2026 年比模型本身还重要：
+它们干的事就是提高 <span class="arithmatex">\(p\)</span>。</p>
+<hr />
+<h2 id="7-物理层的四本硬账">7. 物理层的四本硬账</h2>
+<p>这一节是本文的另一半。前面所有讨论都在 <span class="arithmatex">\(t_{\text{build}}\)</span> 这个符号里，
+现在把它拆开，看它到底由什么组成。四本账：<strong>硅、电、热、原子</strong>。</p>
+<h3 id="71-硅fab-的时间常数是年">7.1 硅：fab 的时间常数是年</h3>
+<p>2026 年的供应链事实：</p>
+<ul>
+<li><strong>前道产能（front-end）已经取代封装成为主要瓶颈。</strong>
+  CoWoS 的紧张在缓解，但 TSMC 做 CoWoS 产能规划时必须盯着 N3 的约束——
+  在前道晶圆供给不足的情况下，超配封装产能没有意义。</li>
+<li><strong>HBM 是最赚钱的瓶颈</strong>：SK 海力士、美光、三星的 <strong>2026 年产能已全部被预订</strong>。</li>
+<li><strong>新产能极慢</strong>：TSMC 亚利桑那 Fab 2 从 2028 提前到 <strong>2027</strong>；
+  Intel 俄亥俄的量产从 2026 滑到 <strong>2030</strong>。</li>
+<li>行业分析预计 2026 年规划的数据中心产能有 <strong>30–50% 会滑到 2028</strong>。</li>
+</ul>
+<p>关键的数量级：<strong>建一座 fab 需要 3–5 年</strong>，一次流片要一到两年。
+这意味着"AI 设计出更好的芯片"这个回路，
+无论设计端被加速多少倍，<strong>每一圈至少要一年以上</strong>。
+AlphaChip 把布图规划从几个月压到几小时——这是真实的、巨大的进步，
+但它压的是 <span class="arithmatex">\(t_{\text{think}}\)</span> 的一部分，不是 <span class="arithmatex">\(t_{\text{build}}\)</span>。</p>
+<p>回看 6.2 节：<strong>这正是 EDA 先例的教训。</strong>
+从 fabless 走向 "designless" 是一个合理的商业方向，
+但把它当成点火装置，需要解释为什么这次能突破 18 倍研究人员那条曲线。</p>
+<p>（本站<a href="eda-and-llm.html">《EDA 与 LLM》</a>讲的就是这条线上的技术细节。）</p>
+<h3 id="72-电眼前那堵墙">7.2 电：眼前那堵墙</h3>
+<p>这本账是四本里<strong>最近</strong>的一堵墙：</p>
+<ul>
+<li>Gartner 预计 <strong>2027 年 40% 的 AI 数据中心会受电力约束</strong>。</li>
+<li>美国互联队列（interconnection queue）已经膨胀到 <strong>2100 GW</strong> 以上。</li>
+<li>主要美欧市场的电网容量审批周期是 <strong>24–36 个月</strong>。</li>
+<li>TSMC 高管公开把能耗列为未来芯片发展的主要约束，
+  加速器竞争的<strong>首要指标已经从峰值算力转向 tokens-per-watt</strong>。</li>
+</ul>
+<p>反方也要记上：<strong>International AI Safety Report 2026</strong> 的判断是，
+美国的电力建设大概率足以支撑 <strong>10 GW 量级</strong>的训练，
+所以至少到本十年末，能源瓶颈<strong>不会</strong>阻止算力扩张；
+fab 通常要 3–5 年，但这些挑战"大概率可以被克服"。</p>
+<p>所以这堵墙的准确描述是：<strong>它约束的是节奏，不是终局。</strong>
+它给 <span class="arithmatex">\(t_{\text{build}}\)</span> 贡献了一个 2–3 年的常数项，而不是一个无穷大。</p>
+<h3 id="73-热与熵物理硬顶还远得很">7.3 热与熵：物理硬顶还远得很</h3>
+<p>这一节是给那些用 Landauer 原理论证"超级智能不可能"的论证做个体检。结论是：<strong>那个论证很弱。</strong></p>
+<p>Landauer 原理（1961）：擦除一个比特的最小能量代价是</p>
+<div class="arithmatex">\[
+\Delta E \ge k_B T \ln 2
+\]</div>
+<p>室温 <span class="arithmatex">\(T = 300\,\mathrm{K}\)</span>：</p>
+<div class="arithmatex">\[
+k_B T \ln 2 = 1.38\times10^{-23} \times 300 \times 0.693 \approx 2.9\times10^{-21}\ \mathrm{J}
+\]</div>
+<p>Bérut et al. 和 Lutz et al. 在 2012 年用单个胶体粒子在实验误差内验证了这个界。</p>
+<p>而现代硅晶体管一次开关大约耗散 <span class="arithmatex">\(10^{-15}\ \mathrm{J}\)</span>：</p>
+<div class="arithmatex">\[
+\frac{10^{-15}}{2.9\times10^{-21}} \approx 3.4\times 10^{5}
+\]</div>
+<p><strong>还差五到六个数量级。</strong> 而且 Landauer 界是<strong>可以绕过的</strong>——
+可逆计算（reversible computing）原则上不擦除信息，因此不受这个界约束。</p>
+<p>同一族的还有 Bremermann 界（由 <span class="arithmatex">\(c\)</span> 和不确定性原理给出的最大计算速率）、
+Margolus–Levitin 界（量子态演化速度）。Lloyd 算过"1 千克黑洞计算机"
+能做 <span class="arithmatex">\(10^{51}\)</span> 次操作、存 <span class="arithmatex">\(10^{31}\)</span> 比特。这些数字离现实太远，在工程讨论里没有约束力。</p>
+<p>真正有约束力的是<strong>行星热平衡</strong>这本账。把数量级排一排：</p>
+<table>
+<thead>
+<tr>
+<th>尺度</th>
+<th>功率</th>
+<th>相对当前数据中心</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>当前全球数据中心（量级）</td>
+<td><span class="arithmatex">\(\sim 10^{11}\)</span> W</td>
+<td>—</td>
+</tr>
+<tr>
+<td>人类一次能源总消耗</td>
+<td><span class="arithmatex">\(\sim 2\times 10^{13}\)</span> W</td>
+<td><strong>约 2 个数量级</strong></td>
+</tr>
+<tr>
+<td>地球截获的太阳辐射</td>
+<td><span class="arithmatex">\(1.74\times 10^{17}\)</span> W</td>
+<td><strong>约 6 个数量级</strong></td>
+</tr>
+<tr>
+<td>Landauer 器件效率余量</td>
+<td>—</td>
+<td><strong>约 5–6 个数量级</strong>（且可绕过）</td>
+</tr>
+</tbody>
+</table>
+<p>于是得到一把很干净的尺子——<strong>四堵墙，距离差了好几个数量级</strong>：</p>
+<div class="arithmatex">\[
+\underbrace{\text{电网}}_{&lt;1\ \text{个数量级}} \;\ll\;
+\underbrace{\text{人类总能源}}_{\sim 2}\;\ll\;
+\underbrace{\text{散热/行星热平衡}}_{\sim 6}\;\approx\;
+\underbrace{\text{Landauer}}_{\sim 5\text{–}6,\ \text{可绕过}}
+\]</div>
+<p><strong>物理极限很远，工程极限就在眼前。</strong>
+这两件事在公共讨论里被反复混为一谈，而它们差了五个数量级。</p>
+<p>Harvard Science Review 2026 年 2 月那篇的结论说得对：
+<strong>这个十年的决定性工程挑战是散热，不是计算本身</strong>，
+代价可能是水。（2024 年 7 月北弗吉尼亚的一次电压波动让 60 座数据中心同时脱网，
+造出 1500 MW 的瞬时电力过剩，需要紧急干预——这是电网层面真实发生过的事。）</p>
+<p>2026 年也有工作在收紧 Landauer 界本身：
+有限时间操作和强耦合修正会让实际代价显著高于标准界，
+甚至存在"Landauer 加热"驱动的动力学相变——冷却功率不足时系统进入无界错误相。
+这些是漂亮的物理，但同样不改变"还有五个数量级余量"这个工程结论。</p>
+<h3 id="74-原子自复制以及闭合率这个指标">7.4 原子：自复制，以及"闭合率"这个指标</h3>
+<p>这是四本账里最有意思的一本，也是被讨论得最糟糕的一本。</p>
+<p>理论起点是 von Neumann 1948–49 年的 universal constructor：
+一台能造出包括自己在内的任何机器的机器，需要<strong>构造器 + 自身蓝图 + 复制蓝图的机制</strong>。
+这是自复制的最小完备结构，也是 DNA 的结构（这个对应关系是 von Neumann 在发现 DNA 结构之前推出来的）。</p>
+<p>2026 年的现实：</p>
+<ul>
+<li><strong>1X</strong> 的 Neo 已经在 Neo 自己的产线上做装配任务——子组件搬运、上测试台、简单配料。</li>
+<li>Tesla Optimus 累计超过 <strong>5 万台</strong>；
+  Fremont 产线<strong>设计</strong>年产能 100 万台，德州<strong>设计</strong>年产能 1000 万台（注意：设计产能，不是当前产量）。</li>
+<li>中国 2026 上半年生产人形机器人 <strong>4 万台</strong>；2025 年产谐波/行星执行器 20 万套以上。</li>
+<li>现代汽车承诺在其工厂部署 <strong>2.5 万台</strong> Atlas。</li>
+<li>Figure 的机器人在宝马斯帕坦堡工厂参与了 <strong>3 万多辆车</strong>的生产，
+  每天十小时、每周五天做物料搬运——这是目前文档最完整的商业人形部署。</li>
+<li>中国工信部与国资委 7 月 27 日启动计划，目标 2026 年底把人形机器人推进到<strong>万台级</strong>真实工厂运行。</li>
+</ul>
+<p>冷水也要泼：</p>
+<ul>
+<li>多数 2026 年的"全自主"演示，回路里某处仍然有遥操作或脚本环境；
+  按工业标准衡量，可靠性很差。</li>
+<li><strong>谐波减速器是真实的物理瓶颈</strong>：精密制造、供应商极少、交期约 <strong>26 周</strong>。</li>
+</ul>
+<p>但要判断"物理层 RSI 有没有开始"，产量不是对的指标。对的指标是<strong>闭合率</strong>：</p>
+<div class="arithmatex">\[
+c \;=\; \frac{\text{系统能自己生产的 BOM 价值}}{\text{全部 BOM 价值}}
+\]</div>
+<p>有效倍增时间是</p>
+<div class="arithmatex">\[
+T_{\text{double}} = \frac{t_{\text{build}}}{c}
+\]</div>
+<p><span class="arithmatex">\(c \to 0\)</span> 时 <span class="arithmatex">\(T_{\text{double}} \to \infty\)</span>。而现在的 <span class="arithmatex">\(c\)</span> 是多少？</p>
+<p>一台人形机器人造不出自己的谐波减速器，造不出自己的芯片，
+造不出自己的稀土磁体，更造不出自己的电。
+把整条供应链算进去，<strong><span class="arithmatex">\(c\)</span> 大约是 0.0x 量级</strong>。
+"机器人在自己的产线上拧螺丝"是一个真实的里程碑，
+但它离"自复制"的距离，和一个会做加法的程序离通用计算的距离差不多——
+结构上重要，数量上为零。</p>
+<p>这也正是 Rosenfeld 那句"AI 装不了一块 GPU"的定量版本。</p>
+<h3 id="75-自动实验室物理层唯一真的在闭环的地方">7.5 自动实验室：物理层唯一真的在闭环的地方</h3>
+<p>前面四本账都很悲观，但物理层有一个地方是例外，而且例外的原因<strong>恰好是第 2 节那条定律</strong>。</p>
+<ul>
+<li><strong>A-Lab</strong>（劳伦斯伯克利，Szymanski et al., <em>Nature</em> 624, 86–91, 2023）：
+  连续 <strong>17 天</strong>无人参与合成回路的闭环自主材料实验室。
+  后续关于"产物是否真的新颖"的批评是真实的学术争论，
+  但它没有推翻核心演示：<strong>闭环跑通了。</strong></li>
+<li>2026 年《Materials Horizons》的 <strong>SDL 2.0</strong> 综述判断：
+  SDL 1.0 证明了闭环发现可行，但受限于范围狭窄、互操作性差、依赖人工整理的启发式。</li>
+<li>当前行业水平：五级自主度量表上的 <strong>Level 2–3</strong>——
+  能在特定任务上做闭环优化，目标设定和异常处理仍归人类。</li>
+<li><strong>Argonne</strong> 在同时推两条路线：<em>automate the lab</em>（台面上固定机器人）
+  和 <em>automate the scientist</em>（能自由移动的类人机器人）。</li>
+<li>Acceleration Consortium 的目标：把材料发现从"1000 万美元 / 10 年"压到"100 万美元 / 1 年"。</li>
+<li>落地程度按领域排序：材料与化学 &gt; 药物发现 &gt; 合成生物学 &gt; 环境检测/临床诊断（后者受法规限制）。</li>
+</ul>
+<p><strong>为什么这里能闭环，而机器人造机器人不能？</strong></p>
+<p>因为自动实验室的验证器是<strong>物理定律</strong>——
+X 射线衍射图谱不会被说服，也不会 reward hack。
+按第 2 节的层级，物理实验和 Lean 一样位于最强的那一格。</p>
+<p>于是本文给出一个可以被证伪的预测：</p>
+<blockquote>
+<p><strong>物理层的 RSI 会先从自动实验室开始，而不是从机器人工厂开始。</strong>
+因为前者的打分器是物理定律（最强验证器 + 短周期），
+后者的打分器是"产线跑通了没有"（弱验证器 + 长周期 + 闭合率近零）。</p>
+</blockquote>
+<hr />
+<h2 id="8-时间常数表谁卡住了谁">8. 时间常数表：谁卡住了谁</h2>
+<p>把全文的数字收进一张表。这张表是整篇文章的压缩：</p>
+<table>
+<thead>
+<tr>
+<th>回路</th>
+<th>周期时间</th>
+<th>2026 年闭合了吗</th>
+<th>验证器</th>
+<th>被什么卡住</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>推理时自我修正</td>
+<td>秒</td>
+<td><strong>是</strong></td>
+<td>自评/测试</td>
+<td>上下文、自评不可靠</td>
+</tr>
+<tr>
+<td>agent 改自己的代码</td>
+<td>小时</td>
+<td><strong>是</strong>（DGM）</td>
+<td>benchmark</td>
+<td>基准被刷爆</td>
+</tr>
+<tr>
+<td>后训练 / RL 回路</td>
+<td>天～周</td>
+<td>半</td>
+<td>奖励模型</td>
+<td>奖励黑客、坍缩</td>
+</tr>
+<tr>
+<td>一代模型</td>
+<td>月（任务时长 <strong>4 个月</strong>翻倍）</td>
+<td>否（人选题）</td>
+<td>人 + 评测</td>
+<td>选题、算力</td>
+</tr>
+<tr>
+<td>芯片流片</td>
+<td><strong>1–2 年</strong></td>
+<td>否</td>
+<td>硅</td>
+<td>前道产能、HBM</td>
+</tr>
+<tr>
+<td>新 fab</td>
+<td><strong>3–5 年</strong></td>
+<td>否</td>
+<td>—</td>
+<td>资本、设备、人</td>
+</tr>
+<tr>
+<td>新电力并网</td>
+<td><strong>2–5 年</strong>（队列 24–36 月）</td>
+<td>否</td>
+<td>—</td>
+<td>电网审批、2100 GW 队列</td>
+</tr>
+<tr>
+<td>自动实验室闭环</td>
+<td><strong>天</strong>（A-Lab 17 天一轮）</td>
+<td><strong>是</strong>（Level 2–3）</td>
+<td><strong>物理定律</strong></td>
+<td>范围窄、互操作性</td>
+</tr>
+<tr>
+<td>机器人自复制</td>
+<td>—</td>
+<td><strong>否</strong>（<span class="arithmatex">\(c \approx 0\)</span>）</td>
+<td>产线</td>
+<td>谐波减速器、芯片、电</td>
+</tr>
+</tbody>
+</table>
+<p>读法：<strong>从上往下，周期时间涨了七八个数量级，而回路的闭合程度在下降。</strong></p>
+<p>代回 6.3 的公式：整个系统的倍增时间由<strong>最慢的那个必经闭环</strong>决定。
+今天软件层已经是秒和小时，物理层是年。
+所以 2026 年的 RSI 图景是这样的：</p>
+<blockquote>
+<p><strong>一个在软件层以小时为周期疯狂旋转、
+但整体被一年到五年量级的物理周期钳住的系统。</strong></p>
+</blockquote>
+<p>这不是"没有 RSI"，也不是"奇点将至"。
+这是一个<strong>分层的、时间常数相差七个数量级的复合系统</strong>，
+它的行为既不像平台期，也不像爆炸——像一条倍增时间被硬件周期锁定的指数。</p>
+<hr />
+<h2 id="9-安全问题就是验证器问题">9. 安全问题就是验证器问题</h2>
+<h3 id="91-阈值已经被写成可测量的定义">9.1 阈值已经被写成可测量的定义</h3>
+<p>值得注意的一件事：RSI 已经从修辞变成了<strong>可审计的指标</strong>。
+OpenAI 的 "Critical" AI Self-improvement 等级有一个操作化定义，两个指标二选一：</p>
+<ul>
+<li><strong>前瞻指标</strong>：出现超人类水平的研究员/科学家 agent；</li>
+<li><strong>滞后指标</strong>：造成<strong>以 2024 年等效进展的五分之一 wall-clock 时间</strong>完成一代模型改进，
+  并<strong>持续数月</strong>。</li>
+</ul>
+<p>这个定义的好处是它可测。第二条说的其实就是第 6.3 节的 <span class="arithmatex">\(T_{\text{double}}\)</span>——
+把一个哲学争论变成了一个可以读数的量。</p>
+<p>（同期还有 <em>International AI Safety Report 2026</em> 和多份前沿安全框架评估
+在做同一件事：把 RSI 写进阈值表。）</p>
+<h3 id="92-递归的两端">9.2 递归的两端</h3>
+<p>Anthropic 那条线的逻辑是：<strong>用 RSI 去做对齐本身</strong>。
+九个 agent 五天拿到 97%，就是这个论证的存在性证明。
+如果自动化研究是不可避免的，那么让它先自动化<strong>安全研究</strong>，是一个有内在一致性的策略。</p>
+<p>但按第 2 节的层级看，这里有个紧张关系值得说破：</p>
+<ul>
+<li>费马大定理那种自主性之所以安全，是因为 <strong>Lean 不可被欺骗</strong>。</li>
+<li>对齐研究没有 Lean。它的验证器是"人类研究员判断哪些发现是真的、哪些是 reward hack"——
+  这正是 Anthropic 自己列的 caveat：<strong>这一步仍然是人做的</strong>。</li>
+<li>而 Red Queen Gödel Machine 那条路线（让被评者协同进化评估器），
+  在能力上可能是必要的，在安全上正好指向层级最弱的那一格。</li>
+</ul>
+<p>所以整篇文章的安全结论可以压成一句：</p>
+<blockquote>
+<p><strong>回路能安全地跑多远，等于它的验证器能被信任多远。
+智能提升生成候选的质量，但它不会自动提升打分的可信度——
+事实上，生成器越强，弱验证器被绕过得越快。</strong></p>
+</blockquote>
+<p>这也是为什么 2026 年那些"agent 自主干了 N 天"的成果里，
+唯一真正无争议的那个，是打分器叫 Lean 的那个。</p>
+<hr />
+<h2 id="10-如果只记五句话">10. 如果只记五句话</h2>
+<ol>
+<li>
+<p><strong>RSI 不是一个东西，是五层。</strong> L0–L2 已经在跑但收敛，L3 正在发生但回路是开的，
+   L4 连起跑线都没到。争论 "RSI 来没来" 而不指明层数，是在浪费时间。</p>
+</li>
+<li>
+<p><strong>验证器决定一切。</strong> 改进强度严格跟随验证层级：
+   形式验证 &gt; 可执行测试 &gt; PRM &gt; LLM judge &gt; 自评。
+   2026 年最自主的成果（11 天、1300 万行 Lean、费马大定理）出现在层级最顶格，不是巧合。</p>
+</li>
+<li>
+<p><strong>无限的智能 + 有限的物理周期 = 指数，不是奇点。</strong>
+   <span class="arithmatex">\(T_{\text{double}} = t_{\text{build}} \cdot \ln 2 / \ln g\)</span>。
+   奇点要求周期本身趋于零，而周期的下界在硅、电、热、原子里。</p>
+</li>
+<li>
+<p><strong>物理极限很远，工程极限就在眼前，两者差五个数量级。</strong>
+   电网不到 1 个数量级，人类总能源约 2 个，行星热平衡约 6 个，
+   Landauer 还有 5–6 个而且可以被可逆计算绕过。
+   用 Landauer 论证超级智能不可能，是把最远的那堵墙当成了最近的那堵。</p>
+</li>
+<li>
+<p><strong>物理层的 RSI 会从自动实验室开始，不会从机器人工厂开始。</strong>
+   因为前者的打分器是物理定律，后者的闭合率约等于零——
+   机器人造不出自己的减速器、芯片和电。这是第 2 句话在原子尺度上的重演。</p>
+</li>
+</ol>
+<p>至于 Ilya：在 SSI 发出东西之前，它在这本账上是一个值为零的条目。
+只不过，如果"大脑学习中那些未被充分探索的性质"真的指向样本效率和持续学习，
+那么他赌的是 <span class="arithmatex">\(\partial I/\partial C\)</span> 而不是 <span class="arithmatex">\(dC/dt\)</span>——
+<strong>赌的是唯一一个不会被本文第 7 节那四堵墙挡住的方向。</strong>
+这个赌注目前没有任何公开证据支持。它是一个方差极大的零。</p>
+<hr />
+<h2 id="参考文献">参考文献</h2>
+<p><strong>综述与理论</strong></p>
+<ul>
+<li>M. Chen, L. Wang, B. Qu, <em>Recursive Self-Improvement in AI: From Bounded Self-Refinement to Autonomous Research Loops</em>, <a href="https://arxiv.org/abs/2607.07663">arXiv:2607.07663</a> (2026-07，2026-09 修订；综述 1250 篇论文，提出验证层级)</li>
+<li>I.J. Good, <em>Speculations Concerning the First Ultraintelligent Machine</em> (1966)（智能爆炸论证的原始出处）</li>
+<li>J. Schmidhuber, <em>Gödel Machines: Fully Self-Referential Optimal Universal Self-Improvers</em> (2003)</li>
+<li>J. von Neumann, <em>Theory of Self-Reproducing Automata</em>（1948–49 讲稿，Burks 编，1966）</li>
+<li>N. Bloom, C.I. Jones, J. Van Reenen, M. Webb, <em>Are Ideas Getting Harder to Find?</em>, AER 110(4): 1104–44 (2020)（摩尔定律需要 18 倍研究人员；研究生产率年降 6.8%）— <a href="https://web.stanford.edu/~chadj/IdeaPF.pdf">PDF</a></li>
+<li><em>International AI Safety Report 2026</em>, <a href="https://arxiv.org/pdf/2602.21012">arXiv:2602.21012</a></li>
+</ul>
+<p><strong>自我改进系统</strong></p>
+<ul>
+<li>J. Zhang et al., <em>Darwin Gödel Machine: Open-Ended Evolution of Self-Improving Agents</em>, <a href="https://arxiv.org/abs/2505.22954">arXiv:2505.22954</a>（ICLR 2026）— <a href="https://sakana.ai/dgm/">Sakana 博客</a></li>
+<li><em>DARWIN: Dynamic Agentically Rewriting Self-Improving Network</em>, <a href="https://arxiv.org/pdf/2602.05848">arXiv:2602.05848</a></li>
+<li><em>The Red Queen Gödel Machine: Co-Evolving Agents and Their Evaluators</em>, <a href="https://arxiv.org/pdf/2606.26294">arXiv:2606.26294</a></li>
+<li><em>Hyperagents</em>（DGM-H）, <a href="https://arxiv.org/pdf/2603.19461">arXiv:2603.19461</a></li>
+<li><em>AlphaEvolve: a coding agent for scientific and algorithmic discovery</em>, CoRR abs/2506.13131 (2025)</li>
+<li>ICLR 2026 Workshop on AI with Recursive Self-Improvement — <a href="https://iclr.cc/virtual/2026/workshop/10000796">页面</a></li>
+</ul>
+<p><strong>实验室与公司</strong></p>
+<ul>
+<li>Anthropic, <em>When AI builds itself</em>（2026-05）— <a href="https://www.anthropic.com/institute/recursive-self-improvement">anthropic.com/institute/recursive-self-improvement</a></li>
+<li>Anthropic, <em>Automated researchers can reliably mitigate alignment failures</em>（2026-08-28）</li>
+<li>Anthropic, <em>Formalizing Fermat's Last Theorem</em>（2026-09-05）— <a href="https://www.anthropic.com/research/formalizing-fermats-last-theorem">研究页</a>（11 天、1300 万行 Lean、30300 条定理、约 60 亿 output token）</li>
+<li>Anthropic, <em>Signs of introspection in large language models</em>（2025-10-29）；<em>The assistant axis</em>（2026-01-19）</li>
+<li>OpenAI, <em>Introducing GPT-5.3-Codex</em>（2026-02-05）— <a href="https://openai.com/index/introducing-gpt-5-3-codex/">openai.com</a> · <a href="https://thenewstack.io/openais-gpt-5-3-codex-helped-build-itself/">The New Stack 报道</a></li>
+<li>NVIDIA Newsroom, <em>Ilya Sutskever's Safe Superintelligence Inc. and NVIDIA Announce Long-Term Strategic Partnership</em>（2026-07-27）— <a href="https://nvidianews.nvidia.com/news/ilya-sutskevers-safe-superintelligence-inc-and-nvidia-announce-long-term-strategic-partnership">公告</a> · <a href="https://techcrunch.com/2026/07/27/ilya-sutskevers-safe-superintelligence-partners-with-nvidia-to-scale-its-ai-research/">TechCrunch</a></li>
+<li>FutureSearch, <em>When Will Safe Superintelligence Release a Model?</em> — <a href="https://futuresearch.ai/safe-superintelligence-forecast/">预测页</a></li>
+</ul>
+<p><strong>反方</strong></p>
+<ul>
+<li>MIT Technology Review, <em>AI's recursive self-improvement might not come so quickly after all</em>（2026-08-18）— <a href="https://www.technologyreview.com/2026/08/18/1142188/ai-recursive-self-improvement/">文章</a></li>
+<li>Communications of the ACM, <em>Is Recursive Self-Improvement Really Here?</em> — <a href="https://cacm.acm.org/news/is-recursive-self-improvement-really-here/">文章</a></li>
+<li>IEEE Spectrum, <em>Recursive Self-Improvement Edges Closer In AI Labs</em> — <a href="https://spectrum.ieee.org/recursive-self-improvement">文章</a></li>
+<li>R. Schaeffer, B. Miranda, S. Koyejo, <em>Are Emergent Abilities of Large Language Models a Mirage?</em>, NeurIPS (2023)（度量假象）</li>
+</ul>
+<p><strong>物理层</strong></p>
+<ul>
+<li>R. Landauer, <em>Irreversibility and Heat Generation in the Computing Process</em>, IBM J. Res. Dev. 5, 183 (1961)</li>
+<li>A. Bérut et al., <em>Experimental verification of Landauer's principle</em>, Nature 483, 187 (2012)；E. Lutz et al. (2012)</li>
+<li>S. Lloyd, <em>Ultimate physical limits to computation</em>, Nature 406, 1047 (2000)</li>
+<li>K. Takahashi &amp; Hayashi, <em>Thermodynamic Limits of Physical Intelligence</em>, <a href="https://arxiv.org/abs/2602.05463">arXiv:2602.05463</a></li>
+<li><em>Information Physics of Intelligence: Unifying Logical Depth and Entropy under Thermodynamic Constraints</em>, <a href="https://arxiv.org/pdf/2511.19156">arXiv:2511.19156</a></li>
+<li>Harvard Science Review, <em>The Physical Limits of AI Intelligence</em>（2026-02-26）— <a href="https://harvardsciencereview.org/2026/02/26/the-physical-limits-of-ai-intelligence-the-collision-course-with-the-law-of-thermodynamics-part-i/">文章</a></li>
+<li>SemiAnalysis, <em>The Great AI Silicon Shortage</em> — <a href="https://newsletter.semianalysis.com/p/the-great-ai-silicon-shortage">文章</a></li>
+<li>Sequoia, <em>Black Holes and the Intelligence Explosion</em> — <a href="https://sequoiacap.com/article/black-holes-perspective">文章</a></li>
+<li>Sequoia Podcast, <em>How Ricursive Intelligence's Founders are Using AI to Shape The Future of Chip Design</em>（AlphaChip → "designless"）— <a href="https://sequoiacap.com/podcast/how-ricursive-intelligences-founders-are-using-ai-to-shape-the-future-of-chip-design">页面</a></li>
+</ul>
+<p><strong>自动实验室与机器人</strong></p>
+<ul>
+<li>N.J. Szymanski et al., <em>An autonomous laboratory for the accelerated synthesis of novel materials</em>, Nature 624, 86–91 (2023)（A-Lab，17 天闭环）</li>
+<li><em>Toward self-driving laboratory 2.0 for chemistry and materials discovery</em>, Materials Horizons 13(10), 4712 (2026) — <a href="https://pubs.rsc.org/mh/article/13/10/4712/1226991/Toward-self-driving-laboratory-2-0-for-chemistry">RSC</a></li>
+<li>Argonne National Laboratory, <em>Autonomous Discovery</em> — <a href="https://www.anl.gov/autonomous-discovery">页面</a></li>
+<li>Google DeepMind, <em>Gemini Robotics 2</em>（2026-07-30/31，全身人形控制，Apptronik Apollo 2 上演示）</li>
+<li>QPillars, <em>Self-Driving Labs in 2026: What Actually Works vs. What's Still Hype</em> — <a href="https://qpillars.com/blog/self-driving-labs-2026-what-works-vs-hype">文章</a></li>
+</ul>
+<p><strong>本站相关</strong></p>
+<ul>
+<li><a href="emergence-three-faces.html">涌现的三副面孔</a> — "度量涌现"与真相变的区别，第 5.3 节的底稿</li>
+<li><a href="randomness-is-a-search-tool.html">随机性不是噪声，是搜索工具</a> — 搜索 = 生成候选 + 打分，第 2 节的骨架</li>
+<li><a href="synthetic-data.html">合成数据</a> — 自生成数据的分布坍缩</li>
+<li><a href="eda-and-llm.html">EDA 与 LLM</a> — 芯片设计那个跑了三十年的闭环</li>
+<li><a href="harness-is-everything.html">harness 才是一切</a> · <a href="loop-engineering.html">循环工程</a> — 提高 Amdahl 公式里那个 <span class="arithmatex">\(p\)</span></li>
+<li><a href="compression-is-intelligence.html">压缩即智能</a> — 另一条给"智能"下定义的路</li>
+</ul>
+    </div>
+  </article>
+
+</main>
+
+<!-- Floating Ask-AI chat widget -->
+<button class="ai-fab" id="ai-fab" aria-label="Ask AI about this article" title="Ask AI about this article">
+  <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+    <path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"/>
+  </svg>
+  <span class="ai-fab-label">Ask AI</span>
+</button>
+
+<div class="ai-panel" id="ai-panel" role="dialog" aria-labelledby="ai-panel-title" aria-hidden="true">
+  <header class="ai-panel-head">
+    <div class="ai-panel-title-wrap">
+      <span class="ai-dot"></span>
+      <h3 id="ai-panel-title">Ask AI about this post</h3>
+    </div>
+    <div class="ai-panel-actions">
+      <button class="ai-icon-btn" id="ai-clear" title="Clear conversation" aria-label="Clear">
+        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><polyline points="3 6 5 6 21 6"/><path d="M19 6l-1 14a2 2 0 0 1-2 2H8a2 2 0 0 1-2-2L5 6"/><path d="M10 11v6M14 11v6"/><path d="M9 6V4a1 1 0 0 1 1-1h4a1 1 0 0 1 1 1v2"/></svg>
+      </button>
+      <button class="ai-icon-btn" id="ai-close" title="Minimize" aria-label="Minimize">
+        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><polyline points="6 9 12 15 18 9"/></svg>
+      </button>
+    </div>
+  </header>
+
+  <div class="ai-messages" id="ai-messages">
+    <div class="ai-empty" id="ai-empty">
+      <p class="ai-empty-title">On-device AI · Gemini Nano</p>
+      <p class="ai-empty-sub">Ask anything about this article. Runs in your browser — nothing leaves your device.</p>
+    </div>
+  </div>
+
+  <div class="ai-status" id="ai-status" hidden></div>
+
+  <form class="ai-composer" id="ai-form">
+    <textarea id="ai-input" rows="1" placeholder="Ask about this post…" autocomplete="off"></textarea>
+    <button type="submit" id="ai-send" class="ai-send" aria-label="Send" disabled>
+      <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><line x1="22" y1="2" x2="11" y2="13"/><polygon points="22 2 15 22 11 13 2 9 22 2"/></svg>
+    </button>
+  </form>
+</div>
+
+<script>
+(function () {
+  const POST_TITLE = "RSI \u7684\u4e09\u5c42\u8d26\u672c\uff1a\u8f6f\u4ef6\u5c42\u5df2\u7ecf\u5f00\u59cb\u4e86\uff0c\u7269\u7406\u5c42\u8fd8\u6ca1\u5f00\u59cb";
+  const contentEl = document.querySelector('article .content');
+
+  const fab = document.getElementById('ai-fab');
+  const panel = document.getElementById('ai-panel');
+  const closeBtn = document.getElementById('ai-close');
+  const clearBtn = document.getElementById('ai-clear');
+  const msgsEl = document.getElementById('ai-messages');
+  const emptyEl = document.getElementById('ai-empty');
+  const statusEl = document.getElementById('ai-status');
+  const formEl = document.getElementById('ai-form');
+  const inputEl = document.getElementById('ai-input');
+  const sendBtn = document.getElementById('ai-send');
+
+  function articleText() {
+    if (!contentEl) return '';
+    return (contentEl.innerText || contentEl.textContent || '')
+      .replace(/[ \t]+\n/g, '\n')
+      .replace(/\n{3,}/g, '\n\n')
+      .trim();
+  }
+
+  function setStatus(msg, cls) {
+    if (!msg) { statusEl.hidden = true; statusEl.textContent = ''; statusEl.className = 'ai-status'; return; }
+    statusEl.hidden = false;
+    statusEl.textContent = msg;
+    statusEl.className = 'ai-status' + (cls ? ' ' + cls : '');
+  }
+
+  function hideEmpty() { if (emptyEl) emptyEl.style.display = 'none'; }
+
+  function appendBubble(role, text) {
+    hideEmpty();
+    const wrap = document.createElement('div');
+    wrap.className = 'ai-msg ai-msg-' + role;
+    const bubble = document.createElement('div');
+    bubble.className = 'ai-bubble';
+    bubble.textContent = text;
+    wrap.appendChild(bubble);
+    msgsEl.appendChild(wrap);
+    msgsEl.scrollTop = msgsEl.scrollHeight;
+    return bubble;
+  }
+
+  function appendTyping() {
+    hideEmpty();
+    const wrap = document.createElement('div');
+    wrap.className = 'ai-msg ai-msg-assistant ai-typing';
+    wrap.innerHTML = '<div class="ai-bubble"><span class="ai-dots"><i></i><i></i><i></i></span></div>';
+    msgsEl.appendChild(wrap);
+    msgsEl.scrollTop = msgsEl.scrollHeight;
+    return wrap;
+  }
+
+  function autoSize() {
+    inputEl.style.height = 'auto';
+    inputEl.style.height = Math.min(inputEl.scrollHeight, 140) + 'px';
+  }
+
+  function openPanel() {
+    panel.classList.add('open');
+    panel.setAttribute('aria-hidden', 'false');
+    fab.classList.add('hidden');
+    setTimeout(() => inputEl.focus(), 50);
+  }
+  function closePanel() {
+    panel.classList.remove('open');
+    panel.setAttribute('aria-hidden', 'true');
+    fab.classList.remove('hidden');
+  }
+
+  fab.addEventListener('click', openPanel);
+  closeBtn.addEventListener('click', closePanel);
+  document.addEventListener('keydown', e => {
+    if (e.key === 'Escape' && panel.classList.contains('open')) closePanel();
+  });
+
+  // ---- LanguageModel session ----
+  let session = null;
+  let creating = null;
+  let history = [];
+
+  function buildSystemPrompt() {
+    // Keep article context modest — Gemini Nano's input quota is small.
+    const article = articleText().slice(0, 4000);
+    return (
+      'You are a concise, helpful assistant answering questions about a blog post. ' +
+      'Use the article below as your primary source. If the answer is not in it, say so briefly and answer generally. ' +
+      'Reply in the same language as the user\'s question. Keep answers short unless asked for detail.\n\n' +
+      '=== ARTICLE TITLE ===\n' + POST_TITLE + '\n\n' +
+      '=== ARTICLE CONTENT ===\n' + article
+    );
+  }
+
+  async function ensureSession() {
+    if (session) return session;
+    if (creating) return creating;
+
+    if (!('LanguageModel' in self)) {
+      throw new Error(
+        'On-device AI not available. Use Chrome 138+ on desktop, or enable ' +
+        '"Prompt API for Gemini Nano" in chrome://flags.'
+      );
+    }
+
+    setStatus('Checking model…', 'info');
+    const status = await LanguageModel.availability();
+    if (status === 'unavailable') {
+      throw new Error('Model unavailable on this device.');
+    }
+
+    creating = (async () => {
+      // Only show download UI when the model isn't already there.
+      const willDownload = (status !== 'available');
+      if (willDownload) setStatus('Preparing model (first run downloads ~2GB)…', 'info');
+      else setStatus('Warming up…', 'info');
+
+      const s = await LanguageModel.create({
+        initialPrompts: [{ role: 'system', content: buildSystemPrompt() }],
+        monitor(m) {
+          m.addEventListener('downloadprogress', e => {
+            // Skip the spurious 0% event Chrome fires for cached models.
+            if (!willDownload && e.loaded === 0) return;
+            const pct = (e.loaded * 100).toFixed(1);
+            setStatus('Downloading model: ' + pct + '%', 'info');
+          });
+        }
+      });
+      session = s;
+      setStatus('');
+      return s;
+    })();
+
+    try { return await creating; }
+    finally { creating = null; }
+  }
+
+  async function ask(q) {
+    appendBubble('user', q);
+    history.push({ role: 'user', content: q });
+
+    sendBtn.disabled = true;
+    inputEl.disabled = true;
+    const typing = appendTyping();
+
+    let answerBubble = null;
+    let acc = '';
+    try {
+      const s = await ensureSession();
+      const stream = s.promptStreaming(q);
+      for await (const chunk of stream) {
+        if (!answerBubble) {
+          typing.remove();
+          const wrap = document.createElement('div');
+          wrap.className = 'ai-msg ai-msg-assistant';
+          answerBubble = document.createElement('div');
+          answerBubble.className = 'ai-bubble';
+          wrap.appendChild(answerBubble);
+          msgsEl.appendChild(wrap);
+        }
+        acc += chunk;
+        answerBubble.textContent = acc;
+        msgsEl.scrollTop = msgsEl.scrollHeight;
+      }
+      if (acc) history.push({ role: 'assistant', content: acc });
+      else { typing.remove(); appendBubble('assistant', '(no response)'); }
+    } catch (e) {
+      if (typing && typing.parentNode) typing.remove();
+      const err = document.createElement('div');
+      err.className = 'ai-msg ai-msg-error';
+      err.innerHTML = '<div class="ai-bubble">⚠ ' + (e && e.message ? e.message : String(e)) + '</div>';
+      msgsEl.appendChild(err);
+      msgsEl.scrollTop = msgsEl.scrollHeight;
+    } finally {
+      sendBtn.disabled = !inputEl.value.trim();
+      inputEl.disabled = false;
+      inputEl.focus();
+    }
+  }
+
+  formEl.addEventListener('submit', e => {
+    e.preventDefault();
+    const q = inputEl.value.trim();
+    if (!q) return;
+    inputEl.value = '';
+    autoSize();
+    sendBtn.disabled = true;
+    ask(q);
+  });
+
+  inputEl.addEventListener('input', () => {
+    autoSize();
+    sendBtn.disabled = !inputEl.value.trim();
+  });
+  inputEl.addEventListener('keydown', e => {
+    if (e.key === 'Enter' && !e.shiftKey) {
+      e.preventDefault();
+      formEl.requestSubmit();
+    }
+  });
+
+  clearBtn.addEventListener('click', () => {
+    msgsEl.innerHTML = '';
+    msgsEl.appendChild(emptyEl);
+    emptyEl.style.display = '';
+    history = [];
+    if (session && session.destroy) { try { session.destroy(); } catch (_) {} }
+    session = null;
+    setStatus('');
+  });
+
+  if (!('LanguageModel' in self)) {
+    fab.addEventListener('click', () => {
+      openPanel();
+      setStatus('On-device AI not detected. Use Chrome 138+ desktop, or enable "Prompt API for Gemini Nano" in chrome://flags.', 'bad');
+    }, { once: true });
+  }
+})();
+</script>
+
+<!-- Outline notes / comments — DataScript + IndexedDB -->
+<script src="https://github.com/tonsky/datascript/releases/download/1.7.8/datascript-1.7.8.min.js"></script>
+<script src="../notes.js?v=6"></script>
+<script src="../theme.js"></script>
+<script src="../wechat-copy.js?v=3"></script>
+
+</body>
+</html>
