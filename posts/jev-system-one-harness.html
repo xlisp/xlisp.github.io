@@ -1,0 +1,879 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Jev 是&quot;模型内置的 harness&quot;吗？——System One 决策模型的原理、设计与边界 · Steve Chan — xlisp</title>
+<meta name="description" content="前面几篇（Harness 即一切、Loop Engineering、ReAct 深度解析、把提示词当代码写）反复落在同一个结论上：价值重心在 harness，不在 loop，也不全在模型。">
+<meta name="author" content="Steve Chan">
+<link rel="icon" type="image/jpeg" href="../icon.jpeg">
+<link rel="apple-touch-icon" href="../icon.jpeg">
+<meta property="og:type" content="article">
+<meta property="og:title" content="Jev 是&quot;模型内置的 harness&quot;吗？——System One 决策模型的原理、设计与边界">
+<meta property="og:description" content="前面几篇（Harness 即一切、Loop Engineering、ReAct 深度解析、把提示词当代码写）反复落在同一个结论上：价值重心在 harness，不在 loop，也不全在模型。">
+<meta property="og:image" content="../icon.jpeg">
+<meta property="og:site_name" content="Steve Chan — xlisp">
+<meta name="twitter:card" content="summary_large_image">
+<meta name="twitter:title" content="Jev 是&quot;模型内置的 harness&quot;吗？——System One 决策模型的原理、设计与边界">
+<meta name="twitter:description" content="前面几篇（Harness 即一切、Loop Engineering、ReAct 深度解析、把提示词当代码写）反复落在同一个结论上：价值重心在 harness，不在 loop，也不全在模型。">
+<meta name="twitter:image" content="../icon.jpeg">
+<link rel="stylesheet" href="../style.css?v=light1">
+<script>(function(){try{if(localStorage.getItem('theme')==='light')document.documentElement.setAttribute('data-theme','light');}catch(e){}})();</script>
+<!-- Math formula rendering via MathJax -->
+<script>
+window.MathJax = {
+  tex: {
+    // arithmatex emits \(...\) / \[...\] markup, so only these delimiters
+    // are needed; plain `$` is left alone (avoids currency false positives).
+    inlineMath: [['\\(', '\\)']],
+    displayMath: [['\\[', '\\]']],
+    processEscapes: true
+  },
+  svg: {
+    // Each formula gets its own self-contained <defs>, so the copy script can
+    // serialize one <svg> and rasterize it to a PNG for WeChat.
+    fontCache: 'local'
+  },
+  options: {
+    skipHtmlTags: ['script', 'noscript', 'style', 'textarea', 'pre', 'code'],
+    ignoreHtmlClass: 'highlight'
+  }
+};
+</script>
+<script src="https://cdn.jsdelivr.net/npm/mathjax@3/es5/tex-svg.js" async></script>
+</head>
+<body>
+<main class="wrap post">
+
+  <nav class="topnav">
+    <a href="../index.html">← home</a>
+  </nav>
+
+  <article>
+    <header class="post-header">
+      <h1>Jev 是&quot;模型内置的 harness&quot;吗？——System One 决策模型的原理、设计与边界</h1>
+      <p class="meta">2026-09-24 · Steve Chan</p>
+    </header>
+
+    <div class="content">
+<blockquote>
+<p>"Loop 是免费的，Harness 是昂贵的。"
+—— 《AI圈突然都在聊 Loop、Graph Engineering》</p>
+<p>"模型越聪明，你越需要一个可靠的缰绳。"
+—— 《从 CoT 到 ReAct，再到"会自己思考"的模型》</p>
+</blockquote>
+<p>前面几篇（<a href="harness-is-everything.md">Harness 即一切</a>、<a href="loop-engineering.md">Loop Engineering</a>、<a href="In-depth-analysis-of-ReAct.md">ReAct 深度解析</a>、<a href="prompt-as-code.md">把提示词当代码写</a>）反复落在同一个结论上：<strong>价值重心在 harness，不在 loop，也不全在模型。</strong></p>
+<p>最近 TypeSafe AI 发布的 <strong>Jev</strong> 在 agent 圈里传得很快。LangChain、Cloudflare、Langfuse 几天内就接入了；browser-use 拿它做了一个"最快最便宜的 web agent"；还有人拿它让 LLM 自己写 harness。看到这些，很自然会冒出一个问题：</p>
+<blockquote>
+<p><strong>Jev 是不是就是"模型内置的 harness"？harness 是不是终于被做进模型里了？</strong></p>
+</blockquote>
+<p>本文先把 Jev 的原理和设计讲清楚，再回答这个问题。先把结论放在这里：<strong>不是，方向正好反过来。</strong> Jev 不是"模型里装了 harness"，而是"harness 里装了一个专门的模型"。它把 harness 中最难写好的那一格，也就是<strong>语义判断</strong>，从手写规则和昂贵的 LLM 调用里拿出来，做成了一个又快又便宜、带类型、带概率的函数。</p>
+<hr />
+<h2 id="一jev-是什么一个不生成文本的模型">一、Jev 是什么：一个不生成文本的模型</h2>
+<p>一句话定义（来自 TypeSafe 的官方表述）：</p>
+<blockquote>
+<p><strong>Unstructured or structured state in → typed probabilistic decisions out.</strong>
+输入任意状态，输出带类型、带概率的决策。</p>
+</blockquote>
+<p>它<strong>不生成文本</strong>。你事先定义好"允许的答案空间"，Jev 读完状态，只在这个空间里给出答案和概率分布。TypeSafe 把这类模型叫做 <strong>System One Model</strong>，名字取自 Kahneman 的"系统 1 / 系统 2"：</p>
+<table>
+<thead>
+<tr>
+<th></th>
+<th>System 1（快思考）</th>
+<th>System 2（慢思考）</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>人类对应</td>
+<td>看一眼就知道"这封邮件是催款的"</td>
+<td>坐下来推导一道证明题</td>
+</tr>
+<tr>
+<td>AI 对应</td>
+<td><strong>Jev</strong>：一次前向，给出判断</td>
+<td>LLM / 推理模型：逐 token 展开推理和生成</td>
+</tr>
+<tr>
+<td>输出</td>
+<td>封闭集合上的概率</td>
+<td>开放文本</td>
+</tr>
+<tr>
+<td>代价</td>
+<td>约 0.3s、约 $0.00004 / 次</td>
+<td>秒到分钟、贵几个数量级</td>
+</tr>
+</tbody>
+</table>
+<p>TypeSafe 在分类任务上宣称的数字是：比同类 LLM <strong>推理快约 200 倍、成本低约 400 倍</strong>。</p>
+<h3 id="11-三个原语">1.1 三个原语</h3>
+<p>Jev 只暴露三种"问题类型"，这就是它的全部接口：</p>
+<table>
+<thead>
+<tr>
+<th>原语</th>
+<th>语义</th>
+<th>返回</th>
+<th>典型用途</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><strong>Noul</strong></td>
+<td>是/否命题</td>
+<td>命题为真的概率 p∈[0,1]</td>
+<td>检测：是否要求退款？是否包含注入？</td>
+</tr>
+<tr>
+<td><strong>Choice</strong></td>
+<td>从 N 个选项选一个（最多 255 个）</td>
+<td>每个选项的概率 + confidence</td>
+<td>分类、路由、选工具</td>
+</tr>
+<tr>
+<td><strong>Score</strong></td>
+<td>在 2–10 个有序等级上打分</td>
+<td>连续分数 + 分布 + confidence</td>
+<td>严重度、质量、相关性、风险等级</td>
+</tr>
+</tbody>
+</table>
+<p>LangChain 集成里的调用长这样：</p>
+<div class="highlight"><pre><span></span><code><span class="kn">from</span><span class="w"> </span><span class="nn">langchain_typesafe</span><span class="w"> </span><span class="kn">import</span> <span class="n">Noul</span><span class="p">,</span> <span class="n">TypeSafeClassifier</span>
+
+<span class="n">classifier</span> <span class="o">=</span> <span class="n">TypeSafeClassifier</span><span class="p">()</span>
+<span class="n">response</span> <span class="o">=</span> <span class="n">classifier</span><span class="o">.</span><span class="n">invoke</span><span class="p">({</span>
+    <span class="s2">&quot;state&quot;</span><span class="p">:</span> <span class="s2">&quot;Deploy failed, customers see 500s&quot;</span><span class="p">,</span>
+    <span class="s2">&quot;questions&quot;</span><span class="p">:</span> <span class="p">{</span>
+        <span class="s2">&quot;urgent&quot;</span><span class="p">:</span> <span class="n">Noul</span><span class="p">(</span><span class="n">instructions</span><span class="o">=</span><span class="s2">&quot;Does this need attention now?&quot;</span><span class="p">),</span>
+    <span class="p">},</span>
+<span class="p">})</span>
+<span class="c1"># -&gt; {&quot;urgent&quot;: {&quot;type&quot;: &quot;noul&quot;, &quot;noul&quot;: 0.999}}</span>
+</code></pre></div>
+
+<p>注意输入的形状：<strong>一个 state，加一组有名字的问题</strong>。state 就是"你会摆在专家面前让他判断的全部材料"，可以是字符串、JSON、对话记录或数据库记录。问题之间<strong>相互独立</strong>：问题 A 的答案不会偷偷影响问题 B 的评估。</p>
+<h3 id="12-官方给的心智模型五秒专家判断">1.2 官方给的心智模型："五秒专家判断"</h3>
+<p>TypeSafe 的文档把 Jev 适合的任务描述为：<strong>一个懂行的人不查资料、不写推理、不做计划，五秒钟内就能给出的判断。</strong> 他们还给了一张六问自测表：</p>
+<table>
+<thead>
+<tr>
+<th>检验</th>
+<th>问题</th>
+<th>正向信号</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>Judgement</td>
+<td>AI 是在"判断"而不是"创造"吗？</td>
+<td>强</td>
+</tr>
+<tr>
+<td>Bounded</td>
+<td>答案空间能事先枚举吗？</td>
+<td>强</td>
+</tr>
+<tr>
+<td>Atomic</td>
+<td>是一个聚焦的单一判断吗？</td>
+<td>强</td>
+</tr>
+<tr>
+<td>Context-contained</td>
+<td>需要的信息都在 state 里吗？</td>
+<td>强</td>
+</tr>
+<tr>
+<td>Fast-human</td>
+<td>专家能很快判断吗？</td>
+<td>强</td>
+</tr>
+<tr>
+<td>Machine-consumed</td>
+<td>结果是直接给程序用的吗？</td>
+<td><strong>很强</strong></td>
+</tr>
+</tbody>
+</table>
+<p>5–6 个"是"适合用 Jev，3–4 个部分适合，0–2 个就该换别的工具。</p>
+<p><strong>最后一条权重最高：结果是给机器消费的。</strong> 这一条几乎就是 harness 里"判断节点"的定义。</p>
+<hr />
+<h2 id="二原理为什么不会说话反而是优势">二、原理：为什么"不会说话"反而是优势</h2>
+<p>Jev 的具体网络结构 TypeSafe 没有公开。下面把<strong>已公开的事实</strong>和<strong>基于事实的推理</strong>分开写。</p>
+<h3 id="21-封闭输出空间把格式幻觉从结构上消灭">2.1 封闭输出空间：把"格式幻觉"从结构上消灭</h3>
+<p>用 LLM 做判断，我们在<a href="prompt-as-code.md">把提示词当代码写</a>里用过一整套手法：结构化输出、JSON 锁边界、"绝对语气 = 类型约束"、只许输出一行。它们都在做同一件事：<strong>把一个开放的生成器，硬压成一个封闭的函数。</strong> 这种压制靠的是模型"愿意配合"，所以总会漏：多一个逗号、选项名拼错、在 JSON 前面加一句 "Sure! Here's..."。</p>
+<p>Jev 把这件事从"约束"变成了"结构"。它的输出层只覆盖你定义的那几个选项，<strong>根本没有能力输出集合外的值</strong>。这就是 TypeSafe 说的 "zero hallucinations"。</p>
+<p>但他们自己也特意强调：</p>
+<blockquote>
+<p><strong>Never interpret "zero hallucinations" as "zero errors."</strong></p>
+</blockquote>
+<p>消灭的只是<strong>类型错误</strong>（输出不在集合里），不是<strong>语义错误</strong>（在集合里选错了）。这句话后面讲风险时还会用到。</p>
+<h3 id="22-并行问题不是自回归">2.2 并行问题：不是自回归</h3>
+<p>LLM 回答五个问题，要么调五次，要么在一次生成里依次写出五个答案，后写的答案会受先写的答案影响。Jev 的文档明确说，<strong>同一请求里的多个问题是对同一个 state 并行、独立评估的</strong>。</p>
+<p>合理的推测是：state 编码一次，每个问题（带上它的 instructions 和选项）作为查询，在同一份表示上各自读出一个分布，类似"一个编码器 + 多个可配置的读出头"。这也解释了速度：<strong>没有逐 token 解码，就没有自回归延迟。</strong> 一次判断的成本接近一次编码的成本。</p>
+<p>对 harness 设计者来说，这带来一个很实际的好处：<strong>一次调用可以问 N 个正交的问题</strong>，而且问题之间不串味、可以单独测试。</p>
+<h3 id="23-rlcd训练目标是概率要诚实">2.3 RLCD：训练目标是"概率要诚实"</h3>
+<p>Jev 用 <strong>RLCD（Reinforcement Learning for Calibrated Decisions）</strong> 训练。公开信息只有名字和目标：<strong>让输出的概率真正代表不确定性。</strong></p>
+<p>"校准"（calibration）的含义很具体：<strong>在所有给出 0.8 的判断里，大约 80% 应该是对的。</strong> 要让 RL 把模型推向"诚实"，奖励函数得满足一个数学性质，叫<strong>严格适当评分规则</strong>（strictly proper scoring rule），比如对数分数 <code>log p(真实答案)</code> 或 Brier 分数。它们的共同性质是：<strong>只有当你报出你真实相信的概率时，期望奖励才最大。</strong> 虚张声势（明明没把握却报 0.99）和过分谦虚（明明有把握却报 0.6）都会被扣分。</p>
+<p>RLCD 的具体奖励 TypeSafe 没有公开，但"calibrated decisions"这个目标决定了它必然属于这一类。</p>
+<p><strong>为什么校准对 harness 这么重要？</strong> 因为 harness 是代码，代码需要阈值：</p>
+<div class="highlight"><pre><span></span><code><span class="n">risk</span> <span class="o">=</span> <span class="n">jev</span><span class="p">(</span><span class="n">state</span><span class="p">,</span> <span class="p">{</span><span class="s2">&quot;danger&quot;</span><span class="p">:</span> <span class="n">Score</span><span class="p">(</span><span class="n">levels</span><span class="o">=</span><span class="p">[</span><span class="o">...</span><span class="p">])})</span>
+<span class="k">if</span> <span class="n">risk</span><span class="o">.</span><span class="n">confidence</span> <span class="o">&lt;</span> <span class="mf">0.5</span><span class="p">:</span>
+    <span class="n">escalate_to_human</span><span class="p">()</span>        <span class="c1"># 模型自己都没把握 → 交给人</span>
+<span class="k">elif</span> <span class="n">risk</span><span class="p">[</span><span class="s2">&quot;danger&quot;</span><span class="p">]</span><span class="o">.</span><span class="n">score</span> <span class="o">&gt;=</span> <span class="mi">2</span><span class="p">:</span>
+    <span class="n">deny</span><span class="p">()</span>
+<span class="k">else</span><span class="p">:</span>
+    <span class="n">allow</span><span class="p">()</span>
+</code></pre></div>
+
+<p>一个没校准的 0.9 对代码毫无意义，你没法在它上面设阈值。<strong>校准后的概率才是能写进 <code>if</code> 里的数字。</strong> 这是 Jev 和"让 LLM 输出一个 1–10 的分数"最本质的区别：LLM 报的 7 分是文本，Jev 报的 0.7 是有统计含义的量。</p>
+<p>TypeSafe 也提醒了另一面：<strong>calibration ≠ correctness。</strong> 校准保证的是"概率越高越常对"，不保证任何一次具体判断是对的。</p>
+<h3 id="24-一张图看-llm-与-jev-的分工">2.4 一张图看 LLM 与 Jev 的分工</h3>
+<div class="highlight"><pre><span></span><code>                 开放生成（System 2）                    封闭判断（System 1）
+               ┌─────────────────────┐              ┌──────────────────────┐
+  state ──────►│  LLM: 逐 token 解码  │──► 文本 ──►  │ 解析 / 正则 / 重试    │──► 决策（可能失败）
+               └─────────────────────┘              └──────────────────────┘
+
+               ┌─────────────────────────────────────────────────────────────┐
+  state ──────►│  Jev: 编码一次 → 各问题并行读出 → 封闭集合上的校准分布        │──► 决策（类型保证）
+               └─────────────────────────────────────────────────────────────┘
+</code></pre></div>
+
+<p>上面那条路里，"解析 / 正则 / 重试"这一格本身就是一小段 harness，专门用来收拾 LLM 输出的烂摊子。<strong>Jev 直接把这一格删掉了。</strong></p>
+<hr />
+<h2 id="三设计哲学控制流留在代码里">三、设计哲学：控制流留在代码里</h2>
+<p>TypeSafe 推荐的架构只有一行：</p>
+<blockquote>
+<p><strong>deterministic code → Jev semantic judgement → deterministic code</strong></p>
+</blockquote>
+<p>他们甚至明确说，System One 是 <strong>"AI-powered software rather than agent architecture"</strong>：是"被 AI 增强的软件"，不是"agent 架构"。</p>
+<p>这句话值得细读。主流 agent 范式（ReAct、deep agents）让 <strong>LLM 掌握控制流</strong>：下一步做什么、调哪个工具、何时停下，都由模型在文本里决定，harness 只负责执行和兜底。Jev 的主张相反：</p>
+<ul>
+<li><strong>控制流归代码</strong>：<code>if / for / while</code>、状态机、重试、超时，全由程序员写死；</li>
+<li><strong>语义缺口归 Jev</strong>：代码不会写的那几个 <code>if</code> 条件（"这句话是不是在要求退款？"），交给 Jev；</li>
+<li><strong>开放生成归 LLM</strong>：真需要写文字、做推理的时候，才调用大模型。</li>
+</ul>
+<p>用<a href="prompt-as-code.md">把提示词当代码写</a>里的话说，那篇文章追求的是"把提示词写成函数"，Jev 则是<strong>一个本来就只能当函数用的模型</strong>。那篇里的"一个 system role 只做一件事：粒度即稳定性"，在 Jev 这里成了硬性要求：问题必须是原子的（Atomic）。</p>
+<hr />
+<h2 id="四把-harness-拆开看-jev-落在哪一格">四、把 harness 拆开，看 Jev 落在哪一格</h2>
+<p>要回答"Jev 是不是 harness"，先得把 harness 拆开。综合前几篇，一个 agent harness 大致有五个部件：</p>
+<table>
+<thead>
+<tr>
+<th>部件</th>
+<th>回答的问题</th>
+<th>前文的例子</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><strong>动作（Tools）</strong></td>
+<td>能对世界做什么？</td>
+<td>code-hacker 的 62 个 tool、<code>read_file</code></td>
+</tr>
+<tr>
+<td><strong>判断（Decisions）</strong></td>
+<td>此刻该走哪条路？</td>
+<td>路由、选工具、放行/拦截、是否停止</td>
+</tr>
+<tr>
+<td><strong>控制流（Topology）</strong></td>
+<td>计算长什么形状？</td>
+<td>loop / 递归 / LangGraph 的图</td>
+</tr>
+<tr>
+<td><strong>记忆（Memory）</strong></td>
+<td>跨轮次记住什么？</td>
+<td><code>memory_store</code>、TodoList</td>
+</tr>
+<tr>
+<td><strong>护栏（Guardrails）</strong></td>
+<td>什么绝对不许做？</td>
+<td><code>BLOCKED_COMMANDS</code>、<code>is_safe_path</code>、<code>recursion_limit</code></td>
+</tr>
+</tbody>
+</table>
+<p>前几篇重点讲了动作（"精准 tools 即精准上下文"）、控制流（"拓扑便宜，harness 贵"）和护栏（"唯一不该退潮的部分"）。<strong>"判断"这一格一直被默认交给主 LLM</strong>：让大模型在 Thought 里顺便决定。</p>
+<p>这其实是个很别扭的安排。一个 harness 里的判断点远比想象中多：</p>
+<table>
+<thead>
+<tr>
+<th>判断点</th>
+<th>以前怎么做</th>
+<th>问题</th>
+<th>Jev 的做法</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>请求路由（简单问题走小模型）</td>
+<td>正则 / 关键词 / 再调一次 LLM</td>
+<td>规则太脆；LLM 太贵，用来省钱的步骤本身就在花钱</td>
+<td><code>Choice</code> + confidence 阈值</td>
+</tr>
+<tr>
+<td>工具调用放行</td>
+<td>命令黑名单</td>
+<td>只能拦住已知的字符串</td>
+<td><code>Score(风险等级)</code> + 黑名单兜底</td>
+</tr>
+<tr>
+<td>选哪个工具</td>
+<td>主 LLM 在 Thought 里选</td>
+<td>每一步都要跑完整 LLM</td>
+<td><code>Choice</code>（MetaTool 199 个工具上 96.5%）</td>
+</tr>
+<tr>
+<td>检索结果重排</td>
+<td>embedding 余弦</td>
+<td>语义粗糙</td>
+<td><code>Score(相关性)</code>（SciFact MRR 0.622→0.843）</td>
+</tr>
+<tr>
+<td>注入检测</td>
+<td>规则 / 另一个 LLM</td>
+<td>慢或漏</td>
+<td><code>Noul</code></td>
+</tr>
+<tr>
+<td>是否该停止 / 是否完成</td>
+<td>主 LLM 自评</td>
+<td>自评偏乐观</td>
+<td><code>Noul</code> + 阈值</td>
+</tr>
+</tbody>
+</table>
+<p>所以 Jev 在 harness 里的位置很清楚：<strong>它是"判断"这一格的专用硬件。</strong> 类比一下：</p>
+<ul>
+<li>代码里的 <code>if x &gt; 0</code> 是<strong>数值谓词</strong>，CPU 一条指令就算完；</li>
+<li>代码里的 <code>if is_refund_request(msg)</code> 是<strong>语义谓词</strong>，以前要么写一堆脆弱的正则，要么花几秒几分钱调一次 GPT；</li>
+<li><strong>Jev 让语义谓词便宜到可以像数值谓词一样随手写。</strong></li>
+</ul>
+<p>这对<a href="loop-engineering.md">Loop Engineering</a>里的结论是一个直接补充。那篇说"拓扑决定能表达多复杂的流程，harness 决定这流程靠不靠谱"。Jev 恰好作用在两者的交界处：<strong>图的边上的条件</strong>。LangGraph 里的 conditional edge 以前要么是写死的规则，要么是一次 LLM 调用。现在它可以是一次 0.3 秒的 Jev 调用，而且返回的概率可以直接拿来比阈值。</p>
+<hr />
+<h2 id="五核心问题jev-是模型内置的-harness吗">五、核心问题：Jev 是"模型内置的 harness"吗？</h2>
+<h3 id="51-先分清两个方向">5.1 先分清两个方向</h3>
+<p>"harness 和模型的关系"在前几篇里其实已经出现过两条相反的路：</p>
+<p><strong>方向 A：内化，把 harness 训进大模型的权重。</strong>
+<a href="In-depth-analysis-of-ReAct.md">ReAct 深度解析</a>第 6 节讲的就是这条路：CoT 被 o1 用 RL 训成了内生的长推理，ToT 的"换条路"成了 R1 的自发行为，ReAct 的 Thought 侧也在内化。今天的 agentic RL（在真实工具环境里训练模型调用工具、规划、自我纠错）是这条路的延续。<strong>如果真有"模型内置的 harness"，指的应该是这个：</strong> 原来写在 prompt 和框架里的 SOP，被训练吸收进了一个通用大模型。</p>
+<p><strong>方向 B：外化，把 harness 里的某一类功能拆出来，做成专用模型。</strong>
+这是 Jev 走的路。它没有让大模型更会管自己，而是从大模型身上<strong>拆下</strong>了一类工作（快速、有界的判断），交给一个专门训练的小模型，并且<strong>把控制权交还给代码</strong>。</p>
+<p>两条路的对照：</p>
+<table>
+<thead>
+<tr>
+<th></th>
+<th>方向 A：内化（agentic RL / 推理模型）</th>
+<th>方向 B：外化（Jev）</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>谁掌握控制流</td>
+<td>模型</td>
+<td><strong>代码</strong></td>
+</tr>
+<tr>
+<td>harness 变厚还是变薄</td>
+<td>变薄："约束在退潮"</td>
+<td>判断格变成可调用的组件，<strong>harness 变得更显式</strong></td>
+</tr>
+<tr>
+<td>输出</td>
+<td>开放文本 / 工具调用</td>
+<td>封闭类型上的概率</td>
+</tr>
+<tr>
+<td>可审计性</td>
+<td>看 trace，难以量化</td>
+<td>每个判断都有概率，可以记录、回放、设阈值</td>
+</tr>
+<tr>
+<td>代表</td>
+<td>o1、R1、Claude 的 agentic 训练</td>
+<td>Jev、各种 guard / router 模型</td>
+</tr>
+</tbody>
+</table>
+<h3 id="52-所以答案是">5.2 所以答案是</h3>
+<blockquote>
+<p><strong>Jev 不是"模型内置的 harness"，而是"harness 内置的模型"。</strong></p>
+</blockquote>
+<p>说得更精确一点：</p>
+<ol>
+<li><strong>Jev 自己没有 harness 的任何"骨架"部件。</strong> 它不循环、不调工具、没有记忆、不决定下一步做什么。它甚至没有"下一步"的概念，每次调用都是无状态的单次判断。把它单独拿出来，它什么也做不成。</li>
+<li><strong>Jev 是 harness 里一个可学习的零件。</strong> 它替换的是 harness 代码里那些本该语义化、却只能写成正则的 <code>if</code> 条件。</li>
+<li><strong>Jev 加强了"代码掌握控制流"这个立场。</strong> 这和方向 A 的趋势（让模型接管越来越多的控制）是反着走的。</li>
+</ol>
+<h3 id="53-但这个误会从哪来它说对了一半">5.3 但这个误会从哪来？它说对了一半</h3>
+<p>之所以会有"Jev 是内置 harness"的直觉，是因为它确实让一件原本属于 harness 工程师的工作<strong>从手写变成了学习</strong>：</p>
+<ul>
+<li>以前：工程师手写 <code>BLOCKED_COMMANDS = ["rm -rf", "mkfs", ...]</code>，这是<strong>人把判断硬编码进 harness</strong>；</li>
+<li>现在：<code>jev(cmd, {"danger": Score(...)})</code>，<strong>判断标准来自一个训练过的模型</strong>，工程师只定义问题和答案空间。</li>
+</ul>
+<p>所以如果把"harness"狭义理解为"harness 里的判断逻辑"，那 Jev 确实是<strong>把 harness 的判断逻辑模型化了</strong>。准确的说法是：<strong>Jev 是 harness 的判断层被做成了模型，而不是 harness 被做进了模型。</strong> 骨架（控制流、工具、记忆、护栏）仍然在外面，而且更需要人来设计。</p>
+<h3 id="54-最有意思的证据jevharnesssystem-2-编译出-system-1">5.4 最有意思的证据：JevHarness，"System 2 编译出 System 1"</h3>
+<p>GitHub 上的 <a href="https://github.com/TianyuCodings/JevHarness">JevHarness</a> 项目把这个关系演示得非常清楚：</p>
+<ol>
+<li><strong>编写期</strong>：一个 LLM（System 2）针对具体任务<strong>写一份 Python harness</strong>，内容包括：从观察里算特征的代码、要问 Jev 的问题、把 Jev 的答案组合成动作的决策逻辑、记忆结构；</li>
+<li><strong>运行期</strong>：harness <strong>冻结</strong>，每一步只跑特征代码 + 并行的 Jev 请求，<strong>不再调用 LLM</strong>；</li>
+<li><strong>进化期</strong>（可选）：收集完整轨迹和奖励，让 LLM 反思、改写 harness，用 GEPA 在候选版本之间选优。</li>
+</ol>
+<p>在宝可梦对战的例子里，五轮反思后胜率从 <strong>25%（3/12）升到 75%（9/12）</strong>，单步决策中位延迟约 568ms。</p>
+<p>这个结构几乎就是 <a href="loop-engineering.md">Loop Engineering</a> 里 autoresearch 的翻版：<strong>一个可改写的程序 + 一个可度量的指标 + 一个自动循环</strong>，只不过被改写的对象从 <code>train.py</code> 换成了 <code>harness.py</code>。它清楚地说明了三者的分工：</p>
+<div class="highlight"><pre><span></span><code>LLM (System 2)        ── 写 harness：把&quot;怎么想&quot;编译成代码 + 问题清单
+harness (code)        ── 掌握控制流、特征、记忆、组合逻辑
+Jev (System 1)        ── 在运行期回答那些代码写不出的语义谓词
+</code></pre></div>
+
+<p><strong>大模型的推理被"编译"进了 harness 代码，Jev 负责执行其中的语义判断。</strong> 这里没有任何东西被"内置进模型"。恰恰相反，推理被<strong>导出</strong>成了可读、可改、可 diff 的代码。</p>
+<hr />
+<h2 id="六三个落地样本">六、三个落地样本</h2>
+<h3 id="61-langchainrouter-tool-gate">6.1 LangChain：Router + Tool Gate</h3>
+<p>LangChain 的示例 harness 在标准 agent loop 上只加了两个 Jev 节点：</p>
+<ul>
+<li><strong>Request Router</strong>：用 <code>Choice</code> 判断请求复杂度，简单的走 <code>gpt-4o-mini</code>，复杂的走 <code>gpt-4o</code>；</li>
+<li><strong>Tool Gate</strong>（<code>AutoModeMiddleware</code>）：在工具执行前，用 <code>Score</code> 按 low / medium / high 给调用评风险，高风险的（比如删账号）直接拒绝。</li>
+</ul>
+<p>路由这件事以前有个悖论：<strong>为了省大模型的钱，先调一次大模型来判断要不要用大模型。</strong> Jev 用一个便宜两三个数量级的判断把这个悖论解开了。</p>
+<h3 id="62-browser-use-的-jev-ultrafastjev-当手小-llm-只管嘴">6.2 browser-use 的 jev-ultrafast：Jev 当"手"，小 LLM 只管"嘴"</h3>
+<p>这是一个把分工推到极致的 web agent：</p>
+<ol>
+<li>一次浏览器调用拿到带编号的可交互元素快照；</li>
+<li><strong>一次 Jev 请求同时给出"做什么操作"和"点哪个元素"的概率</strong>；</li>
+<li>执行器在动手前<strong>重新校验</strong>页面是否已变、点击目标是否被遮挡；</li>
+<li><strong>只有当操作是 <code>TYPE_TEXT</code> 时</strong>，才调用小 LLM 生成要输入的文字。</li>
+</ol>
+<p>在 Google Flights 上完成一次苏黎世→伦敦的搜索只用 7.1 秒；对比实验里中位耗时从 9.45s 降到 7.09s，浏览器协议调用从 1092 次降到 101 次。</p>
+<p>注意第 3 步：<strong>Jev 做判断，执行前的校验仍然是确定性代码。</strong> 这正是"deterministic code → Jev → deterministic code"的样子。</p>
+<h3 id="63-一次独立的-benchmark它擅长什么不擅长什么">6.3 一次独立的 benchmark：它擅长什么、不擅长什么</h3>
+<p>一位开发者用 jev-1.13.0 在 10 个公开数据集上跑了约 22,500 次调用（总成本 $2.19），结果很有代表性：</p>
+<table>
+<thead>
+<tr>
+<th>强项</th>
+<th>结果</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>注入检测</td>
+<td>阈值 0.10 下 precision / recall 均为 100%</td>
+</tr>
+<tr>
+<td>Shell 命令风险</td>
+<td>危险命令检出 100%，安全命令放行 98.2%</td>
+</tr>
+<tr>
+<td>意图路由（SNIPS，7 类）</td>
+<td>97.9%</td>
+</tr>
+<tr>
+<td>工具路由（MetaTool，199 个工具）</td>
+<td>96.5%</td>
+</tr>
+<tr>
+<td>重排（BEIR SciFact）</td>
+<td>MRR 0.622 → 0.843</td>
+</tr>
+</tbody>
+</table>
+<table>
+<thead>
+<tr>
+<th>弱项</th>
+<th>结果</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>预测"这道题对别的模型难不难"</td>
+<td>51%，接近随机</td>
+</tr>
+<tr>
+<td>跨步骤的失败归因</td>
+<td>AUROC 0.560</td>
+</tr>
+<tr>
+<td>非英语（韩语检索）</td>
+<td>R@1 48.9%（英语 61.5%）</td>
+</tr>
+</tbody>
+</table>
+<p>强项全是<strong>局部、有界、一眼可判</strong>的任务；弱项全是<strong>需要跨步推理、需要建模另一个模型</strong>的任务。这与"五秒专家判断"的定位完全吻合，也再次说明 Jev 当不了 harness 的"大脑"：失败归因、下一步规划这类事，它做不了。</p>
+<p>同一份报告里还有两条对 harness 设计很有价值的经验：</p>
+<ul>
+<li><strong>正交分解 + 代码组合，胜过一个大问题。</strong> 把"这条命令危险吗"拆成几个正交的原子问题，再用代码组合，误报率从 <strong>14.5% 降到 1.8%</strong>；</li>
+<li><strong>多标签任务"先竞争、再验证"。</strong> 先用 <code>Choice</code> 让候选互相竞争，再用 <code>Noul</code> 逐个复核，技能路由从 <strong>9% 提到 81%</strong>。</li>
+</ul>
+<p>这两条和<a href="prompt-as-code.md">把提示词当代码写</a>里"提示词是可组合的函数（Lambda 演算）"是同一个道理。<strong>原子问题交给模型，组合交给代码。</strong> 组合逻辑一旦写进代码，就可以测试、可以 diff、可以回放。</p>
+<hr />
+<h2 id="七边界与风险护栏不能只交给一个概率">七、边界与风险：护栏不能只交给一个概率</h2>
+<h3 id="71-jev-也会被注入">7.1 Jev 也会被注入</h3>
+<p>VentureBeat 报道了 Octomind 的一个测试：在一次"是否拦截这条命令"的判断里注入一个伪造的"已批准"字段，<strong>拦截概率从 0.76 掉到 0.48，confidence 从 0.64 掉到 0.22</strong>。TypeSafe 自己也承认，刻意写来操纵模型的内容"可以移动答案"。</p>
+<p>这是 2.1 节那句 "zero hallucinations ≠ zero errors" 的直接后果：<strong>类型安全不等于语义安全。</strong> Jev 输出的永远是一个合法选项，但攻击者可以影响它选哪个。</p>
+<h3 id="72-所以护栏要分层">7.2 所以护栏要分层</h3>
+<p><a href="In-depth-analysis-of-ReAct.md">ReAct 深度解析</a>里说过，<code>BLOCKED_COMMANDS</code>、<code>is_safe_path</code> 这类安全边界是 <strong>harness 中唯一不该退潮的部分</strong>。Jev 出现之后，这句话要更精确一些：</p>
+<div class="highlight"><pre><span></span><code>第 0 层：确定性硬护栏    BLOCKED_COMMANDS / 路径白名单 / 权限隔离   ← 不可被说服
+第 1 层：Jev 语义闸门    Score(风险) + confidence 阈值             ← 覆盖规则写不全的长尾
+第 2 层：人工确认        低 confidence 或高风险时升级              ← 对真正有后果的动作兜底
+</code></pre></div>
+
+<p><strong>Jev 适合放在硬规则和人之间，扩大覆盖面，而不是取代硬规则。</strong> 一条经验法则：凡是"被说服就会出事"的判断，都必须有一层<strong>不接受说服</strong>的确定性代码兜底。模型再准，也是可以被说服的。</p>
+<p>同一篇报道给出的工程建议也值得照做：</p>
+<ol>
+<li><strong>全量记录</strong>：state、问题定义、选项顺序、模型版本、概率与 confidence；</li>
+<li><strong>固定模型版本</strong>，避免判断标准悄悄漂移；</li>
+<li><strong>对抗测试</strong>：打乱选项顺序、喂恶意输入，看结果是否稳定；</li>
+<li><strong>隔离权限</strong>：不同工作负载不要共用一套权限；</li>
+<li><strong>有后果的动作保留人工检查点。</strong></li>
+</ol>
+<p>Jev 有一个 LLM 不具备的优势：<strong>它的每个判断都是一个带概率的结构化记录，天然可以审计。</strong> 用好这个优势，本身就是 harness 工程的一部分。</p>
+<h3 id="73-能力边界">7.3 能力边界</h3>
+<p>再总结一次 Jev 做不了的事，它们都是 harness 骨架里仍然需要人和大模型负责的部分：</p>
+<ul>
+<li>多步推理、规划、失败归因 → 仍然是 System 2（大模型）的工作；</li>
+<li>查外部信息 → 仍然是 tools 的工作；</li>
+<li>生成任何文字 → 仍然是 LLM 的工作；</li>
+<li>控制流、状态、重试 → 仍然是代码的工作。</li>
+</ul>
+<hr />
+<h2 id="八把-jev-放回前几篇的全景图">八、把 Jev 放回前几篇的全景图</h2>
+<p><a href="In-depth-analysis-of-ReAct.md">ReAct 深度解析</a>第 7 节画过一张"能力在内、结构在外"的演化图。加上 Jev，这张图多了一个维度：</p>
+<div class="highlight"><pre><span></span><code>                       内化进通用大模型                  外化成专用组件
+                       （方向 A）                         （方向 B）
+                  ◄──────────────────────       ──────────────────────►
+
+怎么想（推理）     o1 / R1：CoT、搜索、反思         —（没有理由外化）
+                  被 RL 训进权重
+
+判断（语义谓词）   主 LLM 在 Thought 里顺便判断      Jev：路由 / 放行 / 选工具 / 重排
+                                                  被 RLCD 训成专用 System 1 模型
+
+动作（碰世界）     —（无法内化，世界不在权重里）      tools / MCP：永远在 harness
+
+控制流             agent 自主决定下一步               代码 / 状态机 / LangGraph
+
+护栏               —（被说服就会出事）                确定性规则 + Jev 闸门 + 人工
+</code></pre></div>
+
+<p>这张图说明，"模型越来越强，harness 就可以越来越松"只说对了一部分：</p>
+<ul>
+<li><strong>"怎么想"</strong> 确实在向左迁移，约束在退潮；</li>
+<li><strong>"判断"</strong> 正在分叉：可以留在大模型里（慢、贵、灵活），也可以外化成 Jev 这样的专用模型（快、便宜、可审计、可设阈值）。对于高频、有界、需要给机器消费的判断，外化明显更划算；</li>
+<li><strong>"动作"和"护栏"</strong> 仍然在 harness 里，而且更重了。</li>
+</ul>
+<p>所以 Jev 没有让 harness 消失，它让 harness <strong>变得更像软件</strong>：判断点显式化，每个判断点都有类型、有概率、有日志。这和 harness 的本义（缰绳）是一致的。</p>
+<hr />
+<h2 id="九给动手的人">九、给动手的人</h2>
+<ol>
+<li><strong>在你的 harness 里找出所有"判断点"。</strong> 凡是现在用正则、关键词，或者"再问一次 LLM"来实现的 <code>if</code>，都是 Jev 的候选位置。对照第一节的六问表过一遍。</li>
+<li><strong>优先替换高频、低风险的判断</strong>：路由、重排、意图分类、是否需要检索。这些地方省下的延迟和成本最明显，判错的代价也最小。</li>
+<li><strong>问题要原子化，组合写进代码。</strong> 不要问 Jev "这条命令安全吗"，拆成"是否删除数据""是否影响生产""是否需要提权"几个正交问题，再用代码组合。</li>
+<li><strong>用 confidence 做分流，而不是只看 argmax。</strong> 低 confidence 的判断，升级给大模型或人。这正是校准概率存在的意义。</li>
+<li><strong>安全判断永远保留确定性兜底。</strong> Jev 闸门放在 <code>BLOCKED_COMMANDS</code> 之后，而不是替代它。</li>
+<li><strong>把大模型用在"写 harness"上，而不是"当 harness"。</strong> JevHarness 的思路值得借鉴：让 LLM 离线写出判断逻辑和问题清单，运行期只跑代码 + Jev，再用轨迹和指标迭代。这比每一步都调一次 LLM 更快、更便宜，也更容易审计。</li>
+</ol>
+<hr />
+<h2 id="十结语">十、结语</h2>
+<p>回到开头的问题：<strong>Jev 是模型内置的 harness 吗？</strong></p>
+<p>不是。Jev 是 harness 内置的模型。它不循环、不调工具、不记忆、不决定下一步，它只在 harness 问它的时候，用 0.3 秒给出一个带概率的判断。</p>
+<p>但它确实改变了 harness 的工程方式。以前 harness 里的语义判断只有两个选项：写不全的规则，或者又慢又贵、输出还要解析的 LLM。现在多了第三个选项：<strong>一个像函数一样调用、像数字一样比较、像日志一样审计的语义谓词。</strong></p>
+<p>前面几篇说"Loop 是免费的，Harness 是昂贵的"。Jev 没有让 harness 变得免费，但它让 harness 里最常见的那种零件（判断）便宜了几百倍。零件便宜了，工程的重心就更清楚了：<strong>控制流、工具、护栏，以及把问题拆成对的原子问题。</strong> 这些仍然要靠人来设计。</p>
+<blockquote>
+<p>大模型负责想，代码负责管，Jev 负责判断。</p>
+</blockquote>
+<hr />
+<h2 id="参考">参考</h2>
+<ul>
+<li>LangChain Blog, <em>What Is Jev? A Guide to TypeSafe AI's System One Model</em> — https://www.langchain.com/blog/building-a-harness-with-jev</li>
+<li>SitePoint, <em>Build Safer AI Agent Harnesses with Jev and LangChain</em> — https://www.sitepoint.com/build-safer-ai-agent-harness-jev-langchain/</li>
+<li><em>Comprehensive project reference for TypeSafe Jev</em>（概念、原语、六问自测表）— https://gist.github.com/pjburnhill/adf8d28efcad9df037bfdece178ef965</li>
+<li>DEV Community, <em>Benchmarking Jev: what a decision model can (and can't) do in an agent harness</em> — https://dev.to/aitejiu/benchmarking-jev-what-a-decision-model-can-and-cant-do-in-an-agent-harness-20po</li>
+<li>VentureBeat, <em>Companies are putting Jev in charge of AI agent decisions — and prompt injection can influence the verdict</em> — https://venturebeat.com/security/companies-are-putting-jev-in-charge-of-ai-agent-decisions-and-prompt-injection-can-influence-the-verdict</li>
+<li>browser-use / jev-ultrafast — https://github.com/browser-use/jev-ultrafast</li>
+<li>TianyuCodings / JevHarness — https://github.com/TianyuCodings/JevHarness</li>
+</ul>
+<p><em>相关阅读（本站）：</em>
+- <a href="harness-is-everything.md">Harness 即一切：模型不是不够聪明，而是是否有足够有用的 tools</a>
+- <a href="loop-engineering.md">AI圈突然都在聊 Loop、Graph Engineering，炒作还是新东西？</a>
+- <a href="In-depth-analysis-of-ReAct.md">从 CoT 到 ReAct，再到"会自己思考"的模型</a>
+- <a href="prompt-as-code.md">把提示词当代码写：Prompt Engineering 的第一性原理</a></p>
+    </div>
+  </article>
+
+</main>
+
+<!-- Floating Ask-AI chat widget -->
+<button class="ai-fab" id="ai-fab" aria-label="Ask AI about this article" title="Ask AI about this article">
+  <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+    <path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"/>
+  </svg>
+  <span class="ai-fab-label">Ask AI</span>
+</button>
+
+<div class="ai-panel" id="ai-panel" role="dialog" aria-labelledby="ai-panel-title" aria-hidden="true">
+  <header class="ai-panel-head">
+    <div class="ai-panel-title-wrap">
+      <span class="ai-dot"></span>
+      <h3 id="ai-panel-title">Ask AI about this post</h3>
+    </div>
+    <div class="ai-panel-actions">
+      <button class="ai-icon-btn" id="ai-clear" title="Clear conversation" aria-label="Clear">
+        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><polyline points="3 6 5 6 21 6"/><path d="M19 6l-1 14a2 2 0 0 1-2 2H8a2 2 0 0 1-2-2L5 6"/><path d="M10 11v6M14 11v6"/><path d="M9 6V4a1 1 0 0 1 1-1h4a1 1 0 0 1 1 1v2"/></svg>
+      </button>
+      <button class="ai-icon-btn" id="ai-close" title="Minimize" aria-label="Minimize">
+        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><polyline points="6 9 12 15 18 9"/></svg>
+      </button>
+    </div>
+  </header>
+
+  <div class="ai-messages" id="ai-messages">
+    <div class="ai-empty" id="ai-empty">
+      <p class="ai-empty-title">On-device AI · Gemini Nano</p>
+      <p class="ai-empty-sub">Ask anything about this article. Runs in your browser — nothing leaves your device.</p>
+    </div>
+  </div>
+
+  <div class="ai-status" id="ai-status" hidden></div>
+
+  <form class="ai-composer" id="ai-form">
+    <textarea id="ai-input" rows="1" placeholder="Ask about this post…" autocomplete="off"></textarea>
+    <button type="submit" id="ai-send" class="ai-send" aria-label="Send" disabled>
+      <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><line x1="22" y1="2" x2="11" y2="13"/><polygon points="22 2 15 22 11 13 2 9 22 2"/></svg>
+    </button>
+  </form>
+</div>
+
+<script>
+(function () {
+  const POST_TITLE = "Jev \u662f\"\u6a21\u578b\u5185\u7f6e\u7684 harness\"\u5417\uff1f\u2014\u2014System One \u51b3\u7b56\u6a21\u578b\u7684\u539f\u7406\u3001\u8bbe\u8ba1\u4e0e\u8fb9\u754c";
+  const contentEl = document.querySelector('article .content');
+
+  const fab = document.getElementById('ai-fab');
+  const panel = document.getElementById('ai-panel');
+  const closeBtn = document.getElementById('ai-close');
+  const clearBtn = document.getElementById('ai-clear');
+  const msgsEl = document.getElementById('ai-messages');
+  const emptyEl = document.getElementById('ai-empty');
+  const statusEl = document.getElementById('ai-status');
+  const formEl = document.getElementById('ai-form');
+  const inputEl = document.getElementById('ai-input');
+  const sendBtn = document.getElementById('ai-send');
+
+  function articleText() {
+    if (!contentEl) return '';
+    return (contentEl.innerText || contentEl.textContent || '')
+      .replace(/[ \t]+\n/g, '\n')
+      .replace(/\n{3,}/g, '\n\n')
+      .trim();
+  }
+
+  function setStatus(msg, cls) {
+    if (!msg) { statusEl.hidden = true; statusEl.textContent = ''; statusEl.className = 'ai-status'; return; }
+    statusEl.hidden = false;
+    statusEl.textContent = msg;
+    statusEl.className = 'ai-status' + (cls ? ' ' + cls : '');
+  }
+
+  function hideEmpty() { if (emptyEl) emptyEl.style.display = 'none'; }
+
+  function appendBubble(role, text) {
+    hideEmpty();
+    const wrap = document.createElement('div');
+    wrap.className = 'ai-msg ai-msg-' + role;
+    const bubble = document.createElement('div');
+    bubble.className = 'ai-bubble';
+    bubble.textContent = text;
+    wrap.appendChild(bubble);
+    msgsEl.appendChild(wrap);
+    msgsEl.scrollTop = msgsEl.scrollHeight;
+    return bubble;
+  }
+
+  function appendTyping() {
+    hideEmpty();
+    const wrap = document.createElement('div');
+    wrap.className = 'ai-msg ai-msg-assistant ai-typing';
+    wrap.innerHTML = '<div class="ai-bubble"><span class="ai-dots"><i></i><i></i><i></i></span></div>';
+    msgsEl.appendChild(wrap);
+    msgsEl.scrollTop = msgsEl.scrollHeight;
+    return wrap;
+  }
+
+  function autoSize() {
+    inputEl.style.height = 'auto';
+    inputEl.style.height = Math.min(inputEl.scrollHeight, 140) + 'px';
+  }
+
+  function openPanel() {
+    panel.classList.add('open');
+    panel.setAttribute('aria-hidden', 'false');
+    fab.classList.add('hidden');
+    setTimeout(() => inputEl.focus(), 50);
+  }
+  function closePanel() {
+    panel.classList.remove('open');
+    panel.setAttribute('aria-hidden', 'true');
+    fab.classList.remove('hidden');
+  }
+
+  fab.addEventListener('click', openPanel);
+  closeBtn.addEventListener('click', closePanel);
+  document.addEventListener('keydown', e => {
+    if (e.key === 'Escape' && panel.classList.contains('open')) closePanel();
+  });
+
+  // ---- LanguageModel session ----
+  let session = null;
+  let creating = null;
+  let history = [];
+
+  function buildSystemPrompt() {
+    // Keep article context modest — Gemini Nano's input quota is small.
+    const article = articleText().slice(0, 4000);
+    return (
+      'You are a concise, helpful assistant answering questions about a blog post. ' +
+      'Use the article below as your primary source. If the answer is not in it, say so briefly and answer generally. ' +
+      'Reply in the same language as the user\'s question. Keep answers short unless asked for detail.\n\n' +
+      '=== ARTICLE TITLE ===\n' + POST_TITLE + '\n\n' +
+      '=== ARTICLE CONTENT ===\n' + article
+    );
+  }
+
+  async function ensureSession() {
+    if (session) return session;
+    if (creating) return creating;
+
+    if (!('LanguageModel' in self)) {
+      throw new Error(
+        'On-device AI not available. Use Chrome 138+ on desktop, or enable ' +
+        '"Prompt API for Gemini Nano" in chrome://flags.'
+      );
+    }
+
+    setStatus('Checking model…', 'info');
+    const status = await LanguageModel.availability();
+    if (status === 'unavailable') {
+      throw new Error('Model unavailable on this device.');
+    }
+
+    creating = (async () => {
+      // Only show download UI when the model isn't already there.
+      const willDownload = (status !== 'available');
+      if (willDownload) setStatus('Preparing model (first run downloads ~2GB)…', 'info');
+      else setStatus('Warming up…', 'info');
+
+      const s = await LanguageModel.create({
+        initialPrompts: [{ role: 'system', content: buildSystemPrompt() }],
+        monitor(m) {
+          m.addEventListener('downloadprogress', e => {
+            // Skip the spurious 0% event Chrome fires for cached models.
+            if (!willDownload && e.loaded === 0) return;
+            const pct = (e.loaded * 100).toFixed(1);
+            setStatus('Downloading model: ' + pct + '%', 'info');
+          });
+        }
+      });
+      session = s;
+      setStatus('');
+      return s;
+    })();
+
+    try { return await creating; }
+    finally { creating = null; }
+  }
+
+  async function ask(q) {
+    appendBubble('user', q);
+    history.push({ role: 'user', content: q });
+
+    sendBtn.disabled = true;
+    inputEl.disabled = true;
+    const typing = appendTyping();
+
+    let answerBubble = null;
+    let acc = '';
+    try {
+      const s = await ensureSession();
+      const stream = s.promptStreaming(q);
+      for await (const chunk of stream) {
+        if (!answerBubble) {
+          typing.remove();
+          const wrap = document.createElement('div');
+          wrap.className = 'ai-msg ai-msg-assistant';
+          answerBubble = document.createElement('div');
+          answerBubble.className = 'ai-bubble';
+          wrap.appendChild(answerBubble);
+          msgsEl.appendChild(wrap);
+        }
+        acc += chunk;
+        answerBubble.textContent = acc;
+        msgsEl.scrollTop = msgsEl.scrollHeight;
+      }
+      if (acc) history.push({ role: 'assistant', content: acc });
+      else { typing.remove(); appendBubble('assistant', '(no response)'); }
+    } catch (e) {
+      if (typing && typing.parentNode) typing.remove();
+      const err = document.createElement('div');
+      err.className = 'ai-msg ai-msg-error';
+      err.innerHTML = '<div class="ai-bubble">⚠ ' + (e && e.message ? e.message : String(e)) + '</div>';
+      msgsEl.appendChild(err);
+      msgsEl.scrollTop = msgsEl.scrollHeight;
+    } finally {
+      sendBtn.disabled = !inputEl.value.trim();
+      inputEl.disabled = false;
+      inputEl.focus();
+    }
+  }
+
+  formEl.addEventListener('submit', e => {
+    e.preventDefault();
+    const q = inputEl.value.trim();
+    if (!q) return;
+    inputEl.value = '';
+    autoSize();
+    sendBtn.disabled = true;
+    ask(q);
+  });
+
+  inputEl.addEventListener('input', () => {
+    autoSize();
+    sendBtn.disabled = !inputEl.value.trim();
+  });
+  inputEl.addEventListener('keydown', e => {
+    if (e.key === 'Enter' && !e.shiftKey) {
+      e.preventDefault();
+      formEl.requestSubmit();
+    }
+  });
+
+  clearBtn.addEventListener('click', () => {
+    msgsEl.innerHTML = '';
+    msgsEl.appendChild(emptyEl);
+    emptyEl.style.display = '';
+    history = [];
+    if (session && session.destroy) { try { session.destroy(); } catch (_) {} }
+    session = null;
+    setStatus('');
+  });
+
+  if (!('LanguageModel' in self)) {
+    fab.addEventListener('click', () => {
+      openPanel();
+      setStatus('On-device AI not detected. Use Chrome 138+ desktop, or enable "Prompt API for Gemini Nano" in chrome://flags.', 'bad');
+    }, { once: true });
+  }
+})();
+</script>
+
+<!-- Outline notes / comments — DataScript + IndexedDB -->
+<script src="https://github.com/tonsky/datascript/releases/download/1.7.8/datascript-1.7.8.min.js"></script>
+<script src="../notes.js?v=6"></script>
+<script src="../theme.js"></script>
+<script src="../wechat-copy.js?v=3"></script>
+
+</body>
+</html>
