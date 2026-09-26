@@ -1,0 +1,811 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>从&quot;解出一个数&quot;到&quot;解出一条规律&quot;：一般方程与微分方程 · Steve Chan — xlisp</title>
+<meta name="description" content="打个比方：">
+<meta name="author" content="Steve Chan">
+<link rel="icon" type="image/jpeg" href="../icon.jpeg">
+<link rel="apple-touch-icon" href="../icon.jpeg">
+<meta property="og:type" content="article">
+<meta property="og:title" content="从&quot;解出一个数&quot;到&quot;解出一条规律&quot;：一般方程与微分方程">
+<meta property="og:description" content="打个比方：">
+<meta property="og:image" content="../icon.jpeg">
+<meta property="og:site_name" content="Steve Chan — xlisp">
+<meta name="twitter:card" content="summary_large_image">
+<meta name="twitter:title" content="从&quot;解出一个数&quot;到&quot;解出一条规律&quot;：一般方程与微分方程">
+<meta name="twitter:description" content="打个比方：">
+<meta name="twitter:image" content="../icon.jpeg">
+<link rel="stylesheet" href="../style.css?v=light1">
+<script>(function(){try{if(localStorage.getItem('theme')==='light')document.documentElement.setAttribute('data-theme','light');}catch(e){}})();</script>
+<!-- Math formula rendering via MathJax -->
+<script>
+window.MathJax = {
+  tex: {
+    // arithmatex emits \(...\) / \[...\] markup, so only these delimiters
+    // are needed; plain `$` is left alone (avoids currency false positives).
+    inlineMath: [['\\(', '\\)']],
+    displayMath: [['\\[', '\\]']],
+    processEscapes: true
+  },
+  svg: {
+    // Each formula gets its own self-contained <defs>, so the copy script can
+    // serialize one <svg> and rasterize it to a PNG for WeChat.
+    fontCache: 'local'
+  },
+  options: {
+    skipHtmlTags: ['script', 'noscript', 'style', 'textarea', 'pre', 'code'],
+    ignoreHtmlClass: 'highlight'
+  }
+};
+</script>
+<script src="https://cdn.jsdelivr.net/npm/mathjax@3/es5/tex-svg.js" async></script>
+</head>
+<body>
+<main class="wrap post">
+
+  <nav class="topnav">
+    <a href="../index.html">← home</a>
+  </nav>
+
+  <article>
+    <header class="post-header">
+      <h1>从&quot;解出一个数&quot;到&quot;解出一条规律&quot;：一般方程与微分方程</h1>
+      <p class="meta">2026-09-26 · Steve Chan</p>
+    </header>
+
+    <div class="content">
+<blockquote>
+<p>初中解 <code>2x + 3 = 7</code>，高中解 <code>x² - 5x + 6 = 0</code>，大学突然冒出来一个 <code>dy/dt = ky</code>，
+很多人从这里开始觉得数学"变了味"：怎么方程里还有导数？解出来的怎么不是一个数，而是一个函数？</p>
+<p>其实两者是一脉相承的。一句话概括：</p>
+<p><strong>一般方程问的是"哪个数满足这个关系"，微分方程问的是"哪个函数满足这个变化规律"。</strong></p>
+<p>这篇文章按这个顺序走：</p>
+<ul>
+<li>一般方程（代数方程）到底在解什么？</li>
+<li>为什么光有一般方程不够，必须引入"导数"？</li>
+<li>常见的微分方程有哪些：指数增长、牛顿冷却、Logistic、自由落体、弹簧振动、RC 电路、热方程、波动方程</li>
+<li>两者的系统对比：未知量、解的形态、定解条件、解法</li>
+<li>最有意思的部分：微分方程如何一次次"退化"回一般方程（特征方程、平衡点、欧拉离散化）</li>
+</ul>
+<p>代码都用 Python（numpy），可以直接跑。</p>
+</blockquote>
+<hr />
+<h2 id="0-一句话主线">0. 一句话主线</h2>
+<blockquote>
+<p><strong>一般方程描述"状态"，微分方程描述"变化"。
+一般方程的解是一个点，微分方程的解是一条轨迹。</strong></p>
+</blockquote>
+<p>打个比方：</p>
+<ul>
+<li>一般方程像一张<strong>照片</strong>：告诉你"此刻，某个量等于多少"。</li>
+<li>微分方程像一条<strong>运动规则</strong>：告诉你"在任何时刻，这个量正以多快的速度变化"。然后让你反推出整部<strong>电影</strong>。</li>
+</ul>
+<div class="highlight"><pre><span></span><code><span class="c1"># 一般方程：2x + 3 = 7，答案是一个数</span>
+<span class="n">x</span> <span class="o">=</span> <span class="p">(</span><span class="mi">7</span> <span class="o">-</span> <span class="mi">3</span><span class="p">)</span> <span class="o">/</span> <span class="mi">2</span>
+<span class="nb">print</span><span class="p">(</span><span class="n">x</span><span class="p">)</span>            <span class="c1"># 2.0</span>
+
+<span class="c1"># 微分方程：dy/dt = 0.5 * y，y(0) = 1，答案是一个函数</span>
+<span class="kn">import</span><span class="w"> </span><span class="nn">numpy</span><span class="w"> </span><span class="k">as</span><span class="w"> </span><span class="nn">np</span>
+<span class="n">y</span> <span class="o">=</span> <span class="k">lambda</span> <span class="n">t</span><span class="p">:</span> <span class="n">np</span><span class="o">.</span><span class="n">exp</span><span class="p">(</span><span class="mf">0.5</span> <span class="o">*</span> <span class="n">t</span><span class="p">)</span>
+<span class="nb">print</span><span class="p">([</span><span class="nb">round</span><span class="p">(</span><span class="n">y</span><span class="p">(</span><span class="n">t</span><span class="p">),</span> <span class="mi">3</span><span class="p">)</span> <span class="k">for</span> <span class="n">t</span> <span class="ow">in</span> <span class="p">[</span><span class="mi">0</span><span class="p">,</span> <span class="mi">1</span><span class="p">,</span> <span class="mi">2</span><span class="p">,</span> <span class="mi">3</span><span class="p">]])</span>   <span class="c1"># [1.0, 1.649, 2.718, 4.482]</span>
+</code></pre></div>
+
+<p>第一行的答案是 <code>2.0</code>；第二段的答案是 <code>y(t) = e^{0.5t}</code>——它对每一个时刻 t 都给出一个值。</p>
+<hr />
+<h2 id="1-一般方程在数的世界里找未知数">1. 一般方程：在"数"的世界里找未知数</h2>
+<p>所谓一般方程（代数方程、超越方程），未知量是<strong>一个或几个数</strong>。常见的几类：</p>
+<table>
+<thead>
+<tr>
+<th>类型</th>
+<th>例子</th>
+<th>解</th>
+<th>典型意义</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>一元一次</td>
+<td><code>2x + 3 = 7</code></td>
+<td><code>x = 2</code></td>
+<td>单价、比例</td>
+</tr>
+<tr>
+<td>一元二次</td>
+<td><code>x² - 5x + 6 = 0</code></td>
+<td><code>x = 2, 3</code></td>
+<td>抛物线与 x 轴交点</td>
+</tr>
+<tr>
+<td>线性方程组</td>
+<td><code>x + y = 5, x - y = 1</code></td>
+<td><code>(3, 2)</code></td>
+<td>多个约束同时满足</td>
+</tr>
+<tr>
+<td>高次多项式</td>
+<td><code>x³ - 6x² + 11x - 6 = 0</code></td>
+<td><code>1, 2, 3</code></td>
+<td>特征值、稳定性</td>
+</tr>
+<tr>
+<td>指数/超越方程</td>
+<td><code>2^x = 10</code>、<code>cos x = x</code></td>
+<td><code>x ≈ 3.32</code>、<code>x ≈ 0.739</code></td>
+<td>复利、不动点</td>
+</tr>
+</tbody>
+</table>
+<div class="highlight"><pre><span></span><code><span class="kn">import</span><span class="w"> </span><span class="nn">numpy</span><span class="w"> </span><span class="k">as</span><span class="w"> </span><span class="nn">np</span>
+
+<span class="c1"># 一元二次</span>
+<span class="nb">print</span><span class="p">(</span><span class="n">np</span><span class="o">.</span><span class="n">roots</span><span class="p">([</span><span class="mi">1</span><span class="p">,</span> <span class="o">-</span><span class="mi">5</span><span class="p">,</span> <span class="mi">6</span><span class="p">]))</span>                 <span class="c1"># [3. 2.]</span>
+
+<span class="c1"># 线性方程组 A x = b</span>
+<span class="n">A</span> <span class="o">=</span> <span class="n">np</span><span class="o">.</span><span class="n">array</span><span class="p">([[</span><span class="mi">1</span><span class="p">,</span> <span class="mi">1</span><span class="p">],</span> <span class="p">[</span><span class="mi">1</span><span class="p">,</span> <span class="o">-</span><span class="mi">1</span><span class="p">]]);</span> <span class="n">b</span> <span class="o">=</span> <span class="n">np</span><span class="o">.</span><span class="n">array</span><span class="p">([</span><span class="mi">5</span><span class="p">,</span> <span class="mi">1</span><span class="p">])</span>
+<span class="nb">print</span><span class="p">(</span><span class="n">np</span><span class="o">.</span><span class="n">linalg</span><span class="o">.</span><span class="n">solve</span><span class="p">(</span><span class="n">A</span><span class="p">,</span> <span class="n">b</span><span class="p">))</span>                <span class="c1"># [3. 2.]</span>
+
+<span class="c1"># 超越方程 cos(x) = x：没有公式解，只能数值求</span>
+<span class="c1"># 牛顿法：x_{n+1} = x_n - f(x_n) / f&#39;(x_n)</span>
+<span class="n">f</span>  <span class="o">=</span> <span class="k">lambda</span> <span class="n">x</span><span class="p">:</span> <span class="n">np</span><span class="o">.</span><span class="n">cos</span><span class="p">(</span><span class="n">x</span><span class="p">)</span> <span class="o">-</span> <span class="n">x</span>
+<span class="n">df</span> <span class="o">=</span> <span class="k">lambda</span> <span class="n">x</span><span class="p">:</span> <span class="o">-</span><span class="n">np</span><span class="o">.</span><span class="n">sin</span><span class="p">(</span><span class="n">x</span><span class="p">)</span> <span class="o">-</span> <span class="mi">1</span>
+<span class="n">x</span> <span class="o">=</span> <span class="mf">1.0</span>
+<span class="k">for</span> <span class="n">_</span> <span class="ow">in</span> <span class="nb">range</span><span class="p">(</span><span class="mi">6</span><span class="p">):</span>
+    <span class="n">x</span> <span class="o">=</span> <span class="n">x</span> <span class="o">-</span> <span class="n">f</span><span class="p">(</span><span class="n">x</span><span class="p">)</span> <span class="o">/</span> <span class="n">df</span><span class="p">(</span><span class="n">x</span><span class="p">)</span>
+<span class="nb">print</span><span class="p">(</span><span class="n">x</span><span class="p">)</span>                                    <span class="c1"># 0.739085...</span>
+</code></pre></div>
+
+<p>一般方程的共同点：</p>
+<ol>
+<li><strong>未知量是数</strong>（或数组成的向量）。</li>
+<li><strong>解通常是有限个孤立的点</strong>：二次方程最多 2 个根，n 次方程最多 n 个根。</li>
+<li><strong>方程本身就够了</strong>，不需要额外"初始条件"。</li>
+<li>解不出公式时，可以用<strong>数值迭代</strong>（二分法、牛顿法）逼近。</li>
+</ol>
+<p>注意第 4 点里的牛顿法——它本身就在用导数。导数这个工具，一会儿就会从"辅助"变成"主角"。</p>
+<hr />
+<h2 id="2-为什么一般方程不够用">2. 为什么一般方程不够用？</h2>
+<p>一般方程擅长回答"<strong>是多少</strong>"，却回答不了"<strong>会怎样</strong>"。</p>
+<p>看三个问题：</p>
+<ul>
+<li>一杯 90℃ 的咖啡放在 20℃ 的房间里，10 分钟后是多少度？</li>
+<li>一个细菌培养皿，每个细菌每小时分裂一次，5 小时后有多少？</li>
+<li>一根弹簧被拉开 3 厘米后松手，第 2 秒时它在哪？</li>
+</ul>
+<p>这些问题有一个共同点：<strong>我们不知道"答案等于什么"，但我们知道"它怎么变"。</strong></p>
+<ul>
+<li>咖啡：温差越大，降温越快。</li>
+<li>细菌：细菌越多，增长越快。</li>
+<li>弹簧：拉得越开，拉回的力越大，加速度越大。</li>
+</ul>
+<p>"怎么变"在数学上就是<strong>导数</strong>：<code>dy/dt</code> 表示 y 随时间 t 的变化率。
+把"怎么变"的规律写成等式，就得到了<strong>微分方程</strong>：</p>
+<blockquote>
+<p><strong>含有未知函数及其导数的方程，叫微分方程。</strong></p>
+</blockquote>
+<p>从一般方程到微分方程，只做了一件事：</p>
+<div class="highlight"><pre><span></span><code>一般方程：   F(x) = 0              未知量 x 是一个数
+微分方程：   F(t, y, y&#39;, y&#39;&#39;, ...) = 0   未知量 y(t) 是一个函数
+</code></pre></div>
+
+<p>未知量从"数"升级成了"函数"，解从"点"升级成了"曲线"。</p>
+<hr />
+<h2 id="3-常见的微分方程一阶">3. 常见的微分方程（一阶）</h2>
+<h3 id="31-指数增长-衰减y-k-y">3.1 指数增长 / 衰减：<code>y' = k y</code></h3>
+<p>"越多，涨得越快"（k &gt; 0）或"越多，减得越快"（k &lt; 0）。</p>
+<ul>
+<li>人口、细菌、复利（k &gt; 0）</li>
+<li>放射性衰变、药物代谢（k &lt; 0）</li>
+</ul>
+<p>解：<code>y(t) = y₀ · e^{kt}</code></p>
+<div class="highlight"><pre><span></span><code><span class="kn">import</span><span class="w"> </span><span class="nn">numpy</span><span class="w"> </span><span class="k">as</span><span class="w"> </span><span class="nn">np</span>
+
+<span class="n">k</span><span class="p">,</span> <span class="n">y0</span> <span class="o">=</span> <span class="n">np</span><span class="o">.</span><span class="n">log</span><span class="p">(</span><span class="mi">2</span><span class="p">),</span> <span class="mf">1.0</span>        <span class="c1"># 每小时翻倍</span>
+<span class="n">t</span> <span class="o">=</span> <span class="n">np</span><span class="o">.</span><span class="n">arange</span><span class="p">(</span><span class="mi">6</span><span class="p">)</span>
+<span class="nb">print</span><span class="p">(</span><span class="n">y0</span> <span class="o">*</span> <span class="n">np</span><span class="o">.</span><span class="n">exp</span><span class="p">(</span><span class="n">k</span> <span class="o">*</span> <span class="n">t</span><span class="p">))</span>     <span class="c1"># [ 1.  2.  4.  8. 16. 32.]</span>
+
+<span class="c1"># 碳-14 半衰期约 5730 年：y&#39; = -k y</span>
+<span class="n">k</span> <span class="o">=</span> <span class="n">np</span><span class="o">.</span><span class="n">log</span><span class="p">(</span><span class="mi">2</span><span class="p">)</span> <span class="o">/</span> <span class="mi">5730</span>
+<span class="nb">print</span><span class="p">(</span><span class="n">np</span><span class="o">.</span><span class="n">exp</span><span class="p">(</span><span class="o">-</span><span class="n">k</span> <span class="o">*</span> <span class="mi">11460</span><span class="p">))</span>     <span class="c1"># 0.25 —— 过两个半衰期剩 1/4</span>
+</code></pre></div>
+
+<p>对照一般方程：<code>2^x = 32</code> 问的是"<strong>哪一刻</strong>等于 32"（答案 x = 5，是一个数）；
+<code>y' = ln2 · y</code> 问的是"<strong>每一刻</strong>是多少"（答案是整条曲线 <code>2^t</code>）。
+前者恰好是后者解出来之后，再解的一个一般方程。</p>
+<h3 id="32-牛顿冷却定律t-k-t-t_env">3.2 牛顿冷却定律：<code>T' = -k (T - T_env)</code></h3>
+<p>降温速度正比于和环境的温差。</p>
+<p>解：<code>T(t) = T_env + (T₀ - T_env) · e^{-kt}</code></p>
+<div class="highlight"><pre><span></span><code><span class="kn">import</span><span class="w"> </span><span class="nn">numpy</span><span class="w"> </span><span class="k">as</span><span class="w"> </span><span class="nn">np</span>
+
+<span class="n">T_env</span><span class="p">,</span> <span class="n">T0</span><span class="p">,</span> <span class="n">k</span> <span class="o">=</span> <span class="mi">20</span><span class="p">,</span> <span class="mi">90</span><span class="p">,</span> <span class="mf">0.1</span>
+<span class="n">T</span> <span class="o">=</span> <span class="k">lambda</span> <span class="n">t</span><span class="p">:</span> <span class="n">T_env</span> <span class="o">+</span> <span class="p">(</span><span class="n">T0</span> <span class="o">-</span> <span class="n">T_env</span><span class="p">)</span> <span class="o">*</span> <span class="n">np</span><span class="o">.</span><span class="n">exp</span><span class="p">(</span><span class="o">-</span><span class="n">k</span> <span class="o">*</span> <span class="n">t</span><span class="p">)</span>
+<span class="k">for</span> <span class="n">t</span> <span class="ow">in</span> <span class="p">[</span><span class="mi">0</span><span class="p">,</span> <span class="mi">5</span><span class="p">,</span> <span class="mi">10</span><span class="p">,</span> <span class="mi">30</span><span class="p">,</span> <span class="mi">60</span><span class="p">]:</span>
+    <span class="nb">print</span><span class="p">(</span><span class="n">t</span><span class="p">,</span> <span class="nb">round</span><span class="p">(</span><span class="n">T</span><span class="p">(</span><span class="n">t</span><span class="p">),</span> <span class="mi">1</span><span class="p">))</span>
+<span class="c1"># 0 90.0 / 5 62.5 / 10 45.8 / 30 23.5 / 60 20.2  —— 无限逼近 20℃</span>
+</code></pre></div>
+
+<h3 id="33-logistic-方程y-r-y-1-yk">3.3 Logistic 方程：<code>y' = r y (1 - y/K)</code></h3>
+<p>指数增长太理想了——资源有限。Logistic 在增长率上乘了一个"刹车"因子 <code>(1 - y/K)</code>：
+y 小时近似指数增长，y 接近承载量 K 时增长趋于 0。</p>
+<p>解：<code>y(t) = K / (1 + ((K - y₀)/y₀) · e^{-rt})</code>，一条 S 形曲线。</p>
+<p>用途：种群增长、传染病早期传播、产品渗透率，以及神经网络里的 sigmoid 函数——它正是这个方程的解。</p>
+<div class="highlight"><pre><span></span><code><span class="kn">import</span><span class="w"> </span><span class="nn">numpy</span><span class="w"> </span><span class="k">as</span><span class="w"> </span><span class="nn">np</span>
+
+<span class="n">K</span><span class="p">,</span> <span class="n">r</span><span class="p">,</span> <span class="n">y0</span> <span class="o">=</span> <span class="mi">1000</span><span class="p">,</span> <span class="mf">0.8</span><span class="p">,</span> <span class="mi">10</span>
+<span class="n">y</span> <span class="o">=</span> <span class="k">lambda</span> <span class="n">t</span><span class="p">:</span> <span class="n">K</span> <span class="o">/</span> <span class="p">(</span><span class="mi">1</span> <span class="o">+</span> <span class="p">(</span><span class="n">K</span> <span class="o">-</span> <span class="n">y0</span><span class="p">)</span> <span class="o">/</span> <span class="n">y0</span> <span class="o">*</span> <span class="n">np</span><span class="o">.</span><span class="n">exp</span><span class="p">(</span><span class="o">-</span><span class="n">r</span> <span class="o">*</span> <span class="n">t</span><span class="p">))</span>
+<span class="nb">print</span><span class="p">([</span><span class="nb">round</span><span class="p">(</span><span class="n">y</span><span class="p">(</span><span class="n">t</span><span class="p">))</span> <span class="k">for</span> <span class="n">t</span> <span class="ow">in</span> <span class="p">[</span><span class="mi">0</span><span class="p">,</span> <span class="mi">3</span><span class="p">,</span> <span class="mi">6</span><span class="p">,</span> <span class="mi">9</span><span class="p">,</span> <span class="mi">12</span><span class="p">,</span> <span class="mi">15</span><span class="p">]])</span>
+<span class="c1"># [10, 100, 551, 931, 993, 999]  —— 慢、快、慢，S 形</span>
+</code></pre></div>
+
+<h3 id="34-rc-电路充电rc-v-v-e">3.4 RC 电路充电：<code>RC · V' + V = E</code></h3>
+<p>电容充电电压的变化，和牛顿冷却是<strong>同一个方程</strong>，只是换了物理量：</p>
+<p>解：<code>V(t) = E (1 - e^{-t/RC})</code></p>
+<p>这就是微分方程的威力之一：<strong>看起来毫不相关的现象，满足同一个方程，就有同一种行为。</strong></p>
+<hr />
+<h2 id="4-常见的微分方程二阶">4. 常见的微分方程（二阶）</h2>
+<h3 id="41-自由落体y-g">4.1 自由落体：<code>y'' = -g</code></h3>
+<p>牛顿第二定律 <code>F = ma</code> 本身就是一个二阶微分方程，因为加速度 a 是位置的二阶导数。</p>
+<p>解：积分两次，<code>y(t) = y₀ + v₀ t - ½ g t²</code></p>
+<p>注意：<strong>积分两次，就出现两个待定常数（y₀、v₀）</strong>，所以需要两个初始条件（初始位置、初始速度）。</p>
+<h3 id="42-简谐振动y-ω²-y">4.2 简谐振动：<code>y'' = -ω² y</code></h3>
+<p>弹簧、单摆（小角度）、LC 电路。"离平衡位置越远，被拉回来的加速度越大"。</p>
+<p>解：<code>y(t) = A cos(ωt) + B sin(ωt)</code></p>
+<h3 id="43-阻尼振动y-2ζω-y-ω²-y-0">4.3 阻尼振动：<code>y'' + 2ζω y' + ω² y = 0</code></h3>
+<p>真实的弹簧会因摩擦慢慢停下。根据阻尼大小 ζ 分三种情况：</p>
+<ul>
+<li>ζ &lt; 1 欠阻尼：一边振动一边衰减</li>
+<li>ζ = 1 临界阻尼：最快回到平衡、不振荡（汽车减震器的设计目标）</li>
+<li>ζ &gt; 1 过阻尼：慢慢爬回平衡</li>
+</ul>
+<p>这三种情况怎么判断？答案藏在一个<strong>一元二次方程</strong>里——见第 6 节。</p>
+<hr />
+<h2 id="5-偏微分方程未知函数有多个自变量">5. 偏微分方程：未知函数有多个自变量</h2>
+<p>上面都是<strong>常微分方程（ODE）</strong>：未知函数只依赖一个变量 t。
+如果未知函数同时依赖时间和空间 <code>u(x, t)</code>，就得到<strong>偏微分方程（PDE）</strong>：</p>
+<table>
+<thead>
+<tr>
+<th>方程</th>
+<th>形式</th>
+<th>描述</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>热方程</td>
+<td><code>∂u/∂t = α ∂²u/∂x²</code></td>
+<td>热量扩散、墨水在水中扩散</td>
+</tr>
+<tr>
+<td>波动方程</td>
+<td><code>∂²u/∂t² = c² ∂²u/∂x²</code></td>
+<td>琴弦振动、声波、电磁波</td>
+</tr>
+<tr>
+<td>拉普拉斯方程</td>
+<td><code>∂²u/∂x² + ∂²u/∂y² = 0</code></td>
+<td>稳态温度分布、静电场</td>
+</tr>
+<tr>
+<td>薛定谔方程</td>
+<td><code>iħ ∂ψ/∂t = Ĥψ</code></td>
+<td>量子态演化</td>
+</tr>
+<tr>
+<td>纳维-斯托克斯</td>
+<td>（略）</td>
+<td>流体、天气</td>
+</tr>
+</tbody>
+</table>
+<p>一个热方程的小模拟：一根铁棒中间加热，看热量如何往两边摊开。</p>
+<div class="highlight"><pre><span></span><code><span class="kn">import</span><span class="w"> </span><span class="nn">numpy</span><span class="w"> </span><span class="k">as</span><span class="w"> </span><span class="nn">np</span>
+
+<span class="n">n</span><span class="p">,</span> <span class="n">alpha</span><span class="p">,</span> <span class="n">dt</span><span class="p">,</span> <span class="n">dx</span> <span class="o">=</span> <span class="mi">21</span><span class="p">,</span> <span class="mf">1.0</span><span class="p">,</span> <span class="mf">0.2</span><span class="p">,</span> <span class="mf">1.0</span>
+<span class="n">u</span> <span class="o">=</span> <span class="n">np</span><span class="o">.</span><span class="n">zeros</span><span class="p">(</span><span class="n">n</span><span class="p">);</span> <span class="n">u</span><span class="p">[</span><span class="n">n</span> <span class="o">//</span> <span class="mi">2</span><span class="p">]</span> <span class="o">=</span> <span class="mf">100.0</span>          <span class="c1"># 中间一点 100℃</span>
+<span class="k">for</span> <span class="n">step</span> <span class="ow">in</span> <span class="nb">range</span><span class="p">(</span><span class="mi">50</span><span class="p">):</span>
+    <span class="n">lap</span> <span class="o">=</span> <span class="n">np</span><span class="o">.</span><span class="n">roll</span><span class="p">(</span><span class="n">u</span><span class="p">,</span> <span class="mi">1</span><span class="p">)</span> <span class="o">-</span> <span class="mi">2</span> <span class="o">*</span> <span class="n">u</span> <span class="o">+</span> <span class="n">np</span><span class="o">.</span><span class="n">roll</span><span class="p">(</span><span class="n">u</span><span class="p">,</span> <span class="o">-</span><span class="mi">1</span><span class="p">)</span>   <span class="c1"># 离散的 ∂²u/∂x²</span>
+    <span class="n">lap</span><span class="p">[</span><span class="mi">0</span><span class="p">]</span> <span class="o">=</span> <span class="n">lap</span><span class="p">[</span><span class="o">-</span><span class="mi">1</span><span class="p">]</span> <span class="o">=</span> <span class="mi">0</span>                           <span class="c1"># 两端固定</span>
+    <span class="n">u</span> <span class="o">=</span> <span class="n">u</span> <span class="o">+</span> <span class="n">alpha</span> <span class="o">*</span> <span class="n">dt</span> <span class="o">/</span> <span class="n">dx</span><span class="o">**</span><span class="mi">2</span> <span class="o">*</span> <span class="n">lap</span>
+<span class="nb">print</span><span class="p">(</span><span class="n">np</span><span class="o">.</span><span class="n">round</span><span class="p">(</span><span class="n">u</span><span class="p">,</span> <span class="mi">1</span><span class="p">))</span>
+<span class="c1"># 尖峰被&quot;抹平&quot;成一个钟形 —— 这就是扩散</span>
+</code></pre></div>
+
+<p>有意思的是：拉普拉斯方程是热方程"等到时间足够久、不再变化"时的样子——令 <code>∂u/∂t = 0</code>。
+这正是下一节要讲的套路。</p>
+<hr />
+<h2 id="6-从微分方程回到一般方程三条桥">6. 从微分方程回到一般方程：三条桥</h2>
+<p>微分方程看起来高了一个维度，但<strong>真正解它时，几乎总要落回一般方程</strong>。这是理解两者关系的关键。</p>
+<h3 id="桥一平衡点-令导数为-0">桥一：平衡点 —— 令导数为 0</h3>
+<p>"系统最终会停在哪？"停下来就是不再变化，也就是 <code>y' = 0</code>。
+于是微分方程 <code>y' = f(y)</code> 的平衡点，就是<strong>一般方程 <code>f(y) = 0</code> 的根</strong>。</p>
+<div class="highlight"><pre><span></span><code><span class="kn">import</span><span class="w"> </span><span class="nn">numpy</span><span class="w"> </span><span class="k">as</span><span class="w"> </span><span class="nn">np</span>
+
+<span class="c1"># Logistic: y&#39; = r y (1 - y/K)，令右边 = 0</span>
+<span class="n">r</span><span class="p">,</span> <span class="n">K</span> <span class="o">=</span> <span class="mf">0.8</span><span class="p">,</span> <span class="mi">1000</span>
+<span class="c1"># r y (1 - y/K) = 0  -&gt;  -r/K y² + r y = 0</span>
+<span class="nb">print</span><span class="p">(</span><span class="n">np</span><span class="o">.</span><span class="n">roots</span><span class="p">([</span><span class="o">-</span><span class="n">r</span> <span class="o">/</span> <span class="n">K</span><span class="p">,</span> <span class="n">r</span><span class="p">,</span> <span class="mi">0</span><span class="p">]))</span>     <span class="c1"># [1000.  0.] —— 两个平衡点：灭绝 与 承载量</span>
+</code></pre></div>
+
+<p>再用导数判断稳定性：<code>f'(y*) &lt; 0</code> 稳定（被吸过去），<code>&gt; 0</code> 不稳定（被推开）。
+Logistic 里 y = 0 不稳定、y = K 稳定——所以种群总会长到 K。</p>
+<p><strong>一般方程的解，是微分方程的"终点"。</strong></p>
+<h3 id="桥二特征方程-猜-ert微分变代数">桥二：特征方程 —— 猜 <code>e^{rt}</code>，微分变代数</h3>
+<p>对常系数线性方程 <code>y'' + a y' + b y = 0</code>，猜一个解 <code>y = e^{rt}</code>：</p>
+<div class="highlight"><pre><span></span><code>y&#39;  = r e^{rt}
+y&#39;&#39; = r² e^{rt}
+代入： (r² + a r + b) e^{rt} = 0
+因为 e^{rt} ≠ 0：   r² + a r + b = 0
+</code></pre></div>
+
+<p><strong>一个二阶微分方程，变成了一个一元二次方程！</strong> 求导变成了乘以 r。
+初中学的判别式 <code>Δ = a² - 4b</code> 在这里有了物理意义：</p>
+<table>
+<thead>
+<tr>
+<th>判别式</th>
+<th>根</th>
+<th>运动</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>Δ &gt; 0</td>
+<td>两个负实根</td>
+<td>过阻尼，慢慢回位</td>
+</tr>
+<tr>
+<td>Δ = 0</td>
+<td>重根</td>
+<td>临界阻尼</td>
+</tr>
+<tr>
+<td>Δ &lt; 0</td>
+<td>共轭复根 <code>-p ± qi</code></td>
+<td>欠阻尼：<code>e^{-pt}</code> 衰减 × <code>cos(qt)</code> 振动</td>
+</tr>
+</tbody>
+</table>
+<div class="highlight"><pre><span></span><code><span class="kn">import</span><span class="w"> </span><span class="nn">numpy</span><span class="w"> </span><span class="k">as</span><span class="w"> </span><span class="nn">np</span>
+
+<span class="n">omega</span> <span class="o">=</span> <span class="mf">2.0</span>
+<span class="k">for</span> <span class="n">zeta</span> <span class="ow">in</span> <span class="p">[</span><span class="mf">0.2</span><span class="p">,</span> <span class="mf">1.0</span><span class="p">,</span> <span class="mf">3.0</span><span class="p">]:</span>
+    <span class="n">a</span><span class="p">,</span> <span class="n">b</span> <span class="o">=</span> <span class="mi">2</span> <span class="o">*</span> <span class="n">zeta</span> <span class="o">*</span> <span class="n">omega</span><span class="p">,</span> <span class="n">omega</span><span class="o">**</span><span class="mi">2</span>
+    <span class="n">roots</span> <span class="o">=</span> <span class="n">np</span><span class="o">.</span><span class="n">roots</span><span class="p">([</span><span class="mi">1</span><span class="p">,</span> <span class="n">a</span><span class="p">,</span> <span class="n">b</span><span class="p">])</span>
+    <span class="nb">print</span><span class="p">(</span><span class="sa">f</span><span class="s2">&quot;ζ=</span><span class="si">{</span><span class="n">zeta</span><span class="si">}</span><span class="s2">: Δ=</span><span class="si">{</span><span class="n">a</span><span class="o">*</span><span class="n">a</span><span class="w"> </span><span class="o">-</span><span class="w"> </span><span class="mi">4</span><span class="o">*</span><span class="n">b</span><span class="si">:</span><span class="s2">+.1f</span><span class="si">}</span><span class="s2">, 根=</span><span class="si">{</span><span class="n">np</span><span class="o">.</span><span class="n">round</span><span class="p">(</span><span class="n">roots</span><span class="p">,</span><span class="w"> </span><span class="mi">3</span><span class="p">)</span><span class="si">}</span><span class="s2">&quot;</span><span class="p">)</span>
+<span class="c1"># ζ=0.2: Δ=-15.4, 根=[-0.4+1.96j -0.4-1.96j]   复根 -&gt; 衰减振荡</span>
+<span class="c1"># ζ=1.0: Δ=+0.0,  根=[-2. -2.]                   重根 -&gt; 临界阻尼</span>
+<span class="c1"># ζ=3.0: Δ=+128.0,根=[-11.657 -0.343]            实根 -&gt; 过阻尼</span>
+</code></pre></div>
+
+<p>简谐振动 <code>y'' = -ω² y</code> 的特征方程是 <code>r² + ω² = 0</code>，根 <code>r = ±iω</code>，
+再借欧拉公式 <code>e^{iωt} = cos ωt + i sin ωt</code>，就得到了 <code>cos</code> 和 <code>sin</code>。
+<strong>虚数根在这里不再"虚"，它就是振动。</strong></p>
+<p>推广到方程组 <code>x' = A x</code>：特征方程变成 <code>det(A - λI) = 0</code>，也就是求矩阵的<strong>特征值</strong>——
+又是一个多项式方程。特征值的实部全为负，系统就稳定。这是控制理论的基石。</p>
+<h3 id="桥三离散化-把微分方程切成一串一般方程">桥三：离散化 —— 把微分方程切成一串一般方程</h3>
+<p>计算机不会"求导"，它只会加减乘除。数值解法的核心是把导数换成差商：</p>
+<div class="highlight"><pre><span></span><code>y&#39;(t) ≈ (y(t + h) - y(t)) / h
+</code></pre></div>
+
+<p>代入 <code>y' = f(y)</code>，得到<strong>欧拉法</strong>：</p>
+<div class="highlight"><pre><span></span><code>y_{n+1} = y_n + h · f(y_n)
+</code></pre></div>
+
+<p><strong>每一步都是一个普通的代数运算。</strong> 一个微分方程，被拆成了无数个首尾相接的一般方程（递推式）。</p>
+<div class="highlight"><pre><span></span><code><span class="kn">import</span><span class="w"> </span><span class="nn">numpy</span><span class="w"> </span><span class="k">as</span><span class="w"> </span><span class="nn">np</span>
+
+<span class="c1"># 用欧拉法解 y&#39; = y, y(0) = 1，求 y(1)，精确值应为 e</span>
+<span class="k">for</span> <span class="n">h</span> <span class="ow">in</span> <span class="p">[</span><span class="mf">0.1</span><span class="p">,</span> <span class="mf">0.01</span><span class="p">,</span> <span class="mf">0.001</span><span class="p">]:</span>
+    <span class="n">y</span> <span class="o">=</span> <span class="mf">1.0</span>
+    <span class="k">for</span> <span class="n">_</span> <span class="ow">in</span> <span class="nb">range</span><span class="p">(</span><span class="nb">int</span><span class="p">(</span><span class="mi">1</span> <span class="o">/</span> <span class="n">h</span><span class="p">)):</span>
+        <span class="n">y</span> <span class="o">=</span> <span class="n">y</span> <span class="o">+</span> <span class="n">h</span> <span class="o">*</span> <span class="n">y</span>
+    <span class="nb">print</span><span class="p">(</span><span class="sa">f</span><span class="s2">&quot;h=</span><span class="si">{</span><span class="n">h</span><span class="si">}</span><span class="s2">: y(1)≈</span><span class="si">{</span><span class="n">y</span><span class="si">:</span><span class="s2">.5f</span><span class="si">}</span><span class="s2">, 误差=</span><span class="si">{</span><span class="nb">abs</span><span class="p">(</span><span class="n">y</span><span class="w"> </span><span class="o">-</span><span class="w"> </span><span class="n">np</span><span class="o">.</span><span class="n">e</span><span class="p">)</span><span class="si">:</span><span class="s2">.5f</span><span class="si">}</span><span class="s2">&quot;</span><span class="p">)</span>
+<span class="c1"># 步长越小越准；而 (1 + h)^(1/h) -&gt; e，正是 e 的定义</span>
+</code></pre></div>
+
+<p>再看阻尼弹簧的完整轨迹（二阶方程拆成两个一阶：位置 y、速度 v）：</p>
+<div class="highlight"><pre><span></span><code><span class="kn">import</span><span class="w"> </span><span class="nn">numpy</span><span class="w"> </span><span class="k">as</span><span class="w"> </span><span class="nn">np</span>
+
+<span class="n">omega</span><span class="p">,</span> <span class="n">zeta</span><span class="p">,</span> <span class="n">h</span> <span class="o">=</span> <span class="mf">2.0</span><span class="p">,</span> <span class="mf">0.2</span><span class="p">,</span> <span class="mf">0.01</span>
+<span class="n">y</span><span class="p">,</span> <span class="n">v</span> <span class="o">=</span> <span class="mf">3.0</span><span class="p">,</span> <span class="mf">0.0</span>                       <span class="c1"># 拉开 3cm，静止释放</span>
+<span class="k">for</span> <span class="n">step</span> <span class="ow">in</span> <span class="nb">range</span><span class="p">(</span><span class="mi">501</span><span class="p">):</span>
+    <span class="k">if</span> <span class="n">step</span> <span class="o">%</span> <span class="mi">50</span> <span class="o">==</span> <span class="mi">0</span><span class="p">:</span>
+        <span class="nb">print</span><span class="p">(</span><span class="sa">f</span><span class="s2">&quot;t=</span><span class="si">{</span><span class="n">step</span><span class="o">*</span><span class="n">h</span><span class="si">:</span><span class="s2">4.1f</span><span class="si">}</span><span class="s2">  y=</span><span class="si">{</span><span class="n">y</span><span class="si">:</span><span class="s2">+.3f</span><span class="si">}</span><span class="s2">&quot;</span><span class="p">)</span>
+    <span class="n">a</span> <span class="o">=</span> <span class="o">-</span><span class="mi">2</span> <span class="o">*</span> <span class="n">zeta</span> <span class="o">*</span> <span class="n">omega</span> <span class="o">*</span> <span class="n">v</span> <span class="o">-</span> <span class="n">omega</span><span class="o">**</span><span class="mi">2</span> <span class="o">*</span> <span class="n">y</span>
+    <span class="n">y</span><span class="p">,</span> <span class="n">v</span> <span class="o">=</span> <span class="n">y</span> <span class="o">+</span> <span class="n">h</span> <span class="o">*</span> <span class="n">v</span><span class="p">,</span> <span class="n">v</span> <span class="o">+</span> <span class="n">h</span> <span class="o">*</span> <span class="n">a</span>
+<span class="c1"># y 在正负之间来回摆，振幅越来越小</span>
+</code></pre></div>
+
+<p>如果用<strong>隐式欧拉</strong> <code>y_{n+1} = y_n + h · f(y_{n+1})</code>，未知量 <code>y_{n+1}</code> 出现在两边，
+每一步都要<strong>解一个一般方程</strong>（常用牛顿法）。于是第 1 节里的牛顿法又回来了——
+解微分方程，最后落在反复解一般方程上。</p>
+<hr />
+<h2 id="7-系统对比">7. 系统对比</h2>
+<table>
+<thead>
+<tr>
+<th>维度</th>
+<th>一般方程</th>
+<th>微分方程</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>未知量</td>
+<td>数（或向量）</td>
+<td>函数 <code>y(t)</code>、<code>u(x,t)</code></td>
+</tr>
+<tr>
+<td>方程描述的是</td>
+<td>量之间的<strong>静态关系</strong></td>
+<td>量的<strong>变化规律</strong></td>
+</tr>
+<tr>
+<td>解的形态</td>
+<td>孤立的点（有限个）</td>
+<td>一族曲线（无穷多条）</td>
+</tr>
+<tr>
+<td>自由度</td>
+<td>由方程个数决定</td>
+<td>由阶数决定：n 阶有 n 个任意常数</td>
+</tr>
+<tr>
+<td>定解条件</td>
+<td>不需要</td>
+<td>初始条件 / 边界条件</td>
+</tr>
+<tr>
+<td>解的存在性</td>
+<td>代数基本定理：n 次多项式有 n 个复根</td>
+<td>皮卡定理：f 足够光滑则初值问题解存在唯一</td>
+</tr>
+<tr>
+<td>公式解</td>
+<td>五次及以上一般无根式解（阿贝尔）</td>
+<td>绝大多数非线性方程无解析解</td>
+</tr>
+<tr>
+<td>数值解法</td>
+<td>二分法、牛顿法、高斯消元</td>
+<td>欧拉法、龙格-库塔、有限差分/有限元</td>
+</tr>
+<tr>
+<td>典型问题</td>
+<td>"多少钱""多长""交点在哪"</td>
+<td>"会怎样演化""最终停在哪""稳不稳定"</td>
+</tr>
+<tr>
+<td>线性情形</td>
+<td><code>Ax = b</code>（线性代数）</td>
+<td><code>x' = Ax</code>（解为 <code>e^{At}x₀</code>，靠特征值）</td>
+</tr>
+</tbody>
+</table>
+<p>几点值得多说一句：</p>
+<p><strong>为什么微分方程需要初始条件？</strong>
+<code>y' = ky</code> 的解是 <code>y = C e^{kt}</code>，C 取任何值都满足。规律只决定"形状"，不决定"从哪出发"。
+就像知道"每年涨 5%"，不知道本金，就算不出十年后多少钱。
+一般方程没有这个问题，因为它不含导数，没有"积分常数"丢失信息。</p>
+<p><strong>为什么微分方程的"解"反而更多？</strong>
+一般方程是"约束"，约束越多解越少；微分方程是"规则"，一条规则下可以有无穷多种初始状态，
+每个初始状态演化出一条轨迹。所有轨迹放在一起，叫<strong>相图</strong>或<strong>流</strong>。</p>
+<p><strong>两者的难度来源相同。</strong>
+一般方程里，线性的 <code>Ax = b</code> 容易，非线性的五次方程没有公式；
+微分方程里，线性的 <code>x' = Ax</code> 容易，非线性的三体问题、Navier-Stokes 至今没有通解。
+<strong>"线性好解，非线性难解"是贯穿两者的同一条分界线。</strong></p>
+<hr />
+<h2 id="8-用一张图记住它们的关系">8. 用一张图记住它们的关系</h2>
+<div class="highlight"><pre><span></span><code>             一般方程  F(x) = 0
+             &quot;哪个数满足这个关系&quot;
+                    │
+                    │ 未知量从&quot;数&quot;升级为&quot;函数&quot;
+                    │ 关系里加入&quot;变化率&quot;
+                    ▼
+             微分方程  F(t, y, y&#39;, y&#39;&#39;, ...) = 0
+             &quot;哪个函数满足这个变化规律&quot;
+                    │
+       ┌────────────┼────────────────┐
+       ▼            ▼                ▼
+   令 y&#39; = 0      猜 y = e^{rt}      导数 ≈ 差商
+   平衡点         特征方程            欧拉/隐式离散
+   f(y*) = 0      r² + ar + b = 0     y_{n+1} = y_n + h f(·)
+       │            │                │
+       └────────────┴────────────────┘
+                    ▼
+            又回到解一般方程
+</code></pre></div>
+
+<hr />
+<h2 id="9-结语">9. 结语</h2>
+<p>一般方程是数学的"名词"：它告诉你一个东西<strong>是什么</strong>。
+微分方程是数学的"动词"：它告诉你一个东西<strong>怎么变</strong>。</p>
+<p>牛顿写下 <code>F = ma</code> 的那一刻，物理学从"描述世界的样子"转向了"描述世界的变化规则"——
+从行星轨道到电路、从传染病到股价、从热传导到量子力学，几乎所有定律都以微分方程的形式出现。</p>
+<p>但只要真正去解，就会发现它总在回到你熟悉的地方：
+平衡点是 <code>f(y) = 0</code> 的根，振动频率是一元二次方程的复根，计算机模拟是一串递推的代数式。</p>
+<p><strong>初中的解方程没有白学——它是微分方程每一次落地时踩着的那块地面。</strong></p>
+<blockquote>
+<p>顺带一提：深度学习里的 ResNet <code>x_{n+1} = x_n + f(x_n)</code>，恰好就是欧拉法的样子；
+把层数取到无穷、步长取到 0，就得到了 Neural ODE <code>dx/dt = f(x)</code>。
+同一条从"离散递推"到"连续微分"的桥，今天也架在神经网络上。</p>
+</blockquote>
+    </div>
+  </article>
+
+</main>
+
+<!-- Floating Ask-AI chat widget -->
+<button class="ai-fab" id="ai-fab" aria-label="Ask AI about this article" title="Ask AI about this article">
+  <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+    <path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"/>
+  </svg>
+  <span class="ai-fab-label">Ask AI</span>
+</button>
+
+<div class="ai-panel" id="ai-panel" role="dialog" aria-labelledby="ai-panel-title" aria-hidden="true">
+  <header class="ai-panel-head">
+    <div class="ai-panel-title-wrap">
+      <span class="ai-dot"></span>
+      <h3 id="ai-panel-title">Ask AI about this post</h3>
+    </div>
+    <div class="ai-panel-actions">
+      <button class="ai-icon-btn" id="ai-clear" title="Clear conversation" aria-label="Clear">
+        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><polyline points="3 6 5 6 21 6"/><path d="M19 6l-1 14a2 2 0 0 1-2 2H8a2 2 0 0 1-2-2L5 6"/><path d="M10 11v6M14 11v6"/><path d="M9 6V4a1 1 0 0 1 1-1h4a1 1 0 0 1 1 1v2"/></svg>
+      </button>
+      <button class="ai-icon-btn" id="ai-close" title="Minimize" aria-label="Minimize">
+        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><polyline points="6 9 12 15 18 9"/></svg>
+      </button>
+    </div>
+  </header>
+
+  <div class="ai-messages" id="ai-messages">
+    <div class="ai-empty" id="ai-empty">
+      <p class="ai-empty-title">On-device AI · Gemini Nano</p>
+      <p class="ai-empty-sub">Ask anything about this article. Runs in your browser — nothing leaves your device.</p>
+    </div>
+  </div>
+
+  <div class="ai-status" id="ai-status" hidden></div>
+
+  <form class="ai-composer" id="ai-form">
+    <textarea id="ai-input" rows="1" placeholder="Ask about this post…" autocomplete="off"></textarea>
+    <button type="submit" id="ai-send" class="ai-send" aria-label="Send" disabled>
+      <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><line x1="22" y1="2" x2="11" y2="13"/><polygon points="22 2 15 22 11 13 2 9 22 2"/></svg>
+    </button>
+  </form>
+</div>
+
+<script>
+(function () {
+  const POST_TITLE = "\u4ece\"\u89e3\u51fa\u4e00\u4e2a\u6570\"\u5230\"\u89e3\u51fa\u4e00\u6761\u89c4\u5f8b\"\uff1a\u4e00\u822c\u65b9\u7a0b\u4e0e\u5fae\u5206\u65b9\u7a0b";
+  const contentEl = document.querySelector('article .content');
+
+  const fab = document.getElementById('ai-fab');
+  const panel = document.getElementById('ai-panel');
+  const closeBtn = document.getElementById('ai-close');
+  const clearBtn = document.getElementById('ai-clear');
+  const msgsEl = document.getElementById('ai-messages');
+  const emptyEl = document.getElementById('ai-empty');
+  const statusEl = document.getElementById('ai-status');
+  const formEl = document.getElementById('ai-form');
+  const inputEl = document.getElementById('ai-input');
+  const sendBtn = document.getElementById('ai-send');
+
+  function articleText() {
+    if (!contentEl) return '';
+    return (contentEl.innerText || contentEl.textContent || '')
+      .replace(/[ \t]+\n/g, '\n')
+      .replace(/\n{3,}/g, '\n\n')
+      .trim();
+  }
+
+  function setStatus(msg, cls) {
+    if (!msg) { statusEl.hidden = true; statusEl.textContent = ''; statusEl.className = 'ai-status'; return; }
+    statusEl.hidden = false;
+    statusEl.textContent = msg;
+    statusEl.className = 'ai-status' + (cls ? ' ' + cls : '');
+  }
+
+  function hideEmpty() { if (emptyEl) emptyEl.style.display = 'none'; }
+
+  function appendBubble(role, text) {
+    hideEmpty();
+    const wrap = document.createElement('div');
+    wrap.className = 'ai-msg ai-msg-' + role;
+    const bubble = document.createElement('div');
+    bubble.className = 'ai-bubble';
+    bubble.textContent = text;
+    wrap.appendChild(bubble);
+    msgsEl.appendChild(wrap);
+    msgsEl.scrollTop = msgsEl.scrollHeight;
+    return bubble;
+  }
+
+  function appendTyping() {
+    hideEmpty();
+    const wrap = document.createElement('div');
+    wrap.className = 'ai-msg ai-msg-assistant ai-typing';
+    wrap.innerHTML = '<div class="ai-bubble"><span class="ai-dots"><i></i><i></i><i></i></span></div>';
+    msgsEl.appendChild(wrap);
+    msgsEl.scrollTop = msgsEl.scrollHeight;
+    return wrap;
+  }
+
+  function autoSize() {
+    inputEl.style.height = 'auto';
+    inputEl.style.height = Math.min(inputEl.scrollHeight, 140) + 'px';
+  }
+
+  function openPanel() {
+    panel.classList.add('open');
+    panel.setAttribute('aria-hidden', 'false');
+    fab.classList.add('hidden');
+    setTimeout(() => inputEl.focus(), 50);
+  }
+  function closePanel() {
+    panel.classList.remove('open');
+    panel.setAttribute('aria-hidden', 'true');
+    fab.classList.remove('hidden');
+  }
+
+  fab.addEventListener('click', openPanel);
+  closeBtn.addEventListener('click', closePanel);
+  document.addEventListener('keydown', e => {
+    if (e.key === 'Escape' && panel.classList.contains('open')) closePanel();
+  });
+
+  // ---- LanguageModel session ----
+  let session = null;
+  let creating = null;
+  let history = [];
+
+  function buildSystemPrompt() {
+    // Keep article context modest — Gemini Nano's input quota is small.
+    const article = articleText().slice(0, 4000);
+    return (
+      'You are a concise, helpful assistant answering questions about a blog post. ' +
+      'Use the article below as your primary source. If the answer is not in it, say so briefly and answer generally. ' +
+      'Reply in the same language as the user\'s question. Keep answers short unless asked for detail.\n\n' +
+      '=== ARTICLE TITLE ===\n' + POST_TITLE + '\n\n' +
+      '=== ARTICLE CONTENT ===\n' + article
+    );
+  }
+
+  async function ensureSession() {
+    if (session) return session;
+    if (creating) return creating;
+
+    if (!('LanguageModel' in self)) {
+      throw new Error(
+        'On-device AI not available. Use Chrome 138+ on desktop, or enable ' +
+        '"Prompt API for Gemini Nano" in chrome://flags.'
+      );
+    }
+
+    setStatus('Checking model…', 'info');
+    const status = await LanguageModel.availability();
+    if (status === 'unavailable') {
+      throw new Error('Model unavailable on this device.');
+    }
+
+    creating = (async () => {
+      // Only show download UI when the model isn't already there.
+      const willDownload = (status !== 'available');
+      if (willDownload) setStatus('Preparing model (first run downloads ~2GB)…', 'info');
+      else setStatus('Warming up…', 'info');
+
+      const s = await LanguageModel.create({
+        initialPrompts: [{ role: 'system', content: buildSystemPrompt() }],
+        monitor(m) {
+          m.addEventListener('downloadprogress', e => {
+            // Skip the spurious 0% event Chrome fires for cached models.
+            if (!willDownload && e.loaded === 0) return;
+            const pct = (e.loaded * 100).toFixed(1);
+            setStatus('Downloading model: ' + pct + '%', 'info');
+          });
+        }
+      });
+      session = s;
+      setStatus('');
+      return s;
+    })();
+
+    try { return await creating; }
+    finally { creating = null; }
+  }
+
+  async function ask(q) {
+    appendBubble('user', q);
+    history.push({ role: 'user', content: q });
+
+    sendBtn.disabled = true;
+    inputEl.disabled = true;
+    const typing = appendTyping();
+
+    let answerBubble = null;
+    let acc = '';
+    try {
+      const s = await ensureSession();
+      const stream = s.promptStreaming(q);
+      for await (const chunk of stream) {
+        if (!answerBubble) {
+          typing.remove();
+          const wrap = document.createElement('div');
+          wrap.className = 'ai-msg ai-msg-assistant';
+          answerBubble = document.createElement('div');
+          answerBubble.className = 'ai-bubble';
+          wrap.appendChild(answerBubble);
+          msgsEl.appendChild(wrap);
+        }
+        acc += chunk;
+        answerBubble.textContent = acc;
+        msgsEl.scrollTop = msgsEl.scrollHeight;
+      }
+      if (acc) history.push({ role: 'assistant', content: acc });
+      else { typing.remove(); appendBubble('assistant', '(no response)'); }
+    } catch (e) {
+      if (typing && typing.parentNode) typing.remove();
+      const err = document.createElement('div');
+      err.className = 'ai-msg ai-msg-error';
+      err.innerHTML = '<div class="ai-bubble">⚠ ' + (e && e.message ? e.message : String(e)) + '</div>';
+      msgsEl.appendChild(err);
+      msgsEl.scrollTop = msgsEl.scrollHeight;
+    } finally {
+      sendBtn.disabled = !inputEl.value.trim();
+      inputEl.disabled = false;
+      inputEl.focus();
+    }
+  }
+
+  formEl.addEventListener('submit', e => {
+    e.preventDefault();
+    const q = inputEl.value.trim();
+    if (!q) return;
+    inputEl.value = '';
+    autoSize();
+    sendBtn.disabled = true;
+    ask(q);
+  });
+
+  inputEl.addEventListener('input', () => {
+    autoSize();
+    sendBtn.disabled = !inputEl.value.trim();
+  });
+  inputEl.addEventListener('keydown', e => {
+    if (e.key === 'Enter' && !e.shiftKey) {
+      e.preventDefault();
+      formEl.requestSubmit();
+    }
+  });
+
+  clearBtn.addEventListener('click', () => {
+    msgsEl.innerHTML = '';
+    msgsEl.appendChild(emptyEl);
+    emptyEl.style.display = '';
+    history = [];
+    if (session && session.destroy) { try { session.destroy(); } catch (_) {} }
+    session = null;
+    setStatus('');
+  });
+
+  if (!('LanguageModel' in self)) {
+    fab.addEventListener('click', () => {
+      openPanel();
+      setStatus('On-device AI not detected. Use Chrome 138+ desktop, or enable "Prompt API for Gemini Nano" in chrome://flags.', 'bad');
+    }, { once: true });
+  }
+})();
+</script>
+
+<!-- Outline notes / comments — DataScript + IndexedDB -->
+<script src="https://github.com/tonsky/datascript/releases/download/1.7.8/datascript-1.7.8.min.js"></script>
+<script src="../notes.js?v=6"></script>
+<script src="../theme.js"></script>
+<script src="../wechat-copy.js?v=3"></script>
+
+</body>
+</html>
