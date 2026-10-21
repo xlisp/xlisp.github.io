@@ -17,7 +17,9 @@ import subprocess
 from multiprocessing import Pool
 
 import numpy as np
-from PIL import Image, ImageDraw, ImageFont, ImageFilter
+from PIL import Image, ImageDraw, ImageFont, ImageFilter, ImageChops
+
+import engine3d as e3
 
 W, H, FPS = 1920, 1080, 30
 SR = 44100
@@ -124,6 +126,7 @@ class Fr:
         self.G = Image.new("RGB", (W // 2, H // 2))
         self.ds = ImageDraw.Draw(self.S)
         self.dg = ImageDraw.Draw(self.G)
+        self.M = None  # 3D 网格遮罩（挡住背景）
 
     def line(self, pts, c, w=4, a=1, g=0.8):
         if a <= 0.01 or len(pts) < 2:
@@ -249,7 +252,8 @@ def compose(fr, fade, T):
     g1 = fr.G.filter(ImageFilter.GaussianBlur(5)).resize((W, H), Image.BILINEAR)
     g2 = fr.G.resize((W // 4, H // 4), Image.BILINEAR).filter(ImageFilter.GaussianBlur(9)).resize((W, H), Image.BILINEAR)
     fg = np.asarray(fr.S, np.float32) + np.asarray(g1, np.float32) * 1.3 + np.asarray(g2, np.float32) * 1.7
-    out = BG + fg * fade
+    bg = BG if fr.M is None else BG * (1 - fr.M[..., None] * 0.95 * fade)
+    out = bg + fg * fade
     xs, ys, sp, ph, br = STARS
     x = ((xs - T * sp) % W).astype(int)
     y = ys.astype(int)
@@ -408,8 +412,324 @@ def chevrons(f, x0, x1, y, t, c, a=1, n=7, speed=260, gain=None):
 # ---------------------------------------------------------------------------
 # 场景
 # ---------------------------------------------------------------------------
+# ---------------------------------------------------------------------------
+# 3D：网格绘制、火焰、粒子、标注
+# ---------------------------------------------------------------------------
+_paths = {}
+
+
+def path3(pts):
+    k = tuple(map(tuple, pts))
+    if k not in _paths:
+        P = e3.tube_path(pts)
+        seg = np.linalg.norm(np.diff(P, axis=0), axis=1)
+        _paths[k] = (P, np.concatenate([[0], np.cumsum(seg)]))
+    return _paths[k]
+
+
+def at3(pts, u):
+    P, cum = path3(pts)
+    d = clamp(u) * cum[-1]
+    i = min(int(np.searchsorted(cum, d, side="right") - 1), len(P) - 2)
+    r = (d - cum[i]) / max(cum[i + 1] - cum[i], 1e-9)
+    return P[i] + (P[i + 1] - P[i]) * r
+
+
+def draw3d(f, mesh, cam, fire=0.0):
+    im = e3.render(mesh, cam, W, H, 2, fire)
+    f.S.paste(im, (0, 0), im)
+    a = np.asarray(im, np.float32)
+    m = a[..., 3] / 255
+    f.M = m if f.M is None else np.maximum(f.M, m)
+    hl = np.clip(a[..., :3] - 170, 0, 255) * 1.2 * m[..., None]
+    g = Image.fromarray(hl.astype(np.uint8)).resize((W // 2, H // 2), Image.BILINEAR)
+    f.G = ImageChops.add(f.G, g)
+    f.dg = ImageDraw.Draw(f.G)
+
+
+def dots3(f, cam, P, cols, rad, alphas, glow=1.0, streak=None):
+    """P: (N,3)；streak: (N,3) 上一时刻位置，画运动拖尾"""
+    if len(P) == 0:
+        return
+    x, y, z, s = cam.project(np.asarray(P, float))
+    order = np.argsort(-z)
+    if streak is not None:
+        x0, y0, _, _ = cam.project(np.asarray(streak, float))
+    for i in order:
+        r = max(1.5, rad[i] * s[i] / 1000)
+        if streak is not None:
+            f.line([(x0[i], y0[i]), (x[i], y[i])], cols[i], max(2, int(r * 1.4)), alphas[i] * 0.7, glow)
+        f.dot(x[i], y[i], r, cols[i], alphas[i], glow)
+
+
+def flame3d(f, cam, t, a=1.0, L=4.2, n=220, y0=None, scale=1.0):
+    ey = e3.exit_y() if y0 is None else y0
+    er = e3.exit_r() * scale
+    P, C, R, A = [], [], [], []
+    for i in range(n):
+        u = frac(rnd(i, 31) + t * (1.1 + 0.7 * rnd(i, 32)))
+        ang = rnd(i, 33) * 6.283 + t
+        rr = er * (0.9 - 0.45 * u) * math.sqrt(rnd(i, 34))
+        P.append((rr * math.cos(ang), ey - u * L * scale, rr * math.sin(ang)))
+        C.append(mix((255, 240, 190), ORANGE, u * 2.2) if u < 0.5 else mix(ORANGE, (190, 30, 30), (u - 0.5) * 2))
+        R.append(40 * (1 - u) + 12)
+        A.append(a * min(1, u * 8) * (1 - u) ** 1.2 * 0.6)
+    # 火焰内核：一条渐细的发光锥
+    for k in range(8):
+        u0, u1 = k / 8, (k + 1) / 8
+        rr0, rr1 = er * (0.6 - 0.45 * u0), er * (0.6 - 0.45 * u1)
+        q = [(-rr0, ey - u0 * L * 0.8 * scale, 0), (rr0, ey - u0 * L * 0.8 * scale, 0),
+             (rr1, ey - u1 * L * 0.8 * scale, 0), (-rr1, ey - u1 * L * 0.8 * scale, 0)]
+        Rm = cam.R.T  # 让锥面始终正对相机
+        qq = np.asarray(q) @ Rm.T * np.array([1, 0, 1]) + np.asarray(q) * np.array([0, 1, 0])
+        x, y, _, _ = cam.project(qq)
+        cc = mix((255, 230, 170), (255, 90, 30), u0)
+        f.ds.polygon(list(zip(x, y)), fill=sc(cc, a * 0.1 * (1 - u0)))
+        f.dg.polygon([(px / 2, py / 2) for px, py in zip(x, y)], fill=sc(cc, a * 0.35 * (1 - u0)))
+    dots3(f, cam, P, C, R, A, 0.9)
+    for k in range(5):  # 马赫环
+        yk = ey - (0.45 + 0.75 * k) * scale
+        rk = er * (0.55 - 0.08 * k)
+        ring = [(rk * math.cos(q), yk, rk * math.sin(q)) for q in np.linspace(0, 6.283, 24)]
+        x, y, _, _ = cam.project(np.asarray(ring))
+        fl = (0.7 + 0.3 * math.sin(t * 37 + k)) * a * (1 - k / 5)
+        pts = list(zip(x, y))
+        f.ds.polygon(pts, fill=sc((255, 200, 235), 0.28 * fl))
+        f.dg.polygon([(px / 2, py / 2) for px, py in pts], fill=sc((255, 110, 200), 0.55 * fl))
+
+
+def flow3(f, cam, pts, t, n, c, speed=0.25, rad=22, a=1.0, glow=1.0):
+    P = [at3(pts, frac(i / n + t * speed)) for i in range(n)]
+    dots3(f, cam, P, [c] * n, [rad] * n, [a] * n, glow)
+
+
+def label3(f, cam, p, txt, sub, tx, ty, c, a, align="r"):
+    """左/右侧文字 + 指向 3D 点的引线"""
+    if a <= 0.01:
+        return
+    x, y, _, _ = cam.project(np.asarray([p], float))
+    px, py = float(x[0]), float(y[0])
+    anchor = "rm" if align == "r" else "lm"
+    ex = tx + 16 if align == "r" else tx - 16
+    f.line([(ex, ty), (ex + (px - ex) * 0.25, ty), (px, py)], c, 2, a * 0.8, 0.5)
+    f.dot(px, py, 6, c, a, 1.2)
+    f.ring(px, py, 13 + 3 * math.sin(f_time[0] * 5), c, 2, a * 0.7)
+    f.text((tx, ty - 6), txt, 40, c, a, 0.7, anchor=anchor[0] + "s", bold=True)
+    if sub:
+        f.text((tx, ty + 34), sub, 27, WHITE, a * 0.85, 0.1, anchor=anchor[0] + "s")
+
+
+f_time = [0.0]
+
+
+def cut_range(cam, open_ang=2.2):
+    az = cam.azimuth()
+    return az + open_ang / 2, az + 2 * math.pi - open_ang / 2
+
+
+# ---------------------------------------------------------------------------
+# A 段：发动机原理（3D）
+# ---------------------------------------------------------------------------
+def s_a_overview(f, t, d):
+    f_time[0] = t
+    header(f, t, "A1", "一台液体火箭发动机长什么样", ORANGE)
+    cam = e3.Camera(0.35 + t * 0.22, 0.12, 9.5, (0, 0.75, 0), 1120, 1230, 420)
+    draw3d(f, e3.full_engine(t * 9, heat=1.0), cam, fire=1.0)
+    flame3d(f, cam, t)
+    fa = ease((t - 4.5) / 0.6)
+    flow3(f, cam, e3.FUEL_IN + e3.FUEL_DISCHARGE, t, 26, ORANGE, 0.3, 20, fa)
+    flow3(f, cam, e3.LOX_IN + e3.LOX_DISCHARGE, t, 26, CYAN, 0.3, 20, fa)
+    parts = [((1.15, 2.1, 0), "涡轮泵", "把推进剂加压到几百 bar", CYAN),
+             ((0, 2.55, 0), "喷注器", "燃料和氧化剂在这里混合", PURPLE),
+             ((0.6, 1.6, 0), "燃烧室", "3500 K 高温高压燃烧", ORANGE),
+             ((0.26, 0.75, 0), "喉部", "最窄处：气流刚好到音速", YELLOW),
+             ((0.95, -0.9, 0), "喷管", "热能 → 动能，高速喷出", GREEN)]
+    for i, (p, s1, s2, c) in enumerate(parts):
+        label3(f, cam, p, s1, s2, 560, 230 + i * 150, c, ease((t - 0.5 - i * 0.6) / 0.5))
+    captions(f, t, [(0.3, 4.5, "液体火箭发动机 = 【涡轮泵】+【燃烧室】+【喷管】"),
+                    (4.5, d, "贮箱 → 泵加压 → 喷注混合 → 燃烧 → 喷管加速喷出")])
+
+
+def s_a_thrust(f, t, d):
+    f_time[0] = t
+    header(f, t, "A2", "推力从哪来", YELLOW)
+    cam = e3.Camera(0.5 + 0.12 * math.sin(t * 0.5), 0.18, 7.2, (0, 0.45, 0), 1250, 600, 470)
+    draw3d(f, e3.engine_body(48, cut_range(cam), 0.9), cam, fire=1.0)
+    # 燃气：燃烧室里慢，过喉部后越来越快（拖尾越长）
+    n = 140
+    P, P0, C, R, A = [], [], [], [], []
+    for i in range(n):
+        u = frac(rnd(i, 41) + t * 0.32)
+        u0 = max(0, u - 0.025)
+        ang, rr = rnd(i, 42) * 6.283, math.sqrt(rnd(i, 43)) * 0.85
+        for uu, lst in ((u, P), (u0, P0)):
+            y = 2.3 - 3.9 * uu ** 2.2
+            r = e3.radius_at(y) * rr
+            lst.append((r * math.cos(ang), y, r * math.sin(ang)))
+        C.append(mix((255, 245, 200), ORANGE, u * 1.3) if u < 0.75 else mix(ORANGE, RED, (u - 0.75) * 4))
+        R.append(16)
+        A.append(0.85)
+    dots3(f, cam, P, C, R, A, 1.0, streak=P0)
+    flame3d(f, cam, t, 0.8, 2.6, 90)
+    stations = [((0.45, 1.7, 0), "燃烧室", "3500 K · 300 bar · 流速很慢", ORANGE, 0.6),
+                ((0.26, 0.75, 0), "喉部", "马赫 1：流量由这里决定", YELLOW, 2.0),
+                ((1.1, -1.45, 0), "出口", "≈ 3.3 km/s 超音速", CYAN, 3.4)]
+    for i, (p, s1, s2, c, t0) in enumerate(stations):
+        label3(f, cam, p, s1, s2, 1120, 240 + i * 150, c, ease((t - t0) / 0.5), align="l")
+    # 沿轴向：压力 ↓ 速度 ↑
+    ag = ease((t - 4.2) / 0.6)
+    X0, X1, Y0, Y1 = 1120, 1780, 650, 840
+    f.line([(X0, Y1), (X1, Y1)], GRAY, 2, ag, 0)
+    f.text((X1, Y1 + 26), "沿喷管轴向 →", 24, GRAY, ag, 0, anchor="rm")
+    xt = X0 + (X1 - X0) * 0.38
+    f.dashed((xt, Y0), (xt, Y1), YELLOW, 2, ag)
+    f.text((xt, Y0 - 18), "M=1", 26, YELLOW, ag, 0.5)
+    up = clamp((t - 4.4) / 2.0)
+    pc = [(X0 + (X1 - X0) * q, Y0 + 20 + (Y1 - Y0 - 30) * (1 / (1 + math.exp(-(q - 0.38) * 9)))) for q in np.linspace(0, 1, 50)]
+    vc = [(X0 + (X1 - X0) * q, Y1 - 10 - (Y1 - Y0 - 30) * (1 / (1 + math.exp(-(q - 0.38) * 7)))) for q in np.linspace(0, 1, 50)]
+    f.line(pl_part(pc, up), RED, 4, ag)
+    f.line(pl_part(vc, up), CYAN, 4, ag)
+    f.text((X0 + 10, Y0 + 2), "压力", 26, RED, ag * up, 0.4, anchor="lm")
+    f.text((X0 + 10, Y1 - 40), "速度", 26, CYAN, ag * up, 0.4, anchor="lm")
+    ae = ease((t - 6.8) / 0.5)
+    f.box([1100, 880, 1800, 945], YELLOW, ae, 3, 16, fill=YELLOW, fa=0.08)
+    f.text((1450, 912), "F = (dm/dt)·ve + (pe − pa)·Ae", 36, YELLOW, ae, 0.6, mono=True)
+    captions(f, t, [(0.3, 3.5, "燃烧把化学能变成【高温高压】的燃气"),
+                    (3.5, 6.8, "收敛段加速 → 喉部【音速】→ 扩张段继续加速到【超音速】"),
+                    (6.8, d, "每秒喷出几百公斤 3 km/s 的燃气，反作用力就是【推力】")])
+
+
+def s_a_pump(f, t, d):
+    f_time[0] = t
+    header(f, t, "A3", "涡轮泵：发动机的心脏", CYAN)
+    spin = t * 5
+    cam = e3.Camera(0.22 + 0.05 * t, 0.38, 5.4, (0, 0, 0), 1150, 640, 520)
+    draw3d(f, e3.turbopump_closeup(spin), cam, fire=0.0)
+    for xc, c in ((1.1, ORANGE), (-1.1, CYAN)):  # 全息外壳
+        for rr in (0.98, 1.06):
+            ring = [(xc, rr * math.sin(q), rr * math.cos(q)) for q in np.linspace(0, 6.283, 48)]
+            x, y, _, _ = cam.project(np.asarray(ring))
+            f.line(list(zip(x, y)), c, 2, 0.5, 0.6)
+    # 燃气吹动涡轮叶片；推进剂被叶轮甩出去
+    P, C, A = [], [], []
+    for i in range(70):
+        u = frac(rnd(i, 51) + t * 0.6)
+        q = spin * 0.3 + rnd(i, 52) * 6.283 + u * 2.5
+        P.append((1.75 - u * 1.3, -0.82 * math.sin(q), 0.82 * math.cos(q)))
+        C.append(mix(YELLOW, RED, u))
+        A.append(0.9 * (1 - u * 0.6))
+    for i in range(70):
+        u = frac(rnd(i, 53) + t * 0.5)
+        q = -spin * 0.4 + rnd(i, 54) * 6.283 + max(0, u - 0.45) * 5
+        if u < 0.45:
+            x, r = -2.1 + u / 0.45 * 0.9, 0.12 + 0.05 * rnd(i, 55)
+        else:
+            x, r = -1.1, 0.15 + (u - 0.45) / 0.55 * 0.9
+        P.append((x, -r * math.sin(q), r * math.cos(q)))
+        C.append(mix(CYAN, WHITE, (u - 0.45) * 1.5))
+        A.append(0.9)
+    dots3(f, cam, P, C, [16] * len(P), A, 1.0)
+    label3(f, cam, (1.1, 0.0, 0.95), "涡轮", "燃气吹动叶片 → 带动轴", 1240, 250, ORANGE, ease((t - 0.5) / 0.5), "l")
+    label3(f, cam, (-1.1, 0.0, 0.8), "泵叶轮", "把推进剂甩出去、加压", 1240, 410, CYAN, ease((t - 1.2) / 0.5), "l")
+    label3(f, cam, (0.0, 0.0, 0.0), "同一根轴", "转速 7 万转/分", 1240, 570, WHITE, ease((t - 1.9) / 0.5), "l")
+    # 自举环
+    ar = ease((t - 5.6) / 0.6)
+    cx, cy, R = 1500, 800, 110
+    nodes = ["泵加压", "烧出燃气", "推涡轮", "带动泵"]
+    for k, s in enumerate(nodes):
+        q = -math.pi / 2 + k * math.pi / 2
+        f.text((cx + R * 1.45 * math.cos(q), cy + R * 0.9 * math.sin(q)), s, 28, YELLOW, ar, 0.5)
+    arc = [(cx + R * math.cos(q), cy + R * 0.6 * math.sin(q)) for q in np.linspace(0, 6.0, 40)]
+    f.line(arc, YELLOW, 3, ar * 0.7, 0.6)
+    qd = t * 2.5
+    f.dot(cx + R * math.cos(qd), cy + R * 0.6 * math.sin(qd), 8, YELLOW, ar, 1.4)
+    captions(f, t, [(0.3, 3.0, "要把推进剂顶进 300 bar 的燃烧室，得靠【涡轮泵】"),
+                    (3.0, 5.6, "RS-25 的燃料泵：出口 480 bar，几万千瓦，【比火车头还大】"),
+                    (5.6, d, "可功率只能来自推进剂自己：这是一个【自举】难题")])
+
+
+def s_a_cycles(f, t, d):
+    f_time[0] = t
+    closed = t >= 5.5
+    header(f, t, "A4", "涡轮的废气往哪去？", MAGENTA)
+    cam = e3.Camera(0.95 + 0.1 * t, 0.12, 9.5, (0.3, 0.75, 0), 1120, 1300, 420)
+    draw3d(f, e3.full_engine(t * 9, heat=1.0, gg="closed" if closed else "open"), cam, fire=1.0)
+    flame3d(f, cam, t)
+    flow3(f, cam, e3.FUEL_IN + e3.FUEL_DISCHARGE, t, 22, ORANGE, 0.3, 20)
+    flow3(f, cam, e3.LOX_IN + e3.LOX_DISCHARGE, t, 22, CYAN, 0.3, 20)
+    if not closed:
+        flow3(f, cam, e3.GG_EXHAUST, t, 14, (200, 200, 200), 0.35, 22)
+        P, C, R, A = [], [], [], []
+        for i in range(40):
+            u = frac(rnd(i, 61) + t * 0.35)
+            P.append((1.85 + u * 1.4 + (rnd(i, 62) - 0.5) * u, -1.5 - u * 1.2 + (rnd(i, 63) - 0.5) * u, 0.35 + (rnd(i, 64) - 0.5) * u))
+            C.append((90, 90, 100))
+            R.append(30 + 120 * u)
+            A.append((1 - u) * 0.5)
+        dots3(f, cam, P, C, R, A, 0.3)
+    else:
+        flow3(f, cam, e3.HOT_GAS, t, 14, RED, 0.5, 24)
+    a1 = win(t, 0.4, 5.5, 0.5, 0.3)
+    a2 = ease((t - 5.7) / 0.5)
+    for a, title, c, rows in ((a1, "燃气发生器循环（开式）", ORANGE,
+                               ["抽 2–5% 推进剂烧一小炉，推涡轮", "推完涡轮的废气【直接排到舷外】",
+                                "比冲损失 2–3%：F-1、Merlin", "≈ 【detach()】"]),
+                              (a2, "分级燃烧循环（闭式）", GREEN,
+                               ["预燃室故意不烧完（~900 K）", "涡轮废气【接回主燃烧室】再烧",
+                                "一分推进剂都不丢：RS-25、猛禽", "≈ 【残差连接 x + f(x)】"])):
+        if a <= 0:
+            continue
+        f.text((110, 230), title, 52, c, a, 0.8, anchor="lm", bold=True)
+        for i, r in enumerate(rows):
+            aa = a * ease((t - (0.8 if c == ORANGE else 6.0) - i * 0.5) / 0.4)
+            f.dot(126, 340 + i * 105, 7, c, aa)
+            f.rich((150, 340 + i * 105), r, 38, aa, acc=c, align="l")
+    captions(f, t, [(0.3, 5.5, "开式：推完涡轮的废气【排到舷外】 —— 土星五号侧面那股黑烟"),
+                    (5.5, d, "闭式：废气【接回主燃烧室】再烧一次 —— 一点都不浪费")])
+
+
+def s_a_regen(f, t, d):
+    f_time[0] = t
+    header(f, t, "A5", "再生冷却：废热用两次", BLUE)
+    cam = e3.Camera(-0.4 + 0.1 * t, 0.2, 7.0, (0, 0.45, 0), 1250, 640, 470)
+    a0, a1 = cut_range(cam, 2.4)
+    draw3d(f, e3.engine_body(48, (a0, a1), 1.0), cam, fire=1.0)
+    # 冷却剂在壁内由下往上流（剖面 + 透视）
+    P, C, R, A = [], [], [], []
+    for side, ang in enumerate((a0, a1)):
+        for i in range(36):
+            u = frac(rnd(i + side * 50, 71) + t * 0.22)
+            y = -1.55 + u * 3.6
+            r = e3.radius_at(y) - 0.035
+            P.append((r * math.cos(ang), y, r * math.sin(ang)))
+            C.append(mix(BLUE, (255, 230, 200), u))
+            R.append(14)
+            A.append(1.0)
+    dots3(f, cam, P, C, R, A, 1.0)
+    for i in range(70):  # 内部燃气
+        u = frac(rnd(i, 72) + t * 0.32)
+        y = 2.3 - 3.9 * u ** 2.2
+        ang, rr = rnd(i, 73) * 6.283, math.sqrt(rnd(i, 74)) * 0.8
+        r = e3.radius_at(y) * rr
+        f_p = [(r * math.cos(ang), y, r * math.sin(ang))]
+        dots3(f, cam, f_p, [mix((255, 240, 190), ORANGE, u)], [14], [0.6], 0.8)
+    flame3d(f, cam, t, 0.7, 2.4, 80)
+    label3(f, cam, (0.0, 1.6, 0.0), "燃气 3500 K", "比钢的熔点还高一倍", 1180, 260, ORANGE, ease((t - 0.4) / 0.5), "l")
+    p_wall = (e3.radius_at(0.0) * math.cos(a1), 0.0, e3.radius_at(0.0) * math.sin(a1))
+    label3(f, cam, p_wall, "燃料在壁内逆流而上", "带走热量，壁面保持 < 800 K", 1180, 430, BLUE, ease((t - 1.4) / 0.5), "l")
+    label3(f, cam, (0.0, 2.55, 0.0), "预热后进喷注器", "废热没有浪费，回到燃烧室", 1180, 600, GREEN, ease((t - 2.6) / 0.5), "l")
+    ak = ease((t - 4.5) / 0.5)
+    f.box([1160, 720, 1800, 840], CYAN, ak, 3, 18, fill=CYAN, fa=0.08)
+    f.rich((1480, 780), "≈ 【KV Cache】：付过的成本用两次", 38, ak, acc=CYAN)
+    captions(f, t, [(0.3, 4.0, "燃气 3500 K，壁面扛不住：让【燃料先流过壁面】带走热量"),
+                    (4.0, d, "废热被回收、燃料被预热 —— 已经付过的成本，【用第二次】")])
+
+
 def s_cover(f, t, d):
-    engine(f, 1450, 150, 1.0, t, 1)
+    f_time[0] = t
+    cam = e3.Camera(0.5 + 0.12 * t, 0.12, 9.0, (0, 0.6, 0), 1050, 1430, 430)
+    draw3d(f, e3.full_engine(t * 9, heat=1.0), cam, fire=1.0)
+    flame3d(f, cam, t)
     a = ease(t / 0.6)
     f.box([140, 175, 520, 240], MAGENTA, a, 3, 30, fill=MAGENTA, fa=0.15)
     f.text((330, 207), "硬核类比 · AI 原理", 32, MAGENTA, a, 0.6)
@@ -433,7 +753,9 @@ def s_same(f, t, d):
     header(f, t, "00", "同一道题，两张图")
     a1 = ease((t - 0.2) / 0.6)
     f.text((480, 170), "火箭发动机", 46, ORANGE, a1, 0.7, bold=True)
-    engine(f, 480, 250, 0.68, t, a1, 0.9)
+    cam = e3.Camera(0.4 + 0.2 * t, 0.12, 9.5, (0, 0.2, 0), 820 * (0.6 + 0.4 * a1), 480, 520)
+    draw3d(f, e3.full_engine(t * 9, heat=1.0), cam, fire=1.0)
+    flame3d(f, cam, t, a1, 3.0, 120)
     a2 = ease((t - 0.5) / 0.6)
     f.text((1440, 170), "Transformer Block", 46, CYAN, a2, 0.7, bold=True)
     tblock(f, 1400, 250, 0.95, t, a2)
@@ -871,7 +1193,9 @@ def s_five(f, t, d):
 def s_end(f, t, d):
     a = ease(t / 0.6)
     ty = 700 - ease(t / d) * 900
-    engine(f, 1560, ty, 0.6, t, a)
+    cam = e3.Camera(0.6 + 0.3 * t, 0.12, 12.0, (0, 4.0 - ease(t / d) * 9, 0), 900, 1560, 540)
+    draw3d(f, e3.full_engine(t * 9, heat=1.0), cam, fire=1.0)
+    flame3d(f, cam, t, a, 5.0)
     s1 = ease((t - 0.2) / 0.6)
     f.text((760, 330), "关注", 60, WHITE, s1, 0.3)
     k = 1 + 0.02 * math.sin(t * 4)
@@ -889,7 +1213,8 @@ def s_end(f, t, d):
               s1 * (1 - u) * 0.8, 1.0)
 
 
-SCENES = [(s_cover, 5), (s_same, 6), (s_cycle, 9), (s_open, 9), (s_preln, 10), (s_fwdbwd, 8),
+SCENES = [(s_cover, 5), (s_same, 6), (s_a_overview, 9), (s_a_thrust, 10), (s_a_pump, 9),
+          (s_a_cycles, 11), (s_a_regen, 8), (s_cycle, 9), (s_open, 9), (s_preln, 10), (s_fwdbwd, 8),
           (s_staged, 9), (s_injector, 9), (s_throat, 10), (s_raptor, 8), (s_control, 9),
           (s_rocket_eq, 8), (s_five, 11), (s_end, 6)]
 STARTS = np.cumsum([0] + [d for _, d in SCENES])
@@ -1022,7 +1347,7 @@ def main():
     print("music saved")
     mp4 = os.path.join(OUT, "rocket_engine_to_transformer.mp4")
     cmd = ["ffmpeg", "-y", "-loglevel", "error", "-f", "rawvideo", "-pix_fmt", "rgb24", "-s", f"{W}x{H}",
-           "-r", str(FPS), "-i", "-", "-i", wav, "-c:v", "libx264", "-preset", "medium", "-crf", "20",
+           "-r", str(FPS), "-i", "-", "-i", wav, "-c:v", "libx264", "-preset", "fast", "-crf", "20",
            "-pix_fmt", "yuv420p", "-c:a", "aac", "-b:a", "192k", "-shortest", "-movflags", "+faststart", mp4]
     p = subprocess.Popen(cmd, stdin=subprocess.PIPE)
     with Pool(max(1, os.cpu_count() - 1)) as pool:
